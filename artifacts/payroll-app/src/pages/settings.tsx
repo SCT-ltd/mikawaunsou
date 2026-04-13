@@ -6,19 +6,16 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { Save, Building2 } from "lucide-react";
+import { Save, Building2, Info } from "lucide-react";
 
 const companySchema = z.object({
   name: z.string().min(1, "会社名を入力してください"),
   closingDay: z.coerce.number().min(1).max(31, "1から31の数値を入力してください（31は月末）"),
   paymentDay: z.coerce.number().min(1).max(31, "1から31の数値を入力してください（31は月末）"),
-  monthlyAverageWorkHours: z.coerce.number().min(1, "1以上の数値を入力してください"),
-  socialInsuranceRate: z.coerce.number().min(0).max(100),
-  employmentInsuranceRate: z.coerce.number().min(0).max(100),
 });
 
 type CompanyFormValues = z.infer<typeof companySchema>;
@@ -36,9 +33,6 @@ export default function Settings() {
       name: "",
       closingDay: 31,
       paymentDay: 25,
-      monthlyAverageWorkHours: 173.8,
-      socialInsuranceRate: 15.0,
-      employmentInsuranceRate: 0.6,
     },
   });
 
@@ -48,9 +42,6 @@ export default function Settings() {
         name: company.name,
         closingDay: company.closingDay,
         paymentDay: company.paymentDay,
-        monthlyAverageWorkHours: company.monthlyAverageWorkHours,
-        socialInsuranceRate: company.socialInsuranceRate,
-        employmentInsuranceRate: company.employmentInsuranceRate,
       });
     }
   }, [company, form]);
@@ -84,9 +75,9 @@ export default function Settings() {
             <Building2 className="h-6 w-6" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold tracking-tight">会社設定（マスタ）</h2>
+            <h2 className="text-2xl font-bold tracking-tight">会社設定</h2>
             <p className="text-sm text-muted-foreground mt-1">
-              給与計算の基準となる全社共通の設定です。変更すると次回の給与計算から適用されます。
+              会社の基本情報・給与締め日・支払日を設定します。
             </p>
           </div>
         </div>
@@ -107,13 +98,11 @@ export default function Settings() {
                       <FormControl>
                         <Input {...field} />
                       </FormControl>
-                      <FormMessage />
                     </FormItem>
                   )}
                 />
-                
-                {/* Empty div for spacing in grid */}
-                <div className="hidden md:block"></div>
+
+                <div className="hidden md:block" />
 
                 <FormField
                   control={form.control}
@@ -127,7 +116,6 @@ export default function Settings() {
                           <span className="text-sm text-muted-foreground">日（31は月末扱い）</span>
                         </div>
                       </FormControl>
-                      <FormMessage />
                     </FormItem>
                   )}
                 />
@@ -143,77 +131,23 @@ export default function Settings() {
                           <span className="text-sm text-muted-foreground">日（31は月末扱い）</span>
                         </div>
                       </FormControl>
-                      <FormMessage />
                     </FormItem>
                   )}
                 />
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">計算基準・保険料率設定</CardTitle>
-                <CardDescription>
-                  法定の料率が改定された場合はこちらを更新してください。
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-6 md:grid-cols-2">
-                <FormField
-                  control={form.control}
-                  name="monthlyAverageWorkHours"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>月平均所定労働時間</FormLabel>
-                      <FormControl>
-                        <div className="flex items-center gap-2">
-                          <Input type="number" step="0.1" {...field} className="w-32 text-right" />
-                          <span className="text-sm text-muted-foreground">時間</span>
-                        </div>
-                      </FormControl>
-                      <FormDescription>
-                        時間外手当の計算（時給単価の算出）に使用されます。
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="socialInsuranceRate"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>社会保険料率（従業員負担分）</FormLabel>
-                      <FormControl>
-                        <div className="flex items-center gap-2">
-                          <Input type="number" step="0.001" {...field} className="w-32 text-right" />
-                          <span className="text-sm text-muted-foreground">%</span>
-                        </div>
-                      </FormControl>
-                      <FormDescription>
-                        健康保険・厚生年金保険の合算料率です。
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="employmentInsuranceRate"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>雇用保険料率（従業員負担分）</FormLabel>
-                      <FormControl>
-                        <div className="flex items-center gap-2">
-                          <Input type="number" step="0.001" {...field} className="w-32 text-right" />
-                          <span className="text-sm text-muted-foreground">%</span>
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </CardContent>
-            </Card>
+            <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+              <Info className="h-4 w-4 mt-0.5 shrink-0 text-blue-600" />
+              <div>
+                <p className="font-medium mb-1">保険料率・計算パラメータの設定について</p>
+                <p className="text-blue-700">
+                  健康保険料率・厚生年金料率・雇用保険料率・時間外割増率・月平均所定労働時間などの給与計算パラメータは、
+                  <strong>マスター管理 → 計算テーブルマスター</strong>で設定・管理してください。
+                  計算テーブルマスターの設定値がサイドバーの給与明細計算に直接反映されます。
+                </p>
+              </div>
+            </div>
 
             <div className="flex justify-end gap-4 pb-12">
               <Button type="submit" disabled={form.formState.isSubmitting}>
