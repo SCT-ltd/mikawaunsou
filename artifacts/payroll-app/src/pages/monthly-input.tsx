@@ -34,9 +34,12 @@ function AllowanceSidebar({
   const queryClient = useQueryClient();
   const employeeId = employee?.id ?? 0;
 
-  const { data: allowanceDefinitions } = useListAllowanceDefinitions({ activeOnly: true });
+  const { data: allowanceDefinitions } = useListAllowanceDefinitions(
+    { activeOnly: true },
+    { query: { staleTime: 0, refetchOnMount: true } }
+  );
   const { data: employeeAllowances } = useGetEmployeeAllowances(employeeId, {
-    query: { enabled: !!employeeId, queryKey: getGetEmployeeAllowancesQueryKey(employeeId) }
+    query: { enabled: !!employeeId, queryKey: getGetEmployeeAllowancesQueryKey(employeeId), staleTime: 0, refetchOnMount: true }
   });
   const updateAllowances = useUpdateEmployeeAllowances();
 
@@ -67,7 +70,10 @@ function AllowanceSidebar({
     }
   };
 
-  const total = Object.values(amounts).reduce((s, v) => s + (v || 0), 0);
+  const allowancesTotal = Object.values(amounts).reduce((s, v) => s + (v || 0), 0);
+  const baseSalary = employee?.baseSalary ?? 0;
+  const grandTotal = baseSalary + allowancesTotal;
+  const totalRows = (allowanceDefinitions?.length ?? 0) + 1; // +1 for 基本給 row
 
   if (!employee) return null;
 
@@ -80,43 +86,55 @@ function AllowanceSidebar({
         </SheetHeader>
 
         <div className="flex-1 overflow-y-auto">
-          {!allowanceDefinitions || allowanceDefinitions.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8 px-6">
-              手当マスタが登録されていません。
-            </p>
-          ) : (
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="bg-muted/60">
-                  <th className="border border-border px-3 py-2 text-left font-medium text-xs text-muted-foreground w-8"></th>
-                  <th className="border border-border px-3 py-2 text-left font-medium text-xs text-muted-foreground">手当名称</th>
-                  <th className="border border-border px-3 py-2 text-center font-medium text-xs text-muted-foreground w-16">課税</th>
-                  <th className="border border-border px-3 py-2 text-right font-medium text-xs text-muted-foreground w-32">金額（円）</th>
+          <table className="w-full border-collapse text-xs">
+            <thead>
+              <tr className="bg-muted/60">
+                <th className="border border-border py-1.5 text-center font-medium text-muted-foreground" style={{ width: "22px" }}></th>
+                <th className="border border-border px-2 py-1.5 text-left font-medium text-muted-foreground">名称</th>
+                <th className="border border-border px-1 py-1.5 text-center font-medium text-muted-foreground" style={{ width: "42px" }}>課税</th>
+                <th className="border border-border px-2 py-1.5 text-right font-medium text-muted-foreground" style={{ width: "100px" }}>金額（円）</th>
+              </tr>
+            </thead>
+            <tbody>
+              {/* 基本給 — fixed read-only row */}
+              <tr className="bg-background">
+                <td
+                  rowSpan={totalRows}
+                  className="border border-border text-center align-middle font-medium"
+                  style={{ writingMode: "vertical-rl", letterSpacing: "0.15em", padding: "6px 3px", fontSize: "11px", width: "22px" }}
+                >
+                  支　給
+                </td>
+                <td className="border border-border px-2 py-1.5 font-medium">基本給</td>
+                <td className="border border-border px-1 py-1.5 text-center">
+                  <span className="px-1 py-0.5 rounded border bg-red-50 text-red-700 border-red-200" style={{ fontSize: "10px" }}>課税</span>
+                </td>
+                <td className="border border-border px-2 py-1.5 text-right tabular-nums font-medium text-muted-foreground">
+                  {baseSalary.toLocaleString()}
+                </td>
+              </tr>
+
+              {/* Dynamic allowance rows */}
+              {!allowanceDefinitions || allowanceDefinitions.length === 0 ? (
+                <tr>
+                  <td colSpan={3} className="border border-border px-3 py-4 text-center text-muted-foreground">
+                    手当マスタが登録されていません
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {allowanceDefinitions.map((def, idx) => (
+              ) : (
+                allowanceDefinitions.map((def, idx) => (
                   <tr key={def.id} className={idx % 2 === 0 ? "bg-background" : "bg-muted/20"}>
-                    {idx === 0 && (
-                      <td
-                        rowSpan={allowanceDefinitions.length}
-                        className="border border-border text-center align-middle font-medium text-xs"
-                        style={{ writingMode: "vertical-rl", letterSpacing: "0.15em", padding: "8px 4px" }}
-                      >
-                        支　給
-                      </td>
-                    )}
-                    <td className="border border-border px-3 py-1.5 text-sm">{def.name}</td>
-                    <td className="border border-border px-2 py-1.5 text-center">
-                      <span className={`text-xs px-1.5 py-0.5 rounded border ${def.isTaxable ? "bg-red-50 text-red-700 border-red-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}>
+                    <td className="border border-border px-2 py-1">{def.name}</td>
+                    <td className="border border-border px-1 py-1 text-center">
+                      <span className={`px-1 py-0.5 rounded border ${def.isTaxable ? "bg-red-50 text-red-700 border-red-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`} style={{ fontSize: "10px" }}>
                         {def.isTaxable ? "課税" : "非課税"}
                       </span>
                     </td>
-                    <td className="border border-border px-2 py-1">
+                    <td className="border border-border px-1 py-0.5">
                       <Input
                         type="number"
                         min="0"
-                        className="h-7 w-full text-right text-sm border-0 shadow-none bg-transparent focus-visible:ring-1 focus-visible:ring-primary px-1"
+                        className="h-6 w-full text-right border-0 shadow-none bg-transparent focus-visible:ring-1 focus-visible:ring-primary px-1 text-xs"
                         value={amounts[def.id] || ""}
                         onChange={(e) => {
                           const v = e.target.value === "" ? 0 : parseInt(e.target.value, 10);
@@ -126,24 +144,26 @@ function AllowanceSidebar({
                       />
                     </td>
                   </tr>
-                ))}
-                <tr className="bg-muted/50 font-semibold">
-                  <td className="border border-border px-3 py-2 text-xs text-muted-foreground text-center" colSpan={2}>合　計</td>
-                  <td className="border border-border" />
-                  <td className="border border-border px-3 py-2 text-right text-sm tabular-nums">
-                    {total > 0 ? `¥${total.toLocaleString()}` : "—"}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          )}
+                ))
+              )}
+
+              {/* 支給合計 row */}
+              <tr className="bg-muted/50 font-semibold">
+                <td className="border border-border px-2 py-1.5 text-muted-foreground text-center" colSpan={2}>支給合計</td>
+                <td className="border border-border" />
+                <td className="border border-border px-2 py-1.5 text-right tabular-nums">
+                  {grandTotal > 0 ? grandTotal.toLocaleString() : "—"}
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
         <div className="border-t px-5 py-3 shrink-0">
           <Button
             className="w-full"
             onClick={handleSave}
-            disabled={updateAllowances.isPending || !allowanceDefinitions?.length}
+            disabled={updateAllowances.isPending}
           >
             <Save className="mr-2 h-4 w-4" />
             手当を保存
