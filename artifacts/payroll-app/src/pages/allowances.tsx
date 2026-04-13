@@ -279,10 +279,6 @@ const employeeEditSchema = z.object({
   dependentCount: z.coerce.number().int().min(0),
   hasSpouse: z.boolean().default(false),
   employmentInsuranceApplied: z.boolean().default(true),
-  residentTax: z.coerce.number().min(0),
-  transportationAllowance: z.coerce.number().min(0),
-  commissionRatePerKm: z.coerce.number().min(0),
-  commissionRatePerCase: z.coerce.number().min(0),
 });
 type EmployeeEditValues = z.infer<typeof employeeEditSchema>;
 
@@ -296,9 +292,7 @@ function EmployeeMasterTab() {
   const form = useForm<EmployeeEditValues>({
     resolver: zodResolver(employeeEditSchema),
     defaultValues: {
-      dependentCount: 0, hasSpouse: false,
-      employmentInsuranceApplied: true, residentTax: 0,
-      transportationAllowance: 0, commissionRatePerKm: 0, commissionRatePerCase: 0,
+      dependentCount: 0, hasSpouse: false, employmentInsuranceApplied: true,
     },
   });
 
@@ -308,10 +302,6 @@ function EmployeeMasterTab() {
       dependentCount: emp.dependentCount,
       hasSpouse: emp.hasSpouse ?? false,
       employmentInsuranceApplied: emp.employmentInsuranceApplied ?? true,
-      residentTax: emp.residentTax,
-      transportationAllowance: emp.transportationAllowance,
-      commissionRatePerKm: emp.commissionRatePerKm,
-      commissionRatePerCase: emp.commissionRatePerCase,
     });
   };
 
@@ -327,15 +317,13 @@ function EmployeeMasterTab() {
     }
   };
 
-  const fmt = (v: number) => `¥${v.toLocaleString("ja-JP")}`;
-
   const activeEmployees = employees?.filter(e => e.isActive) ?? [];
 
   return (
     <div className="space-y-4">
       <div>
         <h3 className="text-lg font-semibold">社員マスター</h3>
-        <p className="text-sm text-muted-foreground">扶養・通勤・歩合など各社員の基本設定を管理します。社会保険料は計算テーブルマスターの料率を使用して自動計算されます。</p>
+        <p className="text-sm text-muted-foreground">扶養・保険など各社員の基本設定を管理します。社会保険料は計算テーブルマスターの料率を使用して自動計算されます。</p>
       </div>
 
       <Card>
@@ -357,7 +345,6 @@ function EmployeeMasterTab() {
                     <TableHead>扶養</TableHead>
                     <TableHead>配偶者</TableHead>
                     <TableHead>雇保</TableHead>
-                    <TableHead className="text-right">住民税（月額）</TableHead>
                     <TableHead className="w-20 text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -382,7 +369,6 @@ function EmployeeMasterTab() {
                           <Badge variant="outline" className="text-muted-foreground text-xs">非適用</Badge>
                         )}
                       </TableCell>
-                      <TableCell className="text-right font-mono text-sm">{fmt(emp.residentTax)}</TableCell>
                       <TableCell className="text-right">
                         <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleOpenEdit(emp); }}>
                           <Edit2 className="h-4 w-4 text-muted-foreground" />
@@ -401,34 +387,11 @@ function EmployeeMasterTab() {
       <Dialog open={!!editingEmployee} onOpenChange={(open) => { if (!open) setEditingEmployee(null); }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingEmployee?.name}　扶養・通勤設定</DialogTitle>
+            <DialogTitle>{editingEmployee?.name}　扶養・保険設定</DialogTitle>
             <p className="text-sm text-muted-foreground mt-1">{editingEmployee?.employeeCode}　{editingEmployee?.department}</p>
           </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              {/* 歩合設定 */}
-              <div>
-                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">歩合設定</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField control={form.control} name="commissionRatePerKm" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>歩合単価（円/km）</FormLabel>
-                      <FormControl><Input type="number" step="0.1" placeholder="0" {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="commissionRatePerCase" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>歩合単価（円/件）</FormLabel>
-                      <FormControl><Input type="number" step="0.1" placeholder="0" {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                </div>
-              </div>
-
-              <Separator />
-
               {/* 扶養・家族 */}
               <div>
                 <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">扶養・家族設定</h4>
@@ -467,29 +430,6 @@ function EmployeeMasterTab() {
                     <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
                   </FormItem>
                 )} />
-              </div>
-
-              <Separator />
-
-              {/* 税・通勤 */}
-              <div>
-                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">税・通勤設定</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField control={form.control} name="residentTax" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>住民税（月額）</FormLabel>
-                      <FormControl><Input type="number" placeholder="8000" {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="transportationAllowance" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>通勤手当（月額）</FormLabel>
-                      <FormControl><Input type="number" placeholder="10000" {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                </div>
               </div>
 
               <DialogFooter>
