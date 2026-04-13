@@ -28,7 +28,6 @@ const allowanceSchema = z.object({
   name: z.string().min(1, "手当名称を入力してください"),
   description: z.string().optional(),
   isTaxable: z.boolean().default(true),
-  sortOrder: z.coerce.number().min(0).default(0),
   isActive: z.boolean().default(true).optional(),
 });
 
@@ -54,7 +53,6 @@ export default function AllowanceSettings() {
       name: "",
       description: "",
       isTaxable: true,
-      sortOrder: 0,
       isActive: true,
     },
   });
@@ -65,7 +63,6 @@ export default function AllowanceSettings() {
       name: "",
       description: "",
       isTaxable: true,
-      sortOrder: allowances && allowances.length > 0 ? Math.max(...allowances.map(a => a.sortOrder)) + 10 : 0,
       isActive: true,
     });
     setIsDialogOpen(true);
@@ -77,7 +74,6 @@ export default function AllowanceSettings() {
       name: allowance.name,
       description: allowance.description || "",
       isTaxable: allowance.isTaxable,
-      sortOrder: allowance.sortOrder,
       isActive: allowance.isActive,
     });
     setIsDialogOpen(true);
@@ -97,7 +93,6 @@ export default function AllowanceSettings() {
             name: data.name,
             description: data.description || undefined,
             isTaxable: data.isTaxable,
-            sortOrder: data.sortOrder,
             isActive: data.isActive !== undefined ? data.isActive : true,
           }
         });
@@ -108,7 +103,6 @@ export default function AllowanceSettings() {
             name: data.name,
             description: data.description || undefined,
             isTaxable: data.isTaxable,
-            sortOrder: data.sortOrder,
           }
         });
         toast({ title: "追加しました", description: "新しい手当を登録しました。" });
@@ -279,40 +273,26 @@ export default function AllowanceSettings() {
                     </FormItem>
                   )}
                 />
-                <div className="grid grid-cols-2 gap-4">
+                {editingAllowance && (
                   <FormField
                     control={form.control}
-                    name="sortOrder"
+                    name="isActive"
                     render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>表示順</FormLabel>
+                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                        <div className="space-y-0.5">
+                          <FormLabel className="text-base">有効</FormLabel>
+                          <div className="text-sm text-muted-foreground">無効にすると給与計算に使用されなくなります</div>
+                        </div>
                         <FormControl>
-                          <Input type="number" {...field} />
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
                         </FormControl>
-                        <FormMessage />
                       </FormItem>
                     )}
                   />
-                  {editingAllowance && (
-                    <FormField
-                      control={form.control}
-                      name="isActive"
-                      render={({ field }) => (
-                        <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                          <div className="space-y-0.5">
-                            <FormLabel className="text-base">有効</FormLabel>
-                          </div>
-                          <FormControl>
-                            <Switch
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
-                            />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
-                  )}
-                </div>
+                )}
                 <DialogFooter className="mt-6">
                   <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
                     キャンセル

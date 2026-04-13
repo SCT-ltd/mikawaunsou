@@ -22,7 +22,7 @@ router.post("/allowance-definitions", async (req, res) => {
     name: body.name,
     description: body.description ?? null,
     isTaxable: body.isTaxable ?? true,
-    sortOrder: body.sortOrder ?? (maxSort + 1),
+    sortOrder: maxSort + 1,
     isActive: true,
   }).returning();
   return res.status(201).json(created);
