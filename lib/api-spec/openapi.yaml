@@ -21,6 +21,8 @@ tags:
     description: 振替伝票
   - name: dashboard
     description: ダッシュボード
+  - name: allowance-definitions
+    description: 手当マスタ
 
 paths:
   /healthz:
@@ -488,6 +490,112 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/PendingEmployee"
+
+  # ── 手当マスタ ──────────────────────────────────────────────────────────────
+  /allowance-definitions:
+    get:
+      operationId: listAllowanceDefinitions
+      tags: [allowance-definitions]
+      summary: 手当定義一覧
+      parameters:
+        - name: activeOnly
+          in: query
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: 手当定義一覧
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AllowanceDefinition"
+    post:
+      operationId: createAllowanceDefinition
+      tags: [allowance-definitions]
+      summary: 手当定義追加
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAllowanceDefinitionBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AllowanceDefinition"
+
+  /allowance-definitions/{id}:
+    put:
+      operationId: updateAllowanceDefinition
+      tags: [allowance-definitions]
+      summary: 手当定義更新
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAllowanceDefinitionBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AllowanceDefinition"
+    delete:
+      operationId: deleteAllowanceDefinition
+      tags: [allowance-definitions]
+      summary: 手当定義削除（論理削除）
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Deleted
+
+  /employees/{id}/allowances:
+    get:
+      operationId: getEmployeeAllowances
+      tags: [allowance-definitions]
+      summary: 社員の手当金額一覧
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: 社員手当一覧
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EmployeeAllowance"
+    put:
+      operationId: updateEmployeeAllowances
+      tags: [allowance-definitions]
+      summary: 社員の手当金額一括更新
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateEmployeeAllowancesBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EmployeeAllowance"
 
 # ── コンポーネント ────────────────────────────────────────────────────────────
 components:
@@ -1111,3 +1219,111 @@ components:
         - department
         - hasMonthlyRecord
         - hasPayroll
+
+    AllowanceDefinition:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+          description: 手当名称（例：皆勤手当、資格手当）
+        description:
+          type: string
+          nullable: true
+          description: 説明
+        isTaxable:
+          type: boolean
+          description: 課税対象かどうか
+        sortOrder:
+          type: integer
+          description: 表示順
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - isTaxable
+        - sortOrder
+        - isActive
+        - createdAt
+        - updatedAt
+
+    CreateAllowanceDefinitionBody:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        isTaxable:
+          type: boolean
+        sortOrder:
+          type: integer
+      required:
+        - name
+        - isTaxable
+
+    UpdateAllowanceDefinitionBody:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        isTaxable:
+          type: boolean
+        sortOrder:
+          type: integer
+        isActive:
+          type: boolean
+
+    EmployeeAllowance:
+      type: object
+      properties:
+        id:
+          type: integer
+        employeeId:
+          type: integer
+        allowanceDefinitionId:
+          type: integer
+        allowanceName:
+          type: string
+        isTaxable:
+          type: boolean
+        amount:
+          type: number
+        sortOrder:
+          type: integer
+      required:
+        - id
+        - employeeId
+        - allowanceDefinitionId
+        - allowanceName
+        - isTaxable
+        - amount
+        - sortOrder
+
+    UpdateEmployeeAllowancesBody:
+      type: object
+      properties:
+        allowances:
+          type: array
+          items:
+            type: object
+            properties:
+              allowanceDefinitionId:
+                type: integer
+              amount:
+                type: number
+            required:
+              - allowanceDefinitionId
+              - amount
+      required:
+        - allowances

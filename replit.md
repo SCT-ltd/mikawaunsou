@@ -30,8 +30,10 @@
 - `company` — 会社マスタ（締め日、支払日、月平均労働時間、社会保険料率等）
 - `employees` — 社員マスタ（基本給、各手当、扶養人数、住民税、歩合単価等）
 - `monthly_records` — 月次実績（出勤日数、残業時間、深夜時間、走行距離、配送件数等）
-- `payrolls` — 給与計算結果（各支給項目・控除項目・差引支給額）
+- `payrolls` — 給与計算結果（各支給項目・控除項目・差引支給額・カスタム手当合計）
 - `journal_entries` — 振替伝票（自動生成）
+- `allowance_definitions` — カスタム手当マスタ（名称・課税区分・表示順・有効フラグ）
+- `employee_allowances` — 社員別カスタム手当金額（社員×手当定義×金額）
 
 ## Payroll Calculation Engine
 

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, payrollsTable, employeesTable, monthlyRecordsTable, companyTable } from "@workspace/db";
+import { db, payrollsTable, employeesTable, monthlyRecordsTable, companyTable, allowanceDefinitionsTable, employeeAllowancesTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { calculatePayroll } from "../lib/payroll-calculator";
 
@@ -53,6 +53,21 @@ router.post("/payroll/calculate", async (req, res) => {
     employmentInsuranceRate: 0.006,
   };
 
+  // カスタム手当を取得
+  const customAllowanceDefs = await db.select().from(allowanceDefinitionsTable)
+    .where(eq(allowanceDefinitionsTable.isActive, true));
+  const empAllowanceRows = await db.select().from(employeeAllowancesTable)
+    .where(eq(employeeAllowancesTable.employeeId, employeeId));
+  const customAllowances = customAllowanceDefs.map(def => {
+    const row = empAllowanceRows.find(r => r.allowanceDefinitionId === def.id);
+    return {
+      allowanceDefinitionId: def.id,
+      allowanceName: def.name,
+      isTaxable: def.isTaxable,
+      amount: row?.amount ?? 0,
+    };
+  }).filter(a => a.amount > 0);
+
   const result = calculatePayroll({
     baseSalary: emp.baseSalary,
     transportationAllowance: emp.transportationAllowance,
@@ -73,6 +88,7 @@ router.post("/payroll/calculate", async (req, res) => {
     drivingDistanceKm: record.drivingDistanceKm,
     deliveryCases: record.deliveryCases,
     absenceDays: record.absenceDays,
+    customAllowances,
   });
 
   // Upsert payroll

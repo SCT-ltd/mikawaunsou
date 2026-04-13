@@ -6,6 +6,7 @@ import monthlyRecordsRouter from "./monthly_records";
 import payrollRouter from "./payroll";
 import journalEntriesRouter from "./journal_entries";
 import dashboardRouter from "./dashboard";
+import allowancesRouter from "./allowances";
 
 const router: IRouter = Router();
 
@@ -16,5 +17,6 @@ router.use(monthlyRecordsRouter);
 router.use(payrollRouter);
 router.use(journalEntriesRouter);
 router.use(dashboardRouter);
+router.use(allowancesRouter);
 
 export default router;

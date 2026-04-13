@@ -26,6 +26,7 @@ export const payrollsTable = pgTable("payrolls", {
   residentTax: doublePrecision("resident_tax").notNull().default(0),
   totalDeductions: doublePrecision("total_deductions").notNull().default(0),
   netSalary: doublePrecision("net_salary").notNull().default(0),
+  customAllowancesTotal: doublePrecision("custom_allowances_total").notNull().default(0),
   overtimeHours: doublePrecision("overtime_hours").notNull().default(0),
   lateNightHours: doublePrecision("late_night_hours").notNull().default(0),
   holidayWorkDays: doublePrecision("holiday_work_days").notNull().default(0),

@@ -17,18 +17,22 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AllowanceDefinition,
   CalculatePayrollBody,
   Company,
+  CreateAllowanceDefinitionBody,
   CreateEmployeeBody,
   CreateMonthlyRecordBody,
   DashboardSummary,
   Employee,
+  EmployeeAllowance,
   ExportJournalEntriesCsvParams,
   GenerateJournalEntriesBody,
   GetDashboardSummaryParams,
   GetPendingEmployeesParams,
   HealthStatus,
   JournalEntry,
+  ListAllowanceDefinitionsParams,
   ListEmployeesParams,
   ListJournalEntriesParams,
   ListMonthlyRecordsParams,
@@ -37,7 +41,9 @@ import type {
   MonthlyTrendItem,
   Payroll,
   PendingEmployee,
+  UpdateAllowanceDefinitionBody,
   UpdateCompanyBody,
+  UpdateEmployeeAllowancesBody,
   UpdateEmployeeBody,
   UpdateMonthlyRecordBody,
   UpdatePayrollBody,
@@ -2170,3 +2176,541 @@ export function useGetPendingEmployees<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary 手当定義一覧
+ */
+export const getListAllowanceDefinitionsUrl = (
+  params?: ListAllowanceDefinitionsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/allowance-definitions?${stringifiedParams}`
+    : `/api/allowance-definitions`;
+};
+
+export const listAllowanceDefinitions = async (
+  params?: ListAllowanceDefinitionsParams,
+  options?: RequestInit,
+): Promise<AllowanceDefinition[]> => {
+  return customFetch<AllowanceDefinition[]>(
+    getListAllowanceDefinitionsUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListAllowanceDefinitionsQueryKey = (
+  params?: ListAllowanceDefinitionsParams,
+) => {
+  return [`/api/allowance-definitions`, ...(params ? [params] : [])] as const;
+};
+
+export const getListAllowanceDefinitionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listAllowanceDefinitions>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListAllowanceDefinitionsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listAllowanceDefinitions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListAllowanceDefinitionsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listAllowanceDefinitions>>
+  > = ({ signal }) =>
+    listAllowanceDefinitions(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listAllowanceDefinitions>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListAllowanceDefinitionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listAllowanceDefinitions>>
+>;
+export type ListAllowanceDefinitionsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary 手当定義一覧
+ */
+
+export function useListAllowanceDefinitions<
+  TData = Awaited<ReturnType<typeof listAllowanceDefinitions>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListAllowanceDefinitionsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listAllowanceDefinitions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListAllowanceDefinitionsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary 手当定義追加
+ */
+export const getCreateAllowanceDefinitionUrl = () => {
+  return `/api/allowance-definitions`;
+};
+
+export const createAllowanceDefinition = async (
+  createAllowanceDefinitionBody: CreateAllowanceDefinitionBody,
+  options?: RequestInit,
+): Promise<AllowanceDefinition> => {
+  return customFetch<AllowanceDefinition>(getCreateAllowanceDefinitionUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createAllowanceDefinitionBody),
+  });
+};
+
+export const getCreateAllowanceDefinitionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createAllowanceDefinition>>,
+    TError,
+    { data: BodyType<CreateAllowanceDefinitionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createAllowanceDefinition>>,
+  TError,
+  { data: BodyType<CreateAllowanceDefinitionBody> },
+  TContext
+> => {
+  const mutationKey = ["createAllowanceDefinition"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createAllowanceDefinition>>,
+    { data: BodyType<CreateAllowanceDefinitionBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createAllowanceDefinition(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateAllowanceDefinitionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createAllowanceDefinition>>
+>;
+export type CreateAllowanceDefinitionMutationBody =
+  BodyType<CreateAllowanceDefinitionBody>;
+export type CreateAllowanceDefinitionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary 手当定義追加
+ */
+export const useCreateAllowanceDefinition = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createAllowanceDefinition>>,
+    TError,
+    { data: BodyType<CreateAllowanceDefinitionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createAllowanceDefinition>>,
+  TError,
+  { data: BodyType<CreateAllowanceDefinitionBody> },
+  TContext
+> => {
+  return useMutation(getCreateAllowanceDefinitionMutationOptions(options));
+};
+
+/**
+ * @summary 手当定義更新
+ */
+export const getUpdateAllowanceDefinitionUrl = (id: number) => {
+  return `/api/allowance-definitions/${id}`;
+};
+
+export const updateAllowanceDefinition = async (
+  id: number,
+  updateAllowanceDefinitionBody: UpdateAllowanceDefinitionBody,
+  options?: RequestInit,
+): Promise<AllowanceDefinition> => {
+  return customFetch<AllowanceDefinition>(getUpdateAllowanceDefinitionUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateAllowanceDefinitionBody),
+  });
+};
+
+export const getUpdateAllowanceDefinitionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAllowanceDefinition>>,
+    TError,
+    { id: number; data: BodyType<UpdateAllowanceDefinitionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateAllowanceDefinition>>,
+  TError,
+  { id: number; data: BodyType<UpdateAllowanceDefinitionBody> },
+  TContext
+> => {
+  const mutationKey = ["updateAllowanceDefinition"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateAllowanceDefinition>>,
+    { id: number; data: BodyType<UpdateAllowanceDefinitionBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateAllowanceDefinition(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateAllowanceDefinitionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateAllowanceDefinition>>
+>;
+export type UpdateAllowanceDefinitionMutationBody =
+  BodyType<UpdateAllowanceDefinitionBody>;
+export type UpdateAllowanceDefinitionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary 手当定義更新
+ */
+export const useUpdateAllowanceDefinition = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAllowanceDefinition>>,
+    TError,
+    { id: number; data: BodyType<UpdateAllowanceDefinitionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateAllowanceDefinition>>,
+  TError,
+  { id: number; data: BodyType<UpdateAllowanceDefinitionBody> },
+  TContext
+> => {
+  return useMutation(getUpdateAllowanceDefinitionMutationOptions(options));
+};
+
+/**
+ * @summary 手当定義削除（論理削除）
+ */
+export const getDeleteAllowanceDefinitionUrl = (id: number) => {
+  return `/api/allowance-definitions/${id}`;
+};
+
+export const deleteAllowanceDefinition = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteAllowanceDefinitionUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteAllowanceDefinitionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteAllowanceDefinition>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteAllowanceDefinition>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteAllowanceDefinition"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteAllowanceDefinition>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteAllowanceDefinition(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteAllowanceDefinitionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteAllowanceDefinition>>
+>;
+
+export type DeleteAllowanceDefinitionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary 手当定義削除（論理削除）
+ */
+export const useDeleteAllowanceDefinition = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteAllowanceDefinition>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteAllowanceDefinition>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteAllowanceDefinitionMutationOptions(options));
+};
+
+/**
+ * @summary 社員の手当金額一覧
+ */
+export const getGetEmployeeAllowancesUrl = (id: number) => {
+  return `/api/employees/${id}/allowances`;
+};
+
+export const getEmployeeAllowances = async (
+  id: number,
+  options?: RequestInit,
+): Promise<EmployeeAllowance[]> => {
+  return customFetch<EmployeeAllowance[]>(getGetEmployeeAllowancesUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetEmployeeAllowancesQueryKey = (id: number) => {
+  return [`/api/employees/${id}/allowances`] as const;
+};
+
+export const getGetEmployeeAllowancesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEmployeeAllowances>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEmployeeAllowances>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetEmployeeAllowancesQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getEmployeeAllowances>>
+  > = ({ signal }) => getEmployeeAllowances(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEmployeeAllowances>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEmployeeAllowancesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEmployeeAllowances>>
+>;
+export type GetEmployeeAllowancesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary 社員の手当金額一覧
+ */
+
+export function useGetEmployeeAllowances<
+  TData = Awaited<ReturnType<typeof getEmployeeAllowances>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEmployeeAllowances>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEmployeeAllowancesQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary 社員の手当金額一括更新
+ */
+export const getUpdateEmployeeAllowancesUrl = (id: number) => {
+  return `/api/employees/${id}/allowances`;
+};
+
+export const updateEmployeeAllowances = async (
+  id: number,
+  updateEmployeeAllowancesBody: UpdateEmployeeAllowancesBody,
+  options?: RequestInit,
+): Promise<EmployeeAllowance[]> => {
+  return customFetch<EmployeeAllowance[]>(getUpdateEmployeeAllowancesUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateEmployeeAllowancesBody),
+  });
+};
+
+export const getUpdateEmployeeAllowancesMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEmployeeAllowances>>,
+    TError,
+    { id: number; data: BodyType<UpdateEmployeeAllowancesBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateEmployeeAllowances>>,
+  TError,
+  { id: number; data: BodyType<UpdateEmployeeAllowancesBody> },
+  TContext
+> => {
+  const mutationKey = ["updateEmployeeAllowances"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateEmployeeAllowances>>,
+    { id: number; data: BodyType<UpdateEmployeeAllowancesBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateEmployeeAllowances(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateEmployeeAllowancesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateEmployeeAllowances>>
+>;
+export type UpdateEmployeeAllowancesMutationBody =
+  BodyType<UpdateEmployeeAllowancesBody>;
+export type UpdateEmployeeAllowancesMutationError = ErrorType<unknown>;
+
+/**
+ * @summary 社員の手当金額一括更新
+ */
+export const useUpdateEmployeeAllowances = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEmployeeAllowances>>,
+    TError,
+    { id: number; data: BodyType<UpdateEmployeeAllowancesBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateEmployeeAllowances>>,
+  TError,
+  { id: number; data: BodyType<UpdateEmployeeAllowancesBody> },
+  TContext
+> => {
+  return useMutation(getUpdateEmployeeAllowancesMutationOptions(options));
+};

@@ -284,6 +284,55 @@ export interface PendingEmployee {
   payrollStatus?: string | null;
 }
 
+export interface AllowanceDefinition {
+  id: number;
+  /** 手当名称（例：皆勤手当、資格手当） */
+  name: string;
+  /** 説明 */
+  description?: string | null;
+  /** 課税対象かどうか */
+  isTaxable: boolean;
+  /** 表示順 */
+  sortOrder: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateAllowanceDefinitionBody {
+  name: string;
+  description?: string;
+  isTaxable: boolean;
+  sortOrder?: number;
+}
+
+export interface UpdateAllowanceDefinitionBody {
+  name?: string;
+  description?: string;
+  isTaxable?: boolean;
+  sortOrder?: number;
+  isActive?: boolean;
+}
+
+export interface EmployeeAllowance {
+  id: number;
+  employeeId: number;
+  allowanceDefinitionId: number;
+  allowanceName: string;
+  isTaxable: boolean;
+  amount: number;
+  sortOrder: number;
+}
+
+export type UpdateEmployeeAllowancesBodyAllowancesItem = {
+  allowanceDefinitionId: number;
+  amount: number;
+};
+
+export interface UpdateEmployeeAllowancesBody {
+  allowances: UpdateEmployeeAllowancesBodyAllowancesItem[];
+}
+
 export type ListEmployeesParams = {
   active?: boolean;
 };
@@ -336,4 +385,8 @@ export type GetDashboardSummaryParams = {
 export type GetPendingEmployeesParams = {
   year: number;
   month: number;
+};
+
+export type ListAllowanceDefinitionsParams = {
+  activeOnly?: boolean;
 };

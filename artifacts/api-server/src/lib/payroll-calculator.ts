@@ -86,6 +86,13 @@ export function roundJapanese(amount: number): number {
   }
 }
 
+export interface CustomAllowanceItem {
+  allowanceDefinitionId: number;
+  allowanceName: string;
+  isTaxable: boolean;
+  amount: number;
+}
+
 export interface PayrollCalculationInput {
   baseSalary: number;
   transportationAllowance: number;
@@ -107,6 +114,8 @@ export interface PayrollCalculationInput {
   drivingDistanceKm: number;
   deliveryCases: number;
   absenceDays: number;
+  // Custom allowances
+  customAllowances?: CustomAllowanceItem[];
 }
 
 export interface PayrollCalculationResult {
@@ -119,6 +128,7 @@ export interface PayrollCalculationResult {
   safetyDrivingAllowance: number;
   longDistanceAllowance: number;
   positionAllowance: number;
+  customAllowancesTotal: number;
   absenceDeduction: number;
   grossSalary: number;
   socialInsurance: number;
@@ -150,6 +160,7 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     drivingDistanceKm,
     deliveryCases,
     absenceDays,
+    customAllowances = [],
   } = input;
 
   // 時給単価（時間外計算の基準）
@@ -173,6 +184,9 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
   const dailyRate = baseSalary / 22;
   const absenceDeduction = roundJapanese(dailyRate * absenceDays);
 
+  // カスタム手当合計
+  const customAllowancesTotal = customAllowances.reduce((sum, a) => sum + a.amount, 0);
+
   // 支給合計
   const grossSalary = roundJapanese(
     baseSalary +
@@ -183,7 +197,8 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     transportationAllowance +
     safetyDrivingAllowance +
     longDistanceAllowance +
-    positionAllowance -
+    positionAllowance +
+    customAllowancesTotal -
     absenceDeduction
   );
 
@@ -217,6 +232,7 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     safetyDrivingAllowance,
     longDistanceAllowance,
     positionAllowance,
+    customAllowancesTotal,
     absenceDeduction,
     grossSalary,
     socialInsurance,

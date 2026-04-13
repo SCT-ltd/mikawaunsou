@@ -636,3 +636,116 @@ export const GetPendingEmployeesResponseItem = zod.object({
 export const GetPendingEmployeesResponse = zod.array(
   GetPendingEmployeesResponseItem,
 );
+
+/**
+ * @summary 手当定義一覧
+ */
+export const ListAllowanceDefinitionsQueryParams = zod.object({
+  activeOnly: zod.coerce.boolean().optional(),
+});
+
+export const ListAllowanceDefinitionsResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string().describe("手当名称（例：皆勤手当、資格手当）"),
+  description: zod.string().nullish().describe("説明"),
+  isTaxable: zod.boolean().describe("課税対象かどうか"),
+  sortOrder: zod.number().describe("表示順"),
+  isActive: zod.boolean(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListAllowanceDefinitionsResponse = zod.array(
+  ListAllowanceDefinitionsResponseItem,
+);
+
+/**
+ * @summary 手当定義追加
+ */
+export const CreateAllowanceDefinitionBody = zod.object({
+  name: zod.string(),
+  description: zod.string().optional(),
+  isTaxable: zod.boolean(),
+  sortOrder: zod.number().optional(),
+});
+
+/**
+ * @summary 手当定義更新
+ */
+export const UpdateAllowanceDefinitionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateAllowanceDefinitionBody = zod.object({
+  name: zod.string().optional(),
+  description: zod.string().optional(),
+  isTaxable: zod.boolean().optional(),
+  sortOrder: zod.number().optional(),
+  isActive: zod.boolean().optional(),
+});
+
+export const UpdateAllowanceDefinitionResponse = zod.object({
+  id: zod.number(),
+  name: zod.string().describe("手当名称（例：皆勤手当、資格手当）"),
+  description: zod.string().nullish().describe("説明"),
+  isTaxable: zod.boolean().describe("課税対象かどうか"),
+  sortOrder: zod.number().describe("表示順"),
+  isActive: zod.boolean(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary 手当定義削除（論理削除）
+ */
+export const DeleteAllowanceDefinitionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary 社員の手当金額一覧
+ */
+export const GetEmployeeAllowancesParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetEmployeeAllowancesResponseItem = zod.object({
+  id: zod.number(),
+  employeeId: zod.number(),
+  allowanceDefinitionId: zod.number(),
+  allowanceName: zod.string(),
+  isTaxable: zod.boolean(),
+  amount: zod.number(),
+  sortOrder: zod.number(),
+});
+export const GetEmployeeAllowancesResponse = zod.array(
+  GetEmployeeAllowancesResponseItem,
+);
+
+/**
+ * @summary 社員の手当金額一括更新
+ */
+export const UpdateEmployeeAllowancesParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateEmployeeAllowancesBody = zod.object({
+  allowances: zod.array(
+    zod.object({
+      allowanceDefinitionId: zod.number(),
+      amount: zod.number(),
+    }),
+  ),
+});
+
+export const UpdateEmployeeAllowancesResponseItem = zod.object({
+  id: zod.number(),
+  employeeId: zod.number(),
+  allowanceDefinitionId: zod.number(),
+  allowanceName: zod.string(),
+  isTaxable: zod.boolean(),
+  amount: zod.number(),
+  sortOrder: zod.number(),
+});
+export const UpdateEmployeeAllowancesResponse = zod.array(
+  UpdateEmployeeAllowancesResponseItem,
+);

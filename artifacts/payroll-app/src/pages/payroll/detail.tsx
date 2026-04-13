@@ -151,6 +151,14 @@ export default function PayrollDetail() {
                     <td className="py-2">役職手当</td>
                     <td className="py-2 text-right">{formatCurrency(payroll.positionAllowance)}</td>
                   </tr>
+                  {/* @ts-expect-error customAllowancesTotal might be injected */}
+                  {payroll.customAllowancesTotal > 0 && (
+                    <tr className="border-b border-dotted border-gray-300">
+                      <td className="py-2">その他手当</td>
+                      {/* @ts-expect-error */}
+                      <td className="py-2 text-right">{formatCurrency(payroll.customAllowancesTotal)}</td>
+                    </tr>
+                  )}
                   <tr className="border-b-2 border-black font-bold bg-gray-50">
                     <td className="py-2 pl-2">総支給額 (A)</td>
                     <td className="py-2 text-right pr-2">{formatCurrency(payroll.grossSalary)}</td>

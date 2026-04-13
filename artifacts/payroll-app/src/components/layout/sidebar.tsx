@@ -7,7 +7,8 @@ import {
   FileText, 
   BookOpen, 
   Settings,
-  Truck
+  Truck,
+  Tag
 } from "lucide-react";
 
 const navigation = [
@@ -16,6 +17,7 @@ const navigation = [
   { name: "月次実績入力", href: "/monthly-input", icon: CalendarDays },
   { name: "給与明細", href: "/payroll", icon: FileText },
   { name: "振替伝票", href: "/journal", icon: BookOpen },
+  { name: "手当マスタ", href: "/allowances", icon: Tag },
   { name: "会社設定", href: "/settings", icon: Settings },
 ];
 

@@ -6,12 +6,15 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./allowanceDefinition";
 export * from "./calculatePayrollBody";
 export * from "./company";
+export * from "./createAllowanceDefinitionBody";
 export * from "./createEmployeeBody";
 export * from "./createMonthlyRecordBody";
 export * from "./dashboardSummary";
 export * from "./employee";
+export * from "./employeeAllowance";
 export * from "./exportJournalEntriesCsvFormat";
 export * from "./exportJournalEntriesCsvParams";
 export * from "./generateJournalEntriesBody";
@@ -19,6 +22,7 @@ export * from "./getDashboardSummaryParams";
 export * from "./getPendingEmployeesParams";
 export * from "./healthStatus";
 export * from "./journalEntry";
+export * from "./listAllowanceDefinitionsParams";
 export * from "./listEmployeesParams";
 export * from "./listJournalEntriesParams";
 export * from "./listMonthlyRecordsParams";
@@ -29,7 +33,10 @@ export * from "./monthlyTrendItem";
 export * from "./payroll";
 export * from "./payrollStatus";
 export * from "./pendingEmployee";
+export * from "./updateAllowanceDefinitionBody";
 export * from "./updateCompanyBody";
+export * from "./updateEmployeeAllowancesBody";
+export * from "./updateEmployeeAllowancesBodyAllowancesItem";
 export * from "./updateEmployeeBody";
 export * from "./updateMonthlyRecordBody";
 export * from "./updatePayrollBody";

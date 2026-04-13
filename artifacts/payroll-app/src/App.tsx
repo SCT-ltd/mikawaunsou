@@ -13,6 +13,7 @@ import PayrollList from "@/pages/payroll/list";
 import PayrollDetail from "@/pages/payroll/detail";
 import JournalEntries from "@/pages/journal";
 import Settings from "@/pages/settings";
+import AllowanceSettings from "@/pages/allowances";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -35,6 +36,7 @@ function Router() {
       <Route path="/payroll/:id" component={PayrollDetail} />
       <Route path="/journal" component={JournalEntries} />
       <Route path="/settings" component={Settings} />
+      <Route path="/allowances" component={AllowanceSettings} />
       <Route component={NotFound} />
     </Switch>
   );
