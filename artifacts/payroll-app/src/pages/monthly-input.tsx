@@ -5,15 +5,133 @@ import {
   useListMonthlyRecords, 
   useCreateMonthlyRecord, 
   useUpdateMonthlyRecord,
-  getListMonthlyRecordsQueryKey
+  getListMonthlyRecordsQueryKey,
+  useGetEmployeeAllowances,
+  getGetEmployeeAllowancesQueryKey,
+  useUpdateEmployeeAllowances,
+  useListAllowanceDefinitions,
+  Employee
 } from "@workspace/api-client-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { Save } from "lucide-react";
+import { Save, ChevronRight } from "lucide-react";
+
+function AllowanceSidebar({
+  employee,
+  open,
+  onClose,
+}: {
+  employee: Employee | null;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const employeeId = employee?.id ?? 0;
+
+  const { data: allowanceDefinitions } = useListAllowanceDefinitions({ activeOnly: true });
+  const { data: employeeAllowances } = useGetEmployeeAllowances(employeeId, {
+    query: { enabled: !!employeeId, queryKey: getGetEmployeeAllowancesQueryKey(employeeId) }
+  });
+  const updateAllowances = useUpdateEmployeeAllowances();
+
+  const [amounts, setAmounts] = useState<Record<number, number>>({});
+
+  useEffect(() => {
+    if (employeeAllowances) {
+      const init: Record<number, number> = {};
+      employeeAllowances.forEach(a => {
+        init[a.allowanceDefinitionId] = a.amount;
+      });
+      setAmounts(init);
+    } else {
+      setAmounts({});
+    }
+  }, [employeeAllowances, employeeId]);
+
+  const handleSave = async () => {
+    try {
+      const payload = Object.entries(amounts)
+        .map(([id, amount]) => ({ allowanceDefinitionId: parseInt(id, 10), amount }))
+        .filter(a => a.amount > 0);
+      await updateAllowances.mutateAsync({ id: employeeId, data: { allowances: payload } });
+      queryClient.invalidateQueries({ queryKey: getGetEmployeeAllowancesQueryKey(employeeId) });
+      toast({ title: "保存しました", description: `${employee?.name}の手当を更新しました。` });
+    } catch {
+      toast({ title: "エラー", description: "手当の保存に失敗しました。", variant: "destructive" });
+    }
+  };
+
+  if (!employee) return null;
+
+  return (
+    <Sheet open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <SheetContent side="right" className="w-[360px] sm:w-[400px] flex flex-col gap-0 p-0">
+        <SheetHeader className="px-6 py-5 border-b">
+          <SheetTitle className="text-base">{employee.name}</SheetTitle>
+          <SheetDescription className="text-xs">{employee.department}　カスタム手当設定</SheetDescription>
+        </SheetHeader>
+
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          {!allowanceDefinitions || allowanceDefinitions.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              手当マスタが登録されていません。
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {allowanceDefinitions.map((def) => (
+                <div key={def.id} className="flex items-center justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium truncate">{def.name}</div>
+                    <Badge
+                      variant="outline"
+                      className={def.isTaxable
+                        ? "text-xs mt-0.5 bg-red-50 text-red-700 border-red-200"
+                        : "text-xs mt-0.5 bg-emerald-50 text-emerald-700 border-emerald-200"}
+                    >
+                      {def.isTaxable ? "課税" : "非課税"}
+                    </Badge>
+                  </div>
+                  <div className="relative w-36 shrink-0">
+                    <span className="absolute left-3 top-2 text-muted-foreground text-sm">¥</span>
+                    <Input
+                      type="number"
+                      min="0"
+                      className="pl-7 h-8 text-right"
+                      value={amounts[def.id] || ""}
+                      onChange={(e) => {
+                        const v = e.target.value === "" ? 0 : parseInt(e.target.value, 10);
+                        setAmounts(prev => ({ ...prev, [def.id]: isNaN(v) ? 0 : v }));
+                      }}
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="border-t px-6 py-4">
+          <Button
+            className="w-full"
+            onClick={handleSave}
+            disabled={updateAllowances.isPending || !allowanceDefinitions?.length}
+          >
+            <Save className="mr-2 h-4 w-4" />
+            手当を保存
+          </Button>
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
 
 export default function MonthlyInput() {
   const currentDate = new Date();
@@ -28,11 +146,11 @@ export default function MonthlyInput() {
   const createRecord = useCreateMonthlyRecord();
   const updateRecord = useUpdateMonthlyRecord();
 
-  // Local state for inline editing to make it feel fast
   const [edits, setEdits] = useState<Record<number, any>>({});
   const [saving, setSaving] = useState(false);
+  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Initialize edits with server data
   useEffect(() => {
     if (employees && monthlyRecords) {
       const initialEdits: Record<number, any> = {};
@@ -42,14 +160,9 @@ export default function MonthlyInput() {
           initialEdits[emp.id] = { ...record };
         } else {
           initialEdits[emp.id] = {
-            workDays: 0,
-            overtimeHours: 0,
-            lateNightHours: 0,
-            holidayWorkDays: 0,
-            drivingDistanceKm: 0,
-            deliveryCases: 0,
-            absenceDays: 0,
-            notes: ""
+            workDays: 0, overtimeHours: 0, lateNightHours: 0,
+            holidayWorkDays: 0, drivingDistanceKm: 0, deliveryCases: 0,
+            absenceDays: 0, notes: ""
           };
         }
       });
@@ -70,17 +183,10 @@ export default function MonthlyInput() {
   const handleSaveAll = async () => {
     if (!employees) return;
     setSaving(true);
-    let successCount = 0;
-    
     try {
-      // Create an array of promises for sequential or parallel execution
-      // We'll execute them one by one to avoid overwhelming the server
       for (const emp of employees) {
         const editData = edits[emp.id];
         const existingRecord = monthlyRecords?.find(r => r.employeeId === emp.id);
-        
-        // Skip if no changes from 0s for new records, or if we had a deep equal check for existing
-        // For simplicity, we just save all currently edited state
         if (existingRecord) {
           await updateRecord.mutateAsync({ 
             id: existingRecord.id, 
@@ -96,33 +202,18 @@ export default function MonthlyInput() {
             }
           });
         } else {
-          // Only create if there's actually some data entered (not all 0s)
           const hasData = editData.workDays > 0 || editData.drivingDistanceKm > 0 || editData.deliveryCases > 0;
           if (hasData) {
             await createRecord.mutateAsync({
-              data: {
-                employeeId: emp.id,
-                year,
-                month,
-                ...editData
-              }
+              data: { employeeId: emp.id, year, month, ...editData }
             });
           }
         }
-        successCount++;
       }
-      
-      toast({
-        title: "保存完了",
-        description: `${month}月分の実績を保存しました。`,
-      });
+      toast({ title: "保存完了", description: `${month}月分の実績を保存しました。` });
       queryClient.invalidateQueries({ queryKey: getListMonthlyRecordsQueryKey({ year, month }) });
-    } catch (error) {
-      toast({
-        title: "エラー",
-        description: "一部のデータの保存に失敗しました。",
-        variant: "destructive",
-      });
+    } catch {
+      toast({ title: "エラー", description: "一部のデータの保存に失敗しました。", variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -130,7 +221,6 @@ export default function MonthlyInput() {
 
   const years = Array.from({ length: 3 }, (_, i) => currentDate.getFullYear() - 1 + i);
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
-
   const isLoading = employeesLoading || recordsLoading;
 
   return (
@@ -173,7 +263,7 @@ export default function MonthlyInput() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50">
-                  <TableHead className="min-w-[150px] sticky left-0 bg-muted/50 z-10">社員名</TableHead>
+                  <TableHead className="min-w-[160px] sticky left-0 bg-muted/50 z-10">社員名</TableHead>
                   <TableHead className="w-[100px]">出勤日数</TableHead>
                   <TableHead className="w-[100px]">欠勤日数</TableHead>
                   <TableHead className="w-[100px]">残業(h)</TableHead>
@@ -187,105 +277,72 @@ export default function MonthlyInput() {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                      読み込み中...
-                    </TableCell>
+                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">読み込み中...</TableCell>
                   </TableRow>
                 ) : !employees || employees.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                      有効な社員が見つかりません
-                    </TableCell>
+                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">有効な社員が見つかりません</TableCell>
                   </TableRow>
                 ) : (
                   employees.map((emp) => {
                     const rowData = edits[emp.id] || {};
+                    const isSelected = selectedEmployee?.id === emp.id && sidebarOpen;
                     return (
                       <TableRow key={emp.id} className="hover:bg-transparent">
-                        <TableCell className="font-medium sticky left-0 bg-card z-10 border-r shadow-[1px_0_0_0_hsl(var(--border))]">
-                          <div className="truncate" title={emp.name}>{emp.name}</div>
-                          <div className="text-xs text-muted-foreground truncate">{emp.department}</div>
+                        <TableCell
+                          className={`font-medium sticky left-0 z-10 border-r shadow-[1px_0_0_0_hsl(var(--border))] cursor-pointer select-none transition-colors ${isSelected ? "bg-primary/10" : "bg-card hover:bg-muted/40"}`}
+                          onClick={() => {
+                            setSelectedEmployee(emp);
+                            setSidebarOpen(true);
+                          }}
+                        >
+                          <div className="flex items-center justify-between gap-1">
+                            <div className="min-w-0">
+                              <div className="truncate" title={emp.name}>{emp.name}</div>
+                              <div className="text-xs text-muted-foreground truncate">{emp.department}</div>
+                            </div>
+                            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                          </div>
                         </TableCell>
                         <TableCell className="p-2">
-                          <Input 
-                            type="number" 
-                            min="0" 
-                            max="31" 
-                            step="0.5"
-                            className="h-8 w-full text-right"
+                          <Input type="number" min="0" max="31" step="0.5" className="h-8 w-full text-right"
                             value={rowData.workDays || ""}
-                            onChange={(e) => handleEditChange(emp.id, 'workDays', e.target.value)}
-                          />
+                            onChange={(e) => handleEditChange(emp.id, 'workDays', e.target.value)} />
                         </TableCell>
                         <TableCell className="p-2">
-                          <Input 
-                            type="number" 
-                            min="0" 
-                            max="31" 
-                            step="0.5"
-                            className="h-8 w-full text-right"
+                          <Input type="number" min="0" max="31" step="0.5" className="h-8 w-full text-right"
                             value={rowData.absenceDays || ""}
-                            onChange={(e) => handleEditChange(emp.id, 'absenceDays', e.target.value)}
-                          />
+                            onChange={(e) => handleEditChange(emp.id, 'absenceDays', e.target.value)} />
                         </TableCell>
                         <TableCell className="p-2">
-                          <Input 
-                            type="number" 
-                            min="0" 
-                            step="0.5"
-                            className="h-8 w-full text-right"
+                          <Input type="number" min="0" step="0.5" className="h-8 w-full text-right"
                             value={rowData.overtimeHours || ""}
-                            onChange={(e) => handleEditChange(emp.id, 'overtimeHours', e.target.value)}
-                          />
+                            onChange={(e) => handleEditChange(emp.id, 'overtimeHours', e.target.value)} />
                         </TableCell>
                         <TableCell className="p-2">
-                          <Input 
-                            type="number" 
-                            min="0" 
-                            step="0.5"
-                            className="h-8 w-full text-right"
+                          <Input type="number" min="0" step="0.5" className="h-8 w-full text-right"
                             value={rowData.lateNightHours || ""}
-                            onChange={(e) => handleEditChange(emp.id, 'lateNightHours', e.target.value)}
-                          />
+                            onChange={(e) => handleEditChange(emp.id, 'lateNightHours', e.target.value)} />
                         </TableCell>
                         <TableCell className="p-2">
-                          <Input 
-                            type="number" 
-                            min="0" 
-                            max="31" 
-                            step="0.5"
-                            className="h-8 w-full text-right"
+                          <Input type="number" min="0" max="31" step="0.5" className="h-8 w-full text-right"
                             value={rowData.holidayWorkDays || ""}
-                            onChange={(e) => handleEditChange(emp.id, 'holidayWorkDays', e.target.value)}
-                          />
+                            onChange={(e) => handleEditChange(emp.id, 'holidayWorkDays', e.target.value)} />
                         </TableCell>
                         <TableCell className="p-2">
-                          <Input 
-                            type="number" 
-                            min="0" 
-                            step="0.1"
-                            className="h-8 w-full text-right"
+                          <Input type="number" min="0" step="0.1" className="h-8 w-full text-right"
                             value={rowData.drivingDistanceKm || ""}
-                            onChange={(e) => handleEditChange(emp.id, 'drivingDistanceKm', e.target.value)}
-                          />
+                            onChange={(e) => handleEditChange(emp.id, 'drivingDistanceKm', e.target.value)} />
                         </TableCell>
                         <TableCell className="p-2">
-                          <Input 
-                            type="number" 
-                            min="0" 
-                            className="h-8 w-full text-right"
+                          <Input type="number" min="0" className="h-8 w-full text-right"
                             value={rowData.deliveryCases || ""}
-                            onChange={(e) => handleEditChange(emp.id, 'deliveryCases', e.target.value)}
-                          />
+                            onChange={(e) => handleEditChange(emp.id, 'deliveryCases', e.target.value)} />
                         </TableCell>
                         <TableCell className="p-2">
-                          <Input 
-                            type="text" 
-                            className="h-8 w-full"
+                          <Input type="text" className="h-8 w-full" placeholder="摘要"
                             value={rowData.notes || ""}
-                            onChange={(e) => handleEditChange(emp.id, 'notes', e.target.value)}
-                            placeholder="摘要"
-                          />
+                            onChange={(e) => handleEditChange(emp.id, 'notes', e.target.value)} />
                         </TableCell>
                       </TableRow>
                     );
@@ -296,6 +353,12 @@ export default function MonthlyInput() {
           </div>
         </div>
       </div>
+
+      <AllowanceSidebar
+        employee={selectedEmployee}
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
     </AppLayout>
   );
 }
