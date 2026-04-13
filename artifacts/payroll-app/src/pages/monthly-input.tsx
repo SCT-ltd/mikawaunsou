@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { Save, ChevronRight } from "lucide-react";
+import { Save, ChevronRight, Plus, X } from "lucide-react";
 
 // ── 給与計算ユーティリティ（フロントエンド用）────────────────────
 
@@ -77,16 +77,15 @@ function AllowanceSidebar({
   const updateAllowances = useUpdateEmployeeAllowances();
   const updateEmployee = useUpdateEmployee();
 
-  const [amounts, setAmounts] = useState<Record<number, number>>({});
+  type AllowanceRow = { defId: number | null; amount: number };
+  const [rows, setRows] = useState<AllowanceRow[]>([{ defId: null, amount: 0 }]);
   const [baseSalaryInput, setBaseSalaryInput] = useState<number>(0);
 
   useEffect(() => {
-    if (employeeAllowances) {
-      const init: Record<number, number> = {};
-      employeeAllowances.forEach(a => { init[a.allowanceDefinitionId] = a.amount; });
-      setAmounts(init);
+    if (employeeAllowances && employeeAllowances.length > 0) {
+      setRows(employeeAllowances.map(a => ({ defId: a.allowanceDefinitionId, amount: a.amount })));
     } else {
-      setAmounts({});
+      setRows([{ defId: null, amount: 0 }]);
     }
   }, [employeeAllowances, employeeId]);
 
@@ -96,9 +95,9 @@ function AllowanceSidebar({
 
   const handleSave = async () => {
     try {
-      const payload = Object.entries(amounts)
-        .map(([id, amount]) => ({ allowanceDefinitionId: parseInt(id, 10), amount }))
-        .filter(a => a.amount > 0);
+      const payload = rows
+        .filter(r => r.defId !== null && r.amount > 0)
+        .map(r => ({ allowanceDefinitionId: r.defId!, amount: r.amount }));
       await Promise.all([
         updateAllowances.mutateAsync({ id: employeeId, data: { allowances: payload } }),
         updateEmployee.mutateAsync({ id: employeeId, data: { baseSalary: baseSalaryInput } }),
@@ -111,9 +110,10 @@ function AllowanceSidebar({
     }
   };
 
-  const allowancesTotal = Object.values(amounts).reduce((s, v) => s + (v || 0), 0);
+  const allowancesTotal = rows.reduce((s, r) => s + (r.amount || 0), 0);
   const grandTotal = baseSalaryInput + allowancesTotal;
-  const totalRows = (allowanceDefinitions?.length ?? 0) + 2; // +1 基本給, +1 支給合計
+  // +1 基本給, +1 行追加ボタン行, +1 支給合計
+  const totalRows = rows.length + 3;
 
   // ── 社会保険料計算（計算テーブルマスターの料率を使用）──
   const healthInsuranceRate = company?.healthInsuranceEmployeeRate ?? 0.05;
@@ -191,37 +191,72 @@ function AllowanceSidebar({
                 </td>
               </tr>
 
-              {!allowanceDefinitions || allowanceDefinitions.length === 0 ? (
-                <tr>
-                  <td colSpan={3} className="border border-border px-3 py-4 text-center text-muted-foreground">
-                    手当マスタが登録されていません
-                  </td>
-                </tr>
-              ) : (
-                allowanceDefinitions.map((def, idx) => (
-                  <tr key={def.id} className={idx % 2 === 0 ? "bg-background" : "bg-muted/20"}>
-                    <td className="border border-border px-2 py-1">{def.name}</td>
+              {rows.map((row, idx) => {
+                const def = allowanceDefinitions?.find(d => d.id === row.defId);
+                return (
+                  <tr key={idx} className={idx % 2 === 0 ? "bg-background" : "bg-muted/20"}>
+                    <td className="border border-border px-1 py-0.5">
+                      <Select
+                        value={row.defId?.toString() ?? ""}
+                        onValueChange={(v) => setRows(prev => prev.map((r, i) => i === idx ? { ...r, defId: parseInt(v, 10) } : r))}
+                      >
+                        <SelectTrigger className="h-6 text-xs border-0 shadow-none bg-transparent focus:ring-1 focus:ring-primary px-1 w-full">
+                          <SelectValue placeholder="手当を選択…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {allowanceDefinitions?.map(d => (
+                            <SelectItem key={d.id} value={d.id.toString()}>{d.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </td>
                     <td className="border border-border px-1 py-1 text-center">
-                      <span className={`px-1 py-0.5 rounded border ${def.isTaxable ? "bg-red-50 text-red-700 border-red-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`} style={{ fontSize: "10px" }}>
-                        {def.isTaxable ? "課税" : "非課税"}
-                      </span>
+                      {def ? (
+                        <span className={`px-1 py-0.5 rounded border ${def.isTaxable ? "bg-red-50 text-red-700 border-red-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`} style={{ fontSize: "10px" }}>
+                          {def.isTaxable ? "課税" : "非課税"}
+                        </span>
+                      ) : null}
                     </td>
                     <td className="border border-border px-1 py-0.5">
-                      <Input
-                        type="number"
-                        min="0"
-                        className="h-6 w-full text-right border-0 shadow-none bg-transparent focus-visible:ring-1 focus-visible:ring-primary px-1 text-xs"
-                        value={amounts[def.id] || ""}
-                        onChange={(e) => {
-                          const v = e.target.value === "" ? 0 : parseInt(e.target.value, 10);
-                          setAmounts(prev => ({ ...prev, [def.id]: isNaN(v) ? 0 : v }));
-                        }}
-                        placeholder="0"
-                      />
+                      <div className="flex items-center gap-0.5">
+                        <Input
+                          type="number"
+                          min="0"
+                          className="h-6 flex-1 text-right border-0 shadow-none bg-transparent focus-visible:ring-1 focus-visible:ring-primary px-1 text-xs"
+                          value={row.amount || ""}
+                          onChange={(e) => {
+                            const v = e.target.value === "" ? 0 : parseInt(e.target.value, 10);
+                            setRows(prev => prev.map((r, i) => i === idx ? { ...r, amount: isNaN(v) ? 0 : v } : r));
+                          }}
+                          placeholder="0"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setRows(prev => prev.filter((_, i) => i !== idx))}
+                          className="text-muted-foreground hover:text-destructive p-0.5 shrink-0"
+                          title="この行を削除"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
-                ))
-              )}
+                );
+              })}
+
+              {/* 行追加ボタン */}
+              <tr className="bg-muted/10">
+                <td colSpan={3} className="border border-border px-2 py-1">
+                  <button
+                    type="button"
+                    onClick={() => setRows(prev => [...prev, { defId: null, amount: 0 }])}
+                    className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors"
+                  >
+                    <Plus className="h-3 w-3" />
+                    行を追加
+                  </button>
+                </td>
+              </tr>
 
               {/* 支給合計 */}
               <tr className="bg-blue-50 font-semibold">
