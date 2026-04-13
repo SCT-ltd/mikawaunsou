@@ -22,6 +22,7 @@ router.post("/allowance-definitions", async (req, res) => {
     name: body.name,
     description: body.description ?? null,
     isTaxable: body.isTaxable ?? true,
+    calculationType: body.calculationType ?? "variable",
     sortOrder: maxSort + 1,
     isActive: true,
   }).returning();
@@ -35,6 +36,7 @@ router.put("/allowance-definitions/:id", async (req, res) => {
     ...(body.name !== undefined && { name: body.name }),
     ...(body.description !== undefined && { description: body.description }),
     ...(body.isTaxable !== undefined && { isTaxable: body.isTaxable }),
+    ...(body.calculationType !== undefined && { calculationType: body.calculationType }),
     ...(body.sortOrder !== undefined && { sortOrder: body.sortOrder }),
     ...(body.isActive !== undefined && { isActive: body.isActive }),
     updatedAt: new Date(),

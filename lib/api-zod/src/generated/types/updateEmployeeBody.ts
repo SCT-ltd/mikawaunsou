@@ -22,6 +22,10 @@ export interface UpdateEmployeeBody {
   commissionRatePerKm?: number;
   commissionRatePerCase?: number;
   dependentCount?: number;
+  hasSpouse?: boolean;
+  healthInsuranceMonthly?: number;
+  pensionMonthly?: number;
+  employmentInsuranceApplied?: boolean;
   residentTax?: number;
   hireDate?: Date;
   isActive?: boolean;

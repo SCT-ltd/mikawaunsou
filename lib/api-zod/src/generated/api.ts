@@ -29,6 +29,20 @@ export const GetCompanyResponse = zod.object({
     .number()
     .describe("社会保険料率（健康保険＋厚生年金）従業員負担分合計"),
   employmentInsuranceRate: zod.number().describe("雇用保険料率 従業員負担分"),
+  healthInsuranceEmployeeRate: zod
+    .number()
+    .describe("健康保険料率（本人負担）"),
+  healthInsuranceEmployerRate: zod
+    .number()
+    .describe("健康保険料率（会社負担）"),
+  pensionEmployeeRate: zod.number().describe("厚生年金保険料率（本人負担）"),
+  pensionEmployerRate: zod.number().describe("厚生年金保険料率（会社負担）"),
+  employmentInsuranceEmployerRate: zod
+    .number()
+    .describe("雇用保険料率（会社負担）"),
+  overtimeRate: zod.number().describe("残業割増率（例：1.25）"),
+  lateNightAdditionalRate: zod.number().describe("深夜追加割増率（例：0.25）"),
+  holidayRate: zod.number().describe("休日出勤割増率（例：1.35）"),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -43,6 +57,14 @@ export const UpdateCompanyBody = zod.object({
   monthlyAverageWorkHours: zod.number().optional(),
   socialInsuranceRate: zod.number().optional(),
   employmentInsuranceRate: zod.number().optional(),
+  healthInsuranceEmployeeRate: zod.number().optional(),
+  healthInsuranceEmployerRate: zod.number().optional(),
+  pensionEmployeeRate: zod.number().optional(),
+  pensionEmployerRate: zod.number().optional(),
+  employmentInsuranceEmployerRate: zod.number().optional(),
+  overtimeRate: zod.number().optional(),
+  lateNightAdditionalRate: zod.number().optional(),
+  holidayRate: zod.number().optional(),
 });
 
 export const UpdateCompanyResponse = zod.object({
@@ -57,6 +79,20 @@ export const UpdateCompanyResponse = zod.object({
     .number()
     .describe("社会保険料率（健康保険＋厚生年金）従業員負担分合計"),
   employmentInsuranceRate: zod.number().describe("雇用保険料率 従業員負担分"),
+  healthInsuranceEmployeeRate: zod
+    .number()
+    .describe("健康保険料率（本人負担）"),
+  healthInsuranceEmployerRate: zod
+    .number()
+    .describe("健康保険料率（会社負担）"),
+  pensionEmployeeRate: zod.number().describe("厚生年金保険料率（本人負担）"),
+  pensionEmployerRate: zod.number().describe("厚生年金保険料率（会社負担）"),
+  employmentInsuranceEmployerRate: zod
+    .number()
+    .describe("雇用保険料率（会社負担）"),
+  overtimeRate: zod.number().describe("残業割増率（例：1.25）"),
+  lateNightAdditionalRate: zod.number().describe("深夜追加割増率（例：0.25）"),
+  holidayRate: zod.number().describe("休日出勤割増率（例：1.35）"),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -85,6 +121,10 @@ export const ListEmployeesResponseItem = zod.object({
   commissionRatePerKm: zod.number().describe("歩合単価（円\/km）"),
   commissionRatePerCase: zod.number().describe("歩合単価（円\/件）"),
   dependentCount: zod.number().describe("扶養親族数"),
+  hasSpouse: zod.boolean().describe("配偶者の有無"),
+  healthInsuranceMonthly: zod.number().describe("健康保険料（月額）固定額"),
+  pensionMonthly: zod.number().describe("厚生年金保険料（月額）固定額"),
+  employmentInsuranceApplied: zod.boolean().describe("雇用保険適用"),
   residentTax: zod.number().describe("住民税（月額）"),
   hireDate: zod.coerce.date(),
   isActive: zod.boolean(),
@@ -140,6 +180,10 @@ export const GetEmployeeResponse = zod.object({
   commissionRatePerKm: zod.number().describe("歩合単価（円\/km）"),
   commissionRatePerCase: zod.number().describe("歩合単価（円\/件）"),
   dependentCount: zod.number().describe("扶養親族数"),
+  hasSpouse: zod.boolean().describe("配偶者の有無"),
+  healthInsuranceMonthly: zod.number().describe("健康保険料（月額）固定額"),
+  pensionMonthly: zod.number().describe("厚生年金保険料（月額）固定額"),
+  employmentInsuranceApplied: zod.boolean().describe("雇用保険適用"),
   residentTax: zod.number().describe("住民税（月額）"),
   hireDate: zod.coerce.date(),
   isActive: zod.boolean(),
@@ -170,6 +214,10 @@ export const UpdateEmployeeBody = zod.object({
   commissionRatePerKm: zod.number().optional(),
   commissionRatePerCase: zod.number().optional(),
   dependentCount: zod.number().optional(),
+  hasSpouse: zod.boolean().optional(),
+  healthInsuranceMonthly: zod.number().optional(),
+  pensionMonthly: zod.number().optional(),
+  employmentInsuranceApplied: zod.boolean().optional(),
   residentTax: zod.number().optional(),
   hireDate: zod.coerce.date().optional(),
   isActive: zod.boolean().optional(),
@@ -192,6 +240,10 @@ export const UpdateEmployeeResponse = zod.object({
   commissionRatePerKm: zod.number().describe("歩合単価（円\/km）"),
   commissionRatePerCase: zod.number().describe("歩合単価（円\/件）"),
   dependentCount: zod.number().describe("扶養親族数"),
+  hasSpouse: zod.boolean().describe("配偶者の有無"),
+  healthInsuranceMonthly: zod.number().describe("健康保険料（月額）固定額"),
+  pensionMonthly: zod.number().describe("厚生年金保険料（月額）固定額"),
+  employmentInsuranceApplied: zod.boolean().describe("雇用保険適用"),
   residentTax: zod.number().describe("住民税（月額）"),
   hireDate: zod.coerce.date(),
   isActive: zod.boolean(),
@@ -669,6 +721,11 @@ export const ListAllowanceDefinitionsResponseItem = zod.object({
   name: zod.string().describe("手当名称（例：皆勤手当、資格手当）"),
   description: zod.string().nullish().describe("説明"),
   isTaxable: zod.boolean().describe("課税対象かどうか"),
+  calculationType: zod
+    .enum(["fixed", "variable", "unit_time"])
+    .describe(
+      "計算タイプ（fixed:固定給型 \/ variable:変動入力型 \/ unit_time:単価×時間型）",
+    ),
   sortOrder: zod.number().describe("表示順"),
   isActive: zod.boolean(),
   createdAt: zod.coerce.date(),
@@ -685,6 +742,7 @@ export const CreateAllowanceDefinitionBody = zod.object({
   name: zod.string(),
   description: zod.string().optional(),
   isTaxable: zod.boolean(),
+  calculationType: zod.enum(["fixed", "variable", "unit_time"]).optional(),
   sortOrder: zod.number().optional(),
 });
 
@@ -699,6 +757,7 @@ export const UpdateAllowanceDefinitionBody = zod.object({
   name: zod.string().optional(),
   description: zod.string().optional(),
   isTaxable: zod.boolean().optional(),
+  calculationType: zod.enum(["fixed", "variable", "unit_time"]).optional(),
   sortOrder: zod.number().optional(),
   isActive: zod.boolean().optional(),
 });
@@ -708,6 +767,11 @@ export const UpdateAllowanceDefinitionResponse = zod.object({
   name: zod.string().describe("手当名称（例：皆勤手当、資格手当）"),
   description: zod.string().nullish().describe("説明"),
   isTaxable: zod.boolean().describe("課税対象かどうか"),
+  calculationType: zod
+    .enum(["fixed", "variable", "unit_time"])
+    .describe(
+      "計算タイプ（fixed:固定給型 \/ variable:変動入力型 \/ unit_time:単価×時間型）",
+    ),
   sortOrder: zod.number().describe("表示順"),
   isActive: zod.boolean(),
   createdAt: zod.coerce.date(),

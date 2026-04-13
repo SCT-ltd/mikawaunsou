@@ -5,10 +5,12 @@
  * 給与明細・バックオフィス効率化システム API
  * OpenAPI spec version: 0.1.0
  */
+import type { CreateAllowanceDefinitionBodyCalculationType } from "./createAllowanceDefinitionBodyCalculationType";
 
 export interface CreateAllowanceDefinitionBody {
   name: string;
   description?: string;
   isTaxable: boolean;
+  calculationType?: CreateAllowanceDefinitionBodyCalculationType;
   sortOrder?: number;
 }

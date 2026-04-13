@@ -13,4 +13,12 @@ export interface UpdateCompanyBody {
   monthlyAverageWorkHours?: number;
   socialInsuranceRate?: number;
   employmentInsuranceRate?: number;
+  healthInsuranceEmployeeRate?: number;
+  healthInsuranceEmployerRate?: number;
+  pensionEmployeeRate?: number;
+  pensionEmployerRate?: number;
+  employmentInsuranceEmployerRate?: number;
+  overtimeRate?: number;
+  lateNightAdditionalRate?: number;
+  holidayRate?: number;
 }

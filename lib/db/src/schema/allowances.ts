@@ -8,6 +8,7 @@ export const allowanceDefinitionsTable = pgTable("allowance_definitions", {
   name: text("name").notNull(),
   description: text("description"),
   isTaxable: boolean("is_taxable").notNull().default(true),
+  calculationType: text("calculation_type").notNull().default("variable"),
   sortOrder: integer("sort_order").notNull().default(0),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),

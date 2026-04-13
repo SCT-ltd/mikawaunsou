@@ -19,6 +19,22 @@ export interface Company {
   socialInsuranceRate: number;
   /** 雇用保険料率 従業員負担分 */
   employmentInsuranceRate: number;
+  /** 健康保険料率（本人負担） */
+  healthInsuranceEmployeeRate: number;
+  /** 健康保険料率（会社負担） */
+  healthInsuranceEmployerRate: number;
+  /** 厚生年金保険料率（本人負担） */
+  pensionEmployeeRate: number;
+  /** 厚生年金保険料率（会社負担） */
+  pensionEmployerRate: number;
+  /** 雇用保険料率（会社負担） */
+  employmentInsuranceEmployerRate: number;
+  /** 残業割増率（例：1.25） */
+  overtimeRate: number;
+  /** 深夜追加割増率（例：0.25） */
+  lateNightAdditionalRate: number;
+  /** 休日出勤割増率（例：1.35） */
+  holidayRate: number;
   createdAt: Date;
   updatedAt: Date;
 }

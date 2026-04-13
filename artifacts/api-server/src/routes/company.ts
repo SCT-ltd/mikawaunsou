@@ -24,6 +24,14 @@ router.put("/company", async (req, res) => {
       monthlyAverageWorkHours: body.monthlyAverageWorkHours ?? 160,
       socialInsuranceRate: body.socialInsuranceRate ?? 0.1495,
       employmentInsuranceRate: body.employmentInsuranceRate ?? 0.006,
+      healthInsuranceEmployeeRate: body.healthInsuranceEmployeeRate ?? 0.0500,
+      healthInsuranceEmployerRate: body.healthInsuranceEmployerRate ?? 0.0500,
+      pensionEmployeeRate: body.pensionEmployeeRate ?? 0.0915,
+      pensionEmployerRate: body.pensionEmployerRate ?? 0.0915,
+      employmentInsuranceEmployerRate: body.employmentInsuranceEmployerRate ?? 0.0085,
+      overtimeRate: body.overtimeRate ?? 1.25,
+      lateNightAdditionalRate: body.lateNightAdditionalRate ?? 0.25,
+      holidayRate: body.holidayRate ?? 1.35,
     }).returning();
     return res.json(created);
   }
@@ -36,6 +44,14 @@ router.put("/company", async (req, res) => {
       ...(body.monthlyAverageWorkHours !== undefined && { monthlyAverageWorkHours: body.monthlyAverageWorkHours }),
       ...(body.socialInsuranceRate !== undefined && { socialInsuranceRate: body.socialInsuranceRate }),
       ...(body.employmentInsuranceRate !== undefined && { employmentInsuranceRate: body.employmentInsuranceRate }),
+      ...(body.healthInsuranceEmployeeRate !== undefined && { healthInsuranceEmployeeRate: body.healthInsuranceEmployeeRate }),
+      ...(body.healthInsuranceEmployerRate !== undefined && { healthInsuranceEmployerRate: body.healthInsuranceEmployerRate }),
+      ...(body.pensionEmployeeRate !== undefined && { pensionEmployeeRate: body.pensionEmployeeRate }),
+      ...(body.pensionEmployerRate !== undefined && { pensionEmployerRate: body.pensionEmployerRate }),
+      ...(body.employmentInsuranceEmployerRate !== undefined && { employmentInsuranceEmployerRate: body.employmentInsuranceEmployerRate }),
+      ...(body.overtimeRate !== undefined && { overtimeRate: body.overtimeRate }),
+      ...(body.lateNightAdditionalRate !== undefined && { lateNightAdditionalRate: body.lateNightAdditionalRate }),
+      ...(body.holidayRate !== undefined && { holidayRate: body.holidayRate }),
       updatedAt: new Date(),
     })
     .where(eq(companyTable.id, rows[0].id))

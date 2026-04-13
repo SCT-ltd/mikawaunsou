@@ -5,6 +5,7 @@
  * 給与明細・バックオフィス効率化システム API
  * OpenAPI spec version: 0.1.0
  */
+import type { AllowanceDefinitionCalculationType } from "./allowanceDefinitionCalculationType";
 
 export interface AllowanceDefinition {
   id: number;
@@ -14,6 +15,8 @@ export interface AllowanceDefinition {
   description?: string | null;
   /** 課税対象かどうか */
   isTaxable: boolean;
+  /** 計算タイプ（fixed:固定給型 / variable:変動入力型 / unit_time:単価×時間型） */
+  calculationType: AllowanceDefinitionCalculationType;
   /** 表示順 */
   sortOrder: number;
   isActive: boolean;

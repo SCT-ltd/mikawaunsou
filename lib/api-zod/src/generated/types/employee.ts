@@ -36,6 +36,14 @@ export interface Employee {
   commissionRatePerCase: number;
   /** 扶養親族数 */
   dependentCount: number;
+  /** 配偶者の有無 */
+  hasSpouse: boolean;
+  /** 健康保険料（月額）固定額 */
+  healthInsuranceMonthly: number;
+  /** 厚生年金保険料（月額）固定額 */
+  pensionMonthly: number;
+  /** 雇用保険適用 */
+  employmentInsuranceApplied: boolean;
   /** 住民税（月額） */
   residentTax: number;
   hireDate: Date;

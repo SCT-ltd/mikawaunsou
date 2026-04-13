@@ -22,6 +22,22 @@ export interface Company {
   socialInsuranceRate: number;
   /** 雇用保険料率 従業員負担分 */
   employmentInsuranceRate: number;
+  /** 健康保険料率（本人負担） */
+  healthInsuranceEmployeeRate: number;
+  /** 健康保険料率（会社負担） */
+  healthInsuranceEmployerRate: number;
+  /** 厚生年金保険料率（本人負担） */
+  pensionEmployeeRate: number;
+  /** 厚生年金保険料率（会社負担） */
+  pensionEmployerRate: number;
+  /** 雇用保険料率（会社負担） */
+  employmentInsuranceEmployerRate: number;
+  /** 残業割増率（例：1.25） */
+  overtimeRate: number;
+  /** 深夜追加割増率（例：0.25） */
+  lateNightAdditionalRate: number;
+  /** 休日出勤割増率（例：1.35） */
+  holidayRate: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -33,6 +49,14 @@ export interface UpdateCompanyBody {
   monthlyAverageWorkHours?: number;
   socialInsuranceRate?: number;
   employmentInsuranceRate?: number;
+  healthInsuranceEmployeeRate?: number;
+  healthInsuranceEmployerRate?: number;
+  pensionEmployeeRate?: number;
+  pensionEmployerRate?: number;
+  employmentInsuranceEmployerRate?: number;
+  overtimeRate?: number;
+  lateNightAdditionalRate?: number;
+  holidayRate?: number;
 }
 
 export interface Employee {
@@ -65,6 +89,14 @@ export interface Employee {
   commissionRatePerCase: number;
   /** 扶養親族数 */
   dependentCount: number;
+  /** 配偶者の有無 */
+  hasSpouse: boolean;
+  /** 健康保険料（月額）固定額 */
+  healthInsuranceMonthly: number;
+  /** 厚生年金保険料（月額）固定額 */
+  pensionMonthly: number;
+  /** 雇用保険適用 */
+  employmentInsuranceApplied: boolean;
   /** 住民税（月額） */
   residentTax: number;
   hireDate: string;
@@ -109,6 +141,10 @@ export interface UpdateEmployeeBody {
   commissionRatePerKm?: number;
   commissionRatePerCase?: number;
   dependentCount?: number;
+  hasSpouse?: boolean;
+  healthInsuranceMonthly?: number;
+  pensionMonthly?: number;
+  employmentInsuranceApplied?: boolean;
   residentTax?: number;
   hireDate?: string;
   isActive?: boolean;
@@ -296,6 +332,18 @@ export interface PendingEmployee {
   payrollStatus?: string | null;
 }
 
+/**
+ * 計算タイプ（fixed:固定給型 / variable:変動入力型 / unit_time:単価×時間型）
+ */
+export type AllowanceDefinitionCalculationType =
+  (typeof AllowanceDefinitionCalculationType)[keyof typeof AllowanceDefinitionCalculationType];
+
+export const AllowanceDefinitionCalculationType = {
+  fixed: "fixed",
+  variable: "variable",
+  unit_time: "unit_time",
+} as const;
+
 export interface AllowanceDefinition {
   id: number;
   /** 手当名称（例：皆勤手当、資格手当） */
@@ -304,6 +352,8 @@ export interface AllowanceDefinition {
   description?: string | null;
   /** 課税対象かどうか */
   isTaxable: boolean;
+  /** 計算タイプ（fixed:固定給型 / variable:変動入力型 / unit_time:単価×時間型） */
+  calculationType: AllowanceDefinitionCalculationType;
   /** 表示順 */
   sortOrder: number;
   isActive: boolean;
@@ -311,17 +361,37 @@ export interface AllowanceDefinition {
   updatedAt: string;
 }
 
+export type CreateAllowanceDefinitionBodyCalculationType =
+  (typeof CreateAllowanceDefinitionBodyCalculationType)[keyof typeof CreateAllowanceDefinitionBodyCalculationType];
+
+export const CreateAllowanceDefinitionBodyCalculationType = {
+  fixed: "fixed",
+  variable: "variable",
+  unit_time: "unit_time",
+} as const;
+
 export interface CreateAllowanceDefinitionBody {
   name: string;
   description?: string;
   isTaxable: boolean;
+  calculationType?: CreateAllowanceDefinitionBodyCalculationType;
   sortOrder?: number;
 }
+
+export type UpdateAllowanceDefinitionBodyCalculationType =
+  (typeof UpdateAllowanceDefinitionBodyCalculationType)[keyof typeof UpdateAllowanceDefinitionBodyCalculationType];
+
+export const UpdateAllowanceDefinitionBodyCalculationType = {
+  fixed: "fixed",
+  variable: "variable",
+  unit_time: "unit_time",
+} as const;
 
 export interface UpdateAllowanceDefinitionBody {
   name?: string;
   description?: string;
   isTaxable?: boolean;
+  calculationType?: UpdateAllowanceDefinitionBodyCalculationType;
   sortOrder?: number;
   isActive?: boolean;
 }

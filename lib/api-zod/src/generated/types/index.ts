@@ -7,9 +7,11 @@
  */
 
 export * from "./allowanceDefinition";
+export * from "./allowanceDefinitionCalculationType";
 export * from "./calculatePayrollBody";
 export * from "./company";
 export * from "./createAllowanceDefinitionBody";
+export * from "./createAllowanceDefinitionBodyCalculationType";
 export * from "./createEmployeeBody";
 export * from "./createMonthlyRecordBody";
 export * from "./dashboardSummary";
@@ -34,6 +36,7 @@ export * from "./payroll";
 export * from "./payrollStatus";
 export * from "./pendingEmployee";
 export * from "./updateAllowanceDefinitionBody";
+export * from "./updateAllowanceDefinitionBodyCalculationType";
 export * from "./updateCompanyBody";
 export * from "./updateEmployeeAllowancesBody";
 export * from "./updateEmployeeAllowancesBodyAllowancesItem";
