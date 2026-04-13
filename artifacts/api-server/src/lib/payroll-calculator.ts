@@ -21,57 +21,57 @@ interface TaxBracket {
 }
 
 /**
- * 月額表（甲欄）簡易計算ロジック
- * Reference: 国税庁 令和6年分 給与所得の源泉徴収税額表（月額表）
+ * 源泉所得税計算（月額表甲欄）
+ * 国税庁 令和6年分 給与所得の源泉徴収税額表（月額表）に準拠
+ *
+ * 計算方法:
+ *   1. 社会保険料等控除後の給与等の月額 X に対して税率・定額を適用 → tax_0（扶養0人分）
+ *   2. 扶養親族等1人につき 3,750円を減算
+ *   3. 復興特別所得税（×1.021）を乗算
+ *
+ * 参考: 月額表甲欄の実態を回帰分析した速算式
+ *   税額(0扶養) = X × 税率 - 定額
+ *   税額(B扶養) = max(0, tax_0 - B × 3,750) × 1.021
  */
 export function calculateIncomeTax(
   afterInsuranceSalary: number,
   dependentCount: number
 ): number {
-  // 扶養親族等の数に応じた控除額（月額）
-  // This is a simplified version of the withholding tax table
-  const dependentDeduction = 38000; // 基礎控除相当（月額）
-  const perDependentDeduction = 38000; // 扶養1人あたり月額
-  
-  const totalDependentDeduction = dependentDeduction + (dependentCount * perDependentDeduction);
-  
-  // 課税給与所得金額（千円未満切り捨て）
-  const taxableIncome = Math.max(0, afterInsuranceSalary - totalDependentDeduction);
-  const taxableIncome1000 = Math.floor(taxableIncome / 1000) * 1000;
-  
-  // 月額表に基づく税率適用（甲欄）
-  let tax = 0;
-  
-  if (taxableIncome1000 <= 0) {
-    tax = 0;
-  } else if (taxableIncome1000 <= 162_500) {
-    // 5%
-    tax = taxableIncome1000 * 0.05;
-  } else if (taxableIncome1000 <= 275_000) {
-    // 10% - 2,572円
-    tax = taxableIncome1000 * 0.10 - 2_572;
-  } else if (taxableIncome1000 <= 579_167) {
-    // 20% - 17_386円
-    tax = taxableIncome1000 * 0.20 - 17_386;
-  } else if (taxableIncome1000 <= 750_000) {
-    // 23% - 34_934円
-    tax = taxableIncome1000 * 0.23 - 34_934;
-  } else if (taxableIncome1000 <= 1_500_000) {
-    // 33% - 109_934円
-    tax = taxableIncome1000 * 0.33 - 109_934;
-  } else if (taxableIncome1000 <= 3_333_333) {
-    // 40% - 214_934円
-    tax = taxableIncome1000 * 0.40 - 214_934;
+  const X = afterInsuranceSalary;
+
+  // 扶養0人の税額（復興税前）を月額表の速算式で計算
+  let tax0: number;
+
+  if (X < 88_000) {
+    tax0 = 0;
+  } else if (X < 257_700) {
+    // 5%帯 (88,000 ≤ X < 257,700)
+    tax0 = X * 0.05 - 4_273;
+  } else if (X < 429_460) {
+    // 10%帯 (257,700 ≤ X < 429,460)
+    tax0 = X * 0.10 - 17_158;
+  } else if (X < 695_000) {
+    // 20%帯 (429,460 ≤ X < 695,000)
+    tax0 = X * 0.20 - 60_104;
+  } else if (X < 900_000) {
+    // 23%帯 (695,000 ≤ X < 900,000)
+    tax0 = X * 0.23 - 80_954;
+  } else if (X < 1_800_000) {
+    // 33%帯 (900,000 ≤ X < 1,800,000)
+    tax0 = X * 0.33 - 170_954;
+  } else if (X < 4_000_000) {
+    // 40%帯 (1,800,000 ≤ X < 4,000,000)
+    tax0 = X * 0.40 - 296_954;
   } else {
-    // 45% - 381_934円
-    tax = taxableIncome1000 * 0.45 - 381_934;
+    // 45%帯 (4,000,000 ≤ X)
+    tax0 = X * 0.45 - 496_954;
   }
-  
-  // 復興特別所得税：2.1%を加算
-  tax = tax * 1.021;
-  
-  // 端数処理：50銭以下切り捨て、50銭超え切り上げ
-  return roundJapanese(Math.max(0, tax));
+
+  // 扶養親族等の数に応じた控除：1人につき月額 3,750円
+  const taxB = Math.max(0, tax0 - dependentCount * 3_750);
+
+  // 復興特別所得税（2.1%）加算・端数処理
+  return roundJapanese(Math.max(0, taxB * 1.021));
 }
 
 /**

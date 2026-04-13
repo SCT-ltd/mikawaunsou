@@ -31,24 +31,35 @@ function roundJapanese(amount: number): number {
   return fraction <= 0.5 ? Math.floor(amount) : Math.ceil(amount);
 }
 
+/**
+ * 源泉所得税計算（月額表甲欄）
+ * 国税庁 令和6年分 給与所得の源泉徴収税額表（月額表）に準拠
+ * tax_0 = X × 税率 - 定額 → tax_B = max(0, tax_0 - B × 3,750) → × 1.021
+ */
 function calculateIncomeTax(afterInsuranceSalary: number, dependentCount: number): number {
-  const dependentDeduction = 38_000;
-  const perDependentDeduction = 38_000;
-  const totalDependentDeduction = dependentDeduction + dependentCount * perDependentDeduction;
-  const taxableIncome = Math.max(0, afterInsuranceSalary - totalDependentDeduction);
-  const t = Math.floor(taxableIncome / 1000) * 1000;
+  const X = afterInsuranceSalary;
 
-  let tax = 0;
-  if (t <= 0)            tax = 0;
-  else if (t <= 162_500) tax = t * 0.05;
-  else if (t <= 275_000) tax = t * 0.10 - 2_572;
-  else if (t <= 579_167) tax = t * 0.20 - 17_386;
-  else if (t <= 750_000) tax = t * 0.23 - 34_934;
-  else if (t <= 1_500_000) tax = t * 0.33 - 109_934;
-  else if (t <= 3_333_333) tax = t * 0.40 - 214_934;
-  else                   tax = t * 0.45 - 381_934;
+  let tax0: number;
+  if (X < 88_000) {
+    tax0 = 0;
+  } else if (X < 257_700) {
+    tax0 = X * 0.05 - 4_273;
+  } else if (X < 429_460) {
+    tax0 = X * 0.10 - 17_158;
+  } else if (X < 695_000) {
+    tax0 = X * 0.20 - 60_104;
+  } else if (X < 900_000) {
+    tax0 = X * 0.23 - 80_954;
+  } else if (X < 1_800_000) {
+    tax0 = X * 0.33 - 170_954;
+  } else if (X < 4_000_000) {
+    tax0 = X * 0.40 - 296_954;
+  } else {
+    tax0 = X * 0.45 - 496_954;
+  }
 
-  return roundJapanese(Math.max(0, tax * 1.021));
+  const taxB = Math.max(0, tax0 - dependentCount * 3_750);
+  return roundJapanese(Math.max(0, taxB * 1.021));
 }
 
 // ── サイドバー ────────────────────────────────────────────────────
