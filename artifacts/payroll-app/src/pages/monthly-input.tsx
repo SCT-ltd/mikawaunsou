@@ -11,6 +11,7 @@ import {
   useUpdateEmployeeAllowances,
   useListAllowanceDefinitions,
   useUpdateEmployee,
+  useGetCompany,
   getListEmployeesQueryKey,
   Employee
 } from "@workspace/api-client-react";
@@ -22,6 +23,35 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { Save, ChevronRight } from "lucide-react";
+
+// ── 給与計算ユーティリティ（フロントエンド用）────────────────────
+
+function roundJapanese(amount: number): number {
+  const fraction = amount - Math.floor(amount);
+  return fraction <= 0.5 ? Math.floor(amount) : Math.ceil(amount);
+}
+
+function calculateIncomeTax(afterInsuranceSalary: number, dependentCount: number): number {
+  const dependentDeduction = 38_000;
+  const perDependentDeduction = 38_000;
+  const totalDependentDeduction = dependentDeduction + dependentCount * perDependentDeduction;
+  const taxableIncome = Math.max(0, afterInsuranceSalary - totalDependentDeduction);
+  const t = Math.floor(taxableIncome / 1000) * 1000;
+
+  let tax = 0;
+  if (t <= 0)            tax = 0;
+  else if (t <= 162_500) tax = t * 0.05;
+  else if (t <= 275_000) tax = t * 0.10 - 2_572;
+  else if (t <= 579_167) tax = t * 0.20 - 17_386;
+  else if (t <= 750_000) tax = t * 0.23 - 34_934;
+  else if (t <= 1_500_000) tax = t * 0.33 - 109_934;
+  else if (t <= 3_333_333) tax = t * 0.40 - 214_934;
+  else                   tax = t * 0.45 - 381_934;
+
+  return roundJapanese(Math.max(0, tax * 1.021));
+}
+
+// ── サイドバー ────────────────────────────────────────────────────
 
 function AllowanceSidebar({
   employee,
@@ -43,6 +73,7 @@ function AllowanceSidebar({
   const { data: employeeAllowances } = useGetEmployeeAllowances(employeeId, {
     query: { enabled: !!employeeId, queryKey: getGetEmployeeAllowancesQueryKey(employeeId), staleTime: 0, refetchOnMount: true }
   });
+  const { data: company } = useGetCompany();
   const updateAllowances = useUpdateEmployeeAllowances();
   const updateEmployee = useUpdateEmployee();
 
@@ -52,9 +83,7 @@ function AllowanceSidebar({
   useEffect(() => {
     if (employeeAllowances) {
       const init: Record<number, number> = {};
-      employeeAllowances.forEach(a => {
-        init[a.allowanceDefinitionId] = a.amount;
-      });
+      employeeAllowances.forEach(a => { init[a.allowanceDefinitionId] = a.amount; });
       setAmounts(init);
     } else {
       setAmounts({});
@@ -84,9 +113,39 @@ function AllowanceSidebar({
 
   const allowancesTotal = Object.values(amounts).reduce((s, v) => s + (v || 0), 0);
   const grandTotal = baseSalaryInput + allowancesTotal;
-  const totalRows = (allowanceDefinitions?.length ?? 0) + 1; // +1 for 基本給 row
+  const totalRows = (allowanceDefinitions?.length ?? 0) + 2; // +1 基本給, +1 支給合計
+
+  // ── 社会保険料計算 ──
+  const healthInsurance = employee?.healthInsuranceMonthly ?? 0;
+  const pensionInsurance = employee?.pensionMonthly ?? 0;
+  const employmentInsuranceRate = company?.employmentInsuranceRate ?? 0.006;
+  const employmentInsurance = (employee?.employmentInsuranceApplied !== false)
+    ? roundJapanese(grandTotal * employmentInsuranceRate)
+    : 0;
+  const totalInsurance = healthInsurance + pensionInsurance + employmentInsurance;
+
+  // ── 税金計算 ──
+  const afterInsuranceSalary = Math.max(0, grandTotal - totalInsurance);
+  const incomeTax = calculateIncomeTax(afterInsuranceSalary, employee?.dependentCount ?? 0);
+  const residentTax = employee?.residentTax ?? 0;
+
+  // ── 差引合計・差引支給額 ──
+  const totalDeductions = roundJapanese(totalInsurance + incomeTax + residentTax);
+  const netSalary = roundJapanese(grandTotal - totalDeductions);
+
+  const fmt = (v: number) => v > 0 ? v.toLocaleString("ja-JP") : v === 0 ? "0" : "—";
 
   if (!employee) return null;
+
+  const sectionLabel = (label: string, rowSpan: number) => (
+    <td
+      rowSpan={rowSpan}
+      className="border border-border text-center align-middle font-medium bg-muted/30"
+      style={{ writingMode: "vertical-rl", letterSpacing: "0.15em", padding: "6px 3px", fontSize: "11px", width: "22px" }}
+    >
+      {label}
+    </td>
+  );
 
   return (
     <Sheet open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
@@ -107,15 +166,9 @@ function AllowanceSidebar({
               </tr>
             </thead>
             <tbody>
-              {/* 基本給 — editable row */}
+              {/* ── 支給セクション ───────────────────────── */}
               <tr className="bg-background">
-                <td
-                  rowSpan={totalRows}
-                  className="border border-border text-center align-middle font-medium"
-                  style={{ writingMode: "vertical-rl", letterSpacing: "0.15em", padding: "6px 3px", fontSize: "11px", width: "22px" }}
-                >
-                  支　給
-                </td>
+                {sectionLabel("支　給", totalRows)}
                 <td className="border border-border px-2 py-1 font-medium">基本給</td>
                 <td className="border border-border px-1 py-1 text-center">
                   <span className="px-1 py-0.5 rounded border bg-red-50 text-red-700 border-red-200" style={{ fontSize: "10px" }}>課税</span>
@@ -135,7 +188,6 @@ function AllowanceSidebar({
                 </td>
               </tr>
 
-              {/* Dynamic allowance rows */}
               {!allowanceDefinitions || allowanceDefinitions.length === 0 ? (
                 <tr>
                   <td colSpan={3} className="border border-border px-3 py-4 text-center text-muted-foreground">
@@ -168,16 +220,91 @@ function AllowanceSidebar({
                 ))
               )}
 
-              {/* 支給合計 row */}
-              <tr className="bg-muted/50 font-semibold">
-                <td className="border border-border px-2 py-1.5 text-muted-foreground text-center" colSpan={2}>支給合計</td>
+              {/* 支給合計 */}
+              <tr className="bg-blue-50 font-semibold">
+                <td className="border border-border px-2 py-1.5 text-muted-foreground text-center" colSpan={2}>総支給金額</td>
+                <td className="border border-border" />
+                <td className="border border-border px-2 py-1.5 text-right tabular-nums font-bold text-blue-800">
+                  {grandTotal > 0 ? grandTotal.toLocaleString("ja-JP") : "—"}
+                </td>
+              </tr>
+
+              {/* ── 控除（社会保険料）セクション ──────────── */}
+              <tr className="bg-background">
+                {sectionLabel("控　除", 5)}
+                <td className="border border-border px-2 py-1 text-muted-foreground">健康保険料</td>
                 <td className="border border-border" />
                 <td className="border border-border px-2 py-1.5 text-right tabular-nums">
-                  {grandTotal > 0 ? grandTotal.toLocaleString() : "—"}
+                  {fmt(healthInsurance)}
+                </td>
+              </tr>
+              <tr className="bg-muted/20">
+                <td className="border border-border px-2 py-1 text-muted-foreground">厚生年金保険料</td>
+                <td className="border border-border" />
+                <td className="border border-border px-2 py-1.5 text-right tabular-nums">
+                  {fmt(pensionInsurance)}
+                </td>
+              </tr>
+              <tr className="bg-background">
+                <td className="border border-border px-2 py-1 text-muted-foreground">雇用保険料</td>
+                <td className="border border-border" />
+                <td className="border border-border px-2 py-1.5 text-right tabular-nums">
+                  {fmt(employmentInsurance)}
+                </td>
+              </tr>
+              <tr className="bg-muted/20">
+                <td className="border border-border px-2 py-1 text-muted-foreground font-medium" colSpan={2}>
+                  社会保険料控除後の金額
+                  <span className="ml-1 text-muted-foreground font-normal">(人)</span>
+                </td>
+                <td className="border border-border px-2 py-1.5 text-right tabular-nums font-medium">
+                  {fmt(afterInsuranceSalary)}
+                </td>
+              </tr>
+              <tr className="bg-orange-50 font-semibold">
+                <td className="border border-border px-2 py-1.5 text-center text-muted-foreground" colSpan={2}>社会保険料合計</td>
+                <td className="border border-border px-2 py-1.5 text-right tabular-nums text-orange-800 font-bold">
+                  {fmt(totalInsurance)}
+                </td>
+              </tr>
+
+              {/* ── 差引金額セクション ──────────────────── */}
+              <tr className="bg-background">
+                {sectionLabel("差引金額", 4)}
+                <td className="border border-border px-2 py-1 text-muted-foreground">所得税</td>
+                <td className="border border-border" />
+                <td className="border border-border px-2 py-1.5 text-right tabular-nums">
+                  {fmt(incomeTax)}
+                </td>
+              </tr>
+              <tr className="bg-muted/20">
+                <td className="border border-border px-2 py-1 text-muted-foreground">市町村民税</td>
+                <td className="border border-border" />
+                <td className="border border-border px-2 py-1.5 text-right tabular-nums">
+                  {fmt(residentTax)}
+                </td>
+              </tr>
+              <tr className="bg-muted/40 font-semibold">
+                <td className="border border-border px-2 py-1.5 text-center text-muted-foreground" colSpan={2}>差引合計額</td>
+                <td className="border border-border px-2 py-1.5 text-right tabular-nums text-red-700 font-bold">
+                  {fmt(totalDeductions)}
+                </td>
+              </tr>
+              <tr className="bg-green-50 font-bold">
+                <td className="border border-border px-2 py-1.5 text-center font-semibold" colSpan={2}>差引支給額</td>
+                <td className="border border-border px-2 py-1.5 text-right tabular-nums text-green-800 text-sm font-extrabold">
+                  {fmt(netSalary)}
                 </td>
               </tr>
             </tbody>
           </table>
+
+          {/* 備考: 社会保険固定金額未設定の場合 */}
+          {(healthInsurance === 0 || pensionInsurance === 0) && (
+            <div className="mx-3 mt-2 mb-1 px-3 py-2 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800">
+              ※ 社員マスターで健保・厚年月額を設定すると控除額が自動計算されます。
+            </div>
+          )}
         </div>
 
         <div className="border-t px-5 py-3 shrink-0">
