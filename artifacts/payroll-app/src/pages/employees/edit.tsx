@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useLocation, useParams, Link } from "wouter";
 import { AppLayout } from "@/components/layout/app-layout";
 import { 
@@ -6,10 +6,6 @@ import {
   getGetEmployeeQueryKey, 
   useUpdateEmployee, 
   useDeleteEmployee,
-  useGetEmployeeAllowances,
-  getGetEmployeeAllowancesQueryKey,
-  useUpdateEmployeeAllowances,
-  useListAllowanceDefinitions
 } from "@workspace/api-client-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -23,8 +19,6 @@ import { ChevronLeft, Save, Trash2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useQueryClient } from "@tanstack/react-query";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 
 const employeeSchema = z.object({
   employeeCode: z.string().min(1, "社員番号を入力してください"),
@@ -60,50 +54,6 @@ export default function EmployeeEdit() {
   
   const updateEmployee = useUpdateEmployee();
   const deleteEmployee = useDeleteEmployee();
-
-  const { data: employeeAllowances, isLoading: isAllowancesLoading } = useGetEmployeeAllowances(employeeId, {
-    query: { enabled: !!employeeId, queryKey: getGetEmployeeAllowancesQueryKey(employeeId) }
-  });
-  const { data: allowanceDefinitions } = useListAllowanceDefinitions({ activeOnly: true });
-  const updateAllowances = useUpdateEmployeeAllowances();
-
-  const [customAllowances, setCustomAllowances] = useState<Record<number, number>>({});
-
-  useEffect(() => {
-    if (employeeAllowances) {
-      const initialAmounts: Record<number, number> = {};
-      employeeAllowances.forEach(ca => {
-        initialAmounts[ca.allowanceDefinitionId] = ca.amount;
-      });
-      setCustomAllowances(initialAmounts);
-    }
-  }, [employeeAllowances]);
-
-  const handleCustomAllowanceChange = (definitionId: number, value: string) => {
-    const amount = value === "" ? 0 : parseInt(value, 10);
-    setCustomAllowances(prev => ({
-      ...prev,
-      [definitionId]: isNaN(amount) ? 0 : amount
-    }));
-  };
-
-  const handleSaveAllowances = async () => {
-    try {
-      const payload = Object.entries(customAllowances).map(([id, amount]) => ({
-        allowanceDefinitionId: parseInt(id, 10),
-        amount
-      })).filter(a => a.amount > 0);
-      
-      await updateAllowances.mutateAsync({
-        id: employeeId,
-        data: { allowances: payload }
-      });
-      toast({ title: "保存しました", description: "カスタム手当を更新しました。" });
-      queryClient.invalidateQueries({ queryKey: getGetEmployeeAllowancesQueryKey(employeeId) });
-    } catch (error) {
-      toast({ title: "エラー", description: "手当の保存に失敗しました。", variant: "destructive" });
-    }
-  };
 
   const form = useForm<EmployeeFormValues>({
     resolver: zodResolver(employeeSchema),
@@ -349,62 +299,6 @@ export default function EmployeeEdit() {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">歩合・控除情報</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-6 md:grid-cols-2">
-                <FormField
-                  control={form.control}
-                  name="commissionRatePerKm"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>歩合単価（円/km）</FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <span className="absolute left-3 top-2.5 text-muted-foreground">¥</span>
-                          <Input type="number" step="0.1" className="pl-7" {...field} />
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="commissionRatePerCase"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>歩合単価（円/件）</FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <span className="absolute left-3 top-2.5 text-muted-foreground">¥</span>
-                          <Input type="number" className="pl-7" {...field} />
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="residentTax"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>住民税（月額）</FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <span className="absolute left-3 top-2.5 text-muted-foreground">¥</span>
-                          <Input type="number" className="pl-7" {...field} />
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </CardContent>
-            </Card>
-
             <div className="flex justify-end gap-4 pb-4">
               <Button type="button" variant="outline" onClick={() => setLocation("/employees")}>
                 キャンセル
@@ -417,68 +311,6 @@ export default function EmployeeEdit() {
           </form>
         </Form>
 
-        <Card className="mt-8 mb-12">
-          <CardHeader>
-            <CardTitle className="text-lg">カスタム手当設定</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {!allowanceDefinitions || allowanceDefinitions.length === 0 ? (
-              <div className="text-center py-6 text-muted-foreground border rounded-md border-dashed">
-                カスタム手当が定義されていません。
-                <Button variant="link" className="px-1" asChild>
-                  <Link href="/allowances">手当マスタ</Link>
-                </Button>
-                から追加してください。
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>手当名称</TableHead>
-                        <TableHead>課税区分</TableHead>
-                        <TableHead className="w-48 text-right">金額（月額）</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {allowanceDefinitions.map((def) => (
-                        <TableRow key={def.id}>
-                          <TableCell className="font-medium">{def.name}</TableCell>
-                          <TableCell>
-                            {def.isTaxable ? (
-                              <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">課税</Badge>
-                            ) : (
-                              <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">非課税</Badge>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="relative">
-                              <span className="absolute left-3 top-2.5 text-muted-foreground text-sm">¥</span>
-                              <Input 
-                                type="number" 
-                                min="0"
-                                className="pl-7 text-right h-9" 
-                                value={customAllowances[def.id] || ""}
-                                onChange={(e) => handleCustomAllowanceChange(def.id, e.target.value)}
-                              />
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-                <div className="flex justify-end">
-                  <Button type="button" onClick={handleSaveAllowances} disabled={updateAllowances.isPending}>
-                    <Save className="mr-2 h-4 w-4" />
-                    手当を保存
-                  </Button>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
     </AppLayout>
   );
