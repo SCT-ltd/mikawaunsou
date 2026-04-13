@@ -276,11 +276,8 @@ function AllowanceMasterTab() {
 // ─── 社員マスター Tab ──────────────────────────────────────────────
 
 const employeeEditSchema = z.object({
-  baseSalary: z.coerce.number().min(0),
   dependentCount: z.coerce.number().int().min(0),
   hasSpouse: z.boolean().default(false),
-  healthInsuranceMonthly: z.coerce.number().min(0),
-  pensionMonthly: z.coerce.number().min(0),
   employmentInsuranceApplied: z.boolean().default(true),
   residentTax: z.coerce.number().min(0),
   transportationAllowance: z.coerce.number().min(0),
@@ -299,8 +296,7 @@ function EmployeeMasterTab() {
   const form = useForm<EmployeeEditValues>({
     resolver: zodResolver(employeeEditSchema),
     defaultValues: {
-      baseSalary: 0, dependentCount: 0, hasSpouse: false,
-      healthInsuranceMonthly: 0, pensionMonthly: 0,
+      dependentCount: 0, hasSpouse: false,
       employmentInsuranceApplied: true, residentTax: 0,
       transportationAllowance: 0, commissionRatePerKm: 0, commissionRatePerCase: 0,
     },
@@ -309,11 +305,8 @@ function EmployeeMasterTab() {
   const handleOpenEdit = (emp: Employee) => {
     setEditingEmployee(emp);
     form.reset({
-      baseSalary: emp.baseSalary,
       dependentCount: emp.dependentCount,
       hasSpouse: emp.hasSpouse ?? false,
-      healthInsuranceMonthly: emp.healthInsuranceMonthly ?? 0,
-      pensionMonthly: emp.pensionMonthly ?? 0,
       employmentInsuranceApplied: emp.employmentInsuranceApplied ?? true,
       residentTax: emp.residentTax,
       transportationAllowance: emp.transportationAllowance,
@@ -342,7 +335,7 @@ function EmployeeMasterTab() {
     <div className="space-y-4">
       <div>
         <h3 className="text-lg font-semibold">社員マスター</h3>
-        <p className="text-sm text-muted-foreground">給与・保険・扶養など各社員の基本設定を管理します。</p>
+        <p className="text-sm text-muted-foreground">扶養・通勤・歩合など各社員の基本設定を管理します。社会保険料は計算テーブルマスターの料率を使用して自動計算されます。</p>
       </div>
 
       <Card>
@@ -361,12 +354,10 @@ function EmployeeMasterTab() {
                     <TableHead>社員番号</TableHead>
                     <TableHead>氏名</TableHead>
                     <TableHead>部署</TableHead>
-                    <TableHead className="text-right">基本給</TableHead>
-                    <TableHead className="text-right">健保（月額）</TableHead>
-                    <TableHead className="text-right">厚年（月額）</TableHead>
                     <TableHead>扶養</TableHead>
                     <TableHead>配偶者</TableHead>
                     <TableHead>雇保</TableHead>
+                    <TableHead className="text-right">住民税（月額）</TableHead>
                     <TableHead className="w-20 text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -376,9 +367,6 @@ function EmployeeMasterTab() {
                       <TableCell className="text-muted-foreground text-sm">{emp.employeeCode}</TableCell>
                       <TableCell className="font-medium">{emp.name}</TableCell>
                       <TableCell className="text-sm">{emp.department}</TableCell>
-                      <TableCell className="text-right font-mono">{fmt(emp.baseSalary)}</TableCell>
-                      <TableCell className="text-right font-mono text-sm">{fmt(emp.healthInsuranceMonthly ?? 0)}</TableCell>
-                      <TableCell className="text-right font-mono text-sm">{fmt(emp.pensionMonthly ?? 0)}</TableCell>
                       <TableCell className="text-sm">{emp.dependentCount}人</TableCell>
                       <TableCell>
                         {(emp.hasSpouse ?? false) ? (
@@ -394,6 +382,7 @@ function EmployeeMasterTab() {
                           <Badge variant="outline" className="text-muted-foreground text-xs">非適用</Badge>
                         )}
                       </TableCell>
+                      <TableCell className="text-right font-mono text-sm">{fmt(emp.residentTax)}</TableCell>
                       <TableCell className="text-right">
                         <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleOpenEdit(emp); }}>
                           <Edit2 className="h-4 w-4 text-muted-foreground" />
@@ -412,22 +401,15 @@ function EmployeeMasterTab() {
       <Dialog open={!!editingEmployee} onOpenChange={(open) => { if (!open) setEditingEmployee(null); }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingEmployee?.name}　給与・保険設定</DialogTitle>
+            <DialogTitle>{editingEmployee?.name}　扶養・通勤設定</DialogTitle>
             <p className="text-sm text-muted-foreground mt-1">{editingEmployee?.employeeCode}　{editingEmployee?.department}</p>
           </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              {/* 給与設定 */}
+              {/* 歩合設定 */}
               <div>
-                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">給与設定</h4>
+                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">歩合設定</h4>
                 <div className="grid grid-cols-2 gap-4">
-                  <FormField control={form.control} name="baseSalary" render={({ field }) => (
-                    <FormItem className="col-span-2">
-                      <FormLabel>基本給（月額）</FormLabel>
-                      <FormControl><Input type="number" placeholder="250000" {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
                   <FormField control={form.control} name="commissionRatePerKm" render={({ field }) => (
                     <FormItem>
                       <FormLabel>歩合単価（円/km）</FormLabel>
@@ -475,25 +457,9 @@ function EmployeeMasterTab() {
               {/* 社会保険 */}
               <div>
                 <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">社会保険設定</h4>
-                <p className="text-xs text-muted-foreground mb-3">各保険料の従業員負担額（月額）を固定金額で入力してください。</p>
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField control={form.control} name="healthInsuranceMonthly" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>健康保険料（月額）</FormLabel>
-                      <FormControl><Input type="number" placeholder="12500" {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="pensionMonthly" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>厚生年金保険料（月額）</FormLabel>
-                      <FormControl><Input type="number" placeholder="23000" {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                </div>
+                <p className="text-xs text-muted-foreground mb-3">保険料は計算テーブルマスターの料率を使って自動計算されます。</p>
                 <FormField control={form.control} name="employmentInsuranceApplied" render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-lg border p-3 mt-3">
+                  <FormItem className="flex items-center justify-between rounded-lg border p-3">
                     <div>
                       <FormLabel>雇用保険適用</FormLabel>
                       <p className="text-xs text-muted-foreground">適用外の場合はオフ（役員等）</p>

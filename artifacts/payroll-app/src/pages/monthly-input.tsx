@@ -115,10 +115,13 @@ function AllowanceSidebar({
   const grandTotal = baseSalaryInput + allowancesTotal;
   const totalRows = (allowanceDefinitions?.length ?? 0) + 2; // +1 基本給, +1 支給合計
 
-  // ── 社会保険料計算 ──
-  const healthInsurance = employee?.healthInsuranceMonthly ?? 0;
-  const pensionInsurance = employee?.pensionMonthly ?? 0;
+  // ── 社会保険料計算（計算テーブルマスターの料率を使用）──
+  const healthInsuranceRate = company?.healthInsuranceEmployeeRate ?? 0.05;
+  const pensionRate = company?.pensionEmployeeRate ?? 0.0915;
   const employmentInsuranceRate = company?.employmentInsuranceRate ?? 0.006;
+
+  const healthInsurance = roundJapanese(grandTotal * healthInsuranceRate);
+  const pensionInsurance = roundJapanese(grandTotal * pensionRate);
   const employmentInsurance = (employee?.employmentInsuranceApplied !== false)
     ? roundJapanese(grandTotal * employmentInsuranceRate)
     : 0;
@@ -299,10 +302,10 @@ function AllowanceSidebar({
             </tbody>
           </table>
 
-          {/* 備考: 社会保険固定金額未設定の場合 */}
-          {(healthInsurance === 0 || pensionInsurance === 0) && (
-            <div className="mx-3 mt-2 mb-1 px-3 py-2 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800">
-              ※ 社員マスターで健保・厚年月額を設定すると控除額が自動計算されます。
+          {/* 料率表示 */}
+          {company && (
+            <div className="mx-3 mt-2 mb-1 px-3 py-2 bg-muted/40 border rounded text-xs text-muted-foreground">
+              計算テーブルマスター適用：健保 {(healthInsuranceRate * 100).toFixed(2)}%・厚年 {(pensionRate * 100).toFixed(2)}%・雇保 {(employmentInsuranceRate * 100).toFixed(2)}%
             </div>
           )}
         </div>
