@@ -17,6 +17,8 @@ export interface UpdateEmployeeBody {
   safetyDrivingAllowance?: number;
   longDistanceAllowance?: number;
   positionAllowance?: number;
+  familyAllowance?: number;
+  earlyOvertimeAllowance?: number;
   commissionRatePerKm?: number;
   commissionRatePerCase?: number;
   dependentCount?: number;

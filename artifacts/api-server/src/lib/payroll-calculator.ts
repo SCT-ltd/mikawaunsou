@@ -99,6 +99,8 @@ export interface PayrollCalculationInput {
   safetyDrivingAllowance: number;
   longDistanceAllowance: number;
   positionAllowance: number;
+  familyAllowance: number;
+  earlyOvertimeAllowance: number;
   commissionRatePerKm: number;
   commissionRatePerCase: number;
   dependentCount: number;
@@ -128,6 +130,8 @@ export interface PayrollCalculationResult {
   safetyDrivingAllowance: number;
   longDistanceAllowance: number;
   positionAllowance: number;
+  familyAllowance: number;
+  earlyOvertimeAllowance: number;
   customAllowancesTotal: number;
   absenceDeduction: number;
   grossSalary: number;
@@ -146,6 +150,8 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     safetyDrivingAllowance,
     longDistanceAllowance,
     positionAllowance,
+    familyAllowance,
+    earlyOvertimeAllowance,
     commissionRatePerKm,
     commissionRatePerCase,
     dependentCount,
@@ -198,6 +204,8 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     safetyDrivingAllowance +
     longDistanceAllowance +
     positionAllowance +
+    familyAllowance +
+    earlyOvertimeAllowance +
     customAllowancesTotal -
     absenceDeduction
   );
@@ -232,6 +240,8 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     safetyDrivingAllowance,
     longDistanceAllowance,
     positionAllowance,
+    familyAllowance,
+    earlyOvertimeAllowance,
     customAllowancesTotal,
     absenceDeduction,
     grossSalary,

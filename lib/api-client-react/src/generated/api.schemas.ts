@@ -55,6 +55,10 @@ export interface Employee {
   longDistanceAllowance: number;
   /** 役職手当 */
   positionAllowance: number;
+  /** 家族手当 */
+  familyAllowance: number;
+  /** 早出残業手当 */
+  earlyOvertimeAllowance: number;
   /** 歩合単価（円/km） */
   commissionRatePerKm: number;
   /** 歩合単価（円/件） */
@@ -80,6 +84,8 @@ export interface CreateEmployeeBody {
   safetyDrivingAllowance?: number;
   longDistanceAllowance?: number;
   positionAllowance?: number;
+  familyAllowance?: number;
+  earlyOvertimeAllowance?: number;
   commissionRatePerKm?: number;
   commissionRatePerCase?: number;
   dependentCount: number;
@@ -98,6 +104,8 @@ export interface UpdateEmployeeBody {
   safetyDrivingAllowance?: number;
   longDistanceAllowance?: number;
   positionAllowance?: number;
+  familyAllowance?: number;
+  earlyOvertimeAllowance?: number;
   commissionRatePerKm?: number;
   commissionRatePerCase?: number;
   dependentCount?: number;
@@ -189,6 +197,10 @@ export interface Payroll {
   longDistanceAllowance: number;
   /** 役職手当 */
   positionAllowance: number;
+  /** 家族手当 */
+  familyAllowance: number;
+  /** 早出残業手当 */
+  earlyOvertimeAllowance: number;
   /** 欠勤控除 */
   absenceDeduction: number;
   /** 支給合計 */

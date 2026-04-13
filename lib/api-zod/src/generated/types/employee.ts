@@ -26,6 +26,10 @@ export interface Employee {
   longDistanceAllowance: number;
   /** 役職手当 */
   positionAllowance: number;
+  /** 家族手当 */
+  familyAllowance: number;
+  /** 早出残業手当 */
+  earlyOvertimeAllowance: number;
   /** 歩合単価（円/km） */
   commissionRatePerKm: number;
   /** 歩合単価（円/件） */

@@ -33,6 +33,10 @@ export interface Payroll {
   longDistanceAllowance: number;
   /** 役職手当 */
   positionAllowance: number;
+  /** 家族手当 */
+  familyAllowance: number;
+  /** 早出残業手当 */
+  earlyOvertimeAllowance: number;
   /** 欠勤控除 */
   absenceDeduction: number;
   /** 支給合計 */

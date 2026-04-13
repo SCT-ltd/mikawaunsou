@@ -14,6 +14,8 @@ export const employeesTable = pgTable("employees", {
   safetyDrivingAllowance: doublePrecision("safety_driving_allowance").notNull().default(0),
   longDistanceAllowance: doublePrecision("long_distance_allowance").notNull().default(0),
   positionAllowance: doublePrecision("position_allowance").notNull().default(0),
+  familyAllowance: doublePrecision("family_allowance").notNull().default(0),
+  earlyOvertimeAllowance: doublePrecision("early_overtime_allowance").notNull().default(0),
   commissionRatePerKm: doublePrecision("commission_rate_per_km").notNull().default(0),
   commissionRatePerCase: doublePrecision("commission_rate_per_case").notNull().default(0),
   dependentCount: integer("dependent_count").notNull().default(0),

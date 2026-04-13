@@ -704,6 +704,12 @@ components:
         positionAllowance:
           type: number
           description: 役職手当
+        familyAllowance:
+          type: number
+          description: 家族手当
+        earlyOvertimeAllowance:
+          type: number
+          description: 早出残業手当
         commissionRatePerKm:
           type: number
           description: 歩合単価（円/km）
@@ -738,6 +744,8 @@ components:
         - safetyDrivingAllowance
         - longDistanceAllowance
         - positionAllowance
+        - familyAllowance
+        - earlyOvertimeAllowance
         - commissionRatePerKm
         - commissionRatePerCase
         - dependentCount
@@ -769,6 +777,10 @@ components:
         longDistanceAllowance:
           type: number
         positionAllowance:
+          type: number
+        familyAllowance:
+          type: number
+        earlyOvertimeAllowance:
           type: number
         commissionRatePerKm:
           type: number
@@ -812,6 +824,10 @@ components:
         longDistanceAllowance:
           type: number
         positionAllowance:
+          type: number
+        familyAllowance:
+          type: number
+        earlyOvertimeAllowance:
           type: number
         commissionRatePerKm:
           type: number
@@ -986,6 +1002,12 @@ components:
         positionAllowance:
           type: number
           description: 役職手当
+        familyAllowance:
+          type: number
+          description: 家族手当
+        earlyOvertimeAllowance:
+          type: number
+          description: 早出残業手当
         absenceDeduction:
           type: number
           description: 欠勤控除
@@ -1039,6 +1061,8 @@ components:
         - safetyDrivingAllowance
         - longDistanceAllowance
         - positionAllowance
+        - familyAllowance
+        - earlyOvertimeAllowance
         - absenceDeduction
         - grossSalary
         - socialInsurance

@@ -18,6 +18,8 @@ export const payrollsTable = pgTable("payrolls", {
   safetyDrivingAllowance: doublePrecision("safety_driving_allowance").notNull().default(0),
   longDistanceAllowance: doublePrecision("long_distance_allowance").notNull().default(0),
   positionAllowance: doublePrecision("position_allowance").notNull().default(0),
+  familyAllowance: doublePrecision("family_allowance").notNull().default(0),
+  earlyOvertimeAllowance: doublePrecision("early_overtime_allowance").notNull().default(0),
   absenceDeduction: doublePrecision("absence_deduction").notNull().default(0),
   grossSalary: doublePrecision("gross_salary").notNull().default(0),
   socialInsurance: doublePrecision("social_insurance").notNull().default(0),

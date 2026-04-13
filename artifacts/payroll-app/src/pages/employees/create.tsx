@@ -24,6 +24,8 @@ const employeeSchema = z.object({
   safetyDrivingAllowance: z.coerce.number().min(0).default(0),
   longDistanceAllowance: z.coerce.number().min(0).default(0),
   positionAllowance: z.coerce.number().min(0).default(0),
+  familyAllowance: z.coerce.number().min(0).default(0),
+  earlyOvertimeAllowance: z.coerce.number().min(0).default(0),
   commissionRatePerKm: z.coerce.number().min(0).default(0),
   commissionRatePerCase: z.coerce.number().min(0).default(0),
   dependentCount: z.coerce.number().min(0).default(0),
@@ -51,6 +53,8 @@ export default function EmployeeCreate() {
       safetyDrivingAllowance: 0,
       longDistanceAllowance: 0,
       positionAllowance: 0,
+      familyAllowance: 0,
+      earlyOvertimeAllowance: 0,
       commissionRatePerKm: 0,
       commissionRatePerCase: 0,
       dependentCount: 0,
@@ -200,6 +204,38 @@ export default function EmployeeCreate() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>基本給 <span className="text-destructive">*</span></FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          <span className="absolute left-3 top-2.5 text-muted-foreground">¥</span>
+                          <Input type="number" className="pl-7" {...field} />
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="familyAllowance"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>家族手当</FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          <span className="absolute left-3 top-2.5 text-muted-foreground">¥</span>
+                          <Input type="number" className="pl-7" {...field} />
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="earlyOvertimeAllowance"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>早出残業手当</FormLabel>
                       <FormControl>
                         <div className="relative">
                           <span className="absolute left-3 top-2.5 text-muted-foreground">¥</span>
