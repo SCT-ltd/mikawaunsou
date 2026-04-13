@@ -351,30 +351,6 @@ export default function EmployeeEdit() {
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">給与・手当情報</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-6 md:grid-cols-2">
-                <FormField
-                  control={form.control}
-                  name="baseSalary"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>基本給 <span className="text-destructive">*</span></FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <span className="absolute left-3 top-2.5 text-muted-foreground">¥</span>
-                          <Input type="number" className="pl-7" {...field} />
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
                 <CardTitle className="text-lg">歩合・控除情報</CardTitle>
               </CardHeader>
               <CardContent className="grid gap-6 md:grid-cols-2">

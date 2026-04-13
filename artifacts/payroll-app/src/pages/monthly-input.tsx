@@ -10,6 +10,8 @@ import {
   getGetEmployeeAllowancesQueryKey,
   useUpdateEmployeeAllowances,
   useListAllowanceDefinitions,
+  useUpdateEmployee,
+  getListEmployeesQueryKey,
   Employee
 } from "@workspace/api-client-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -42,8 +44,10 @@ function AllowanceSidebar({
     query: { enabled: !!employeeId, queryKey: getGetEmployeeAllowancesQueryKey(employeeId), staleTime: 0, refetchOnMount: true }
   });
   const updateAllowances = useUpdateEmployeeAllowances();
+  const updateEmployee = useUpdateEmployee();
 
   const [amounts, setAmounts] = useState<Record<number, number>>({});
+  const [baseSalaryInput, setBaseSalaryInput] = useState<number>(0);
 
   useEffect(() => {
     if (employeeAllowances) {
@@ -57,22 +61,29 @@ function AllowanceSidebar({
     }
   }, [employeeAllowances, employeeId]);
 
+  useEffect(() => {
+    setBaseSalaryInput(employee?.baseSalary ?? 0);
+  }, [employee?.baseSalary, employeeId]);
+
   const handleSave = async () => {
     try {
       const payload = Object.entries(amounts)
         .map(([id, amount]) => ({ allowanceDefinitionId: parseInt(id, 10), amount }))
         .filter(a => a.amount > 0);
-      await updateAllowances.mutateAsync({ id: employeeId, data: { allowances: payload } });
+      await Promise.all([
+        updateAllowances.mutateAsync({ id: employeeId, data: { allowances: payload } }),
+        updateEmployee.mutateAsync({ id: employeeId, data: { baseSalary: baseSalaryInput } }),
+      ]);
       queryClient.invalidateQueries({ queryKey: getGetEmployeeAllowancesQueryKey(employeeId) });
-      toast({ title: "保存しました", description: `${employee?.name}の手当を更新しました。` });
+      queryClient.invalidateQueries({ queryKey: getListEmployeesQueryKey({ active: true }) });
+      toast({ title: "保存しました", description: `${employee?.name}の基本給・手当を更新しました。` });
     } catch {
-      toast({ title: "エラー", description: "手当の保存に失敗しました。", variant: "destructive" });
+      toast({ title: "エラー", description: "保存に失敗しました。", variant: "destructive" });
     }
   };
 
   const allowancesTotal = Object.values(amounts).reduce((s, v) => s + (v || 0), 0);
-  const baseSalary = employee?.baseSalary ?? 0;
-  const grandTotal = baseSalary + allowancesTotal;
+  const grandTotal = baseSalaryInput + allowancesTotal;
   const totalRows = (allowanceDefinitions?.length ?? 0) + 1; // +1 for 基本給 row
 
   if (!employee) return null;
@@ -96,7 +107,7 @@ function AllowanceSidebar({
               </tr>
             </thead>
             <tbody>
-              {/* 基本給 — fixed read-only row */}
+              {/* 基本給 — editable row */}
               <tr className="bg-background">
                 <td
                   rowSpan={totalRows}
@@ -105,12 +116,22 @@ function AllowanceSidebar({
                 >
                   支　給
                 </td>
-                <td className="border border-border px-2 py-1.5 font-medium">基本給</td>
-                <td className="border border-border px-1 py-1.5 text-center">
+                <td className="border border-border px-2 py-1 font-medium">基本給</td>
+                <td className="border border-border px-1 py-1 text-center">
                   <span className="px-1 py-0.5 rounded border bg-red-50 text-red-700 border-red-200" style={{ fontSize: "10px" }}>課税</span>
                 </td>
-                <td className="border border-border px-2 py-1.5 text-right tabular-nums font-medium text-muted-foreground">
-                  {baseSalary.toLocaleString()}
+                <td className="border border-border px-1 py-0.5">
+                  <Input
+                    type="number"
+                    min="0"
+                    className="h-6 w-full text-right border-0 shadow-none bg-transparent focus-visible:ring-1 focus-visible:ring-primary px-1 text-xs font-medium"
+                    value={baseSalaryInput || ""}
+                    onChange={(e) => {
+                      const v = e.target.value === "" ? 0 : parseInt(e.target.value, 10);
+                      setBaseSalaryInput(isNaN(v) ? 0 : v);
+                    }}
+                    placeholder="0"
+                  />
                 </td>
               </tr>
 
