@@ -610,7 +610,7 @@ function CalcTableMasterTab() {
     }
   };
 
-  const pct = (v: number) => `${(v * 100).toFixed(2)}%`;
+  const pct = (v: unknown) => `${(Number(v) * 100).toFixed(2)}%`;
 
   if (isLoading) return <div className="text-center py-8 text-muted-foreground">読み込み中...</div>;
 
