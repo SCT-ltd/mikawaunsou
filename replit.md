@@ -1,8 +1,8 @@
-# Workspace
+# 給与明細・バックオフィス効率化システム
 
 ## Overview
 
-pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
+運送業特化型の給与計算・バックオフィス自動化クラウドシステム。基本給・残業・深夜・歩合給の計算から、源泉所得税自動ルックアップ、振替伝票出力まで一気通貫で行う。
 
 ## Stack
 
@@ -10,7 +10,8 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **Node.js version**: 24
 - **Package manager**: pnpm
 - **TypeScript version**: 5.9
-- **API framework**: Express 5
+- **Frontend**: React + Vite (artifact: `payroll-app`, preview path: `/`)
+- **API framework**: Express 5 (artifact: `api-server`, path: `/api`)
 - **Database**: PostgreSQL + Drizzle ORM
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
@@ -24,4 +25,32 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
 - `pnpm --filter @workspace/api-server run dev` — run API server locally
 
-See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
+## Database Schema
+
+- `company` — 会社マスタ（締め日、支払日、月平均労働時間、社会保険料率等）
+- `employees` — 社員マスタ（基本給、各手当、扶養人数、住民税、歩合単価等）
+- `monthly_records` — 月次実績（出勤日数、残業時間、深夜時間、走行距離、配送件数等）
+- `payrolls` — 給与計算結果（各支給項目・控除項目・差引支給額）
+- `journal_entries` — 振替伝票（自動生成）
+
+## Payroll Calculation Engine
+
+`artifacts/api-server/src/lib/payroll-calculator.ts`
+
+- 時間外手当: (基本給 ÷ 月平均労働時間) × 1.25 × 残業時間
+- 深夜手当: (基本給 ÷ 月平均労働時間) × 0.25 × 深夜時間
+- 歩合給: 走行距離 × km単価 + 件数 × 件単価
+- 源泉所得税: 国税庁月額表甲欄ロジック（社会保険控除後、扶養人数考慮）
+- 端数処理: 50銭以下切り捨て、50銭超え切り上げ
+
+## Accounting CSV Output
+
+Supports: 弥生会計, freee, マネーフォワード, generic
+
+## Key Architecture Notes
+
+- OpenAPI spec: `lib/api-spec/openapi.yaml`
+- Generated API hooks: `lib/api-client-react/src/generated/`
+- DB schema: `lib/db/src/schema/`
+- API routes: `artifacts/api-server/src/routes/`
+- Frontend pages: `artifacts/payroll-app/src/pages/`

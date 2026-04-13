@@ -1,22 +1,33 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: 給与明細・バックオフィス効率化システム API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: employees
+    description: 社員マスタ
+  - name: company
+    description: 会社マスタ
+  - name: monthly-records
+    description: 月次実績
+  - name: payroll
+    description: 給与計算・明細
+  - name: journal-entries
+    description: 振替伝票
+  - name: dashboard
+    description: ダッシュボード
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,7 +35,470 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # ── 会社マスタ ──────────────────────────────────────────────────────────────
+  /company:
+    get:
+      operationId: getCompany
+      tags: [company]
+      summary: 会社情報取得
+      responses:
+        "200":
+          description: 会社情報
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Company"
+        "404":
+          description: Not found
+    put:
+      operationId: updateCompany
+      tags: [company]
+      summary: 会社情報更新
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCompanyBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Company"
+
+  # ── 社員マスタ ──────────────────────────────────────────────────────────────
+  /employees:
+    get:
+      operationId: listEmployees
+      tags: [employees]
+      summary: 社員一覧
+      parameters:
+        - name: active
+          in: query
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: 社員一覧
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Employee"
+    post:
+      operationId: createEmployee
+      tags: [employees]
+      summary: 社員登録
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEmployeeBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Employee"
+
+  /employees/{id}:
+    get:
+      operationId: getEmployee
+      tags: [employees]
+      summary: 社員詳細
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: 社員詳細
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Employee"
+        "404":
+          description: Not found
+    put:
+      operationId: updateEmployee
+      tags: [employees]
+      summary: 社員更新
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateEmployeeBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Employee"
+    delete:
+      operationId: deleteEmployee
+      tags: [employees]
+      summary: 社員削除（論理削除）
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Deleted
+
+  # ── 月次実績 ──────────────────────────────────────────────────────────────
+  /monthly-records:
+    get:
+      operationId: listMonthlyRecords
+      tags: [monthly-records]
+      summary: 月次実績一覧
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: 月次実績一覧
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MonthlyRecord"
+    post:
+      operationId: createMonthlyRecord
+      tags: [monthly-records]
+      summary: 月次実績登録
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMonthlyRecordBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MonthlyRecord"
+
+  /monthly-records/{id}:
+    get:
+      operationId: getMonthlyRecord
+      tags: [monthly-records]
+      summary: 月次実績詳細
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: 月次実績詳細
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MonthlyRecord"
+    put:
+      operationId: updateMonthlyRecord
+      tags: [monthly-records]
+      summary: 月次実績更新
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMonthlyRecordBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MonthlyRecord"
+
+  # ── 給与計算・明細 ──────────────────────────────────────────────────────────
+  /payroll:
+    get:
+      operationId: listPayrolls
+      tags: [payroll]
+      summary: 給与一覧
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, confirmed]
+      responses:
+        "200":
+          description: 給与一覧
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Payroll"
+
+  /payroll/calculate:
+    post:
+      operationId: calculatePayroll
+      tags: [payroll]
+      summary: 給与計算実行
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CalculatePayrollBody"
+      responses:
+        "200":
+          description: 計算結果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payroll"
+
+  /payroll/{id}:
+    get:
+      operationId: getPayroll
+      tags: [payroll]
+      summary: 給与明細詳細
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: 給与明細
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payroll"
+    put:
+      operationId: updatePayroll
+      tags: [payroll]
+      summary: 給与明細更新
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePayrollBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payroll"
+
+  /payroll/{id}/confirm:
+    post:
+      operationId: confirmPayroll
+      tags: [payroll]
+      summary: 給与確定
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Confirmed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payroll"
+
+  /payroll/{id}/csv:
+    get:
+      operationId: exportPayrollCsv
+      tags: [payroll]
+      summary: 給与明細CSV出力
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: CSV data
+          content:
+            text/csv:
+              schema:
+                type: string
+
+  # ── 振替伝票 ──────────────────────────────────────────────────────────────
+  /journal-entries:
+    get:
+      operationId: listJournalEntries
+      tags: [journal-entries]
+      summary: 振替伝票一覧
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: 振替伝票一覧
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/JournalEntry"
+
+  /journal-entries/generate:
+    post:
+      operationId: generateJournalEntries
+      tags: [journal-entries]
+      summary: 振替伝票自動生成
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateJournalEntriesBody"
+      responses:
+        "200":
+          description: 生成された振替伝票
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/JournalEntry"
+
+  /journal-entries/export-csv:
+    get:
+      operationId: exportJournalEntriesCsv
+      tags: [journal-entries]
+      summary: 振替伝票CSV出力（会計ソフト連携）
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [yayoi, freee, moneyforward, generic]
+            default: generic
+      responses:
+        "200":
+          description: CSV data
+          content:
+            text/csv:
+              schema:
+                type: string
+
+  # ── ダッシュボード ──────────────────────────────────────────────────────────
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: ダッシュボードサマリー
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: ダッシュボードサマリー
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /dashboard/monthly-trend:
+    get:
+      operationId: getMonthlyTrend
+      tags: [dashboard]
+      summary: 月別給与支払い推移（過去12ヶ月）
+      responses:
+        "200":
+          description: 月別推移データ
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MonthlyTrendItem"
+
+  /dashboard/pending-employees:
+    get:
+      operationId: getPendingEmployees
+      tags: [dashboard]
+      summary: 未確定社員一覧
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: 未確定社員
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PendingEmployee"
+
+# ── コンポーネント ────────────────────────────────────────────────────────────
 components:
+  parameters:
+    IdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+
   schemas:
     HealthStatus:
       type: object
@@ -34,3 +508,606 @@ components:
       required:
         - status
 
+    Company:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        closingDay:
+          type: integer
+          description: 締め日（例：31は月末）
+        paymentDay:
+          type: integer
+          description: 支払日
+        monthlyAverageWorkHours:
+          type: number
+          description: 月平均労働時間（時間外計算の基準）
+        socialInsuranceRate:
+          type: number
+          description: 社会保険料率（健康保険＋厚生年金）従業員負担分合計
+        employmentInsuranceRate:
+          type: number
+          description: 雇用保険料率 従業員負担分
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - closingDay
+        - paymentDay
+        - monthlyAverageWorkHours
+        - socialInsuranceRate
+        - employmentInsuranceRate
+        - createdAt
+        - updatedAt
+
+    UpdateCompanyBody:
+      type: object
+      properties:
+        name:
+          type: string
+        closingDay:
+          type: integer
+        paymentDay:
+          type: integer
+        monthlyAverageWorkHours:
+          type: number
+        socialInsuranceRate:
+          type: number
+        employmentInsuranceRate:
+          type: number
+
+    Employee:
+      type: object
+      properties:
+        id:
+          type: integer
+        employeeCode:
+          type: string
+          description: 社員番号
+        name:
+          type: string
+        nameKana:
+          type: string
+        department:
+          type: string
+          description: 部署
+        position:
+          type: string
+          description: 役職
+        baseSalary:
+          type: number
+          description: 基本給（円）
+        transportationAllowance:
+          type: number
+          description: 通勤手当
+        safetyDrivingAllowance:
+          type: number
+          description: 無事故手当
+        longDistanceAllowance:
+          type: number
+          description: 長距離手当
+        positionAllowance:
+          type: number
+          description: 役職手当
+        commissionRatePerKm:
+          type: number
+          description: 歩合単価（円/km）
+        commissionRatePerCase:
+          type: number
+          description: 歩合単価（円/件）
+        dependentCount:
+          type: integer
+          description: 扶養親族数
+        residentTax:
+          type: number
+          description: 住民税（月額）
+        hireDate:
+          type: string
+          format: date
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - employeeCode
+        - name
+        - nameKana
+        - department
+        - baseSalary
+        - transportationAllowance
+        - safetyDrivingAllowance
+        - longDistanceAllowance
+        - positionAllowance
+        - commissionRatePerKm
+        - commissionRatePerCase
+        - dependentCount
+        - residentTax
+        - hireDate
+        - isActive
+        - createdAt
+        - updatedAt
+
+    CreateEmployeeBody:
+      type: object
+      properties:
+        employeeCode:
+          type: string
+        name:
+          type: string
+        nameKana:
+          type: string
+        department:
+          type: string
+        position:
+          type: string
+        baseSalary:
+          type: number
+        transportationAllowance:
+          type: number
+        safetyDrivingAllowance:
+          type: number
+        longDistanceAllowance:
+          type: number
+        positionAllowance:
+          type: number
+        commissionRatePerKm:
+          type: number
+        commissionRatePerCase:
+          type: number
+        dependentCount:
+          type: integer
+        residentTax:
+          type: number
+        hireDate:
+          type: string
+          format: date
+      required:
+        - employeeCode
+        - name
+        - nameKana
+        - department
+        - baseSalary
+        - dependentCount
+        - hireDate
+
+    UpdateEmployeeBody:
+      type: object
+      properties:
+        employeeCode:
+          type: string
+        name:
+          type: string
+        nameKana:
+          type: string
+        department:
+          type: string
+        position:
+          type: string
+        baseSalary:
+          type: number
+        transportationAllowance:
+          type: number
+        safetyDrivingAllowance:
+          type: number
+        longDistanceAllowance:
+          type: number
+        positionAllowance:
+          type: number
+        commissionRatePerKm:
+          type: number
+        commissionRatePerCase:
+          type: number
+        dependentCount:
+          type: integer
+        residentTax:
+          type: number
+        hireDate:
+          type: string
+          format: date
+        isActive:
+          type: boolean
+
+    MonthlyRecord:
+      type: object
+      properties:
+        id:
+          type: integer
+        employeeId:
+          type: integer
+        employeeName:
+          type: string
+        year:
+          type: integer
+        month:
+          type: integer
+        workDays:
+          type: number
+          description: 出勤日数
+        overtimeHours:
+          type: number
+          description: 残業時間
+        lateNightHours:
+          type: number
+          description: 深夜時間
+        holidayWorkDays:
+          type: number
+          description: 休日出勤数
+        drivingDistanceKm:
+          type: number
+          description: 走行距離（km）
+        deliveryCases:
+          type: integer
+          description: 配送件数
+        absenceDays:
+          type: number
+          description: 欠勤日数
+        notes:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - employeeId
+        - year
+        - month
+        - workDays
+        - overtimeHours
+        - lateNightHours
+        - holidayWorkDays
+        - drivingDistanceKm
+        - deliveryCases
+        - absenceDays
+        - createdAt
+        - updatedAt
+
+    CreateMonthlyRecordBody:
+      type: object
+      properties:
+        employeeId:
+          type: integer
+        year:
+          type: integer
+        month:
+          type: integer
+        workDays:
+          type: number
+        overtimeHours:
+          type: number
+        lateNightHours:
+          type: number
+        holidayWorkDays:
+          type: number
+        drivingDistanceKm:
+          type: number
+        deliveryCases:
+          type: integer
+        absenceDays:
+          type: number
+        notes:
+          type: string
+      required:
+        - employeeId
+        - year
+        - month
+        - workDays
+        - overtimeHours
+        - lateNightHours
+        - holidayWorkDays
+        - drivingDistanceKm
+        - deliveryCases
+        - absenceDays
+
+    UpdateMonthlyRecordBody:
+      type: object
+      properties:
+        workDays:
+          type: number
+        overtimeHours:
+          type: number
+        lateNightHours:
+          type: number
+        holidayWorkDays:
+          type: number
+        drivingDistanceKm:
+          type: number
+        deliveryCases:
+          type: integer
+        absenceDays:
+          type: number
+        notes:
+          type: string
+
+    Payroll:
+      type: object
+      properties:
+        id:
+          type: integer
+        employeeId:
+          type: integer
+        employeeName:
+          type: string
+        employeeCode:
+          type: string
+        year:
+          type: integer
+        month:
+          type: integer
+        status:
+          type: string
+          enum: [draft, confirmed]
+        baseSalary:
+          type: number
+          description: 基本給
+        overtimePay:
+          type: number
+          description: 時間外手当
+        lateNightPay:
+          type: number
+          description: 深夜手当
+        holidayPay:
+          type: number
+          description: 休日手当
+        commissionPay:
+          type: number
+          description: 歩合給
+        transportationAllowance:
+          type: number
+          description: 通勤手当
+        safetyDrivingAllowance:
+          type: number
+          description: 無事故手当
+        longDistanceAllowance:
+          type: number
+          description: 長距離手当
+        positionAllowance:
+          type: number
+          description: 役職手当
+        absenceDeduction:
+          type: number
+          description: 欠勤控除
+        grossSalary:
+          type: number
+          description: 支給合計
+        socialInsurance:
+          type: number
+          description: 社会保険料
+        employmentInsurance:
+          type: number
+          description: 雇用保険料
+        incomeTax:
+          type: number
+          description: 源泉所得税
+        residentTax:
+          type: number
+          description: 住民税
+        totalDeductions:
+          type: number
+          description: 控除合計
+        netSalary:
+          type: number
+          description: 差引支給額
+        overtimeHours:
+          type: number
+        lateNightHours:
+          type: number
+        holidayWorkDays:
+          type: number
+        workDays:
+          type: number
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - employeeId
+        - year
+        - month
+        - status
+        - baseSalary
+        - overtimePay
+        - lateNightPay
+        - holidayPay
+        - commissionPay
+        - transportationAllowance
+        - safetyDrivingAllowance
+        - longDistanceAllowance
+        - positionAllowance
+        - absenceDeduction
+        - grossSalary
+        - socialInsurance
+        - employmentInsurance
+        - incomeTax
+        - residentTax
+        - totalDeductions
+        - netSalary
+        - overtimeHours
+        - lateNightHours
+        - holidayWorkDays
+        - workDays
+        - createdAt
+        - updatedAt
+
+    UpdatePayrollBody:
+      type: object
+      properties:
+        safetyDrivingAllowance:
+          type: number
+        longDistanceAllowance:
+          type: number
+        positionAllowance:
+          type: number
+        notes:
+          type: string
+
+    CalculatePayrollBody:
+      type: object
+      properties:
+        employeeId:
+          type: integer
+        year:
+          type: integer
+        month:
+          type: integer
+      required:
+        - employeeId
+        - year
+        - month
+
+    JournalEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        year:
+          type: integer
+        month:
+          type: integer
+        entryDate:
+          type: string
+          format: date
+        debitAccount:
+          type: string
+          description: 借方科目
+        creditAccount:
+          type: string
+          description: 貸方科目
+        amount:
+          type: number
+        description:
+          type: string
+          description: 摘要
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - year
+        - month
+        - entryDate
+        - debitAccount
+        - creditAccount
+        - amount
+        - description
+        - createdAt
+
+    GenerateJournalEntriesBody:
+      type: object
+      properties:
+        year:
+          type: integer
+        month:
+          type: integer
+      required:
+        - year
+        - month
+
+    DashboardSummary:
+      type: object
+      properties:
+        year:
+          type: integer
+        month:
+          type: integer
+        totalEmployees:
+          type: integer
+        confirmedCount:
+          type: integer
+        pendingCount:
+          type: integer
+        totalGrossSalary:
+          type: number
+          description: 支給総額
+        totalNetSalary:
+          type: number
+          description: 差引支給総額
+        totalIncomeTax:
+          type: number
+          description: 源泉所得税合計
+        totalSocialInsurance:
+          type: number
+          description: 社会保険料合計
+        totalResidentTax:
+          type: number
+          description: 住民税合計
+        averageNetSalary:
+          type: number
+      required:
+        - year
+        - month
+        - totalEmployees
+        - confirmedCount
+        - pendingCount
+        - totalGrossSalary
+        - totalNetSalary
+        - totalIncomeTax
+        - totalSocialInsurance
+        - totalResidentTax
+        - averageNetSalary
+
+    MonthlyTrendItem:
+      type: object
+      properties:
+        year:
+          type: integer
+        month:
+          type: integer
+        label:
+          type: string
+        totalGrossSalary:
+          type: number
+        totalNetSalary:
+          type: number
+        employeeCount:
+          type: integer
+      required:
+        - year
+        - month
+        - label
+        - totalGrossSalary
+        - totalNetSalary
+        - employeeCount
+
+    PendingEmployee:
+      type: object
+      properties:
+        id:
+          type: integer
+        employeeCode:
+          type: string
+        name:
+          type: string
+        department:
+          type: string
+        hasMonthlyRecord:
+          type: boolean
+        hasPayroll:
+          type: boolean
+        payrollStatus:
+          type: string
+          nullable: true
+      required:
+        - id
+        - employeeCode
+        - name
+        - department
+        - hasMonthlyRecord
+        - hasPayroll

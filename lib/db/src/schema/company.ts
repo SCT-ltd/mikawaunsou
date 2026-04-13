@@ -1,0 +1,19 @@
+import { pgTable, serial, text, integer, doublePrecision, timestamp } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
+import { z } from "zod/v4";
+
+export const companyTable = pgTable("company", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  closingDay: integer("closing_day").notNull().default(31),
+  paymentDay: integer("payment_day").notNull().default(25),
+  monthlyAverageWorkHours: doublePrecision("monthly_average_work_hours").notNull().default(160),
+  socialInsuranceRate: doublePrecision("social_insurance_rate").notNull().default(0.1495),
+  employmentInsuranceRate: doublePrecision("employment_insurance_rate").notNull().default(0.006),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertCompanySchema = createInsertSchema(companyTable).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCompany = z.infer<typeof insertCompanySchema>;
+export type Company = typeof companyTable.$inferSelect;
