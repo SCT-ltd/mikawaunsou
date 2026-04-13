@@ -136,10 +136,10 @@ export default function EmployeeEdit() {
         department: employee.department,
         position: employee.position || "",
         baseSalary: employee.baseSalary,
-        transportationAllowance: employee.transportationAllowance,
-        safetyDrivingAllowance: employee.safetyDrivingAllowance,
-        longDistanceAllowance: employee.longDistanceAllowance,
-        positionAllowance: employee.positionAllowance,
+        transportationAllowance: 0,
+        safetyDrivingAllowance: 0,
+        longDistanceAllowance: 0,
+        positionAllowance: 0,
         commissionRatePerKm: employee.commissionRatePerKm,
         commissionRatePerCase: employee.commissionRatePerCase,
         dependentCount: employee.dependentCount,
@@ -360,70 +360,6 @@ export default function EmployeeEdit() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>基本給 <span className="text-destructive">*</span></FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <span className="absolute left-3 top-2.5 text-muted-foreground">¥</span>
-                          <Input type="number" className="pl-7" {...field} />
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="transportationAllowance"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>通勤手当</FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <span className="absolute left-3 top-2.5 text-muted-foreground">¥</span>
-                          <Input type="number" className="pl-7" {...field} />
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="safetyDrivingAllowance"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>無事故手当</FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <span className="absolute left-3 top-2.5 text-muted-foreground">¥</span>
-                          <Input type="number" className="pl-7" {...field} />
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="longDistanceAllowance"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>長距離手当</FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <span className="absolute left-3 top-2.5 text-muted-foreground">¥</span>
-                          <Input type="number" className="pl-7" {...field} />
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="positionAllowance"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>役職手当</FormLabel>
                       <FormControl>
                         <div className="relative">
                           <span className="absolute left-3 top-2.5 text-muted-foreground">¥</span>
