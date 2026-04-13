@@ -415,6 +415,80 @@ export interface UpdateEmployeeAllowancesBody {
   allowances: UpdateEmployeeAllowancesBodyAllowancesItem[];
 }
 
+/**
+ * 計算タイプ（fixed:固定額 / variable:変動入力型）
+ */
+export type DeductionDefinitionCalculationType =
+  (typeof DeductionDefinitionCalculationType)[keyof typeof DeductionDefinitionCalculationType];
+
+export const DeductionDefinitionCalculationType = {
+  fixed: "fixed",
+  variable: "variable",
+} as const;
+
+export interface DeductionDefinition {
+  id: number;
+  /** 差引名称（例：積立金、組合費） */
+  name: string;
+  /** 説明 */
+  description?: string | null;
+  /** 計算タイプ（fixed:固定額 / variable:変動入力型） */
+  calculationType: DeductionDefinitionCalculationType;
+  /** 表示順 */
+  sortOrder: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CreateDeductionDefinitionBodyCalculationType =
+  (typeof CreateDeductionDefinitionBodyCalculationType)[keyof typeof CreateDeductionDefinitionBodyCalculationType];
+
+export const CreateDeductionDefinitionBodyCalculationType = {
+  fixed: "fixed",
+  variable: "variable",
+} as const;
+
+export interface CreateDeductionDefinitionBody {
+  name: string;
+  description?: string;
+  calculationType?: CreateDeductionDefinitionBodyCalculationType;
+}
+
+export type UpdateDeductionDefinitionBodyCalculationType =
+  (typeof UpdateDeductionDefinitionBodyCalculationType)[keyof typeof UpdateDeductionDefinitionBodyCalculationType];
+
+export const UpdateDeductionDefinitionBodyCalculationType = {
+  fixed: "fixed",
+  variable: "variable",
+} as const;
+
+export interface UpdateDeductionDefinitionBody {
+  name?: string;
+  description?: string;
+  calculationType?: UpdateDeductionDefinitionBodyCalculationType;
+  sortOrder?: number;
+  isActive?: boolean;
+}
+
+export interface EmployeeDeduction {
+  id: number;
+  employeeId: number;
+  deductionDefinitionId: number;
+  deductionName: string;
+  amount: number;
+  sortOrder: number;
+}
+
+export type UpdateEmployeeDeductionsBodyDeductionsItem = {
+  deductionDefinitionId: number;
+  amount: number;
+};
+
+export interface UpdateEmployeeDeductionsBody {
+  deductions: UpdateEmployeeDeductionsBodyDeductionsItem[];
+}
+
 export type ListEmployeesParams = {
   active?: boolean;
 };
@@ -470,5 +544,9 @@ export type GetPendingEmployeesParams = {
 };
 
 export type ListAllowanceDefinitionsParams = {
+  activeOnly?: boolean;
+};
+
+export type ListDeductionDefinitionsParams = {
   activeOnly?: boolean;
 };

@@ -21,11 +21,14 @@ import type {
   CalculatePayrollBody,
   Company,
   CreateAllowanceDefinitionBody,
+  CreateDeductionDefinitionBody,
   CreateEmployeeBody,
   CreateMonthlyRecordBody,
   DashboardSummary,
+  DeductionDefinition,
   Employee,
   EmployeeAllowance,
+  EmployeeDeduction,
   ExportJournalEntriesCsvParams,
   GenerateJournalEntriesBody,
   GetDashboardSummaryParams,
@@ -33,6 +36,7 @@ import type {
   HealthStatus,
   JournalEntry,
   ListAllowanceDefinitionsParams,
+  ListDeductionDefinitionsParams,
   ListEmployeesParams,
   ListJournalEntriesParams,
   ListMonthlyRecordsParams,
@@ -43,8 +47,10 @@ import type {
   PendingEmployee,
   UpdateAllowanceDefinitionBody,
   UpdateCompanyBody,
+  UpdateDeductionDefinitionBody,
   UpdateEmployeeAllowancesBody,
   UpdateEmployeeBody,
+  UpdateEmployeeDeductionsBody,
   UpdateMonthlyRecordBody,
   UpdatePayrollBody,
 } from "./api.schemas";
@@ -2713,4 +2719,542 @@ export const useUpdateEmployeeAllowances = <
   TContext
 > => {
   return useMutation(getUpdateEmployeeAllowancesMutationOptions(options));
+};
+
+/**
+ * @summary 差引定義一覧
+ */
+export const getListDeductionDefinitionsUrl = (
+  params?: ListDeductionDefinitionsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/deduction-definitions?${stringifiedParams}`
+    : `/api/deduction-definitions`;
+};
+
+export const listDeductionDefinitions = async (
+  params?: ListDeductionDefinitionsParams,
+  options?: RequestInit,
+): Promise<DeductionDefinition[]> => {
+  return customFetch<DeductionDefinition[]>(
+    getListDeductionDefinitionsUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListDeductionDefinitionsQueryKey = (
+  params?: ListDeductionDefinitionsParams,
+) => {
+  return [`/api/deduction-definitions`, ...(params ? [params] : [])] as const;
+};
+
+export const getListDeductionDefinitionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listDeductionDefinitions>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListDeductionDefinitionsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listDeductionDefinitions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListDeductionDefinitionsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listDeductionDefinitions>>
+  > = ({ signal }) =>
+    listDeductionDefinitions(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listDeductionDefinitions>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListDeductionDefinitionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listDeductionDefinitions>>
+>;
+export type ListDeductionDefinitionsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary 差引定義一覧
+ */
+
+export function useListDeductionDefinitions<
+  TData = Awaited<ReturnType<typeof listDeductionDefinitions>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListDeductionDefinitionsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listDeductionDefinitions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListDeductionDefinitionsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary 差引定義追加
+ */
+export const getCreateDeductionDefinitionUrl = () => {
+  return `/api/deduction-definitions`;
+};
+
+export const createDeductionDefinition = async (
+  createDeductionDefinitionBody: CreateDeductionDefinitionBody,
+  options?: RequestInit,
+): Promise<DeductionDefinition> => {
+  return customFetch<DeductionDefinition>(getCreateDeductionDefinitionUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createDeductionDefinitionBody),
+  });
+};
+
+export const getCreateDeductionDefinitionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createDeductionDefinition>>,
+    TError,
+    { data: BodyType<CreateDeductionDefinitionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createDeductionDefinition>>,
+  TError,
+  { data: BodyType<CreateDeductionDefinitionBody> },
+  TContext
+> => {
+  const mutationKey = ["createDeductionDefinition"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createDeductionDefinition>>,
+    { data: BodyType<CreateDeductionDefinitionBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createDeductionDefinition(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateDeductionDefinitionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createDeductionDefinition>>
+>;
+export type CreateDeductionDefinitionMutationBody =
+  BodyType<CreateDeductionDefinitionBody>;
+export type CreateDeductionDefinitionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary 差引定義追加
+ */
+export const useCreateDeductionDefinition = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createDeductionDefinition>>,
+    TError,
+    { data: BodyType<CreateDeductionDefinitionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createDeductionDefinition>>,
+  TError,
+  { data: BodyType<CreateDeductionDefinitionBody> },
+  TContext
+> => {
+  return useMutation(getCreateDeductionDefinitionMutationOptions(options));
+};
+
+/**
+ * @summary 差引定義更新
+ */
+export const getUpdateDeductionDefinitionUrl = (id: number) => {
+  return `/api/deduction-definitions/${id}`;
+};
+
+export const updateDeductionDefinition = async (
+  id: number,
+  updateDeductionDefinitionBody: UpdateDeductionDefinitionBody,
+  options?: RequestInit,
+): Promise<DeductionDefinition> => {
+  return customFetch<DeductionDefinition>(getUpdateDeductionDefinitionUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateDeductionDefinitionBody),
+  });
+};
+
+export const getUpdateDeductionDefinitionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateDeductionDefinition>>,
+    TError,
+    { id: number; data: BodyType<UpdateDeductionDefinitionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateDeductionDefinition>>,
+  TError,
+  { id: number; data: BodyType<UpdateDeductionDefinitionBody> },
+  TContext
+> => {
+  const mutationKey = ["updateDeductionDefinition"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateDeductionDefinition>>,
+    { id: number; data: BodyType<UpdateDeductionDefinitionBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateDeductionDefinition(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateDeductionDefinitionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateDeductionDefinition>>
+>;
+export type UpdateDeductionDefinitionMutationBody =
+  BodyType<UpdateDeductionDefinitionBody>;
+export type UpdateDeductionDefinitionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary 差引定義更新
+ */
+export const useUpdateDeductionDefinition = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateDeductionDefinition>>,
+    TError,
+    { id: number; data: BodyType<UpdateDeductionDefinitionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateDeductionDefinition>>,
+  TError,
+  { id: number; data: BodyType<UpdateDeductionDefinitionBody> },
+  TContext
+> => {
+  return useMutation(getUpdateDeductionDefinitionMutationOptions(options));
+};
+
+/**
+ * @summary 差引定義削除（論理削除）
+ */
+export const getDeleteDeductionDefinitionUrl = (id: number) => {
+  return `/api/deduction-definitions/${id}`;
+};
+
+export const deleteDeductionDefinition = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteDeductionDefinitionUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteDeductionDefinitionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteDeductionDefinition>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteDeductionDefinition>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteDeductionDefinition"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteDeductionDefinition>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteDeductionDefinition(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteDeductionDefinitionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteDeductionDefinition>>
+>;
+
+export type DeleteDeductionDefinitionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary 差引定義削除（論理削除）
+ */
+export const useDeleteDeductionDefinition = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteDeductionDefinition>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteDeductionDefinition>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteDeductionDefinitionMutationOptions(options));
+};
+
+/**
+ * @summary 社員の差引金額一覧
+ */
+export const getGetEmployeeDeductionsUrl = (id: number) => {
+  return `/api/employees/${id}/deductions`;
+};
+
+export const getEmployeeDeductions = async (
+  id: number,
+  options?: RequestInit,
+): Promise<EmployeeDeduction[]> => {
+  return customFetch<EmployeeDeduction[]>(getGetEmployeeDeductionsUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetEmployeeDeductionsQueryKey = (id: number) => {
+  return [`/api/employees/${id}/deductions`] as const;
+};
+
+export const getGetEmployeeDeductionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEmployeeDeductions>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEmployeeDeductions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetEmployeeDeductionsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getEmployeeDeductions>>
+  > = ({ signal }) => getEmployeeDeductions(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEmployeeDeductions>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEmployeeDeductionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEmployeeDeductions>>
+>;
+export type GetEmployeeDeductionsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary 社員の差引金額一覧
+ */
+
+export function useGetEmployeeDeductions<
+  TData = Awaited<ReturnType<typeof getEmployeeDeductions>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEmployeeDeductions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEmployeeDeductionsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary 社員の差引金額一括更新
+ */
+export const getUpdateEmployeeDeductionsUrl = (id: number) => {
+  return `/api/employees/${id}/deductions`;
+};
+
+export const updateEmployeeDeductions = async (
+  id: number,
+  updateEmployeeDeductionsBody: UpdateEmployeeDeductionsBody,
+  options?: RequestInit,
+): Promise<EmployeeDeduction[]> => {
+  return customFetch<EmployeeDeduction[]>(getUpdateEmployeeDeductionsUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateEmployeeDeductionsBody),
+  });
+};
+
+export const getUpdateEmployeeDeductionsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEmployeeDeductions>>,
+    TError,
+    { id: number; data: BodyType<UpdateEmployeeDeductionsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateEmployeeDeductions>>,
+  TError,
+  { id: number; data: BodyType<UpdateEmployeeDeductionsBody> },
+  TContext
+> => {
+  const mutationKey = ["updateEmployeeDeductions"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateEmployeeDeductions>>,
+    { id: number; data: BodyType<UpdateEmployeeDeductionsBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateEmployeeDeductions(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateEmployeeDeductionsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateEmployeeDeductions>>
+>;
+export type UpdateEmployeeDeductionsMutationBody =
+  BodyType<UpdateEmployeeDeductionsBody>;
+export type UpdateEmployeeDeductionsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary 社員の差引金額一括更新
+ */
+export const useUpdateEmployeeDeductions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEmployeeDeductions>>,
+    TError,
+    { id: number; data: BodyType<UpdateEmployeeDeductionsBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateEmployeeDeductions>>,
+  TError,
+  { id: number; data: BodyType<UpdateEmployeeDeductionsBody> },
+  TContext
+> => {
+  return useMutation(getUpdateEmployeeDeductionsMutationOptions(options));
 };

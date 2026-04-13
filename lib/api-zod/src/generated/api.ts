@@ -833,3 +833,117 @@ export const UpdateEmployeeAllowancesResponseItem = zod.object({
 export const UpdateEmployeeAllowancesResponse = zod.array(
   UpdateEmployeeAllowancesResponseItem,
 );
+
+/**
+ * @summary 差引定義一覧
+ */
+export const ListDeductionDefinitionsQueryParams = zod.object({
+  activeOnly: zod.coerce.boolean().optional(),
+});
+
+export const ListDeductionDefinitionsResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string().describe("差引名称（例：積立金、組合費）"),
+  description: zod.string().nullish().describe("説明"),
+  calculationType: zod
+    .enum(["fixed", "variable"])
+    .describe("計算タイプ（fixed:固定額 \/ variable:変動入力型）"),
+  sortOrder: zod.number().describe("表示順"),
+  isActive: zod.boolean(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListDeductionDefinitionsResponse = zod.array(
+  ListDeductionDefinitionsResponseItem,
+);
+
+/**
+ * @summary 差引定義追加
+ */
+export const CreateDeductionDefinitionBody = zod.object({
+  name: zod.string(),
+  description: zod.string().optional(),
+  calculationType: zod.enum(["fixed", "variable"]).optional(),
+});
+
+/**
+ * @summary 差引定義更新
+ */
+export const UpdateDeductionDefinitionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateDeductionDefinitionBody = zod.object({
+  name: zod.string().optional(),
+  description: zod.string().optional(),
+  calculationType: zod.enum(["fixed", "variable"]).optional(),
+  sortOrder: zod.number().optional(),
+  isActive: zod.boolean().optional(),
+});
+
+export const UpdateDeductionDefinitionResponse = zod.object({
+  id: zod.number(),
+  name: zod.string().describe("差引名称（例：積立金、組合費）"),
+  description: zod.string().nullish().describe("説明"),
+  calculationType: zod
+    .enum(["fixed", "variable"])
+    .describe("計算タイプ（fixed:固定額 \/ variable:変動入力型）"),
+  sortOrder: zod.number().describe("表示順"),
+  isActive: zod.boolean(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary 差引定義削除（論理削除）
+ */
+export const DeleteDeductionDefinitionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary 社員の差引金額一覧
+ */
+export const GetEmployeeDeductionsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetEmployeeDeductionsResponseItem = zod.object({
+  id: zod.number(),
+  employeeId: zod.number(),
+  deductionDefinitionId: zod.number(),
+  deductionName: zod.string(),
+  amount: zod.number(),
+  sortOrder: zod.number(),
+});
+export const GetEmployeeDeductionsResponse = zod.array(
+  GetEmployeeDeductionsResponseItem,
+);
+
+/**
+ * @summary 社員の差引金額一括更新
+ */
+export const UpdateEmployeeDeductionsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateEmployeeDeductionsBody = zod.object({
+  deductions: zod.array(
+    zod.object({
+      deductionDefinitionId: zod.number(),
+      amount: zod.number(),
+    }),
+  ),
+});
+
+export const UpdateEmployeeDeductionsResponseItem = zod.object({
+  id: zod.number(),
+  employeeId: zod.number(),
+  deductionDefinitionId: zod.number(),
+  deductionName: zod.string(),
+  amount: zod.number(),
+  sortOrder: zod.number(),
+});
+export const UpdateEmployeeDeductionsResponse = zod.array(
+  UpdateEmployeeDeductionsResponseItem,
+);

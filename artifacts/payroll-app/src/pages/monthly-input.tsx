@@ -10,6 +10,10 @@ import {
   getGetEmployeeAllowancesQueryKey,
   useUpdateEmployeeAllowances,
   useListAllowanceDefinitions,
+  useGetEmployeeDeductions,
+  getGetEmployeeDeductionsQueryKey,
+  useUpdateEmployeeDeductions,
+  useListDeductionDefinitions,
   useUpdateEmployee,
   useGetCompany,
   getListEmployeesQueryKey,
@@ -84,8 +88,16 @@ function AllowanceSidebar({
   const { data: employeeAllowances } = useGetEmployeeAllowances(employeeId, {
     query: { enabled: !!employeeId, queryKey: getGetEmployeeAllowancesQueryKey(employeeId), staleTime: 0, refetchOnMount: true }
   });
+  const { data: deductionDefinitions } = useListDeductionDefinitions(
+    { activeOnly: true },
+    { query: { staleTime: 0, refetchOnMount: true } }
+  );
+  const { data: employeeDeductions } = useGetEmployeeDeductions(employeeId, {
+    query: { enabled: !!employeeId, queryKey: getGetEmployeeDeductionsQueryKey(employeeId), staleTime: 0, refetchOnMount: true }
+  });
   const { data: company } = useGetCompany();
   const updateAllowances = useUpdateEmployeeAllowances();
+  const updateDeductions = useUpdateEmployeeDeductions();
   const updateEmployee = useUpdateEmployee();
 
   type AllowanceRow = { defId: number | null; amount: number };
@@ -93,6 +105,10 @@ function AllowanceSidebar({
   const [baseSalaryInput, setBaseSalaryInput] = useState<number>(0);
   const baseSalaryRef = useRef<HTMLInputElement>(null);
   const rowAmountRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  type DeductionRow = { defId: number | null; amount: number };
+  const [deductionRows, setDeductionRows] = useState<DeductionRow[]>([{ defId: null, amount: 0 }]);
+  const deductionRowAmountRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const focusRowAmount = (idx: number) => {
     setTimeout(() => rowAmountRefs.current[idx]?.focus(), 30);
@@ -107,21 +123,37 @@ function AllowanceSidebar({
   }, [employeeAllowances, employeeId]);
 
   useEffect(() => {
+    if (deductionDefinitions) {
+      setDeductionRows(deductionDefinitions.map(def => {
+        const existing = employeeDeductions?.find(d => d.deductionDefinitionId === def.id);
+        return { defId: def.id, amount: existing?.amount ?? 0 };
+      }));
+    } else {
+      setDeductionRows([]);
+    }
+  }, [deductionDefinitions, employeeDeductions, employeeId]);
+
+  useEffect(() => {
     setBaseSalaryInput(employee?.baseSalary ?? 0);
   }, [employee?.baseSalary, employeeId]);
 
   const handleSave = async () => {
     try {
-      const payload = rows
+      const allowancePayload = rows
         .filter(r => r.defId !== null && r.amount > 0)
         .map(r => ({ allowanceDefinitionId: r.defId!, amount: r.amount }));
+      const deductionPayload = deductionRows
+        .filter(r => r.defId !== null)
+        .map(r => ({ deductionDefinitionId: r.defId!, amount: r.amount || 0 }));
       await Promise.all([
-        updateAllowances.mutateAsync({ id: employeeId, data: { allowances: payload } }),
+        updateAllowances.mutateAsync({ id: employeeId, data: { allowances: allowancePayload } }),
+        updateDeductions.mutateAsync({ id: employeeId, data: { deductions: deductionPayload } }),
         updateEmployee.mutateAsync({ id: employeeId, data: { baseSalary: baseSalaryInput } }),
       ]);
       queryClient.invalidateQueries({ queryKey: getGetEmployeeAllowancesQueryKey(employeeId) });
+      queryClient.invalidateQueries({ queryKey: getGetEmployeeDeductionsQueryKey(employeeId) });
       queryClient.invalidateQueries({ queryKey: getListEmployeesQueryKey({ active: true }) });
-      toast({ title: "保存しました", description: `${employee?.name}の基本給・手当を更新しました。` });
+      toast({ title: "保存しました", description: `${employee?.name}の基本給・手当・差引を更新しました。` });
     } catch {
       toast({ title: "エラー", description: "保存に失敗しました。", variant: "destructive" });
     }
@@ -149,8 +181,11 @@ function AllowanceSidebar({
   const incomeTax = calculateIncomeTax(afterInsuranceSalary, employee?.dependentCount ?? 0);
   const residentTax = employee?.residentTax ?? 0;
 
+  // ── その他差引（積立等）──
+  const customDeductionsTotal = deductionRows.reduce((s, r) => s + (r.amount || 0), 0);
+
   // ── 差引合計・差引支給額 ──
-  const totalDeductions = roundJapanese(totalInsurance + incomeTax + residentTax);
+  const totalDeductions = roundJapanese(totalInsurance + incomeTax + residentTax + customDeductionsTotal);
   const netSalary = roundJapanese(grandTotal - totalDeductions);
 
   const fmt = (v: number) => v > 0 ? v.toLocaleString("ja-JP") : v === 0 ? "0" : "—";
@@ -341,7 +376,7 @@ function AllowanceSidebar({
 
               {/* ── 差引金額セクション ──────────────────── */}
               <tr className="bg-background">
-                {sectionLabel("差引金額", 4)}
+                {sectionLabel("差引金額", 2 + deductionRows.length + 2)}
                 <td className="border border-border px-2 py-1 text-muted-foreground">所得税</td>
                 <td className="border border-border" />
                 <td className="border border-border px-2 py-1.5 text-right tabular-nums">
@@ -355,6 +390,40 @@ function AllowanceSidebar({
                   {fmt(residentTax)}
                 </td>
               </tr>
+
+              {/* ── その他差引（積立等）──────────────────── */}
+              {deductionRows.map((row, idx) => {
+                const def = deductionDefinitions?.find(d => d.id === row.defId);
+                return (
+                  <tr key={idx} className={idx % 2 === 0 ? "bg-background" : "bg-muted/10"}>
+                    <td className="border border-border px-2 py-0.5 text-muted-foreground text-xs">
+                      {def?.name ?? "—"}
+                    </td>
+                    <td className="border border-border" />
+                    <td className="border border-border px-1 py-0.5">
+                      <Input
+                        ref={(el) => { deductionRowAmountRefs.current[idx] = el; }}
+                        type="number"
+                        min="0"
+                        className="h-6 w-full text-right border-0 shadow-none bg-transparent focus-visible:ring-1 focus-visible:ring-primary px-1 text-xs"
+                        value={row.amount || ""}
+                        onChange={(e) => {
+                          const v = e.target.value === "" ? 0 : parseInt(e.target.value, 10);
+                          setDeductionRows(prev => prev.map((r, i) => i === idx ? { ...r, amount: isNaN(v) ? 0 : v } : r));
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            setTimeout(() => deductionRowAmountRefs.current[idx + 1]?.focus(), 30);
+                          }
+                        }}
+                        placeholder="0"
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
+
               <tr className="bg-muted/40 font-semibold">
                 <td className="border border-border px-2 py-1.5 text-center text-muted-foreground" colSpan={2}>差引合計額</td>
                 <td className="border border-border px-2 py-1.5 text-right tabular-nums text-red-700 font-bold">
@@ -382,7 +451,7 @@ function AllowanceSidebar({
           <Button
             className="w-full"
             onClick={handleSave}
-            disabled={updateAllowances.isPending}
+            disabled={updateAllowances.isPending || updateDeductions.isPending}
           >
             <Save className="mr-2 h-4 w-4" />
             手当を保存

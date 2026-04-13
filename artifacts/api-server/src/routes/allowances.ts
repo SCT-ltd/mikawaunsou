@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, allowanceDefinitionsTable, employeeAllowancesTable } from "@workspace/db";
+import { db, allowanceDefinitionsTable, employeeAllowancesTable, deductionDefinitionsTable, employeeDeductionsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 
 const router = Router();
@@ -120,6 +120,127 @@ router.put("/employees/:id/allowances", async (req, res) => {
       allowanceDefinitionId: def.id,
       allowanceName: def.name,
       isTaxable: def.isTaxable,
+      amount: existing?.amount ?? 0,
+      sortOrder: def.sortOrder,
+    };
+  });
+
+  return res.json(result);
+});
+
+// ── 差引マスター ─────────────────────────────────────────────────────────────
+
+router.get("/deduction-definitions", async (req, res) => {
+  const { activeOnly } = req.query;
+  let rows = await db.select().from(deductionDefinitionsTable).orderBy(deductionDefinitionsTable.sortOrder);
+  if (activeOnly === "true") {
+    rows = rows.filter(r => r.isActive);
+  }
+  return res.json(rows);
+});
+
+router.post("/deduction-definitions", async (req, res) => {
+  const body = req.body;
+  const existing = await db.select().from(deductionDefinitionsTable).orderBy(deductionDefinitionsTable.sortOrder);
+  const maxSort = existing.length > 0 ? Math.max(...existing.map(e => e.sortOrder)) : 0;
+
+  const [created] = await db.insert(deductionDefinitionsTable).values({
+    name: body.name,
+    description: body.description ?? null,
+    calculationType: body.calculationType ?? "fixed",
+    sortOrder: maxSort + 1,
+    isActive: true,
+  }).returning();
+  return res.status(201).json(created);
+});
+
+router.put("/deduction-definitions/:id", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const body = req.body;
+  const [updated] = await db.update(deductionDefinitionsTable).set({
+    ...(body.name !== undefined && { name: body.name }),
+    ...(body.description !== undefined && { description: body.description }),
+    ...(body.calculationType !== undefined && { calculationType: body.calculationType }),
+    ...(body.sortOrder !== undefined && { sortOrder: body.sortOrder }),
+    ...(body.isActive !== undefined && { isActive: body.isActive }),
+    updatedAt: new Date(),
+  }).where(eq(deductionDefinitionsTable.id, id)).returning();
+  if (!updated) return res.status(404).json({ error: "Not found" });
+  return res.json(updated);
+});
+
+router.delete("/deduction-definitions/:id", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  await db.update(deductionDefinitionsTable)
+    .set({ isActive: false, updatedAt: new Date() })
+    .where(eq(deductionDefinitionsTable.id, id));
+  return res.status(204).send();
+});
+
+router.get("/employees/:id/deductions", async (req, res) => {
+  const employeeId = parseInt(req.params.id, 10);
+
+  const definitions = await db.select().from(deductionDefinitionsTable)
+    .where(eq(deductionDefinitionsTable.isActive, true))
+    .orderBy(deductionDefinitionsTable.sortOrder);
+
+  const empDeductions = await db.select().from(employeeDeductionsTable)
+    .where(eq(employeeDeductionsTable.employeeId, employeeId));
+
+  const result = definitions.map(def => {
+    const existing = empDeductions.find(d => d.deductionDefinitionId === def.id);
+    return {
+      id: existing?.id ?? 0,
+      employeeId,
+      deductionDefinitionId: def.id,
+      deductionName: def.name,
+      amount: existing?.amount ?? 0,
+      sortOrder: def.sortOrder,
+    };
+  });
+
+  return res.json(result);
+});
+
+router.put("/employees/:id/deductions", async (req, res) => {
+  const employeeId = parseInt(req.params.id, 10);
+  const { deductions } = req.body as { deductions: Array<{ deductionDefinitionId: number; amount: number }> };
+
+  for (const item of deductions) {
+    const existing = await db.select().from(employeeDeductionsTable)
+      .where(and(
+        eq(employeeDeductionsTable.employeeId, employeeId),
+        eq(employeeDeductionsTable.deductionDefinitionId, item.deductionDefinitionId)
+      )).limit(1);
+
+    if (existing.length > 0) {
+      await db.update(employeeDeductionsTable).set({
+        amount: item.amount,
+        updatedAt: new Date(),
+      }).where(eq(employeeDeductionsTable.id, existing[0].id));
+    } else {
+      await db.insert(employeeDeductionsTable).values({
+        employeeId,
+        deductionDefinitionId: item.deductionDefinitionId,
+        amount: item.amount,
+      });
+    }
+  }
+
+  const definitions = await db.select().from(deductionDefinitionsTable)
+    .where(eq(deductionDefinitionsTable.isActive, true))
+    .orderBy(deductionDefinitionsTable.sortOrder);
+
+  const empDeductions = await db.select().from(employeeDeductionsTable)
+    .where(eq(employeeDeductionsTable.employeeId, employeeId));
+
+  const result = definitions.map(def => {
+    const existing = empDeductions.find(d => d.deductionDefinitionId === def.id);
+    return {
+      id: existing?.id ?? 0,
+      employeeId,
+      deductionDefinitionId: def.id,
+      deductionName: def.name,
       amount: existing?.amount ?? 0,
       sortOrder: def.sortOrder,
     };

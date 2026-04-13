@@ -23,6 +23,8 @@ tags:
     description: ダッシュボード
   - name: allowance-definitions
     description: 手当マスタ
+  - name: deduction-definitions
+    description: 差引マスタ
 
 paths:
   /healthz:
@@ -596,6 +598,112 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/EmployeeAllowance"
+
+  # ── 差引マスタ ──────────────────────────────────────────────────────────────
+  /deduction-definitions:
+    get:
+      operationId: listDeductionDefinitions
+      tags: [deduction-definitions]
+      summary: 差引定義一覧
+      parameters:
+        - name: activeOnly
+          in: query
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: 差引定義一覧
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DeductionDefinition"
+    post:
+      operationId: createDeductionDefinition
+      tags: [deduction-definitions]
+      summary: 差引定義追加
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDeductionDefinitionBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeductionDefinition"
+
+  /deduction-definitions/{id}:
+    put:
+      operationId: updateDeductionDefinition
+      tags: [deduction-definitions]
+      summary: 差引定義更新
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateDeductionDefinitionBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeductionDefinition"
+    delete:
+      operationId: deleteDeductionDefinition
+      tags: [deduction-definitions]
+      summary: 差引定義削除（論理削除）
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Deleted
+
+  /employees/{id}/deductions:
+    get:
+      operationId: getEmployeeDeductions
+      tags: [deduction-definitions]
+      summary: 社員の差引金額一覧
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: 社員差引一覧
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EmployeeDeduction"
+    put:
+      operationId: updateEmployeeDeductions
+      tags: [deduction-definitions]
+      summary: 社員の差引金額一括更新
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateEmployeeDeductionsBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EmployeeDeduction"
 
 # ── コンポーネント ────────────────────────────────────────────────────────────
 components:
@@ -1434,3 +1542,108 @@ components:
               - amount
       required:
         - allowances
+
+    DeductionDefinition:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+          description: 差引名称（例：積立金、組合費）
+        description:
+          type: string
+          nullable: true
+          description: 説明
+        calculationType:
+          type: string
+          description: 計算タイプ（fixed:固定額 / variable:変動入力型）
+          enum: [fixed, variable]
+        sortOrder:
+          type: integer
+          description: 表示順
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - calculationType
+        - sortOrder
+        - isActive
+        - createdAt
+        - updatedAt
+
+    CreateDeductionDefinitionBody:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        calculationType:
+          type: string
+          enum: [fixed, variable]
+      required:
+        - name
+
+    UpdateDeductionDefinitionBody:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        calculationType:
+          type: string
+          enum: [fixed, variable]
+        sortOrder:
+          type: integer
+        isActive:
+          type: boolean
+
+    EmployeeDeduction:
+      type: object
+      properties:
+        id:
+          type: integer
+        employeeId:
+          type: integer
+        deductionDefinitionId:
+          type: integer
+        deductionName:
+          type: string
+        amount:
+          type: number
+        sortOrder:
+          type: integer
+      required:
+        - id
+        - employeeId
+        - deductionDefinitionId
+        - deductionName
+        - amount
+        - sortOrder
+
+    UpdateEmployeeDeductionsBody:
+      type: object
+      properties:
+        deductions:
+          type: array
+          items:
+            type: object
+            properties:
+              deductionDefinitionId:
+                type: integer
+              amount:
+                type: number
+            required:
+              - deductionDefinitionId
+              - amount
+      required:
+        - deductions

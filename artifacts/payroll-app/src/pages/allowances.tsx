@@ -6,6 +6,11 @@ import {
   useCreateAllowanceDefinition,
   useUpdateAllowanceDefinition,
   useDeleteAllowanceDefinition,
+  useListDeductionDefinitions,
+  getListDeductionDefinitionsQueryKey,
+  useCreateDeductionDefinition,
+  useUpdateDeductionDefinition,
+  useDeleteDeductionDefinition,
   useListEmployees,
   getListEmployeesQueryKey,
   useUpdateEmployee,
@@ -13,6 +18,7 @@ import {
   getGetCompanyQueryKey,
   useUpdateCompany,
   AllowanceDefinition,
+  DeductionDefinition,
   Employee,
   Company,
 } from "@workspace/api-client-react";
@@ -31,7 +37,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { Plus, Edit2, Trash2, Settings2, Users, Wallet, Calculator } from "lucide-react";
+import { Plus, Edit2, Trash2, Settings2, Users, Wallet, Calculator, Minus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 
@@ -262,6 +268,223 @@ function AllowanceMasterTab() {
           <AlertDialogHeader>
             <AlertDialogTitle>本当に削除しますか？</AlertDialogTitle>
             <AlertDialogDescription>「{deletingAllowance?.name}」を削除します。この操作は元に戻せません。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>キャンセル</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">削除する</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+// ─── 差引マスター Tab ──────────────────────────────────────────────
+
+const deductionCalcTypeLabels: Record<string, { label: string; color: string }> = {
+  fixed: { label: "固定額型", color: "bg-blue-50 text-blue-700 border-blue-200" },
+  variable: { label: "変動入力型", color: "bg-orange-50 text-orange-700 border-orange-200" },
+};
+
+const deductionSchema = z.object({
+  name: z.string().min(1, "差引名称を入力してください"),
+  description: z.string().optional(),
+  calculationType: z.enum(["fixed", "variable"]).default("fixed"),
+  isActive: z.boolean().default(true).optional(),
+});
+type DeductionFormValues = z.infer<typeof deductionSchema>;
+
+function DeductionMasterTab() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { data: deductions, isLoading } = useListDeductionDefinitions({});
+  const createDeduction = useCreateDeductionDefinition();
+  const updateDeduction = useUpdateDeductionDefinition();
+  const deleteDeduction = useDeleteDeductionDefinition();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [editingDeduction, setEditingDeduction] = useState<DeductionDefinition | null>(null);
+  const [deletingDeduction, setDeletingDeduction] = useState<DeductionDefinition | null>(null);
+
+  const form = useForm<DeductionFormValues>({
+    resolver: zodResolver(deductionSchema),
+    defaultValues: { name: "", description: "", calculationType: "fixed", isActive: true },
+  });
+
+  const handleOpenCreate = () => {
+    setEditingDeduction(null);
+    form.reset({ name: "", description: "", calculationType: "fixed", isActive: true });
+    setIsDialogOpen(true);
+  };
+
+  const handleOpenEdit = (deduction: DeductionDefinition) => {
+    setEditingDeduction(deduction);
+    form.reset({
+      name: deduction.name,
+      description: deduction.description || "",
+      calculationType: (deduction.calculationType as "fixed" | "variable") ?? "fixed",
+      isActive: deduction.isActive,
+    });
+    setIsDialogOpen(true);
+  };
+
+  const onSubmit = async (data: DeductionFormValues) => {
+    try {
+      if (editingDeduction) {
+        await updateDeduction.mutateAsync({
+          id: editingDeduction.id,
+          data: { name: data.name, description: data.description || undefined, calculationType: data.calculationType, isActive: data.isActive ?? true },
+        });
+        toast({ title: "保存しました", description: "差引マスタを更新しました。" });
+      } else {
+        await createDeduction.mutateAsync({
+          data: { name: data.name, description: data.description || undefined, calculationType: data.calculationType },
+        });
+        toast({ title: "追加しました", description: "新しい差引項目を登録しました。" });
+      }
+      queryClient.invalidateQueries({ queryKey: getListDeductionDefinitionsQueryKey() });
+      setIsDialogOpen(false);
+    } catch {
+      toast({ title: "エラー", description: "差引マスタの保存に失敗しました。", variant: "destructive" });
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deletingDeduction) return;
+    try {
+      await deleteDeduction.mutateAsync({ id: deletingDeduction.id });
+      toast({ title: "削除しました", description: "差引項目を削除しました。" });
+      queryClient.invalidateQueries({ queryKey: getListDeductionDefinitionsQueryKey() });
+      setIsDeleteDialogOpen(false);
+    } catch {
+      toast({ title: "エラー", description: "差引の削除に失敗しました。", variant: "destructive" });
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold">差引マスター</h3>
+          <p className="text-sm text-muted-foreground">積立金・組合費など給与から差し引く項目を定義します。</p>
+        </div>
+        <Button onClick={handleOpenCreate} size="sm">
+          <Plus className="mr-2 h-4 w-4" />差引を追加
+        </Button>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          {isLoading ? (
+            <div className="text-center py-8 text-muted-foreground">読み込み中...</div>
+          ) : !deductions || deductions.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground border-dashed border rounded-md m-4">
+              差引項目が登録されていません。「差引を追加」ボタンから登録してください。
+            </div>
+          ) : (
+            <div className="rounded-md overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>差引名称</TableHead>
+                    <TableHead>説明</TableHead>
+                    <TableHead>計算タイプ</TableHead>
+                    <TableHead className="w-20">表示順</TableHead>
+                    <TableHead className="w-24">状態</TableHead>
+                    <TableHead className="w-24 text-right">操作</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {deductions.map((d) => {
+                    const ct = deductionCalcTypeLabels[d.calculationType] ?? deductionCalcTypeLabels.fixed;
+                    return (
+                      <TableRow key={d.id}>
+                        <TableCell className="font-medium">{d.name}</TableCell>
+                        <TableCell className="text-muted-foreground">{d.description || "-"}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={ct.color}>{ct.label}</Badge>
+                        </TableCell>
+                        <TableCell>{d.sortOrder}</TableCell>
+                        <TableCell>
+                          {d.isActive ? <Badge variant="secondary">有効</Badge> : <Badge variant="outline" className="text-muted-foreground">無効</Badge>}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(d)}><Edit2 className="h-4 w-4 text-muted-foreground" /></Button>
+                            <Button variant="ghost" size="icon" onClick={() => { setDeletingDeduction(d); setIsDeleteDialogOpen(true); }}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingDeduction ? "差引項目を編集" : "新しい差引項目を追加"}</DialogTitle>
+          </DialogHeader>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <FormField control={form.control} name="name" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>差引名称 <span className="text-destructive">*</span></FormLabel>
+                  <FormControl><Input placeholder="例：積立金、組合費、親睦会費" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="description" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>説明</FormLabel>
+                  <FormControl><Input placeholder="例：毎月一定額を積立" {...field} value={field.value || ""} /></FormControl>
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="calculationType" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>計算タイプ</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="計算タイプを選択" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="fixed">固定額型（毎月固定額を差し引く）</SelectItem>
+                      <SelectItem value="variable">変動入力型（月ごとに金額入力）</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </FormItem>
+              )} />
+              {editingDeduction && (
+                <FormField control={form.control} name="isActive" render={({ field }) => (
+                  <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                    <div>
+                      <FormLabel className="text-base">有効</FormLabel>
+                      <p className="text-sm text-muted-foreground">無効にすると給与計算に使用されません</p>
+                    </div>
+                    <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                  </FormItem>
+                )} />
+              )}
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>キャンセル</Button>
+                <Button type="submit" disabled={form.formState.isSubmitting}>保存する</Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>本当に削除しますか？</AlertDialogTitle>
+            <AlertDialogDescription>「{deletingDeduction?.name}」を削除します。この操作は元に戻せません。</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>キャンセル</AlertDialogCancel>
@@ -744,12 +967,15 @@ export default function MasterManagement() {
         </div>
 
         <Tabs defaultValue="employees" className="w-full">
-          <TabsList className="grid w-full grid-cols-3 mb-6">
+          <TabsList className="grid w-full grid-cols-4 mb-6">
             <TabsTrigger value="employees" className="flex items-center gap-2">
               <Users className="h-4 w-4" />社員マスター
             </TabsTrigger>
             <TabsTrigger value="allowances" className="flex items-center gap-2">
               <Wallet className="h-4 w-4" />手当マスター
+            </TabsTrigger>
+            <TabsTrigger value="deductions" className="flex items-center gap-2">
+              <Minus className="h-4 w-4" />差引マスター
             </TabsTrigger>
             <TabsTrigger value="calc-tables" className="flex items-center gap-2">
               <Calculator className="h-4 w-4" />計算テーブルマスター
@@ -762,6 +988,10 @@ export default function MasterManagement() {
 
           <TabsContent value="allowances">
             <AllowanceMasterTab />
+          </TabsContent>
+
+          <TabsContent value="deductions">
+            <DeductionMasterTab />
           </TabsContent>
 
           <TabsContent value="calc-tables">
