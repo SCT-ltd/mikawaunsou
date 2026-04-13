@@ -123,15 +123,12 @@ function AllowanceSidebar({
   }, [employeeAllowances, employeeId]);
 
   useEffect(() => {
-    if (deductionDefinitions) {
-      setDeductionRows(deductionDefinitions.map(def => {
-        const existing = employeeDeductions?.find(d => d.deductionDefinitionId === def.id);
-        return { defId: def.id, amount: existing?.amount ?? 0 };
-      }));
+    if (employeeDeductions && employeeDeductions.length > 0) {
+      setDeductionRows(employeeDeductions.map(d => ({ defId: d.deductionDefinitionId, amount: d.amount })));
     } else {
-      setDeductionRows([]);
+      setDeductionRows([{ defId: null, amount: 0 }]);
     }
-  }, [deductionDefinitions, employeeDeductions, employeeId]);
+  }, [employeeDeductions, employeeId]);
 
   useEffect(() => {
     setBaseSalaryInput(employee?.baseSalary ?? 0);
@@ -376,7 +373,7 @@ function AllowanceSidebar({
 
               {/* ── 差引金額セクション ──────────────────── */}
               <tr className="bg-background">
-                {sectionLabel("差引金額", 2 + deductionRows.length + 2)}
+                {sectionLabel("差引金額", 2 + deductionRows.length + 1 + 2)}
                 <td className="border border-border px-2 py-1 text-muted-foreground">所得税</td>
                 <td className="border border-border" />
                 <td className="border border-border px-2 py-1.5 text-right tabular-nums">
@@ -392,20 +389,31 @@ function AllowanceSidebar({
               </tr>
 
               {/* ── その他差引（積立等）──────────────────── */}
-              {deductionRows.map((row, idx) => {
-                const def = deductionDefinitions?.find(d => d.id === row.defId);
-                return (
-                  <tr key={idx} className={idx % 2 === 0 ? "bg-background" : "bg-muted/10"}>
-                    <td className="border border-border px-2 py-0.5 text-muted-foreground text-xs">
-                      {def?.name ?? "—"}
-                    </td>
-                    <td className="border border-border" />
-                    <td className="border border-border px-1 py-0.5">
+              {deductionRows.map((row, idx) => (
+                <tr key={idx} className={idx % 2 === 0 ? "bg-background" : "bg-muted/10"}>
+                  <td className="border border-border px-1 py-0.5">
+                    <Select
+                      value={row.defId?.toString() ?? ""}
+                      onValueChange={(v) => setDeductionRows(prev => prev.map((r, i) => i === idx ? { ...r, defId: parseInt(v, 10) } : r))}
+                    >
+                      <SelectTrigger className="h-6 text-xs border-0 shadow-none bg-transparent focus:ring-1 focus:ring-primary px-1 w-full">
+                        <SelectValue placeholder="差引を選択…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {deductionDefinitions?.map(d => (
+                          <SelectItem key={d.id} value={d.id.toString()}>{d.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </td>
+                  <td className="border border-border" />
+                  <td className="border border-border px-1 py-0.5">
+                    <div className="flex items-center gap-0.5">
                       <Input
                         ref={(el) => { deductionRowAmountRefs.current[idx] = el; }}
                         type="number"
                         min="0"
-                        className="h-6 w-full text-right border-0 shadow-none bg-transparent focus-visible:ring-1 focus-visible:ring-primary px-1 text-xs"
+                        className="h-6 flex-1 text-right border-0 shadow-none bg-transparent focus-visible:ring-1 focus-visible:ring-primary px-1 text-xs"
                         value={row.amount || ""}
                         onChange={(e) => {
                           const v = e.target.value === "" ? 0 : parseInt(e.target.value, 10);
@@ -414,15 +422,42 @@ function AllowanceSidebar({
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault();
-                            setTimeout(() => deductionRowAmountRefs.current[idx + 1]?.focus(), 30);
+                            if (idx + 1 < deductionRows.length) {
+                              setTimeout(() => deductionRowAmountRefs.current[idx + 1]?.focus(), 30);
+                            } else {
+                              setDeductionRows(prev => [...prev, { defId: null, amount: 0 }]);
+                              setTimeout(() => deductionRowAmountRefs.current[idx + 1]?.focus(), 30);
+                            }
                           }
                         }}
                         placeholder="0"
                       />
-                    </td>
-                  </tr>
-                );
-              })}
+                      <button
+                        type="button"
+                        onClick={() => setDeductionRows(prev => prev.filter((_, i) => i !== idx))}
+                        className="text-muted-foreground hover:text-destructive p-0.5 shrink-0"
+                        title="この行を削除"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+
+              {/* 差引行追加ボタン */}
+              <tr className="bg-muted/10">
+                <td colSpan={3} className="border border-border px-2 py-1">
+                  <button
+                    type="button"
+                    onClick={() => setDeductionRows(prev => [...prev, { defId: null, amount: 0 }])}
+                    className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors"
+                  >
+                    <Plus className="h-3 w-3" />
+                    行を追加
+                  </button>
+                </td>
+              </tr>
 
               <tr className="bg-muted/40 font-semibold">
                 <td className="border border-border px-2 py-1.5 text-center text-muted-foreground" colSpan={2}>差引合計額</td>
