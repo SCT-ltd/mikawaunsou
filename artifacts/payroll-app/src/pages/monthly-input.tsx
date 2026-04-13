@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { AppLayout } from "@/components/layout/app-layout";
 import { 
   useListEmployees, 
@@ -91,6 +91,12 @@ function AllowanceSidebar({
   type AllowanceRow = { defId: number | null; amount: number };
   const [rows, setRows] = useState<AllowanceRow[]>([{ defId: null, amount: 0 }]);
   const [baseSalaryInput, setBaseSalaryInput] = useState<number>(0);
+  const baseSalaryRef = useRef<HTMLInputElement>(null);
+  const rowAmountRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  const focusRowAmount = (idx: number) => {
+    setTimeout(() => rowAmountRefs.current[idx]?.focus(), 30);
+  };
 
   useEffect(() => {
     if (employeeAllowances && employeeAllowances.length > 0) {
@@ -189,6 +195,7 @@ function AllowanceSidebar({
                 </td>
                 <td className="border border-border px-1 py-0.5">
                   <Input
+                    ref={baseSalaryRef}
                     type="number"
                     min="0"
                     className="h-6 w-full text-right border-0 shadow-none bg-transparent focus-visible:ring-1 focus-visible:ring-primary px-1 text-xs font-medium"
@@ -196,6 +203,9 @@ function AllowanceSidebar({
                     onChange={(e) => {
                       const v = e.target.value === "" ? 0 : parseInt(e.target.value, 10);
                       setBaseSalaryInput(isNaN(v) ? 0 : v);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); focusRowAmount(0); }
                     }}
                     placeholder="0"
                   />
@@ -231,6 +241,7 @@ function AllowanceSidebar({
                     <td className="border border-border px-1 py-0.5">
                       <div className="flex items-center gap-0.5">
                         <Input
+                          ref={(el) => { rowAmountRefs.current[idx] = el; }}
                           type="number"
                           min="0"
                           className="h-6 flex-1 text-right border-0 shadow-none bg-transparent focus-visible:ring-1 focus-visible:ring-primary px-1 text-xs"
@@ -238,6 +249,17 @@ function AllowanceSidebar({
                           onChange={(e) => {
                             const v = e.target.value === "" ? 0 : parseInt(e.target.value, 10);
                             setRows(prev => prev.map((r, i) => i === idx ? { ...r, amount: isNaN(v) ? 0 : v } : r));
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              if (idx + 1 < rows.length) {
+                                focusRowAmount(idx + 1);
+                              } else {
+                                setRows(prev => [...prev, { defId: null, amount: 0 }]);
+                                focusRowAmount(idx + 1);
+                              }
+                            }
                           }}
                           placeholder="0"
                         />
