@@ -92,10 +92,11 @@ export default function AttendancePage() {
   const [now, setNow] = useState(new Date());
   const [qrEmployee, setQrEmployee] = useState<EmployeeStatus["employee"] | null>(null);
 
-  // 手動更新（ボタン用）
+  // REST取得（手動更新・フォールバック用）
   const fetchData = useCallback(async () => {
     try {
       const res = await fetch(`${BASE}/api/attendance/today`);
+      if (!res.ok) return;
       const result = await res.json();
       setData(result);
       setLastUpdated(new Date());
@@ -106,8 +107,12 @@ export default function AttendancePage() {
     }
   }, []);
 
-  // SSEで打刻をリアルタイム受信
+  // SSE（打刻を即時受信）+ 10秒ポーリング（フォールバック）
   useEffect(() => {
+    // 初回REST取得
+    fetchData();
+
+    // SSEストリーム接続
     const es = new EventSource(`${BASE}/api/attendance/stream`);
 
     es.onmessage = (event) => {
@@ -121,12 +126,13 @@ export default function AttendancePage() {
       }
     };
 
-    es.onerror = () => {
-      // 接続断時は手動更新で補完（EventSourceは自動再接続する）
-      fetchData();
-    };
+    // SSEが切断されても10秒ポーリングで補完（EventSourceは自動再接続する）
+    const poll = setInterval(fetchData, 10000);
 
-    return () => es.close();
+    return () => {
+      es.close();
+      clearInterval(poll);
+    };
   }, [fetchData]);
 
   // 1秒ごとに現在時刻を更新（経過時間表示用）

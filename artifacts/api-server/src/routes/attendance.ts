@@ -7,10 +7,17 @@ const router = Router();
 // ── SSEクライアント管理 ────────────────────────────────
 const sseClients = new Set<Response>();
 
+function flush(res: Response) {
+  if (typeof (res as unknown as { flush?: () => void }).flush === "function") {
+    (res as unknown as { flush: () => void }).flush();
+  }
+}
+
 function broadcast(data: unknown) {
   const payload = `data: ${JSON.stringify(data)}\n\n`;
   for (const client of sseClients) {
     client.write(payload);
+    flush(client);
   }
 }
 
@@ -74,16 +81,18 @@ router.get("/attendance/stream", async (req, res) => {
   try {
     const snapshot = await buildTodaySnapshot();
     res.write(`data: ${JSON.stringify(snapshot)}\n\n`);
+    flush(res);
   } catch {
     // 初回送信失敗は無視
   }
 
   sseClients.add(res);
 
-  // 接続維持用ハートビート（30秒ごと）
+  // 接続維持用ハートビート（15秒ごと）
   const heartbeat = setInterval(() => {
     res.write(": ping\n\n");
-  }, 30000);
+    flush(res);
+  }, 15000);
 
   req.on("close", () => {
     clearInterval(heartbeat);
