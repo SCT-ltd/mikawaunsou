@@ -328,6 +328,12 @@ export default function AttendancePage() {
                               <div>
                                 <p className="font-semibold leading-tight">{d.employee.name}</p>
                                 <p className="text-xs text-muted-foreground">{d.employee.employeeCode}</p>
+                                {(() => {
+                                  const latest = [...d.records].reverse().find(r => r.note);
+                                  return latest?.note ? (
+                                    <p className="text-xs text-primary/80 mt-0.5 font-medium">📍 {latest.note}</p>
+                                  ) : null;
+                                })()}
                               </div>
                             </div>
                           </td>
@@ -416,6 +422,18 @@ export default function AttendancePage() {
                     </p>
                   </div>
                 </div>
+                {(() => {
+                  const latest = [...selected.records].reverse().find(r => r.note);
+                  return latest?.note ? (
+                    <div className="mt-3 rounded-lg bg-primary/5 border border-primary/15 px-3 py-2.5 flex items-center gap-2">
+                      <span className="text-base">📍</span>
+                      <div className="min-w-0">
+                        <p className="text-xs text-muted-foreground leading-none mb-0.5">最新の発着地</p>
+                        <p className="text-sm font-semibold text-primary truncate">{latest.note}</p>
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
               </div>
 
               {/* 打刻履歴 */}
