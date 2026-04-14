@@ -66,9 +66,9 @@ router.put("/allowance-definitions/:id", async (req, res) => {
 
 router.delete("/allowance-definitions/:id", async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  await db.update(allowanceDefinitionsTable)
-    .set({ isActive: false, updatedAt: new Date() })
-    .where(eq(allowanceDefinitionsTable.id, id));
+  // 関連する社員手当レコードも削除してから定義を完全削除
+  await db.delete(employeeAllowancesTable).where(eq(employeeAllowancesTable.allowanceDefinitionId, id));
+  await db.delete(allowanceDefinitionsTable).where(eq(allowanceDefinitionsTable.id, id));
   return res.status(204).send();
 });
 
@@ -209,9 +209,9 @@ router.put("/deduction-definitions/:id", async (req, res) => {
 
 router.delete("/deduction-definitions/:id", async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  await db.update(deductionDefinitionsTable)
-    .set({ isActive: false, updatedAt: new Date() })
-    .where(eq(deductionDefinitionsTable.id, id));
+  // 関連する社員差引レコードも削除してから定義を完全削除
+  await db.delete(employeeDeductionsTable).where(eq(employeeDeductionsTable.deductionDefinitionId, id));
+  await db.delete(deductionDefinitionsTable).where(eq(deductionDefinitionsTable.id, id));
   return res.status(204).send();
 });
 
