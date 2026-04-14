@@ -28,8 +28,8 @@ function todayJST(): string {
   return jst.toISOString().slice(0, 10);
 }
 
-async function buildTodaySnapshot() {
-  const today = todayJST();
+async function buildSnapshot(date?: string) {
+  const targetDate = date ?? todayJST();
 
   const employees = await db
     .select()
@@ -39,7 +39,7 @@ async function buildTodaySnapshot() {
   const allRecords = await db
     .select()
     .from(attendanceRecordsTable)
-    .where(eq(attendanceRecordsTable.workDate, today))
+    .where(eq(attendanceRecordsTable.workDate, targetDate))
     .orderBy(attendanceRecordsTable.recordedAt);
 
   return employees.map(emp => {
@@ -79,7 +79,7 @@ router.get("/attendance/stream", async (req, res) => {
 
   // 接続直後に現在の状態を送信
   try {
-    const snapshot = await buildTodaySnapshot();
+    const snapshot = await buildSnapshot();
     res.write(`data: ${JSON.stringify(snapshot)}\n\n`);
     flush(res);
   } catch {
@@ -100,9 +100,10 @@ router.get("/attendance/stream", async (req, res) => {
   });
 });
 
-// ── 全社員の今日の状況（REST fallback） ──────────────
-router.get("/attendance/today", async (_req, res) => {
-  const snapshot = await buildTodaySnapshot();
+// ── 全社員の勤怠状況（日付指定可、デフォルト今日） ──
+router.get("/attendance/today", async (req, res) => {
+  const date = req.query.date as string | undefined;
+  const snapshot = await buildSnapshot(date);
   return res.json(snapshot);
 });
 
@@ -147,7 +148,7 @@ router.post("/attendance/record", async (req, res) => {
   }).returning();
 
   // 打刻後に全SSEクライアントへ最新スナップショットをブロードキャスト
-  buildTodaySnapshot().then(snapshot => broadcast(snapshot)).catch(() => {});
+  buildSnapshot().then(snapshot => broadcast(snapshot)).catch(() => {});
 
   return res.status(201).json(record);
 });
@@ -178,7 +179,7 @@ router.patch("/attendance/records/:id", async (req, res) => {
     return res.status(404).json({ error: "レコードが見つかりません" });
   }
 
-  buildTodaySnapshot().then(snapshot => broadcast(snapshot)).catch(() => {});
+  buildSnapshot().then(snapshot => broadcast(snapshot)).catch(() => {});
   return res.json(updated);
 });
 
@@ -195,7 +196,7 @@ router.delete("/attendance/records/:id", async (req, res) => {
     return res.status(404).json({ error: "レコードが見つかりません" });
   }
 
-  buildTodaySnapshot().then(snapshot => broadcast(snapshot)).catch(() => {});
+  buildSnapshot().then(snapshot => broadcast(snapshot)).catch(() => {});
   return res.status(204).send();
 });
 

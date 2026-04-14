@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import {
   RefreshCw, Clock, QrCode, Pencil, Trash2, Save, X,
   UserCheck, Coffee, LogOut, AlarmClock, Plus, GripVertical,
+  ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -31,6 +32,23 @@ interface EmployeeStatus {
 }
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+/* ── 日付ユーティリティ ─────────────────── */
+function todayJST(): string {
+  const jst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  return jst.toISOString().slice(0, 10);
+}
+function formatDateJP(dateStr: string): string {
+  const [y, m, d] = dateStr.split("-");
+  const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
+  const dow = weekdays[new Date(dateStr).getDay()];
+  return `${y}年${Number(m)}月${Number(d)}日（${dow}）`;
+}
+function addDays(dateStr: string, n: number): string {
+  const d = new Date(dateStr);
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
 
 /* ── ユーティリティ ──────────────────────── */
 function fmt(dateStr: string | null): string {
@@ -96,6 +114,7 @@ function Avatar({ name, size = "md" }: { name: string; size?: "sm" | "md" | "lg"
 
 /* ── メインページ ────────────────────────── */
 export default function AttendancePage() {
+  const [selectedDate, setSelectedDate] = useState(() => todayJST());
   const [data, setData] = useState<EmployeeStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(new Date());
@@ -123,21 +142,31 @@ export default function AttendancePage() {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
+  const isToday = selectedDate === todayJST();
+
   /* ── データ取得 ──────────────────────── */
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (date: string) => {
     try {
-      const res = await fetch(`${BASE}/api/attendance/today`, { cache: "no-store" });
+      const url = `${BASE}/api/attendance/today?date=${date}`;
+      const res = await fetch(url, { cache: "no-store" });
       if (!res.ok) return;
       const result: EmployeeStatus[] = await res.json();
       setData(result);
       setLastUpdated(new Date());
-      // サイドパネルも更新
       setSelected(prev => prev ? (result.find(r => r.employee.id === prev.employee.id) ?? null) : null);
     } catch { /* silent */ } finally { setLoading(false); }
   }, []);
 
+  // 日付が変わったら再取得・サイドパネルを閉じる
   useEffect(() => {
-    fetchData();
+    setLoading(true);
+    setSelected(null);
+    fetchData(selectedDate);
+  }, [selectedDate, fetchData]);
+
+  // 今日の場合のみSSE＋ポーリング
+  useEffect(() => {
+    if (!isToday) return;
     const es = new EventSource(`${BASE}/api/attendance/stream`);
     es.onmessage = (e) => {
       try {
@@ -148,9 +177,9 @@ export default function AttendancePage() {
         setSelected(prev => prev ? (result.find(r => r.employee.id === prev.employee.id) ?? null) : null);
       } catch { /* ignore */ }
     };
-    const poll = setInterval(fetchData, 10000);
+    const poll = setInterval(() => fetchData(selectedDate), 10000);
     return () => { es.close(); clearInterval(poll); };
-  }, [fetchData]);
+  }, [isToday, selectedDate, fetchData]);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
@@ -177,7 +206,7 @@ export default function AttendancePage() {
         body: JSON.stringify({ eventType: editEventType, recordedAt: base.toISOString() }),
       });
       setEditRecord(null);
-      await fetchData();
+      await fetchData(selectedDate);
     } finally { setSaving(false); }
   };
   const deleteRec = async () => {
@@ -187,7 +216,7 @@ export default function AttendancePage() {
       await fetch(`${BASE}/api/attendance/records/${editRecord.id}`, { method: "DELETE" });
       setEditRecord(null);
       setDeleteConfirm(false);
-      await fetchData();
+      await fetchData(selectedDate);
     } finally { setSaving(false); }
   };
 
@@ -205,7 +234,7 @@ export default function AttendancePage() {
         body: JSON.stringify({ employeeId: selected.employee.id, eventType: addEventType, recordedAt: d.toISOString() }),
       });
       setAddMode(false);
-      await fetchData();
+      await fetchData(selectedDate);
     } finally { setSaving(false); }
   };
 
@@ -229,7 +258,7 @@ export default function AttendancePage() {
           body: JSON.stringify({ eventType: b.eventType, recordedAt: a.recordedAt }),
         }),
       ]);
-      await fetchData();
+      await fetchData(selectedDate);
     } finally {
       setSaving(false);
       setDragIndex(null);
@@ -257,17 +286,60 @@ export default function AttendancePage() {
           <div className="space-y-5 max-w-5xl">
 
             {/* ヘッダー */}
-            <div className="flex items-center justify-between">
+            <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-2xl font-bold tracking-tight">勤怠ダッシュボード</h2>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  最終更新: {lastUpdated.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-                  　社員をクリックすると詳細を表示
+                  {isToday
+                    ? `最終更新: ${lastUpdated.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}　社員をクリックすると詳細を表示`
+                    : "過去の記録（読み取り専用）　社員をクリックすると詳細を表示"}
                 </p>
               </div>
-              <Button variant="outline" size="sm" onClick={fetchData} className="gap-1.5">
-                <RefreshCw className="h-3.5 w-3.5" />更新
-              </Button>
+              <div className="flex items-center gap-2 shrink-0">
+                {/* 日付ナビゲーション */}
+                <div className="flex items-center gap-1 rounded-lg border bg-background shadow-sm">
+                  <button
+                    onClick={() => setSelectedDate(d => addDays(d, -1))}
+                    className="p-1.5 hover:bg-muted rounded-l-lg transition-colors"
+                    title="前の日"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      const el = document.getElementById("attendance-date-input") as HTMLInputElement | null;
+                      el?.showPicker?.();
+                    }}
+                    className="px-3 py-1.5 text-sm font-semibold hover:bg-muted transition-colors min-w-[180px] text-center relative"
+                  >
+                    {formatDateJP(selectedDate)}
+                    <input
+                      id="attendance-date-input"
+                      type="date"
+                      value={selectedDate}
+                      max={todayJST()}
+                      onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
+                      className="absolute inset-0 opacity-0 cursor-pointer w-full"
+                    />
+                  </button>
+                  <button
+                    onClick={() => setSelectedDate(d => addDays(d, 1))}
+                    disabled={isToday}
+                    className="p-1.5 hover:bg-muted rounded-r-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    title="次の日"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+                {!isToday && (
+                  <Button variant="outline" size="sm" onClick={() => setSelectedDate(todayJST())} className="text-xs">
+                    今日
+                  </Button>
+                )}
+                <Button variant="outline" size="sm" onClick={() => fetchData(selectedDate)} className="gap-1.5">
+                  <RefreshCw className="h-3.5 w-3.5" />更新
+                </Button>
+              </div>
             </div>
 
             {/* サマリーカード */}
