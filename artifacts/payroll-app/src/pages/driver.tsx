@@ -70,7 +70,8 @@ export default function DriverPage() {
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [now, setNow] = useState(new Date());
-  const [locationNote, setLocationNote] = useState("");
+  const [departure, setDeparture] = useState("");
+  const [arrival, setArrival] = useState("");
 
   // 現在時刻を毎秒更新
   useEffect(() => {
@@ -123,10 +124,15 @@ export default function DriverPage() {
     try {
       await apiFetch("/attendance/record", {
         method: "POST",
-        body: JSON.stringify({ employeeId, eventType, note: locationNote.trim() || null }),
+        body: JSON.stringify({
+          employeeId, eventType,
+          note: [departure.trim(), arrival.trim()].filter(Boolean).join(" → ") || null,
+        }),
       });
-      setSuccessMsg(`${EVENT_LABELS[eventType]}を記録しました${locationNote.trim() ? `（${locationNote.trim()}）` : ""}`);
-      setLocationNote("");
+      const loc = [departure.trim(), arrival.trim()].filter(Boolean).join(" → ");
+      setSuccessMsg(`${EVENT_LABELS[eventType]}を記録しました${loc ? `（${loc}）` : ""}`);
+      setDeparture("");
+      setArrival("");
       setTimeout(() => setSuccessMsg(null), 4000);
       await fetchData();
     } catch {
@@ -224,16 +230,30 @@ export default function DriverPage() {
 
       {/* 発着地入力 */}
       <div className="mx-4 mt-3 mb-1">
-        <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
-          📍 発着地（任意）
-        </label>
-        <input
-          type="text"
-          value={locationNote}
-          onChange={(e) => setLocationNote(e.target.value)}
-          placeholder="例：本社 → 大阪営業所"
-          className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-base placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm"
-        />
+        <p className="text-xs font-semibold text-muted-foreground mb-1.5">📍 発着地（任意）</p>
+        <div className="flex items-center gap-2">
+          <div className="flex-1">
+            <label className="block text-xs text-muted-foreground mb-1">発地</label>
+            <input
+              type="text"
+              value={departure}
+              onChange={(e) => setDeparture(e.target.value)}
+              placeholder="例：本社"
+              className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-base placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm"
+            />
+          </div>
+          <span className="text-gray-400 text-lg mt-4">→</span>
+          <div className="flex-1">
+            <label className="block text-xs text-muted-foreground mb-1">着地</label>
+            <input
+              type="text"
+              value={arrival}
+              onChange={(e) => setArrival(e.target.value)}
+              placeholder="例：大阪営業所"
+              className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-base placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm"
+            />
+          </div>
+        </div>
       </div>
 
       {/* 4大ボタン */}
