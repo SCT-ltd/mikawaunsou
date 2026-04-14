@@ -92,7 +92,27 @@ export default function DriverPage() {
     }
   }, [employeeId]);
 
+  // 初回取得
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // SSEで管理者操作（打刻追加・修正・削除）をリアルタイム受信
+  useEffect(() => {
+    const es = new EventSource(`${BASE}/api/attendance/stream`);
+    es.onmessage = (event) => {
+      try {
+        const snapshot = JSON.parse(event.data) as Array<{
+          employee: { id: number };
+          records: AttendanceRecord[];
+        }>;
+        const mine = snapshot.find(s => s.employee.id === employeeId);
+        if (mine) {
+          setRecords(mine.records);
+          setLoading(false);
+        }
+      } catch { /* ignore */ }
+    };
+    return () => es.close();
+  }, [employeeId]);
 
   const status = getStatus(records);
 
