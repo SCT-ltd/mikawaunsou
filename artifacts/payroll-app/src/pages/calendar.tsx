@@ -115,8 +115,9 @@ function MonthCalendar({
     <div className="border rounded-lg overflow-hidden bg-card shadow-sm">
       <div className="bg-muted/50 px-3 py-2 flex items-center justify-between border-b">
         <span className="font-semibold text-sm">{MONTH_NAMES[month - 1]}</span>
-        <span className="text-xs text-muted-foreground tabular-nums">
-          出勤 <span className="font-semibold text-foreground">{workDays}</span>日
+        <span className="text-xs tabular-nums flex items-center gap-2">
+          <span className="text-muted-foreground">出勤 <span className="font-semibold text-foreground">{workDays}</span>日</span>
+          <span className="text-red-400">休 <span className="font-semibold">{daysInMonth - workDays}</span>日</span>
         </span>
       </div>
       <div className="p-2">
@@ -202,6 +203,9 @@ export default function CalendarPage() {
     });
   };
 
+  // 年間日数（うるう年考慮）
+  const totalDays = new Date(year, 1, 29).getMonth() === 1 ? 366 : 365;
+
   // 年間出勤日数合計
   const totalWorkDays = (() => {
     let count = 0;
@@ -283,10 +287,18 @@ export default function CalendarPage() {
             </span>
             祝日（ホバーで名称表示）
           </span>
-          <span className="ml-auto flex items-center gap-2">
-            <span className="text-muted-foreground">{year}年 年間出勤日数</span>
-            <span className="text-lg font-bold text-foreground tabular-nums">{totalWorkDays}</span>
-            <span>日</span>
+          <span className="ml-auto flex items-center gap-6">
+            <span className="flex items-center gap-1.5">
+              <span className="text-muted-foreground">{year}年 年間出勤日数</span>
+              <span className="text-lg font-bold text-foreground tabular-nums">{totalWorkDays}</span>
+              <span>日</span>
+            </span>
+            <span className="w-px h-5 bg-border" />
+            <span className="flex items-center gap-1.5">
+              <span className="text-muted-foreground">年間休日数</span>
+              <span className="text-lg font-bold text-red-600 tabular-nums">{totalDays - totalWorkDays}</span>
+              <span>日</span>
+            </span>
           </span>
         </div>
       </div>
