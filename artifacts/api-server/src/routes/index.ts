@@ -7,6 +7,7 @@ import payrollRouter from "./payroll";
 import journalEntriesRouter from "./journal_entries";
 import dashboardRouter from "./dashboard";
 import allowancesRouter from "./allowances";
+import attendanceRouter from "./attendance";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use(payrollRouter);
 router.use(journalEntriesRouter);
 router.use(dashboardRouter);
 router.use(allowancesRouter);
+router.use(attendanceRouter);
 
 export default router;

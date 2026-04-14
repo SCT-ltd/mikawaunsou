@@ -9,12 +9,14 @@ import {
   Settings,
   Truck,
   Tag,
-  CalendarRange
+  CalendarRange,
+  ClipboardCheck,
 } from "lucide-react";
 
 const navigation = [
   { name: "ダッシュボード", href: "/", icon: LayoutDashboard },
   { name: "社員管理", href: "/employees", icon: Users },
+  { name: "勤怠管理", href: "/attendance", icon: ClipboardCheck },
   { name: "月次実績入力", href: "/monthly-input", icon: CalendarDays },
   { name: "給与明細", href: "/payroll", icon: FileText },
   { name: "振替伝票", href: "/journal", icon: BookOpen },

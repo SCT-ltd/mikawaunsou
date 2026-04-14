@@ -37,6 +37,7 @@
 - `allowance_definitions` — カスタム手当マスタ（名称・課税区分・calculationType・表示順・有効フラグ）
   - calculationType: 'fixed'（固定給型）| 'variable'（変動入力型）| 'unit_time'（単価×時間型）
 - `employee_allowances` — 社員別カスタム手当金額（社員×手当定義×金額）
+- `attendance_records` — 打刻記録（employeeId, eventType: clock_in|clock_out|break_start|break_end, workDate, recordedAt）
 
 ## Payroll Calculation Engine
 

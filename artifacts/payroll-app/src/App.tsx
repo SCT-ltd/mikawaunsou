@@ -15,6 +15,8 @@ import JournalEntries from "@/pages/journal";
 import Settings from "@/pages/settings";
 import AllowanceSettings from "@/pages/allowances";
 import CalendarPage from "@/pages/calendar";
+import AttendancePage from "@/pages/attendance";
+import DriverPage from "@/pages/driver";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -39,6 +41,8 @@ function Router() {
       <Route path="/settings" component={Settings} />
       <Route path="/allowances" component={AllowanceSettings} />
       <Route path="/calendar" component={CalendarPage} />
+      <Route path="/attendance" component={AttendancePage} />
+      <Route path="/driver/:id" component={DriverPage} />
       <Route component={NotFound} />
     </Switch>
   );

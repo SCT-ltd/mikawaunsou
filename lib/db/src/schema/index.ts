@@ -4,3 +4,4 @@ export * from "./monthly_records";
 export * from "./payrolls";
 export * from "./journal_entries";
 export * from "./allowances";
+export * from "./attendance";
