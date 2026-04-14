@@ -16,7 +16,7 @@ router.get("/allowance-definitions", async (req, res) => {
 router.post("/allowance-definitions", async (req, res) => {
   const body = req.body;
   const existing = await db.select().from(allowanceDefinitionsTable).orderBy(allowanceDefinitionsTable.sortOrder);
-  const maxSort = existing.length > 0 ? Math.max(...existing.map(e => e.sortOrder)) : 0;
+  const maxSort = existing.length > 0 ? Math.max(0, ...existing.map(e => e.sortOrder)) : 0;
 
   const [created] = await db.insert(allowanceDefinitionsTable).values({
     name: body.name,
@@ -142,7 +142,7 @@ router.get("/deduction-definitions", async (req, res) => {
 router.post("/deduction-definitions", async (req, res) => {
   const body = req.body;
   const existing = await db.select().from(deductionDefinitionsTable).orderBy(deductionDefinitionsTable.sortOrder);
-  const maxSort = existing.length > 0 ? Math.max(...existing.map(e => e.sortOrder)) : 0;
+  const maxSort = existing.length > 0 ? Math.max(0, ...existing.map(e => e.sortOrder)) : 0;
 
   const [created] = await db.insert(deductionDefinitionsTable).values({
     name: body.name,
