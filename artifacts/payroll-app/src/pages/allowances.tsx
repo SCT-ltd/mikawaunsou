@@ -55,6 +55,7 @@ const allowanceSchema = z.object({
   isTaxable: z.boolean().default(true),
   calculationType: z.enum(["fixed", "variable", "unit_time"]).default("variable"),
   isActive: z.boolean().default(true).optional(),
+  sortOrder: z.number().int().min(1, "1以上の整数を入力してください").optional(),
 });
 type AllowanceFormValues = z.infer<typeof allowanceSchema>;
 
@@ -89,6 +90,7 @@ function AllowanceMasterTab() {
       isTaxable: allowance.isTaxable,
       calculationType: (allowance.calculationType as "fixed" | "variable" | "unit_time") ?? "variable",
       isActive: allowance.isActive,
+      sortOrder: Math.max(1, allowance.sortOrder),
     });
     setIsDialogOpen(true);
   };
@@ -98,7 +100,7 @@ function AllowanceMasterTab() {
       if (editingAllowance) {
         await updateAllowance.mutateAsync({
           id: editingAllowance.id,
-          data: { name: data.name, description: data.description || undefined, isTaxable: data.isTaxable, calculationType: data.calculationType, isActive: data.isActive ?? true },
+          data: { name: data.name, description: data.description || undefined, isTaxable: data.isTaxable, calculationType: data.calculationType, isActive: data.isActive ?? true, sortOrder: data.sortOrder },
         });
         toast({ title: "保存しました", description: "手当マスタを更新しました。" });
       } else {
@@ -244,15 +246,33 @@ function AllowanceMasterTab() {
                 </FormItem>
               )} />
               {editingAllowance && (
-                <FormField control={form.control} name="isActive" render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-lg border p-4">
-                    <div>
-                      <FormLabel className="text-base">有効</FormLabel>
-                      <p className="text-sm text-muted-foreground">無効にすると給与計算に使用されません</p>
-                    </div>
-                    <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                  </FormItem>
-                )} />
+                <>
+                  <FormField control={form.control} name="sortOrder" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>表示順</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min={1}
+                          placeholder="例：1"
+                          {...field}
+                          value={field.value ?? ""}
+                          onChange={e => field.onChange(e.target.value === "" ? undefined : parseInt(e.target.value, 10))}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="isActive" render={({ field }) => (
+                    <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                      <div>
+                        <FormLabel className="text-base">有効</FormLabel>
+                        <p className="text-sm text-muted-foreground">無効にすると給与計算に使用されません</p>
+                      </div>
+                      <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                    </FormItem>
+                  )} />
+                </>
               )}
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>キャンセル</Button>
@@ -291,6 +311,7 @@ const deductionSchema = z.object({
   description: z.string().optional(),
   calculationType: z.enum(["fixed", "variable"]).default("fixed"),
   isActive: z.boolean().default(true).optional(),
+  sortOrder: z.number().int().min(1, "1以上の整数を入力してください").optional(),
 });
 type DeductionFormValues = z.infer<typeof deductionSchema>;
 
@@ -324,6 +345,7 @@ function DeductionMasterTab() {
       description: deduction.description || "",
       calculationType: (deduction.calculationType as "fixed" | "variable") ?? "fixed",
       isActive: deduction.isActive,
+      sortOrder: Math.max(1, deduction.sortOrder),
     });
     setIsDialogOpen(true);
   };
@@ -333,7 +355,7 @@ function DeductionMasterTab() {
       if (editingDeduction) {
         await updateDeduction.mutateAsync({
           id: editingDeduction.id,
-          data: { name: data.name, description: data.description || undefined, calculationType: data.calculationType, isActive: data.isActive ?? true },
+          data: { name: data.name, description: data.description || undefined, calculationType: data.calculationType, isActive: data.isActive ?? true, sortOrder: data.sortOrder },
         });
         toast({ title: "保存しました", description: "差引マスタを更新しました。" });
       } else {
@@ -461,15 +483,33 @@ function DeductionMasterTab() {
                 </FormItem>
               )} />
               {editingDeduction && (
-                <FormField control={form.control} name="isActive" render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-lg border p-4">
-                    <div>
-                      <FormLabel className="text-base">有効</FormLabel>
-                      <p className="text-sm text-muted-foreground">無効にすると給与計算に使用されません</p>
-                    </div>
-                    <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                  </FormItem>
-                )} />
+                <>
+                  <FormField control={form.control} name="sortOrder" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>表示順</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min={1}
+                          placeholder="例：1"
+                          {...field}
+                          value={field.value ?? ""}
+                          onChange={e => field.onChange(e.target.value === "" ? undefined : parseInt(e.target.value, 10))}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="isActive" render={({ field }) => (
+                    <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                      <div>
+                        <FormLabel className="text-base">有効</FormLabel>
+                        <p className="text-sm text-muted-foreground">無効にすると給与計算に使用されません</p>
+                      </div>
+                      <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                    </FormItem>
+                  )} />
+                </>
               )}
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>キャンセル</Button>
