@@ -126,7 +126,7 @@ export default function AttendancePage() {
   /* ── データ取得 ──────────────────────── */
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(`${BASE}/api/attendance/today`);
+      const res = await fetch(`${BASE}/api/attendance/today`, { cache: "no-store" });
       if (!res.ok) return;
       const result: EmployeeStatus[] = await res.json();
       setData(result);
