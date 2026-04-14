@@ -70,6 +70,7 @@ export default function DriverPage() {
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [now, setNow] = useState(new Date());
+  const [locationNote, setLocationNote] = useState("");
 
   // 現在時刻を毎秒更新
   useEffect(() => {
@@ -122,10 +123,11 @@ export default function DriverPage() {
     try {
       await apiFetch("/attendance/record", {
         method: "POST",
-        body: JSON.stringify({ employeeId, eventType }),
+        body: JSON.stringify({ employeeId, eventType, note: locationNote.trim() || null }),
       });
-      setSuccessMsg(`${EVENT_LABELS[eventType]}を記録しました`);
-      setTimeout(() => setSuccessMsg(null), 3000);
+      setSuccessMsg(`${EVENT_LABELS[eventType]}を記録しました${locationNote.trim() ? `（${locationNote.trim()}）` : ""}`);
+      setLocationNote("");
+      setTimeout(() => setSuccessMsg(null), 4000);
       await fetchData();
     } catch {
       setError("記録に失敗しました。もう一度お試しください。");
@@ -220,6 +222,20 @@ export default function DriverPage() {
         </div>
       )}
 
+      {/* 発着地入力 */}
+      <div className="mx-4 mt-3 mb-1">
+        <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
+          📍 発着地（任意）
+        </label>
+        <input
+          type="text"
+          value={locationNote}
+          onChange={(e) => setLocationNote(e.target.value)}
+          placeholder="例：本社 → 大阪営業所"
+          className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-base placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm"
+        />
+      </div>
+
       {/* 4大ボタン */}
       <div className="flex-1 p-4 grid grid-cols-2 gap-4 content-start mt-2">
         {/* 出勤 */}
@@ -283,11 +299,18 @@ export default function DriverPage() {
           </div>
           <div className="divide-y">
             {records.map((r) => (
-              <div key={r.id} className="px-4 py-3 flex items-center justify-between">
-                <span className={`text-xs px-2 py-1 rounded-full border font-medium ${EVENT_COLORS[r.eventType as EventType]}`}>
-                  {EVENT_LABELS[r.eventType as EventType]}
-                </span>
-                <span className="font-mono text-sm font-semibold tabular-nums">
+              <div key={r.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className={`shrink-0 text-xs px-2 py-1 rounded-full border font-medium ${EVENT_COLORS[r.eventType as EventType]}`}>
+                    {EVENT_LABELS[r.eventType as EventType]}
+                  </span>
+                  {r.note && (
+                    <span className="text-xs text-muted-foreground truncate">
+                      📍 {r.note}
+                    </span>
+                  )}
+                </div>
+                <span className="shrink-0 font-mono text-sm font-semibold tabular-nums">
                   {formatTime(r.recordedAt)}
                 </span>
               </div>

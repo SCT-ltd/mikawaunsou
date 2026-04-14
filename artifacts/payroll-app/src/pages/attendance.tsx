@@ -20,6 +20,7 @@ interface AttendanceRecord {
   eventType: EventType;
   workDate: string;
   recordedAt: string;
+  note: string | null;
 }
 
 interface EmployeeStatus {
@@ -494,6 +495,9 @@ export default function AttendancePage() {
                               <div>
                                 <p className="text-xs font-semibold">{EVENT_LABELS[r.eventType as EventType]}</p>
                                 <p className="text-base font-bold tabular-nums">{fmt(r.recordedAt)}</p>
+                                {r.note && (
+                                  <p className="text-xs text-muted-foreground mt-0.5">📍 {r.note}</p>
+                                )}
                               </div>
                               <div className="flex items-center gap-0.5">
                                 <button
