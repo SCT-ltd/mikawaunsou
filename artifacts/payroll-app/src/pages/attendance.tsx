@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { AppLayout } from "@/components/layout/app-layout";
 import { Button } from "@/components/ui/button";
 import {
   RefreshCw, Clock, QrCode, Pencil, Trash2, Save, X,
-  UserCheck, Coffee, LogOut, AlarmClock, Plus,
+  UserCheck, Coffee, LogOut, AlarmClock, Plus, GripVertical,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -118,6 +118,10 @@ export default function AttendancePage() {
   const [addEventType, setAddEventType] = useState<EventType>("clock_in");
   const [addTime, setAddTime] = useState(() => toTimeInput(new Date().toISOString()));
 
+  // ドラッグ並び替え
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
   /* ── データ取得 ──────────────────────── */
   const fetchData = useCallback(async () => {
     try {
@@ -202,6 +206,34 @@ export default function AttendancePage() {
       setAddMode(false);
       await fetchData();
     } finally { setSaving(false); }
+  };
+
+  /* ── ドラッグ並び替え ─────────────────── */
+  const swapRecordTimes = async (indexA: number, indexB: number) => {
+    if (!selected || indexA === indexB) return;
+    const recs = selected.records;
+    const a = recs[indexA];
+    const b = recs[indexB];
+    setSaving(true);
+    try {
+      await Promise.all([
+        fetch(`${BASE}/api/attendance/records/${a.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ eventType: a.eventType, recordedAt: b.recordedAt }),
+        }),
+        fetch(`${BASE}/api/attendance/records/${b.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ eventType: b.eventType, recordedAt: a.recordedAt }),
+        }),
+      ]);
+      await fetchData();
+    } finally {
+      setSaving(false);
+      setDragIndex(null);
+      setDragOverIndex(null);
+    }
   };
 
   /* ── 集計 ──────────────────────────── */
@@ -432,7 +464,15 @@ export default function AttendancePage() {
                     <div className="absolute left-[18px] top-2 bottom-2 w-px bg-border" />
                     <div className="space-y-3">
                       {selected.records.map((r, i) => (
-                        <div key={r.id} className="flex items-start gap-3">
+                        <div
+                          key={r.id}
+                          className={`flex items-start gap-3 transition-opacity ${dragIndex !== null && dragIndex !== i ? "opacity-60" : ""} ${dragOverIndex === i && dragIndex !== i ? "ring-2 ring-primary ring-offset-1 rounded-lg" : ""}`}
+                          draggable
+                          onDragStart={() => setDragIndex(i)}
+                          onDragOver={(e) => { e.preventDefault(); setDragOverIndex(i); }}
+                          onDragEnd={() => { setDragIndex(null); setDragOverIndex(null); }}
+                          onDrop={(e) => { e.preventDefault(); if (dragIndex !== null) swapRecordTimes(dragIndex, i); }}
+                        >
                           {/* ドット */}
                           <div className={`relative z-10 w-9 h-9 rounded-full border-2 flex items-center justify-center shrink-0
                             ${EVENT_COLORS[r.eventType as EventType]} border-current`}>
@@ -445,13 +485,21 @@ export default function AttendancePage() {
                                 <p className="text-xs font-semibold">{EVENT_LABELS[r.eventType as EventType]}</p>
                                 <p className="text-base font-bold tabular-nums">{fmt(r.recordedAt)}</p>
                               </div>
-                              <button
-                                onClick={() => openEdit(r)}
-                                className="p-1.5 rounded hover:bg-black/5 transition-colors opacity-60 hover:opacity-100"
-                                title="修正"
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </button>
+                              <div className="flex items-center gap-0.5">
+                                <button
+                                  onClick={() => openEdit(r)}
+                                  className="p-1.5 rounded hover:bg-black/5 transition-colors opacity-60 hover:opacity-100"
+                                  title="修正"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
+                                <div
+                                  className="p-1.5 cursor-grab active:cursor-grabbing opacity-40 hover:opacity-70"
+                                  title="ドラッグで並び替え"
+                                >
+                                  <GripVertical className="h-3.5 w-3.5" />
+                                </div>
+                              </div>
                             </div>
                           </div>
                         </div>
