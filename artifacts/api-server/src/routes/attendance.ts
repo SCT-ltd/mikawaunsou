@@ -1,35 +1,27 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import { db, attendanceRecordsTable, employeesTable } from "@workspace/db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 const router = Router();
 
-// 今日の日付文字列 (JST)
+// ── SSEクライアント管理 ────────────────────────────────
+const sseClients = new Set<Response>();
+
+function broadcast(data: unknown) {
+  const payload = `data: ${JSON.stringify(data)}\n\n`;
+  for (const client of sseClients) {
+    client.write(payload);
+  }
+}
+
+// ── ユーティリティ ────────────────────────────────────
 function todayJST(): string {
   const now = new Date();
   const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
   return jst.toISOString().slice(0, 10);
 }
 
-// 社員の今日の打刻一覧
-router.get("/attendance/employee/:employeeId/today", async (req, res) => {
-  const employeeId = parseInt(req.params.employeeId, 10);
-  const today = todayJST();
-
-  const records = await db
-    .select()
-    .from(attendanceRecordsTable)
-    .where(and(
-      eq(attendanceRecordsTable.employeeId, employeeId),
-      eq(attendanceRecordsTable.workDate, today),
-    ))
-    .orderBy(attendanceRecordsTable.recordedAt);
-
-  return res.json(records);
-});
-
-// 全社員の今日の状況（ダッシュボード用）
-router.get("/attendance/today", async (req, res) => {
+async function buildTodaySnapshot() {
   const today = todayJST();
 
   const employees = await db
@@ -43,7 +35,7 @@ router.get("/attendance/today", async (req, res) => {
     .where(eq(attendanceRecordsTable.workDate, today))
     .orderBy(attendanceRecordsTable.recordedAt);
 
-  const result = employees.map(emp => {
+  return employees.map(emp => {
     const empRecords = allRecords.filter(r => r.employeeId === emp.id);
     const lastEvent = empRecords.length > 0 ? empRecords[empRecords.length - 1] : null;
 
@@ -68,11 +60,61 @@ router.get("/attendance/today", async (req, res) => {
       records: empRecords,
     };
   });
+}
 
-  return res.json(result);
+// ── SSEストリーム ─────────────────────────────────────
+router.get("/attendance/stream", async (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+
+  // 接続直後に現在の状態を送信
+  try {
+    const snapshot = await buildTodaySnapshot();
+    res.write(`data: ${JSON.stringify(snapshot)}\n\n`);
+  } catch {
+    // 初回送信失敗は無視
+  }
+
+  sseClients.add(res);
+
+  // 接続維持用ハートビート（30秒ごと）
+  const heartbeat = setInterval(() => {
+    res.write(": ping\n\n");
+  }, 30000);
+
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    sseClients.delete(res);
+  });
 });
 
-// 打刻記録
+// ── 全社員の今日の状況（REST fallback） ──────────────
+router.get("/attendance/today", async (_req, res) => {
+  const snapshot = await buildTodaySnapshot();
+  return res.json(snapshot);
+});
+
+// ── 社員の今日の打刻一覧 ─────────────────────────────
+router.get("/attendance/employee/:employeeId/today", async (req, res) => {
+  const employeeId = parseInt(req.params.employeeId, 10);
+  const today = todayJST();
+
+  const records = await db
+    .select()
+    .from(attendanceRecordsTable)
+    .where(and(
+      eq(attendanceRecordsTable.employeeId, employeeId),
+      eq(attendanceRecordsTable.workDate, today),
+    ))
+    .orderBy(attendanceRecordsTable.recordedAt);
+
+  return res.json(records);
+});
+
+// ── 打刻記録（POST → SSEブロードキャスト） ──────────
 router.post("/attendance/record", async (req, res) => {
   const { employeeId, eventType, note } = req.body as {
     employeeId: number;
@@ -95,10 +137,13 @@ router.post("/attendance/record", async (req, res) => {
     note: note ?? null,
   }).returning();
 
+  // 打刻後に全SSEクライアントへ最新スナップショットをブロードキャスト
+  buildTodaySnapshot().then(snapshot => broadcast(snapshot)).catch(() => {});
+
   return res.status(201).json(record);
 });
 
-// 社員の過去の打刻履歴（日付指定）
+// ── 社員の打刻履歴（日付指定） ───────────────────────
 router.get("/attendance/employee/:employeeId", async (req, res) => {
   const employeeId = parseInt(req.params.employeeId, 10);
   const { date } = req.query;

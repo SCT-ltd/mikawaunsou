@@ -31,12 +31,6 @@ interface EmployeeStatus {
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-async function apiFetch(path: string) {
-  const res = await fetch(`${BASE}/api${path}`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
-
 function formatTime(dateStr: string | null): string {
   if (!dateStr) return "-";
   return new Date(dateStr).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
@@ -98,9 +92,11 @@ export default function AttendancePage() {
   const [now, setNow] = useState(new Date());
   const [qrEmployee, setQrEmployee] = useState<EmployeeStatus["employee"] | null>(null);
 
+  // 手動更新（ボタン用）
   const fetchData = useCallback(async () => {
     try {
-      const result = await apiFetch("/attendance/today");
+      const res = await fetch(`${BASE}/api/attendance/today`);
+      const result = await res.json();
       setData(result);
       setLastUpdated(new Date());
     } catch {
@@ -110,11 +106,27 @@ export default function AttendancePage() {
     }
   }, []);
 
-  // 初回取得＋5秒ごとに自動更新
+  // SSEで打刻をリアルタイム受信
   useEffect(() => {
-    fetchData();
-    const t = setInterval(fetchData, 5000);
-    return () => clearInterval(t);
+    const es = new EventSource(`${BASE}/api/attendance/stream`);
+
+    es.onmessage = (event) => {
+      try {
+        const result = JSON.parse(event.data) as EmployeeStatus[];
+        setData(result);
+        setLastUpdated(new Date());
+        setLoading(false);
+      } catch {
+        // 解析失敗は無視
+      }
+    };
+
+    es.onerror = () => {
+      // 接続断時は手動更新で補完（EventSourceは自動再接続する）
+      fetchData();
+    };
+
+    return () => es.close();
   }, [fetchData]);
 
   // 1秒ごとに現在時刻を更新（経過時間表示用）
