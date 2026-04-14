@@ -8,7 +8,8 @@ import {
   BookOpen, 
   Settings,
   Truck,
-  Tag
+  Tag,
+  CalendarRange
 } from "lucide-react";
 
 const navigation = [
@@ -17,6 +18,7 @@ const navigation = [
   { name: "月次実績入力", href: "/monthly-input", icon: CalendarDays },
   { name: "給与明細", href: "/payroll", icon: FileText },
   { name: "振替伝票", href: "/journal", icon: BookOpen },
+  { name: "カレンダー", href: "/calendar", icon: CalendarRange },
   { name: "マスター管理", href: "/allowances", icon: Tag },
   { name: "会社設定", href: "/settings", icon: Settings },
 ];

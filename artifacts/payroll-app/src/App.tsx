@@ -14,6 +14,7 @@ import PayrollDetail from "@/pages/payroll/detail";
 import JournalEntries from "@/pages/journal";
 import Settings from "@/pages/settings";
 import AllowanceSettings from "@/pages/allowances";
+import CalendarPage from "@/pages/calendar";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -37,6 +38,7 @@ function Router() {
       <Route path="/journal" component={JournalEntries} />
       <Route path="/settings" component={Settings} />
       <Route path="/allowances" component={AllowanceSettings} />
+      <Route path="/calendar" component={CalendarPage} />
       <Route component={NotFound} />
     </Switch>
   );
