@@ -110,10 +110,10 @@ export default function AttendancePage() {
     }
   }, []);
 
-  // 初回取得＋1分ごとに自動更新
+  // 初回取得＋5秒ごとに自動更新
   useEffect(() => {
     fetchData();
-    const t = setInterval(fetchData, 60000);
+    const t = setInterval(fetchData, 5000);
     return () => clearInterval(t);
   }, [fetchData]);
 
