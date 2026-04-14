@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, allowanceDefinitionsTable, employeeAllowancesTable, deductionDefinitionsTable, employeeDeductionsTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, ne } from "drizzle-orm";
 
 const router = Router();
 
@@ -32,6 +32,25 @@ router.post("/allowance-definitions", async (req, res) => {
 router.put("/allowance-definitions/:id", async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const body = req.body;
+
+  // sortOrder が指定されていて変更がある場合、重複を入れ替えで解消
+  if (body.sortOrder !== undefined) {
+    const newOrder = body.sortOrder;
+    const [current] = await db.select().from(allowanceDefinitionsTable).where(eq(allowanceDefinitionsTable.id, id));
+    if (!current) return res.status(404).json({ error: "Not found" });
+
+    if (current.sortOrder !== newOrder) {
+      const [conflicting] = await db.select().from(allowanceDefinitionsTable)
+        .where(and(eq(allowanceDefinitionsTable.sortOrder, newOrder), ne(allowanceDefinitionsTable.id, id)));
+      if (conflicting) {
+        // 入れ替え：競合相手に現在の sortOrder を割り当て
+        await db.update(allowanceDefinitionsTable)
+          .set({ sortOrder: current.sortOrder, updatedAt: new Date() })
+          .where(eq(allowanceDefinitionsTable.id, conflicting.id));
+      }
+    }
+  }
+
   const [updated] = await db.update(allowanceDefinitionsTable).set({
     ...(body.name !== undefined && { name: body.name }),
     ...(body.description !== undefined && { description: body.description }),
@@ -157,6 +176,25 @@ router.post("/deduction-definitions", async (req, res) => {
 router.put("/deduction-definitions/:id", async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const body = req.body;
+
+  // sortOrder が指定されていて変更がある場合、重複を入れ替えで解消
+  if (body.sortOrder !== undefined) {
+    const newOrder = body.sortOrder;
+    const [current] = await db.select().from(deductionDefinitionsTable).where(eq(deductionDefinitionsTable.id, id));
+    if (!current) return res.status(404).json({ error: "Not found" });
+
+    if (current.sortOrder !== newOrder) {
+      const [conflicting] = await db.select().from(deductionDefinitionsTable)
+        .where(and(eq(deductionDefinitionsTable.sortOrder, newOrder), ne(deductionDefinitionsTable.id, id)));
+      if (conflicting) {
+        // 入れ替え：競合相手に現在の sortOrder を割り当て
+        await db.update(deductionDefinitionsTable)
+          .set({ sortOrder: current.sortOrder, updatedAt: new Date() })
+          .where(eq(deductionDefinitionsTable.id, conflicting.id));
+      }
+    }
+  }
+
   const [updated] = await db.update(deductionDefinitionsTable).set({
     ...(body.name !== undefined && { name: body.name }),
     ...(body.description !== undefined && { description: body.description }),
