@@ -177,7 +177,7 @@ function AllowanceMasterTab() {
                             <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">非課税</Badge>
                           )}
                         </TableCell>
-                        <TableCell>{a.sortOrder}</TableCell>
+                        <TableCell>{Math.max(0, a.sortOrder)}</TableCell>
                         <TableCell>
                           {a.isActive ? <Badge variant="secondary">有効</Badge> : <Badge variant="outline" className="text-muted-foreground">無効</Badge>}
                         </TableCell>
@@ -404,7 +404,7 @@ function DeductionMasterTab() {
                         <TableCell>
                           <Badge variant="outline" className={ct.color}>{ct.label}</Badge>
                         </TableCell>
-                        <TableCell>{d.sortOrder}</TableCell>
+                        <TableCell>{Math.max(0, d.sortOrder)}</TableCell>
                         <TableCell>
                           {d.isActive ? <Badge variant="secondary">有効</Badge> : <Badge variant="outline" className="text-muted-foreground">無効</Badge>}
                         </TableCell>
