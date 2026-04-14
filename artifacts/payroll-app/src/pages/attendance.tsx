@@ -303,6 +303,7 @@ export default function AttendancePage() {
                         <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" />経過</span>
                       </th>
                       <th className="px-4 py-3 text-center font-medium text-muted-foreground">打刻数</th>
+                      <th className="px-4 py-3 text-center font-medium text-muted-foreground">QR</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
@@ -350,6 +351,15 @@ export default function AttendancePage() {
                             ) : (
                               <span className="text-xs text-muted-foreground">-</span>
                             )}
+                          </td>
+                          <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              onClick={() => setQrEmployee(d.employee)}
+                              className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
+                              title={`${d.employee.name} のQRコード`}
+                            >
+                              <QrCode className="h-4 w-4" />
+                            </button>
                           </td>
                         </tr>
                       );
