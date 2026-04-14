@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { AppLayout } from "@/components/layout/app-layout";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Users, RefreshCw, Clock, QrCode } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Users, RefreshCw, Clock, QrCode, Pencil, Trash2, Save } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import QRCode from "react-qr-code";
 
 type EventType = "clock_in" | "clock_out" | "break_start" | "break_end";
@@ -36,6 +38,13 @@ function formatTime(dateStr: string | null): string {
   return new Date(dateStr).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
 }
 
+function toTimeInput(dateStr: string): string {
+  const d = new Date(dateStr);
+  const h = String(d.getHours()).padStart(2, "0");
+  const m = String(d.getMinutes()).padStart(2, "0");
+  return `${h}:${m}`;
+}
+
 function getElapsed(clockInTime: string | null, now: Date): string {
   if (!clockInTime) return "-";
   const ms = now.getTime() - new Date(clockInTime).getTime();
@@ -54,6 +63,13 @@ const EVENT_LABELS: Record<EventType, string> = {
   clock_out: "退勤",
   break_start: "休憩開始",
   break_end: "休憩終了",
+};
+
+const EVENT_CHIP_COLORS: Record<EventType, string> = {
+  clock_in: "bg-green-100 text-green-800 border-green-200",
+  clock_out: "bg-gray-100 text-gray-700 border-gray-200",
+  break_start: "bg-yellow-100 text-yellow-800 border-yellow-200",
+  break_end: "bg-blue-100 text-blue-700 border-blue-200",
 };
 
 function StatusBadge({ status }: { status: Status }) {
@@ -92,6 +108,14 @@ export default function AttendancePage() {
   const [now, setNow] = useState(new Date());
   const [qrEmployee, setQrEmployee] = useState<EmployeeStatus["employee"] | null>(null);
 
+  // 打刻修正ダイアログ用 state
+  const [editRecord, setEditRecord] = useState<AttendanceRecord | null>(null);
+  const [editEmployeeName, setEditEmployeeName] = useState("");
+  const [editEventType, setEditEventType] = useState<EventType>("clock_in");
+  const [editTime, setEditTime] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+
   // REST取得（手動更新・フォールバック用）
   const fetchData = useCallback(async () => {
     try {
@@ -109,30 +133,18 @@ export default function AttendancePage() {
 
   // SSE（打刻を即時受信）+ 10秒ポーリング（フォールバック）
   useEffect(() => {
-    // 初回REST取得
     fetchData();
-
-    // SSEストリーム接続
     const es = new EventSource(`${BASE}/api/attendance/stream`);
-
     es.onmessage = (event) => {
       try {
         const result = JSON.parse(event.data) as EmployeeStatus[];
         setData(result);
         setLastUpdated(new Date());
         setLoading(false);
-      } catch {
-        // 解析失敗は無視
-      }
+      } catch { /* ignore */ }
     };
-
-    // SSEが切断されても10秒ポーリングで補完（EventSourceは自動再接続する）
     const poll = setInterval(fetchData, 10000);
-
-    return () => {
-      es.close();
-      clearInterval(poll);
-    };
+    return () => { es.close(); clearInterval(poll); };
   }, [fetchData]);
 
   // 1秒ごとに現在時刻を更新（経過時間表示用）
@@ -140,6 +152,51 @@ export default function AttendancePage() {
     const t = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
+
+  // 修正ダイアログを開く
+  const openEdit = (record: AttendanceRecord, employeeName: string) => {
+    setEditRecord(record);
+    setEditEmployeeName(employeeName);
+    setEditEventType(record.eventType);
+    setEditTime(toTimeInput(record.recordedAt));
+    setDeleteConfirm(false);
+  };
+
+  // 修正を保存
+  const saveEdit = async () => {
+    if (!editRecord) return;
+    setSaving(true);
+    try {
+      // recordedAt: 今日の日付 + 入力時刻
+      const base = new Date(editRecord.recordedAt);
+      const [h, m] = editTime.split(":").map(Number);
+      base.setHours(h, m, 0, 0);
+
+      await fetch(`${BASE}/api/attendance/records/${editRecord.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventType: editEventType, recordedAt: base.toISOString() }),
+      });
+      setEditRecord(null);
+      await fetchData();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // レコードを削除
+  const deleteRecord = async () => {
+    if (!editRecord) return;
+    setSaving(true);
+    try {
+      await fetch(`${BASE}/api/attendance/records/${editRecord.id}`, { method: "DELETE" });
+      setEditRecord(null);
+      setDeleteConfirm(false);
+      await fetchData();
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const counts = {
     total: data.length,
@@ -200,6 +257,7 @@ export default function AttendancePage() {
           <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-yellow-100 border border-yellow-200 inline-block" />休憩中</span>
           <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-orange-100 border border-orange-200 inline-block" />8時間以上（長時間注意）</span>
           <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-red-100 border border-red-200 inline-block" />10時間以上（要確認）</span>
+          <span className="flex items-center gap-1.5 ml-auto"><Pencil className="h-3 w-3" />打刻チップをクリックで修正</span>
         </div>
 
         {/* テーブル */}
@@ -220,7 +278,7 @@ export default function AttendancePage() {
                   <th className="px-4 py-3 text-center font-medium text-muted-foreground">
                     <span className="flex items-center justify-center gap-1"><Clock className="h-3.5 w-3.5" />経過時間</span>
                   </th>
-                  <th className="px-4 py-3 text-center font-medium text-muted-foreground hidden lg:table-cell">本日の打刻</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground hidden lg:table-cell">本日の打刻</th>
                   <th className="px-4 py-3 text-center font-medium text-muted-foreground">QR</th>
                 </tr>
               </thead>
@@ -254,11 +312,18 @@ export default function AttendancePage() {
                         {showElapsed ? getElapsed(d.clockInTime, now) : "-"}
                       </td>
                       <td className="px-4 py-3 hidden lg:table-cell">
-                        <div className="flex flex-wrap gap-1 justify-center">
+                        <div className="flex flex-wrap gap-1.5">
                           {d.records.map(r => (
-                            <span key={r.id} className="text-xs bg-muted px-1.5 py-0.5 rounded tabular-nums">
-                              {EVENT_LABELS[r.eventType]} {formatTime(r.recordedAt)}
-                            </span>
+                            <button
+                              key={r.id}
+                              onClick={() => openEdit(r, d.employee.name)}
+                              className={`group inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full border font-medium transition-all hover:shadow-sm hover:brightness-95 cursor-pointer ${EVENT_CHIP_COLORS[r.eventType as EventType]}`}
+                              title="クリックして修正"
+                            >
+                              <span>{EVENT_LABELS[r.eventType as EventType]}</span>
+                              <span className="tabular-nums">{formatTime(r.recordedAt)}</span>
+                              <Pencil className="h-2.5 w-2.5 opacity-0 group-hover:opacity-60 transition-opacity" />
+                            </button>
                           ))}
                           {d.records.length === 0 && <span className="text-xs text-muted-foreground">なし</span>}
                         </div>
@@ -280,6 +345,99 @@ export default function AttendancePage() {
           </div>
         )}
       </div>
+
+      {/* 打刻修正ダイアログ */}
+      <Dialog open={!!editRecord} onOpenChange={(open) => { if (!open) { setEditRecord(null); setDeleteConfirm(false); } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-4 w-4" />
+              打刻修正
+            </DialogTitle>
+          </DialogHeader>
+
+          {editRecord && (
+            <div className="space-y-4 py-2">
+              <p className="text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">{editEmployeeName}</span> さんの打刻を修正します
+              </p>
+
+              <div className="space-y-2">
+                <Label>打刻種別</Label>
+                <Select value={editEventType} onValueChange={(v) => setEditEventType(v as EventType)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="clock_in">出勤</SelectItem>
+                    <SelectItem value="break_start">休憩開始</SelectItem>
+                    <SelectItem value="break_end">休憩終了</SelectItem>
+                    <SelectItem value="clock_out">退勤</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>打刻時刻</Label>
+                <Input
+                  type="time"
+                  value={editTime}
+                  onChange={(e) => setEditTime(e.target.value)}
+                />
+              </div>
+
+              {/* 削除確認 */}
+              {deleteConfirm ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3 space-y-3">
+                  <p className="text-sm text-red-700 font-medium">本当にこの打刻を削除しますか？</p>
+                  <p className="text-xs text-red-600">削除すると元に戻せません。</p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      className="flex-1"
+                      onClick={deleteRecord}
+                      disabled={saving}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                      削除する
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => setDeleteConfirm(false)}
+                      disabled={saving}
+                    >
+                      キャンセル
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 flex-row">
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700 mr-auto"
+              onClick={() => setDeleteConfirm(true)}
+              disabled={saving || deleteConfirm}
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+              削除
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => { setEditRecord(null); setDeleteConfirm(false); }} disabled={saving}>
+              キャンセル
+            </Button>
+            <Button size="sm" onClick={saveEdit} disabled={saving}>
+              <Save className="h-3.5 w-3.5 mr-1.5" />
+              保存
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* QRコードダイアログ */}
       <Dialog open={!!qrEmployee} onOpenChange={(open) => !open && setQrEmployee(null)}>

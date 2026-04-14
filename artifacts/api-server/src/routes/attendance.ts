@@ -152,6 +152,53 @@ router.post("/attendance/record", async (req, res) => {
   return res.status(201).json(record);
 });
 
+// ── 打刻レコード修正 ─────────────────────────────────
+router.patch("/attendance/records/:id", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const { eventType, recordedAt } = req.body as {
+    eventType?: "clock_in" | "clock_out" | "break_start" | "break_end";
+    recordedAt?: string;
+  };
+
+  if (!eventType && !recordedAt) {
+    return res.status(400).json({ error: "eventType または recordedAt が必要です" });
+  }
+
+  const updateValues: Record<string, unknown> = {};
+  if (eventType) updateValues.eventType = eventType;
+  if (recordedAt) updateValues.recordedAt = new Date(recordedAt);
+
+  const [updated] = await db
+    .update(attendanceRecordsTable)
+    .set(updateValues)
+    .where(eq(attendanceRecordsTable.id, id))
+    .returning();
+
+  if (!updated) {
+    return res.status(404).json({ error: "レコードが見つかりません" });
+  }
+
+  buildTodaySnapshot().then(snapshot => broadcast(snapshot)).catch(() => {});
+  return res.json(updated);
+});
+
+// ── 打刻レコード削除 ─────────────────────────────────
+router.delete("/attendance/records/:id", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+
+  const [deleted] = await db
+    .delete(attendanceRecordsTable)
+    .where(eq(attendanceRecordsTable.id, id))
+    .returning();
+
+  if (!deleted) {
+    return res.status(404).json({ error: "レコードが見つかりません" });
+  }
+
+  buildTodaySnapshot().then(snapshot => broadcast(snapshot)).catch(() => {});
+  return res.status(204).send();
+});
+
 // ── 社員の打刻履歴（日付指定） ───────────────────────
 router.get("/attendance/employee/:employeeId", async (req, res) => {
   const employeeId = parseInt(req.params.employeeId, 10);
