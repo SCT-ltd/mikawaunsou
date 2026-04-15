@@ -15,6 +15,8 @@ export const monthlyRecordsTable = pgTable("monthly_records", {
   drivingDistanceKm: doublePrecision("driving_distance_km").notNull().default(0),
   deliveryCases: integer("delivery_cases").notNull().default(0),
   absenceDays: doublePrecision("absence_days").notNull().default(0),
+  saturdayWorkDays: doublePrecision("saturday_work_days").notNull().default(0),
+  sundayWorkHours: doublePrecision("sunday_work_hours").notNull().default(0),
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

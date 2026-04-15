@@ -16,6 +16,9 @@ const companySchema = z.object({
   name: z.string().min(1, "会社名を入力してください"),
   closingDay: z.coerce.number().min(1).max(31, "1から31の数値を入力してください（31は月末）"),
   paymentDay: z.coerce.number().min(1).max(31, "1から31の数値を入力してください（31は月末）"),
+  dailyWageWeekday: z.coerce.number().min(0, "0以上の数値を入力してください").default(9808),
+  dailyWageSaturday: z.coerce.number().min(0, "0以上の数値を入力してください").default(12260),
+  hourlyWageSunday: z.coerce.number().min(0, "0以上の数値を入力してください").default(1655),
 });
 
 type CompanyFormValues = z.infer<typeof companySchema>;
@@ -33,6 +36,9 @@ export default function Settings() {
       name: "",
       closingDay: 31,
       paymentDay: 25,
+      dailyWageWeekday: 9808,
+      dailyWageSaturday: 12260,
+      hourlyWageSunday: 1655,
     },
   });
 
@@ -42,6 +48,9 @@ export default function Settings() {
         name: company.name,
         closingDay: company.closingDay,
         paymentDay: company.paymentDay,
+        dailyWageWeekday: company.dailyWageWeekday ?? 9808,
+        dailyWageSaturday: company.dailyWageSaturday ?? 12260,
+        hourlyWageSunday: company.hourlyWageSunday ?? 1655,
       });
     }
   }, [company, form]);
@@ -131,6 +140,63 @@ export default function Settings() {
                           <span className="text-sm text-muted-foreground">日（31は月末扱い）</span>
                         </div>
                       </FormControl>
+                    </FormItem>
+                  )}
+                />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">日給レート設定</CardTitle>
+                <CardDescription>給与形態が「日給制」の社員に適用される基本単価です。</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-6 md:grid-cols-3">
+                <FormField
+                  control={form.control}
+                  name="dailyWageWeekday"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>平日 日給（円）</FormLabel>
+                      <FormControl>
+                        <div className="flex items-center gap-2">
+                          <Input type="number" min="0" {...field} className="text-right" />
+                          <span className="text-sm text-muted-foreground shrink-0">円/日</span>
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="dailyWageSaturday"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>土曜 日給（円）</FormLabel>
+                      <FormControl>
+                        <div className="flex items-center gap-2">
+                          <Input type="number" min="0" {...field} className="text-right" />
+                          <span className="text-sm text-muted-foreground shrink-0">円/日</span>
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="hourlyWageSunday"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>日曜 時給（円）</FormLabel>
+                      <FormControl>
+                        <div className="flex items-center gap-2">
+                          <Input type="number" min="0" {...field} className="text-right" />
+                          <span className="text-sm text-muted-foreground shrink-0">円/時</span>
+                        </div>
+                      </FormControl>
+                      <FormMessage />
                     </FormItem>
                   )}
                 />

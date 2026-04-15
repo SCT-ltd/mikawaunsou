@@ -21,6 +21,8 @@ router.get("/monthly-records", async (req, res) => {
     drivingDistanceKm: monthlyRecordsTable.drivingDistanceKm,
     deliveryCases: monthlyRecordsTable.deliveryCases,
     absenceDays: monthlyRecordsTable.absenceDays,
+    saturdayWorkDays: monthlyRecordsTable.saturdayWorkDays,
+    sundayWorkHours: monthlyRecordsTable.sundayWorkHours,
     notes: monthlyRecordsTable.notes,
     createdAt: monthlyRecordsTable.createdAt,
     updatedAt: monthlyRecordsTable.updatedAt,
@@ -52,6 +54,8 @@ router.post("/monthly-records", async (req, res) => {
       drivingDistanceKm: body.drivingDistanceKm ?? existing[0].drivingDistanceKm,
       deliveryCases: body.deliveryCases ?? existing[0].deliveryCases,
       absenceDays: body.absenceDays ?? existing[0].absenceDays,
+      saturdayWorkDays: body.saturdayWorkDays ?? existing[0].saturdayWorkDays,
+      sundayWorkHours: body.sundayWorkHours ?? existing[0].sundayWorkHours,
       notes: body.notes ?? existing[0].notes,
       updatedAt: new Date(),
     }).where(eq(monthlyRecordsTable.id, existing[0].id)).returning();
@@ -69,6 +73,8 @@ router.post("/monthly-records", async (req, res) => {
     drivingDistanceKm: body.drivingDistanceKm ?? 0,
     deliveryCases: body.deliveryCases ?? 0,
     absenceDays: body.absenceDays ?? 0,
+    saturdayWorkDays: body.saturdayWorkDays ?? 0,
+    sundayWorkHours: body.sundayWorkHours ?? 0,
     notes: body.notes,
   }).returning();
   return res.status(201).json(record);
@@ -89,6 +95,8 @@ router.get("/monthly-records/:id", async (req, res) => {
     drivingDistanceKm: monthlyRecordsTable.drivingDistanceKm,
     deliveryCases: monthlyRecordsTable.deliveryCases,
     absenceDays: monthlyRecordsTable.absenceDays,
+    saturdayWorkDays: monthlyRecordsTable.saturdayWorkDays,
+    sundayWorkHours: monthlyRecordsTable.sundayWorkHours,
     notes: monthlyRecordsTable.notes,
     createdAt: monthlyRecordsTable.createdAt,
     updatedAt: monthlyRecordsTable.updatedAt,
@@ -111,6 +119,8 @@ router.put("/monthly-records/:id", async (req, res) => {
     ...(body.drivingDistanceKm !== undefined && { drivingDistanceKm: body.drivingDistanceKm }),
     ...(body.deliveryCases !== undefined && { deliveryCases: body.deliveryCases }),
     ...(body.absenceDays !== undefined && { absenceDays: body.absenceDays }),
+    ...(body.saturdayWorkDays !== undefined && { saturdayWorkDays: body.saturdayWorkDays }),
+    ...(body.sundayWorkHours !== undefined && { sundayWorkHours: body.sundayWorkHours }),
     ...(body.notes !== undefined && { notes: body.notes }),
     updatedAt: new Date(),
   }).where(eq(monthlyRecordsTable.id, id)).returning();

@@ -72,10 +72,12 @@ function AllowanceSidebar({
   employee,
   open,
   onClose,
+  monthlyData,
 }: {
   employee: Employee | null;
   open: boolean;
   onClose: () => void;
+  monthlyData?: { workDays: number; saturdayWorkDays: number; sundayWorkHours: number };
 }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -130,9 +132,22 @@ function AllowanceSidebar({
     }
   }, [employeeDeductions, employeeId]);
 
+  const isDaily = employee?.salaryType === "daily";
+  const computedDailyBaseSalary = isDaily && company
+    ? Math.round(
+        (monthlyData?.workDays ?? 0) * (company.dailyWageWeekday ?? 9808) +
+        (monthlyData?.saturdayWorkDays ?? 0) * (company.dailyWageSaturday ?? 12260) +
+        (monthlyData?.sundayWorkHours ?? 0) * (company.hourlyWageSunday ?? 1655)
+      )
+    : null;
+
   useEffect(() => {
-    setBaseSalaryInput(employee?.baseSalary ?? 0);
-  }, [employee?.baseSalary, employeeId]);
+    if (isDaily && computedDailyBaseSalary !== null) {
+      setBaseSalaryInput(computedDailyBaseSalary);
+    } else {
+      setBaseSalaryInput(employee?.baseSalary ?? 0);
+    }
+  }, [employee?.baseSalary, employeeId, isDaily, computedDailyBaseSalary]);
 
   const handleSave = async () => {
     try {
@@ -221,26 +236,39 @@ function AllowanceSidebar({
               {/* ── 支給セクション ───────────────────────── */}
               <tr className="bg-background">
                 {sectionLabel("支　給", totalRows)}
-                <td className="border border-border px-2 py-1 font-medium">基本給</td>
+                <td className="border border-border px-2 py-1">
+                  <div className="font-medium">基本給</div>
+                  {isDaily && (
+                    <div className="text-muted-foreground leading-tight" style={{ fontSize: "9px" }}>
+                      日給制（自動計算）
+                    </div>
+                  )}
+                </td>
                 <td className="border border-border px-1 py-1 text-center">
                   <span className="px-1 py-0.5 rounded border bg-red-50 text-red-700 border-red-200" style={{ fontSize: "10px" }}>課税</span>
                 </td>
                 <td className="border border-border px-1 py-0.5">
-                  <Input
-                    ref={baseSalaryRef}
-                    type="number"
-                    min="0"
-                    className="h-6 w-full text-right border-0 shadow-none bg-transparent focus-visible:ring-1 focus-visible:ring-primary px-1 text-xs font-medium"
-                    value={baseSalaryInput || ""}
-                    onChange={(e) => {
-                      const v = e.target.value === "" ? 0 : parseInt(e.target.value, 10);
-                      setBaseSalaryInput(isNaN(v) ? 0 : v);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') { e.preventDefault(); focusRowAmount(0); }
-                    }}
-                    placeholder="0"
-                  />
+                  {isDaily ? (
+                    <div className="h-6 w-full text-right px-1 text-xs font-medium flex items-center justify-end tabular-nums text-blue-700">
+                      {baseSalaryInput.toLocaleString("ja-JP")}
+                    </div>
+                  ) : (
+                    <Input
+                      ref={baseSalaryRef}
+                      type="number"
+                      min="0"
+                      className="h-6 w-full text-right border-0 shadow-none bg-transparent focus-visible:ring-1 focus-visible:ring-primary px-1 text-xs font-medium"
+                      value={baseSalaryInput || ""}
+                      onChange={(e) => {
+                        const v = e.target.value === "" ? 0 : parseInt(e.target.value, 10);
+                        setBaseSalaryInput(isNaN(v) ? 0 : v);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); focusRowAmount(0); }
+                      }}
+                      placeholder="0"
+                    />
+                  )}
                 </td>
               </tr>
 
@@ -526,7 +554,7 @@ export default function MonthlyInput() {
           initialEdits[emp.id] = {
             workDays: 0, overtimeHours: 0, lateNightHours: 0,
             holidayWorkDays: 0, drivingDistanceKm: 0, deliveryCases: 0,
-            absenceDays: 0, notes: ""
+            absenceDays: 0, saturdayWorkDays: 0, sundayWorkHours: 0, notes: ""
           };
         }
       });
@@ -562,6 +590,8 @@ export default function MonthlyInput() {
               drivingDistanceKm: editData.drivingDistanceKm,
               deliveryCases: editData.deliveryCases,
               absenceDays: editData.absenceDays,
+              saturdayWorkDays: editData.saturdayWorkDays ?? 0,
+              sundayWorkHours: editData.sundayWorkHours ?? 0,
               notes: editData.notes
             }
           });
@@ -628,24 +658,26 @@ export default function MonthlyInput() {
               <TableHeader>
                 <TableRow className="bg-muted/50">
                   <TableHead className="min-w-[160px] sticky left-0 bg-muted/50 z-10">社員名</TableHead>
-                  <TableHead className="w-[100px]">出勤日数</TableHead>
-                  <TableHead className="w-[100px]">欠勤日数</TableHead>
-                  <TableHead className="w-[100px]">残業(h)</TableHead>
-                  <TableHead className="w-[100px]">深夜(h)</TableHead>
-                  <TableHead className="w-[100px]">休日出勤</TableHead>
-                  <TableHead className="w-[120px]">走行距離(km)</TableHead>
-                  <TableHead className="w-[100px]">配送件数</TableHead>
-                  <TableHead className="w-[200px]">備考</TableHead>
+                  <TableHead className="w-[90px]">平日出勤</TableHead>
+                  <TableHead className="w-[90px]">土曜出勤</TableHead>
+                  <TableHead className="w-[90px]">日曜(h)</TableHead>
+                  <TableHead className="w-[90px]">欠勤日数</TableHead>
+                  <TableHead className="w-[90px]">残業(h)</TableHead>
+                  <TableHead className="w-[90px]">深夜(h)</TableHead>
+                  <TableHead className="w-[90px]">休日出勤</TableHead>
+                  <TableHead className="w-[110px]">走行距離(km)</TableHead>
+                  <TableHead className="w-[90px]">配送件数</TableHead>
+                  <TableHead className="w-[180px]">備考</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">読み込み中...</TableCell>
+                    <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">読み込み中...</TableCell>
                   </TableRow>
                 ) : !employees || employees.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">有効な社員が見つかりません</TableCell>
+                    <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">有効な社員が見つかりません</TableCell>
                   </TableRow>
                 ) : (
                   employees.map((emp) => {
@@ -672,6 +704,16 @@ export default function MonthlyInput() {
                           <Input type="number" min="0" max="31" step="0.5" className="h-8 w-full text-right"
                             value={rowData.workDays || ""}
                             onChange={(e) => handleEditChange(emp.id, 'workDays', e.target.value)} />
+                        </TableCell>
+                        <TableCell className="p-2">
+                          <Input type="number" min="0" max="31" step="0.5" className="h-8 w-full text-right"
+                            value={rowData.saturdayWorkDays || ""}
+                            onChange={(e) => handleEditChange(emp.id, 'saturdayWorkDays', e.target.value)} />
+                        </TableCell>
+                        <TableCell className="p-2">
+                          <Input type="number" min="0" step="0.5" className="h-8 w-full text-right"
+                            value={rowData.sundayWorkHours || ""}
+                            onChange={(e) => handleEditChange(emp.id, 'sundayWorkHours', e.target.value)} />
                         </TableCell>
                         <TableCell className="p-2">
                           <Input type="number" min="0" max="31" step="0.5" className="h-8 w-full text-right"
@@ -722,6 +764,11 @@ export default function MonthlyInput() {
         employee={selectedEmployee}
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        monthlyData={selectedEmployee ? {
+          workDays: edits[selectedEmployee.id]?.workDays ?? 0,
+          saturdayWorkDays: edits[selectedEmployee.id]?.saturdayWorkDays ?? 0,
+          sundayWorkHours: edits[selectedEmployee.id]?.sundayWorkHours ?? 0,
+        } : undefined}
       />
     </AppLayout>
   );

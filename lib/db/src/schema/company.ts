@@ -18,6 +18,9 @@ export const companyTable = pgTable("company", {
   overtimeRate: doublePrecision("overtime_rate").notNull().default(1.25),
   lateNightAdditionalRate: doublePrecision("late_night_additional_rate").notNull().default(0.25),
   holidayRate: doublePrecision("holiday_rate").notNull().default(1.35),
+  dailyWageWeekday: doublePrecision("daily_wage_weekday").notNull().default(9808),
+  dailyWageSaturday: doublePrecision("daily_wage_saturday").notNull().default(12260),
+  hourlyWageSunday: doublePrecision("hourly_wage_sunday").notNull().default(1655),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

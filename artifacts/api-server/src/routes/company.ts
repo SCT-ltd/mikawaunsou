@@ -32,6 +32,9 @@ router.put("/company", async (req, res) => {
       overtimeRate: body.overtimeRate ?? 1.25,
       lateNightAdditionalRate: body.lateNightAdditionalRate ?? 0.25,
       holidayRate: body.holidayRate ?? 1.35,
+      dailyWageWeekday: body.dailyWageWeekday ?? 9808,
+      dailyWageSaturday: body.dailyWageSaturday ?? 12260,
+      hourlyWageSunday: body.hourlyWageSunday ?? 1655,
     }).returning();
     return res.json(created);
   }
@@ -52,6 +55,9 @@ router.put("/company", async (req, res) => {
       ...(body.overtimeRate !== undefined && { overtimeRate: body.overtimeRate }),
       ...(body.lateNightAdditionalRate !== undefined && { lateNightAdditionalRate: body.lateNightAdditionalRate }),
       ...(body.holidayRate !== undefined && { holidayRate: body.holidayRate }),
+      ...(body.dailyWageWeekday !== undefined && { dailyWageWeekday: body.dailyWageWeekday }),
+      ...(body.dailyWageSaturday !== undefined && { dailyWageSaturday: body.dailyWageSaturday }),
+      ...(body.hourlyWageSunday !== undefined && { hourlyWageSunday: body.hourlyWageSunday }),
       updatedAt: new Date(),
     })
     .where(eq(companyTable.id, rows[0].id))

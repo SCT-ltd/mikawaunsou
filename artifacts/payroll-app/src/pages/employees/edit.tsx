@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ChevronLeft, Save, Trash2, KeyRound, RotateCcw } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useQueryClient } from "@tanstack/react-query";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -39,6 +40,7 @@ const employeeSchema = z.object({
   residentTax: z.coerce.number().min(0).default(0),
   hireDate: z.string().min(1, "入社日を入力してください"),
   isActive: z.boolean(),
+  salaryType: z.enum(["fixed", "daily"]).default("fixed"),
 });
 
 type EmployeeFormValues = z.infer<typeof employeeSchema>;
@@ -127,6 +129,7 @@ export default function EmployeeEdit() {
       residentTax: 0,
       hireDate: "",
       isActive: true,
+      salaryType: "fixed",
     },
   });
 
@@ -149,6 +152,7 @@ export default function EmployeeEdit() {
         residentTax: employee.residentTax,
         hireDate: employee.hireDate.split("T")[0],
         isActive: employee.isActive,
+        salaryType: (employee.salaryType as "fixed" | "daily") ?? "fixed",
       });
     }
   }, [employee, form]);
@@ -324,6 +328,27 @@ export default function EmployeeEdit() {
                       <FormLabel>扶養親族数</FormLabel>
                       <FormControl>
                         <Input type="number" min="0" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="salaryType"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>給与形態</FormLabel>
+                      <FormControl>
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="給与形態を選択" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="fixed">固定給</SelectItem>
+                            <SelectItem value="daily">日給制</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </FormControl>
                       <FormMessage />
                     </FormItem>
