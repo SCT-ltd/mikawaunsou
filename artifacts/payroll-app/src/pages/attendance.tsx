@@ -68,6 +68,28 @@ function elapsedMs(from: string | null, now: Date): number {
   if (!from) return 0;
   return now.getTime() - new Date(from).getTime();
 }
+function breakTotalMs(records: AttendanceRecord[], now: Date): number {
+  let total = 0;
+  const sorted = [...records].sort((a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime());
+  let breakStart: Date | null = null;
+  for (const r of sorted) {
+    if (r.eventType === "break_start") {
+      breakStart = new Date(r.recordedAt);
+    } else if (r.eventType === "break_end" && breakStart) {
+      total += new Date(r.recordedAt).getTime() - breakStart.getTime();
+      breakStart = null;
+    }
+  }
+  // 休憩中（break_endがまだない）なら現在時刻まで加算
+  if (breakStart) total += now.getTime() - breakStart.getTime();
+  return total;
+}
+function msToStr(ms: number): string {
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  if (h === 0) return `${m}分`;
+  return `${h}時間${m}分`;
+}
 
 /* ── 定数 ──────────────────────────────── */
 const EVENT_LABELS: Record<EventType, string> = {
@@ -479,18 +501,27 @@ export default function AttendancePage() {
 
               {/* 出勤情報カード */}
               <div className="px-5 py-4 border-b">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-2">
                   <div className="rounded-lg bg-muted/30 px-3 py-2.5">
                     <p className="text-xs text-muted-foreground mb-0.5">出勤時刻</p>
-                    <p className="text-lg font-bold tabular-nums">{fmt(selected.clockInTime)}</p>
+                    <p className="text-base font-bold tabular-nums">{fmt(selected.clockInTime)}</p>
                   </div>
                   <div className="rounded-lg bg-muted/30 px-3 py-2.5">
                     <p className="text-xs text-muted-foreground mb-0.5">経過時間</p>
-                    <p className={`text-lg font-bold tabular-nums
+                    <p className={`text-base font-bold tabular-nums
                       ${elapsedMs(selected.clockInTime, now) >= 10 * 3600000 ? "text-red-600" :
                         elapsedMs(selected.clockInTime, now) >= 8 * 3600000 ? "text-orange-600" : ""}`}>
                       {selected.status !== "未出勤" && selected.status !== "退勤済"
                         ? elapsedStr(selected.clockInTime, now) : "-"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-amber-50 border border-amber-100 px-3 py-2.5">
+                    <p className="text-xs text-amber-700 mb-0.5">休憩合計</p>
+                    <p className="text-base font-bold tabular-nums text-amber-800">
+                      {(() => {
+                        const ms = breakTotalMs(selected.records, now);
+                        return ms > 0 ? msToStr(ms) : "-";
+                      })()}
                     </p>
                   </div>
                 </div>
