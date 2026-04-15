@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useParams, Link } from "wouter";
 import { AppLayout } from "@/components/layout/app-layout";
 import { 
@@ -15,10 +15,12 @@ import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { ChevronLeft, Save, Trash2 } from "lucide-react";
+import { ChevronLeft, Save, Trash2, KeyRound, RotateCcw } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useQueryClient } from "@tanstack/react-query";
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 const employeeSchema = z.object({
   employeeCode: z.string().min(1, "社員番号を入力してください"),
@@ -54,6 +56,57 @@ export default function EmployeeEdit() {
   
   const updateEmployee = useUpdateEmployee();
   const deleteEmployee = useDeleteEmployee();
+
+  // PIN管理
+  const [pinInput, setPinInput] = useState("");
+  const [pinSaving, setPinSaving] = useState(false);
+  const [pinSet, setPinSet] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!employeeId) return;
+    fetch(`${BASE}/api/employees/${employeeId}/pin/status`)
+      .then(r => r.json())
+      .then((d: { pinSet: boolean }) => setPinSet(d.pinSet))
+      .catch(() => {});
+  }, [employeeId]);
+
+  const handleSetPin = async () => {
+    if (!/^\d{4}$/.test(pinInput)) {
+      toast({ title: "エラー", description: "4桁の数字を入力してください", variant: "destructive" });
+      return;
+    }
+    setPinSaving(true);
+    try {
+      const res = await fetch(`${BASE}/api/employees/${employeeId}/pin`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin: pinInput }),
+      });
+      if (!res.ok) throw new Error();
+      setPinSet(true);
+      setPinInput("");
+      toast({ title: "PIN設定完了", description: "PINコードを設定しました" });
+    } catch {
+      toast({ title: "エラー", description: "PIN設定に失敗しました", variant: "destructive" });
+    } finally {
+      setPinSaving(false);
+    }
+  };
+
+  const handleResetPin = async () => {
+    setPinSaving(true);
+    try {
+      const res = await fetch(`${BASE}/api/employees/${employeeId}/pin`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+      setPinSet(false);
+      setPinInput("");
+      toast({ title: "PINリセット完了", description: "PINコードを削除しました" });
+    } catch {
+      toast({ title: "エラー", description: "PINリセットに失敗しました", variant: "destructive" });
+    } finally {
+      setPinSaving(false);
+    }
+  };
 
   const form = useForm<EmployeeFormValues>({
     resolver: zodResolver(employeeSchema),
@@ -310,6 +363,74 @@ export default function EmployeeEdit() {
             </div>
           </form>
         </Form>
+
+        {/* PINコード管理 */}
+        <Card className="mt-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <KeyRound className="h-4 w-4" />
+              打刻PINコード管理
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground">現在の状態：</span>
+              {pinSet === null ? (
+                <span className="text-muted-foreground">確認中...</span>
+              ) : pinSet ? (
+                <span className="font-semibold text-green-600">✓ PIN設定済み</span>
+              ) : (
+                <span className="text-muted-foreground">未設定（PIN不要）</span>
+              )}
+            </div>
+
+            <div className="flex gap-2 items-end">
+              <div className="flex-1 max-w-[160px]">
+                <label className="text-xs text-muted-foreground block mb-1">新しいPIN（4桁）</label>
+                <Input
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={4}
+                  placeholder="例：1234"
+                  value={pinInput}
+                  onChange={(e) => setPinInput(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                  className="tracking-widest text-center text-lg"
+                />
+              </div>
+              <Button onClick={handleSetPin} disabled={pinSaving || pinInput.length !== 4} className="gap-1.5">
+                <KeyRound className="h-3.5 w-3.5" />
+                {pinSet ? "変更" : "設定"}
+              </Button>
+              {pinSet && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="outline" className="gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/5" disabled={pinSaving}>
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      リセット
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>PINコードをリセットしますか？</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        PINを削除すると、この社員のQRコードはPIN入力なしで誰でも使えるようになります。
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>キャンセル</AlertDialogCancel>
+                      <AlertDialogAction onClick={handleResetPin} className="bg-destructive hover:bg-destructive/90">
+                        削除する
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              PINを設定すると、QRコードを読み取った後に4桁の数字を入力しないと打刻できなくなります。
+            </p>
+          </CardContent>
+        </Card>
 
       </div>
     </AppLayout>

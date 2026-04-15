@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "wouter";
 
 type EventType = "clock_in" | "clock_out" | "break_start" | "break_end";
@@ -73,6 +73,14 @@ export default function DriverPage() {
   const [departure, setDeparture] = useState("");
   const [arrival, setArrival] = useState("");
 
+  // PIN認証
+  const [pinRequired, setPinRequired] = useState(false);
+  const [pinVerified, setPinVerified] = useState(false);
+  const [pinInput, setPinInput] = useState("");
+  const [pinError, setPinError] = useState(false);
+  const [pinVerifying, setPinVerifying] = useState(false);
+  const shakeRef = useRef<HTMLDivElement>(null);
+
   // 現在時刻を毎秒更新
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
@@ -94,8 +102,16 @@ export default function DriverPage() {
     }
   }, [employeeId]);
 
-  // 初回取得
-  useEffect(() => { fetchData(); }, [fetchData]);
+  // 初回取得 + PIN設定有無の確認
+  useEffect(() => {
+    fetchData();
+    apiFetch(`/employees/${employeeId}/pin/status`)
+      .then((res: { pinSet: boolean }) => {
+        if (res.pinSet) setPinRequired(true);
+        else setPinVerified(true);
+      })
+      .catch(() => setPinVerified(true));
+  }, [fetchData, employeeId]);
 
   // SSEで管理者操作（打刻追加・修正・削除）をリアルタイム受信
   useEffect(() => {
@@ -117,6 +133,46 @@ export default function DriverPage() {
   }, [employeeId]);
 
   const status = getStatus(records);
+
+  // PINキー入力処理
+  const handlePinKey = useCallback(async (key: string) => {
+    if (pinVerifying) return;
+    if (key === "del") {
+      setPinInput(p => p.slice(0, -1));
+      setPinError(false);
+      return;
+    }
+    const next = pinInput + key;
+    setPinInput(next);
+    setPinError(false);
+    if (next.length < 4) return;
+
+    // 4桁揃ったら自動検証
+    setPinVerifying(true);
+    try {
+      const res: { ok: boolean; pinRequired: boolean } = await apiFetch(
+        `/employees/${employeeId}/pin/verify`,
+        { method: "POST", body: JSON.stringify({ pin: next }) }
+      );
+      if (res.ok) {
+        setPinVerified(true);
+      } else {
+        setPinError(true);
+        setPinInput("");
+        shakeRef.current?.animate(
+          [{ transform: "translateX(-8px)" }, { transform: "translateX(8px)" },
+           { transform: "translateX(-6px)" }, { transform: "translateX(6px)" },
+           { transform: "translateX(0)" }],
+          { duration: 400, easing: "ease-in-out" }
+        );
+      }
+    } catch {
+      setPinError(true);
+      setPinInput("");
+    } finally {
+      setPinVerifying(false);
+    }
+  }, [pinInput, pinVerifying, employeeId]);
 
   const handleRecord = async (eventType: EventType) => {
     setRecording(true);
@@ -180,6 +236,64 @@ export default function DriverPage() {
         <div className="text-center p-8">
           <p className="text-xl font-bold text-red-600 mb-2">社員が見つかりません</p>
           <p className="text-muted-foreground">QRコードを確認してください</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── PIN入力画面 ───────────────────────────────────────────────
+  if (pinRequired && !pinVerified) {
+    const keys = ["1","2","3","4","5","6","7","8","9","","0","del"];
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-6">
+        {/* 社員ヘッダー */}
+        <div className="flex flex-col items-center mb-8">
+          <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-2xl mb-3">
+            {employee.name[0]}
+          </div>
+          <p className="text-xl font-bold">{employee.name}</p>
+          <p className="text-sm text-muted-foreground">{employee.department}</p>
+        </div>
+
+        {/* PINドット表示 */}
+        <div ref={shakeRef} className="mb-6 text-center">
+          <p className="text-sm text-muted-foreground mb-4 font-medium">PINコードを入力してください</p>
+          <div className="flex gap-4 justify-center mb-2">
+            {[0,1,2,3].map(i => (
+              <div key={i} className={`w-5 h-5 rounded-full border-2 transition-all
+                ${i < pinInput.length
+                  ? (pinError ? "bg-red-500 border-red-500" : "bg-primary border-primary")
+                  : "border-gray-300 bg-transparent"}`} />
+            ))}
+          </div>
+          {pinError && (
+            <p className="text-sm text-red-600 font-medium mt-2">PINコードが違います</p>
+          )}
+          {pinVerifying && (
+            <p className="text-sm text-muted-foreground mt-2">確認中...</p>
+          )}
+        </div>
+
+        {/* テンキー */}
+        <div className="grid grid-cols-3 gap-3 w-full max-w-[260px]">
+          {keys.map((key, idx) => {
+            if (key === "") return <div key={idx} />;
+            const isDel = key === "del";
+            return (
+              <button
+                key={idx}
+                onClick={() => handlePinKey(key)}
+                disabled={pinVerifying || (!isDel && pinInput.length >= 4)}
+                className={`h-16 rounded-2xl text-xl font-bold transition-all active:scale-95 shadow-sm
+                  ${isDel
+                    ? "bg-gray-200 text-gray-600 hover:bg-gray-300 text-base"
+                    : "bg-white border border-gray-200 hover:bg-gray-50 text-gray-800"}
+                  disabled:opacity-40`}
+              >
+                {isDel ? "⌫" : key}
+              </button>
+            );
+          })}
         </div>
       </div>
     );

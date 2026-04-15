@@ -26,6 +26,7 @@ export const employeesTable = pgTable("employees", {
   residentTax: doublePrecision("resident_tax").notNull().default(0),
   hireDate: date("hire_date").notNull(),
   isActive: boolean("is_active").notNull().default(true),
+  pin: text("pin"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

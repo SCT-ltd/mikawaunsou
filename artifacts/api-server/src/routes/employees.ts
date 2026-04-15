@@ -95,4 +95,51 @@ router.delete("/employees/:id", async (req, res) => {
   return res.status(204).send();
 });
 
+// ── PIN管理 ───────────────────────────────────────────────────────
+
+// PIN設定・変更（管理者用）
+router.put("/employees/:id/pin", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const { pin } = req.body;
+  if (!pin || !/^\d{4}$/.test(String(pin))) {
+    return res.status(400).json({ error: "PINは4桁の数字で入力してください" });
+  }
+  const [updated] = await db.update(employeesTable)
+    .set({ pin: String(pin), updatedAt: new Date() })
+    .where(eq(employeesTable.id, id))
+    .returning({ id: employeesTable.id });
+  if (!updated) return res.status(404).json({ error: "Employee not found" });
+  return res.json({ ok: true });
+});
+
+// PINリセット（管理者用）
+router.delete("/employees/:id/pin", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const [updated] = await db.update(employeesTable)
+    .set({ pin: null, updatedAt: new Date() })
+    .where(eq(employeesTable.id, id))
+    .returning({ id: employeesTable.id });
+  if (!updated) return res.status(404).json({ error: "Employee not found" });
+  return res.json({ ok: true });
+});
+
+// PIN照合（ドライバー用）
+router.post("/employees/:id/pin/verify", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const { pin } = req.body;
+  const [emp] = await db.select({ pin: employeesTable.pin }).from(employeesTable).where(eq(employeesTable.id, id));
+  if (!emp) return res.status(404).json({ error: "Employee not found" });
+  if (!emp.pin) return res.json({ ok: true, pinRequired: false });
+  const ok = emp.pin === String(pin);
+  return res.json({ ok, pinRequired: true });
+});
+
+// PIN設定有無の確認（ドライバー用）
+router.get("/employees/:id/pin/status", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const [emp] = await db.select({ pin: employeesTable.pin }).from(employeesTable).where(eq(employeesTable.id, id));
+  if (!emp) return res.status(404).json({ error: "Employee not found" });
+  return res.json({ pinSet: !!emp.pin });
+});
+
 export default router;
