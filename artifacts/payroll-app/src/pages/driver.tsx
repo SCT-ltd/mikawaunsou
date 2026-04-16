@@ -619,10 +619,13 @@ export default function DriverPage() {
         ? `　走行距離：${startKm ?? "—"} → ${endKm ?? "—"} km`
         : "";
       setSuccessMsg(`${EVENT_LABELS[eventType]}を記録しました${loc ? `（${loc}）` : ""}${odometerInfo}`);
-      setDeparture("");
-      setArrival("");
-      setStartOdometer("");
-      setEndOdometer("");
+      // 退勤打刻時のみフィールドをクリア（それ以外は入力値を保持）
+      if (eventType === "clock_out") {
+        setDeparture("");
+        setArrival("");
+        setStartOdometer("");
+        setEndOdometer("");
+      }
       setTimeout(() => setSuccessMsg(null), 5000);
       await fetchData();
     } catch (e: unknown) {
