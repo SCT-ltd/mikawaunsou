@@ -118,19 +118,23 @@ export default function DriverPage() {
   const [arrival, setArrival] = useState("");
   const [startOdometer, setStartOdometer] = useState("");
   const [endOdometer, setEndOdometer] = useState("");
-  const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
+  const [itemStatus, setItemStatus] = useState<Map<string, "良" | "否">>(new Map());
   const [checkShowAll, setCheckShowAll] = useState(false);
 
-  const toggleCheck = (id: string) => {
-    setCheckedItems(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+  const setItemResult = (id: string, result: "良" | "否") => {
+    setItemStatus(prev => {
+      const next = new Map(prev);
+      if (next.get(id) === result) next.delete(id);
+      else next.set(id, result);
       return next;
     });
   };
 
   const totalItems = INSPECTION_SECTIONS.reduce((s, sec) => s + sec.items.length, 0);
-  const checkedCount = checkedItems.size;
+  const checkedCount = itemStatus.size;
+  const ngItems = INSPECTION_SECTIONS.flatMap(sec =>
+    sec.items.filter(item => itemStatus.get(item.id) === "否")
+  );
 
   // PIN認証
   const [pinRequired, setPinRequired] = useState(false);
@@ -546,8 +550,13 @@ export default function DriverPage() {
           <div className="flex items-center gap-2">
             <span className="font-bold text-sm">日常点検チェックリスト</span>
             <span className={`text-xs px-2 py-0.5 rounded-full font-semibold
-              ${checkedCount === totalItems ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+              ${checkedCount === totalItems && ngItems.length === 0
+                ? "bg-green-100 text-green-700"
+                : ngItems.length > 0
+                  ? "bg-red-100 text-red-700"
+                  : "bg-gray-100 text-gray-500"}`}>
               {checkedCount} / {totalItems}
+              {ngItems.length > 0 && ` (否${ngItems.length}件)`}
             </span>
           </div>
           <span className="text-gray-400 text-sm">{checkShowAll ? "▲" : "▼"}</span>
@@ -571,42 +580,72 @@ export default function DriverPage() {
                 </div>
                 {/* 項目 */}
                 {sec.items.map((item) => {
-                  const checked = checkedItems.has(item.id);
+                  const status = itemStatus.get(item.id);
                   return (
-                    <button
+                    <div
                       key={item.id}
-                      onClick={() => toggleCheck(item.id)}
-                      className={`w-full flex items-center gap-3 px-4 py-3.5 text-left transition-colors active:bg-gray-50
-                        ${checked ? "bg-green-50" : "bg-white"}`}
+                      className={`flex items-center gap-3 px-4 py-3.5 transition-colors
+                        ${status === "良" ? "bg-green-50" : status === "否" ? "bg-red-50" : "bg-white"}`}
                     >
-                      {/* チェックボックス */}
-                      <div className={`w-7 h-7 rounded-lg border-2 flex items-center justify-center shrink-0 transition-all
-                        ${checked
-                          ? "bg-green-500 border-green-500 text-white"
-                          : "border-gray-300 bg-white"}`}>
-                        {checked && <span className="text-base font-bold leading-none">✓</span>}
-                      </div>
                       {/* テキスト */}
                       <div className="flex-1 min-w-0">
-                        <p className={`text-sm font-semibold leading-tight ${checked ? "text-green-800" : "text-gray-800"}`}>
+                        <p className={`text-sm font-semibold leading-tight
+                          ${status === "良" ? "text-green-800" : status === "否" ? "text-red-800" : "text-gray-800"}`}>
                           {item.area}
                         </p>
                         <p className="text-xs text-gray-400 mt-0.5">{item.content}</p>
                       </div>
-                      {/* 良・否バッジ */}
-                      {checked && (
-                        <span className="shrink-0 text-xs font-bold text-green-600 bg-green-100 px-2 py-0.5 rounded-full">良</span>
-                      )}
-                    </button>
+                      {/* 良・否ボタン */}
+                      <div className="flex gap-2 shrink-0">
+                        <button
+                          onClick={() => setItemResult(item.id, "良")}
+                          className={`w-12 h-9 rounded-lg text-sm font-bold border-2 transition-all active:scale-95
+                            ${status === "良"
+                              ? "bg-green-500 border-green-500 text-white shadow-sm"
+                              : "bg-white border-gray-200 text-gray-400 hover:border-green-400 hover:text-green-600"}`}
+                        >
+                          良
+                        </button>
+                        <button
+                          onClick={() => setItemResult(item.id, "否")}
+                          className={`w-12 h-9 rounded-lg text-sm font-bold border-2 transition-all active:scale-95
+                            ${status === "否"
+                              ? "bg-red-500 border-red-500 text-white shadow-sm"
+                              : "bg-white border-gray-200 text-gray-400 hover:border-red-400 hover:text-red-600"}`}
+                        >
+                          否
+                        </button>
+                      </div>
+                    </div>
                   );
                 })}
               </div>
             ))}
 
+            {/* 否（異常）一覧 */}
+            {ngItems.length > 0 && (
+              <div className="px-4 py-3 bg-red-50 border-t border-red-100">
+                <p className="text-red-700 font-bold text-xs mb-2">⚠️ 異常あり — 管理者に報告してください</p>
+                <ul className="space-y-1">
+                  {ngItems.map(item => (
+                    <li key={item.id} className="text-xs text-red-600 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                      {item.area}（{item.content}）
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             {/* 全チェック完了メッセージ */}
-            {checkedCount === totalItems && (
+            {checkedCount === totalItems && ngItems.length === 0 && (
               <div className="px-4 py-4 text-center bg-green-50 border-t border-green-100">
                 <p className="text-green-700 font-bold text-sm">✅ 日常点検完了！　今日も１日安全運転で！！</p>
+              </div>
+            )}
+            {checkedCount === totalItems && ngItems.length > 0 && (
+              <div className="px-4 py-3 text-center bg-orange-50 border-t border-orange-100">
+                <p className="text-orange-700 font-bold text-sm">⚠️ 点検完了（異常 {ngItems.length}件）　管理者へ報告後に運行してください</p>
               </div>
             )}
           </div>
