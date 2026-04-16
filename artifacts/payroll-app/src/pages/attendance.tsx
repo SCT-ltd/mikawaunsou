@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import {
   RefreshCw, Clock, QrCode, Pencil, Trash2, Save, X,
   UserCheck, Coffee, LogOut, AlarmClock, Plus, GripVertical,
-  ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CalendarOff,
+  ChevronLeft, ChevronRight, CalendarOff,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -197,9 +197,12 @@ export default function AttendancePage() {
   const [addEventType, setAddEventType] = useState<EventType>("clock_in");
   const [addTime, setAddTime] = useState(() => toTimeInput(new Date().toISOString()));
 
-  // ドラッグ並び替え
+  // ドラッグ並び替え（打刻）
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  // ドラッグ並び替え（欠勤）
+  const [absenceDragIndex, setAbsenceDragIndex] = useState<number | null>(null);
+  const [absenceDragOverIndex, setAbsenceDragOverIndex] = useState<number | null>(null);
 
   // 欠勤・休暇
   const [absences, setAbsences] = useState<AbsenceRecord[]>([]);
@@ -366,13 +369,13 @@ export default function AttendancePage() {
     } finally { setSaving(false); }
   };
 
-  const moveAbsence = (employeeId: string, fromIndex: number, direction: -1 | 1) => {
-    const toIndex = fromIndex + direction;
+  const swapAbsences = (employeeId: string, indexA: number, indexB: number) => {
+    if (indexA === indexB) return;
     const empAbsences = absences.filter(a => a.employeeId === employeeId);
-    if (toIndex < 0 || toIndex >= empAbsences.length) return;
+    if (indexA < 0 || indexB < 0 || indexA >= empAbsences.length || indexB >= empAbsences.length) return;
     const others = absences.filter(a => a.employeeId !== employeeId);
     const reordered = [...empAbsences];
-    [reordered[fromIndex], reordered[toIndex]] = [reordered[toIndex], reordered[fromIndex]];
+    [reordered[indexA], reordered[indexB]] = [reordered[indexB], reordered[indexA]];
     setAbsences([...others, ...reordered]);
   };
 
@@ -735,7 +738,15 @@ export default function AttendancePage() {
 
                         {/* 欠勤・休暇エントリー（タイムライン先頭に表示） */}
                         {empAbsences.map((a, ai) => (
-                          <div key={`absence-${a.id}`} className="flex items-start gap-3">
+                          <div
+                            key={`absence-${a.id}`}
+                            className={`flex items-start gap-3 transition-opacity ${absenceDragIndex !== null && absenceDragIndex !== ai ? "opacity-60" : ""} ${absenceDragOverIndex === ai && absenceDragIndex !== ai ? "ring-2 ring-primary ring-offset-1 rounded-lg" : ""}`}
+                            draggable
+                            onDragStart={() => setAbsenceDragIndex(ai)}
+                            onDragOver={(e) => { e.preventDefault(); setAbsenceDragOverIndex(ai); }}
+                            onDragEnd={() => { setAbsenceDragIndex(null); setAbsenceDragOverIndex(null); }}
+                            onDrop={(e) => { e.preventDefault(); if (absenceDragIndex !== null) swapAbsences(a.employeeId, absenceDragIndex, ai); }}
+                          >
                             <div className={`relative z-10 w-9 h-9 rounded-full border-2 flex items-center justify-center shrink-0 ${ABSENCE_COLORS[a.absenceType]} border-current`}>
                               <CalendarOff className="h-3.5 w-3.5" />
                             </div>
@@ -748,22 +759,6 @@ export default function AttendancePage() {
                                 </div>
                                 <div className="flex items-center gap-0.5">
                                   <button
-                                    onClick={() => moveAbsence(a.employeeId, ai, -1)}
-                                    disabled={saving || ai === 0}
-                                    className="p-1.5 rounded hover:bg-black/10 transition-colors opacity-40 hover:opacity-80 disabled:opacity-20 disabled:cursor-not-allowed"
-                                    title="上へ"
-                                  >
-                                    <ChevronUp className="h-3.5 w-3.5" />
-                                  </button>
-                                  <button
-                                    onClick={() => moveAbsence(a.employeeId, ai, 1)}
-                                    disabled={saving || ai === empAbsences.length - 1}
-                                    className="p-1.5 rounded hover:bg-black/10 transition-colors opacity-40 hover:opacity-80 disabled:opacity-20 disabled:cursor-not-allowed"
-                                    title="下へ"
-                                  >
-                                    <ChevronDown className="h-3.5 w-3.5" />
-                                  </button>
-                                  <button
                                     onClick={() => deleteAbsence(a.id)}
                                     disabled={saving}
                                     className="p-1.5 rounded hover:bg-black/10 transition-colors opacity-50 hover:opacity-100"
@@ -771,6 +766,12 @@ export default function AttendancePage() {
                                   >
                                     <Trash2 className="h-3.5 w-3.5" />
                                   </button>
+                                  <div
+                                    className="p-1.5 cursor-grab active:cursor-grabbing opacity-40 hover:opacity-70"
+                                    title="ドラッグで並び替え"
+                                  >
+                                    <GripVertical className="h-3.5 w-3.5" />
+                                  </div>
                                 </div>
                               </div>
                             </div>
