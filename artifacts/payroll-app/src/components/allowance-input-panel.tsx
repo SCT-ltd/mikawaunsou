@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { Plus, X } from "lucide-react";
-import { calculateIncomeTaxReiwa8 } from "@/lib/tax-tables-reiwa8";
+import { calculateIncomeTaxReiwa7 } from "@/lib/tax-tables-reiwa8";
 
 function roundJapanese(amount: number): number {
   return Math.floor(amount);
@@ -140,7 +140,7 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
 
   const afterInsuranceSalary = Math.max(0, grandTotal - totalInsurance);
   const dependentEquivCount = (employee.dependentCount ?? 0) + ((employee.hasSpouse ?? false) ? 1 : 0);
-  const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
+  const incomeTax = calculateIncomeTaxReiwa7(afterInsuranceSalary, dependentEquivCount);
   const residentTax = employee.residentTax ?? 0;
 
   const customDeductionsTotal = deductionRows.reduce((s, r) => s + (r.amount || 0), 0);
