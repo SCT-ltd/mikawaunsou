@@ -223,4 +223,30 @@ router.get("/attendance/employee/:employeeId", async (req, res) => {
   return res.json(records);
 });
 
+// ── 社員の月間打刻履歴 ───────────────────────────────
+router.get("/attendance/employee/:employeeId/month", async (req, res) => {
+  const employeeId = parseInt(req.params.employeeId, 10);
+  const year = parseInt(req.query.year as string, 10) || new Date().getFullYear();
+  const month = parseInt(req.query.month as string, 10) || (new Date().getMonth() + 1);
+
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const from = `${year}-${pad(month)}-01`;
+  const lastDay = new Date(year, month, 0).getDate();
+  const to = `${year}-${pad(month)}-${pad(lastDay)}`;
+
+  const { gte, lte } = await import("drizzle-orm");
+
+  const records = await db
+    .select()
+    .from(attendanceRecordsTable)
+    .where(and(
+      eq(attendanceRecordsTable.employeeId, employeeId),
+      gte(attendanceRecordsTable.workDate, from),
+      lte(attendanceRecordsTable.workDate, to),
+    ))
+    .orderBy(attendanceRecordsTable.workDate, attendanceRecordsTable.recordedAt);
+
+  return res.json(records);
+});
+
 export default router;

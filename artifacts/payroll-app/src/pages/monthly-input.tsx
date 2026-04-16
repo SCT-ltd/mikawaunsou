@@ -26,7 +26,8 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { Save, Plus, X } from "lucide-react";
+import { Save, Plus, X, CalendarDays as CalIcon } from "lucide-react";
+import { AttendanceCalendarDialog } from "@/components/attendance-calendar-dialog";
 
 // ── 給与計算ユーティリティ（フロントエンド用）────────────────────
 
@@ -540,6 +541,7 @@ export default function MonthlyInput() {
 
   const [edits, setEdits] = useState<Record<number, any>>({});
   const [saving, setSaving] = useState(false);
+  const [calendarEmp, setCalendarEmp] = useState<{ id: number; name: string } | null>(null);
 
   useEffect(() => {
     if (employees && monthlyRecords) {
@@ -685,10 +687,17 @@ export default function MonthlyInput() {
                         <TableCell
                           className="font-medium sticky left-0 z-10 border-r shadow-[1px_0_0_0_hsl(var(--border))] bg-card"
                         >
-                          <div className="min-w-0">
-                            <div className="truncate" title={emp.name}>{emp.name}</div>
-                            <div className="text-xs text-muted-foreground truncate">{emp.department}</div>
-                          </div>
+                          <button
+                            className="min-w-0 w-full text-left group flex items-center gap-1.5 hover:text-primary transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40 rounded"
+                            title="クリックして勤怠カレンダーを表示"
+                            onClick={() => setCalendarEmp({ id: emp.id, name: emp.name })}
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate">{emp.name}</div>
+                              <div className="text-xs text-muted-foreground truncate">{emp.department}</div>
+                            </div>
+                            <CalIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50 group-hover:text-primary transition-colors" />
+                          </button>
                         </TableCell>
                         <TableCell className="p-2">
                           <Input type="number" min="0" max="31" step="0.5" className="h-8 w-full text-right"
@@ -750,6 +759,16 @@ export default function MonthlyInput() {
         </div>
       </div>
 
+      {calendarEmp && (
+        <AttendanceCalendarDialog
+          open={!!calendarEmp}
+          onClose={() => setCalendarEmp(null)}
+          employeeId={calendarEmp.id}
+          employeeName={calendarEmp.name}
+          year={year}
+          month={month}
+        />
+      )}
     </AppLayout>
   );
 }
