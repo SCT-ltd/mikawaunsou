@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, date, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, date, timestamp, doublePrecision } from "drizzle-orm/pg-core";
 import { employeesTable } from "./employees";
 
 export const attendanceRecordsTable = pgTable("attendance_records", {
@@ -8,6 +8,8 @@ export const attendanceRecordsTable = pgTable("attendance_records", {
   workDate: date("work_date").notNull(),
   recordedAt: timestamp("recorded_at").notNull().defaultNow(),
   note: text("note"),
+  startOdometer: doublePrecision("start_odometer"),
+  endOdometer: doublePrecision("end_odometer"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

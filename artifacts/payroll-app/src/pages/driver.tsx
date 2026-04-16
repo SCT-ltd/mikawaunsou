@@ -11,6 +11,8 @@ interface AttendanceRecord {
   workDate: string;
   recordedAt: string;
   note: string | null;
+  startOdometer: number | null;
+  endOdometer: number | null;
 }
 
 interface Employee {
@@ -72,6 +74,8 @@ export default function DriverPage() {
   const [now, setNow] = useState(new Date());
   const [departure, setDeparture] = useState("");
   const [arrival, setArrival] = useState("");
+  const [startOdometer, setStartOdometer] = useState("");
+  const [endOdometer, setEndOdometer] = useState("");
 
   // PIN認証
   const [pinRequired, setPinRequired] = useState(false);
@@ -178,18 +182,27 @@ export default function DriverPage() {
     setRecording(true);
     setError(null);
     try {
+      const startKm = startOdometer.trim() !== "" ? parseFloat(startOdometer) : null;
+      const endKm = endOdometer.trim() !== "" ? parseFloat(endOdometer) : null;
       await apiFetch("/attendance/record", {
         method: "POST",
         body: JSON.stringify({
           employeeId, eventType,
           note: [departure.trim(), arrival.trim()].filter(Boolean).join(" → ") || null,
+          startOdometer: startKm,
+          endOdometer: endKm,
         }),
       });
       const loc = [departure.trim(), arrival.trim()].filter(Boolean).join(" → ");
-      setSuccessMsg(`${EVENT_LABELS[eventType]}を記録しました${loc ? `（${loc}）` : ""}`);
+      const odometerInfo = startKm !== null || endKm !== null
+        ? `　走行距離：${startKm ?? "—"} → ${endKm ?? "—"} km`
+        : "";
+      setSuccessMsg(`${EVENT_LABELS[eventType]}を記録しました${loc ? `（${loc}）` : ""}${odometerInfo}`);
       setDeparture("");
       setArrival("");
-      setTimeout(() => setSuccessMsg(null), 4000);
+      setStartOdometer("");
+      setEndOdometer("");
+      setTimeout(() => setSuccessMsg(null), 5000);
       await fetchData();
     } catch {
       setError("記録に失敗しました。もう一度お試しください。");
@@ -370,6 +383,49 @@ export default function DriverPage() {
         </div>
       </div>
 
+      {/* 走行距離入力 */}
+      <div className="mx-4 mt-2 mb-1">
+        <p className="text-xs font-semibold text-muted-foreground mb-1.5">🚛 走行距離（任意）</p>
+        <div className="flex items-center gap-2">
+          <div className="flex-1">
+            <label className="block text-xs text-muted-foreground mb-1">出発時（km）</label>
+            <div className="relative">
+              <input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                value={startOdometer}
+                onChange={(e) => setStartOdometer(e.target.value)}
+                placeholder="例：12345"
+                className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 pr-10 text-base placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">km</span>
+            </div>
+          </div>
+          <span className="text-gray-400 text-lg mt-4">→</span>
+          <div className="flex-1">
+            <label className="block text-xs text-muted-foreground mb-1">帰着時（km）</label>
+            <div className="relative">
+              <input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                value={endOdometer}
+                onChange={(e) => setEndOdometer(e.target.value)}
+                placeholder="例：12567"
+                className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 pr-10 text-base placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">km</span>
+            </div>
+          </div>
+        </div>
+        {startOdometer && endOdometer && parseFloat(endOdometer) >= parseFloat(startOdometer) && (
+          <div className="mt-1.5 text-center text-sm font-semibold text-primary">
+            走行距離：{(parseFloat(endOdometer) - parseFloat(startOdometer)).toFixed(1)} km
+          </div>
+        )}
+      </div>
+
       {/* 4大ボタン */}
       <div className="flex-1 p-4 grid grid-cols-2 gap-4 content-start mt-2">
         {/* 出勤 */}
@@ -433,15 +489,36 @@ export default function DriverPage() {
           </div>
           <div className="divide-y">
             {records.map((r) => (
-              <div key={r.id} className="px-4 py-3 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className={`shrink-0 text-xs px-2 py-1 rounded-full border font-medium ${EVENT_COLORS[r.eventType as EventType]}`}>
-                    {EVENT_LABELS[r.eventType as EventType]}
-                  </span>
-                  {r.note && (
-                    <span className="text-xs text-muted-foreground truncate">
-                      📍 {r.note}
+              <div key={r.id} className="px-4 py-3 flex items-start justify-between gap-3">
+                <div className="flex flex-col gap-0.5 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className={`shrink-0 text-xs px-2 py-1 rounded-full border font-medium ${EVENT_COLORS[r.eventType as EventType]}`}>
+                      {EVENT_LABELS[r.eventType as EventType]}
                     </span>
+                    {r.note && (
+                      <span className="text-xs text-muted-foreground truncate">
+                        📍 {r.note}
+                      </span>
+                    )}
+                  </div>
+                  {(r.startOdometer !== null || r.endOdometer !== null) && (
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground ml-0.5">
+                      <span>🚛</span>
+                      {r.startOdometer !== null && (
+                        <span>出発 {r.startOdometer.toLocaleString("ja-JP")} km</span>
+                      )}
+                      {r.startOdometer !== null && r.endOdometer !== null && (
+                        <span className="text-gray-400">→</span>
+                      )}
+                      {r.endOdometer !== null && (
+                        <span>帰着 {r.endOdometer.toLocaleString("ja-JP")} km</span>
+                      )}
+                      {r.startOdometer !== null && r.endOdometer !== null && r.endOdometer >= r.startOdometer && (
+                        <span className="font-semibold text-primary ml-1">
+                          （{(r.endOdometer - r.startOdometer).toFixed(1)} km）
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
                 <span className="shrink-0 font-mono text-sm font-semibold tabular-nums">
