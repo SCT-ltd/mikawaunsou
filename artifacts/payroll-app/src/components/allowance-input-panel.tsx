@@ -251,12 +251,13 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
                     <div className="flex items-center gap-0.5">
                       <Input
                         ref={(el) => { rowAmountRefs.current[idx] = el; }}
-                        type="number"
-                        min="0"
+                        type="text"
+                        inputMode="numeric"
                         className="h-6 flex-1 text-right border-0 shadow-none bg-transparent focus-visible:ring-1 focus-visible:ring-primary px-1 text-xs"
                         value={row.amount || ""}
                         onChange={(e) => {
-                          const v = e.target.value === "" ? 0 : parseInt(e.target.value, 10);
+                          const raw = e.target.value.replace(/[^0-9]/g, "");
+                          const v = raw === "" ? 0 : parseInt(raw, 10);
                           setRows(prev => prev.map((r, i) => i === idx ? { ...r, amount: isNaN(v) ? 0 : v } : r));
                         }}
                         onKeyDown={(e) => {
@@ -370,12 +371,13 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
                   <div className="flex items-center gap-0.5">
                     <Input
                       ref={(el) => { deductionRowAmountRefs.current[idx] = el; }}
-                      type="number"
-                      min="0"
+                      type="text"
+                      inputMode="numeric"
                       className="h-6 flex-1 text-right border-0 shadow-none bg-transparent focus-visible:ring-1 focus-visible:ring-primary px-1 text-xs"
                       value={row.amount || ""}
                       onChange={(e) => {
-                        const v = e.target.value === "" ? 0 : parseInt(e.target.value, 10);
+                        const raw = e.target.value.replace(/[^0-9]/g, "");
+                        const v = raw === "" ? 0 : parseInt(raw, 10);
                         setDeductionRows(prev => prev.map((r, i) => i === idx ? { ...r, amount: isNaN(v) ? 0 : v } : r));
                       }}
                       onKeyDown={(e) => {
