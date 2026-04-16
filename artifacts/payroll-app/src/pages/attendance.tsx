@@ -50,6 +50,8 @@ interface AttendanceRecord {
   workDate: string;
   recordedAt: string;
   note: string | null;
+  latitude: number | null;
+  longitude: number | null;
 }
 
 interface EmployeeStatus {
@@ -858,6 +860,17 @@ export default function AttendancePage() {
                                       <p className="text-base font-bold tabular-nums">{fmt(r.recordedAt)}</p>
                                       {r.note && (
                                         <p className="text-xs text-muted-foreground mt-0.5">📍 {r.note}</p>
+                                      )}
+                                      {r.latitude != null && r.longitude != null && (
+                                        <a
+                                          href={`https://www.google.com/maps?q=${r.latitude},${r.longitude}`}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline mt-0.5"
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
+                                          🛰️ GPS: {r.latitude.toFixed(5)}, {r.longitude.toFixed(5)}
+                                        </a>
                                       )}
                                     </div>
                                     <div className="flex items-center gap-0.5">

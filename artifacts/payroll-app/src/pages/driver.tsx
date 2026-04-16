@@ -237,12 +237,25 @@ export default function DriverPage() {
     }
   }, [pinInput, pinVerifying, employeeId]);
 
+  const getGps = (): Promise<{ latitude: number; longitude: number } | null> => {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) { resolve(null); return; }
+      const timer = setTimeout(() => resolve(null), 6000);
+      navigator.geolocation.getCurrentPosition(
+        (pos) => { clearTimeout(timer); resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }); },
+        () => { clearTimeout(timer); resolve(null); },
+        { timeout: 6000, maximumAge: 0 },
+      );
+    });
+  };
+
   const handleRecord = async (eventType: EventType) => {
     setRecording(true);
     setError(null);
     try {
       const startKm = startOdometer.trim() !== "" ? parseFloat(startOdometer) : null;
       const endKm = endOdometer.trim() !== "" ? parseFloat(endOdometer) : null;
+      const gps = await getGps();
       await apiFetch("/attendance/record", {
         method: "POST",
         body: JSON.stringify({
@@ -250,6 +263,8 @@ export default function DriverPage() {
           note: [departure.trim(), arrival.trim()].filter(Boolean).join(" → ") || null,
           startOdometer: startKm,
           endOdometer: endKm,
+          latitude: gps?.latitude ?? null,
+          longitude: gps?.longitude ?? null,
         }),
       });
       const loc = [departure.trim(), arrival.trim()].filter(Boolean).join(" → ");

@@ -128,13 +128,15 @@ router.get("/attendance/employee/:employeeId/today", async (req, res) => {
 
 // ── 打刻記録（POST → SSEブロードキャスト） ──────────
 router.post("/attendance/record", async (req, res) => {
-  const { employeeId, eventType, note, startOdometer, endOdometer, recordedAt: recordedAtStr } = req.body as {
+  const { employeeId, eventType, note, startOdometer, endOdometer, recordedAt: recordedAtStr, latitude, longitude } = req.body as {
     employeeId: number;
     eventType: "clock_in" | "clock_out" | "break_start" | "break_end";
     note?: string;
     startOdometer?: number | null;
     endOdometer?: number | null;
     recordedAt?: string;
+    latitude?: number | null;
+    longitude?: number | null;
   };
 
   if (!employeeId || !eventType) {
@@ -196,6 +198,8 @@ router.post("/attendance/record", async (req, res) => {
     note: note ?? null,
     startOdometer: startOdometer ?? null,
     endOdometer: endOdometer ?? null,
+    latitude: latitude ?? null,
+    longitude: longitude ?? null,
   }).returning();
 
   // 打刻後に全SSEクライアントへ最新スナップショットをブロードキャスト

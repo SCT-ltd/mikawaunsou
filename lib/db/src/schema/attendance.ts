@@ -10,6 +10,8 @@ export const attendanceRecordsTable = pgTable("attendance_records", {
   note: text("note"),
   startOdometer: doublePrecision("start_odometer"),
   endOdometer: doublePrecision("end_odometer"),
+  latitude: doublePrecision("latitude"),
+  longitude: doublePrecision("longitude"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
