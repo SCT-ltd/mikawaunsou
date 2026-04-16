@@ -9,11 +9,13 @@ import {
   Tag,
   CalendarRange,
   ClipboardCheck,
+  MapPin,
 } from "lucide-react";
 
 const navigation = [
   { name: "ダッシュボード", href: "/", icon: LayoutDashboard },
   { name: "勤怠管理", href: "/attendance", icon: ClipboardCheck },
+  { name: "リアルタイムマップ", href: "/realtime-map", icon: MapPin },
   { name: "月次実績入力", href: "/monthly-input", icon: CalendarDays },
   { name: "給与明細", href: "/payroll", icon: FileText },
   { name: "カレンダー", href: "/calendar", icon: CalendarRange },

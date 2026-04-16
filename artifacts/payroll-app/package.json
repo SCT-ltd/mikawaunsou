@@ -75,6 +75,9 @@
     "zod": "catalog:"
   },
   "dependencies": {
+    "@types/leaflet": "^1.9.21",
+    "leaflet": "^1.9.4",
+    "react-leaflet": "^5.0.0",
     "react-qr-code": "^2.0.18"
   }
 }

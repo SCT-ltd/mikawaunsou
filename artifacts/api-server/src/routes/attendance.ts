@@ -411,4 +411,50 @@ router.get("/attendance/monthly-summary", async (req, res) => {
   return res.json(result);
 });
 
+// ── 全社員の最新GPS位置情報（リアルタイムマップ用） ────────
+router.get("/attendance/gps-locations", async (req, res) => {
+  const today = todayJST();
+
+  const employees = await db
+    .select()
+    .from(employeesTable)
+    .where(eq(employeesTable.isActive, true))
+    .orderBy(asc(employeesTable.employeeCode));
+
+  const todayRecords = await db
+    .select()
+    .from(attendanceRecordsTable)
+    .where(eq(attendanceRecordsTable.workDate, today))
+    .orderBy(attendanceRecordsTable.recordedAt);
+
+  const result = employees.map(emp => {
+    const empRecords = todayRecords.filter(r => r.employeeId === emp.id);
+    const lastEvent = empRecords.length > 0 ? empRecords[empRecords.length - 1] : null;
+
+    let status: string;
+    if (!lastEvent) status = "未出勤";
+    else if (lastEvent.eventType === "clock_in") status = "出勤中";
+    else if (lastEvent.eventType === "break_start") status = "休憩中";
+    else if (lastEvent.eventType === "break_end") status = "出勤中";
+    else status = "退勤済";
+
+    // GPS付きの最新レコードを検索（最新順）
+    const latestGps = [...empRecords].reverse().find(r => r.latitude != null && r.longitude != null);
+
+    return {
+      employeeId: emp.id,
+      employeeCode: emp.employeeCode,
+      name: emp.name,
+      department: emp.department,
+      status,
+      latitude: latestGps?.latitude ?? null,
+      longitude: latestGps?.longitude ?? null,
+      lastEventType: latestGps?.eventType ?? null,
+      lastGpsTime: latestGps?.recordedAt ?? null,
+    };
+  });
+
+  return res.json(result);
+});
+
 export default router;
