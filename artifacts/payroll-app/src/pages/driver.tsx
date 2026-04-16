@@ -130,6 +130,8 @@ export default function DriverPage() {
   const liveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastPosSentRef = useRef<{ lat: number; lng: number; time: number } | null>(null);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  const checklistSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const checklistLoadedRef = useRef(false);
 
   const setItemResult = (id: string, result: "良" | "否") => {
     setItemStatus(prev => {
@@ -146,27 +148,56 @@ export default function DriverPage() {
     sec.items.filter(item => itemStatus.get(item.id) === "否")
   );
 
-  // 全項目入力完了時にDBへ自動保存 → 管理画面にリアルタイム反映
-  useEffect(() => {
-    if (!pinVerified || checkedCount !== totalItems) return;
-    const payload = JSON.stringify({
-      total: totalItems,
-      checked: checkedCount,
-      ng: ngItems.map(i => i.area),
-    });
-    apiFetch(`/attendance/checklist/${employeeId}`, {
-      method: "PATCH",
-      body: JSON.stringify({ checklistNgItems: payload }),
-    }).catch(() => {});
-  }, [itemStatus]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // PIN認証
+  // PIN認証 (useEffectより前に宣言する必要あり)
   const [pinRequired, setPinRequired] = useState(false);
   const [pinVerified, setPinVerified] = useState(false);
   const [pinInput, setPinInput] = useState("");
   const [pinError, setPinError] = useState(false);
   const [pinVerifying, setPinVerifying] = useState(false);
   const shakeRef = useRef<HTMLDivElement>(null);
+
+  // PIN認証後: 本日のチェックリスト状態を復元
+  useEffect(() => {
+    if (!pinVerified || checklistLoadedRef.current) return;
+    checklistLoadedRef.current = true;
+    apiFetch(`/attendance/checklist/${employeeId}`)
+      .then(r => r.json() as Promise<{ checklistNgItems: string | null }>)
+      .then(data => {
+        if (!data.checklistNgItems) return;
+        try {
+          const parsed = JSON.parse(data.checklistNgItems) as {
+            items?: Record<string, "良" | "否">;
+          };
+          if (parsed.items && Object.keys(parsed.items).length > 0) {
+            setItemStatus(new Map(Object.entries(parsed.items) as [string, "良" | "否"][]));
+          }
+        } catch { /* 旧フォーマットは無視 */ }
+      })
+      .catch(() => {});
+  }, [pinVerified, employeeId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // チェック変更のたびにDBへ保存（800ms デバウンス）→ 管理画面にリアルタイム反映
+  useEffect(() => {
+    if (!pinVerified || !checklistLoadedRef.current) return;
+    if (checklistSaveTimerRef.current) clearTimeout(checklistSaveTimerRef.current);
+    checklistSaveTimerRef.current = setTimeout(() => {
+      const allItems: Record<string, "良" | "否"> = {};
+      itemStatus.forEach((v, k) => { allItems[k] = v; });
+      const payload = JSON.stringify({
+        total: totalItems,
+        checked: checkedCount,
+        ng: ngItems.map(i => i.area),
+        items: allItems,
+      });
+      apiFetch(`/attendance/checklist/${employeeId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ checklistNgItems: payload }),
+      }).catch(() => {});
+    }, 800);
+    return () => {
+      if (checklistSaveTimerRef.current) clearTimeout(checklistSaveTimerRef.current);
+    };
+  }, [itemStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 現在時刻を毎秒更新
   useEffect(() => {

@@ -257,6 +257,26 @@ router.delete("/attendance/records/:id", async (req, res) => {
   return res.status(204).send();
 });
 
+// ── 本日のチェックリスト取得（復元用） ────────────────
+router.get("/attendance/checklist/:employeeId", async (req, res) => {
+  const employeeId = parseInt(req.params.employeeId, 10);
+  const today = todayJST();
+
+  const [clockInRec] = await db
+    .select({ checklistNgItems: attendanceRecordsTable.checklistNgItems })
+    .from(attendanceRecordsTable)
+    .where(
+      and(
+        eq(attendanceRecordsTable.employeeId, employeeId),
+        eq(attendanceRecordsTable.workDate, today),
+        eq(attendanceRecordsTable.eventType, "clock_in"),
+      )
+    )
+    .limit(1);
+
+  return res.json({ checklistNgItems: clockInRec?.checklistNgItems ?? null });
+});
+
 // ── チェックリスト結果のリアルタイム保存 ────────────────
 router.patch("/attendance/checklist/:employeeId", async (req, res) => {
   const employeeId = parseInt(req.params.employeeId, 10);
