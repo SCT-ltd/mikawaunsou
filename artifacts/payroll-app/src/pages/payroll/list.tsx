@@ -9,6 +9,7 @@ import {
   useGetPayroll,
   getGetPayrollQueryKey,
   useConfirmPayroll,
+  useListMonthlyRecords,
 } from "@workspace/api-client-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -43,6 +44,9 @@ export default function PayrollList() {
   const [calculating, setCalculating] = useState(false);
   const [calcErrors, setCalcErrors] = useState<CalcError[]>([]);
   const [selectedPayrollId, setSelectedPayrollId] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState("allowance");
+
+  const { data: monthlyRecords } = useListMonthlyRecords({ year, month });
 
   const { data: selectedPayroll, isLoading: detailLoading } = useGetPayroll(
     selectedPayrollId ?? 0,
@@ -244,7 +248,7 @@ export default function PayrollList() {
                   <TableRow
                     key={payroll.id}
                     className={`cursor-pointer transition-colors ${selectedPayrollId === payroll.id ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-muted/50"}`}
-                    onClick={() => setSelectedPayrollId(payroll.id)}
+                    onClick={() => { setSelectedPayrollId(payroll.id); setActiveTab("allowance"); }}
                   >
                     <TableCell className="font-medium">{payroll.employeeCode}</TableCell>
                     <TableCell>{payroll.employeeName}</TableCell>
@@ -269,9 +273,16 @@ export default function PayrollList() {
                             e.stopPropagation();
                             (async () => {
                               try {
-                                await calculatePayroll.mutateAsync({ data: { employeeId: payroll.employeeId, year, month } });
+                                const result = await calculatePayroll.mutateAsync({ data: { employeeId: payroll.employeeId, year, month } });
                                 queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) });
-                                toast({ title: "計算完了", description: `${payroll.employeeName}の給与計算が完了しました。` });
+                                if (result?.id) {
+                                  queryClient.invalidateQueries({ queryKey: getGetPayrollQueryKey(result.id) });
+                                  setSelectedPayrollId(result.id);
+                                } else {
+                                  setSelectedPayrollId(payroll.id);
+                                }
+                                setActiveTab("allowance");
+                                toast({ title: "計算完了", description: `${payroll.employeeName}の給与計算が完了しました。明細入力を確認してください。` });
                               } catch {
                                 toast({ title: "エラー", description: "計算に失敗しました。月次実績を確認してください。", variant: "destructive" });
                               }
@@ -325,7 +336,7 @@ export default function PayrollList() {
           ) : !selectedPayroll ? (
             <div className="py-12 text-center text-muted-foreground">データが見つかりません</div>
           ) : (
-            <Tabs defaultValue="allowance" className="mt-4">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
               <TabsList className="w-full print:hidden">
                 <TabsTrigger value="allowance" className="flex-1">明細入力</TabsTrigger>
                 <TabsTrigger value="slip" className="flex-1">給与明細</TabsTrigger>
@@ -455,11 +466,14 @@ export default function PayrollList() {
                 {employees?.find(e => e.id === selectedPayroll.employeeId) ? (
                   <AllowanceInputPanel
                     employee={employees.find(e => e.id === selectedPayroll.employeeId)!}
-                    monthlyData={{
-                      workDays: selectedPayroll.workDays ?? 0,
-                      saturdayWorkDays: (selectedPayroll as unknown as { saturdayWorkDays?: number }).saturdayWorkDays ?? 0,
-                      sundayWorkHours: (selectedPayroll as unknown as { sundayWorkHours?: number }).sundayWorkHours ?? 0,
-                    }}
+                    monthlyData={(() => {
+                      const rec = monthlyRecords?.find(r => r.employeeId === selectedPayroll.employeeId);
+                      return {
+                        workDays: rec?.workDays ?? selectedPayroll.workDays ?? 0,
+                        saturdayWorkDays: (rec as { saturdayWorkDays?: number } | undefined)?.saturdayWorkDays ?? 0,
+                        sundayWorkHours: (rec as { sundayWorkHours?: number } | undefined)?.sundayWorkHours ?? 0,
+                      };
+                    })()}
                   />
                 ) : (
                   <div className="py-12 text-center text-muted-foreground">社員データが見つかりません</div>

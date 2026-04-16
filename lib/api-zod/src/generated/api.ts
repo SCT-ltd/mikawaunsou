@@ -279,6 +279,8 @@ export const ListMonthlyRecordsResponseItem = zod.object({
   drivingDistanceKm: zod.number().describe("走行距離（km）"),
   deliveryCases: zod.number().describe("配送件数"),
   absenceDays: zod.number().describe("欠勤日数"),
+  saturdayWorkDays: zod.number().describe("土曜出勤日数").optional(),
+  sundayWorkHours: zod.number().describe("日曜労働時間").optional(),
   notes: zod.string().optional(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
