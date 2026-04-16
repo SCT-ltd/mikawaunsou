@@ -19,23 +19,10 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { Plus, X } from "lucide-react";
+import { calculateIncomeTaxReiwa8 } from "@/lib/tax-tables-reiwa8";
 
 function roundJapanese(amount: number): number {
   return Math.floor(amount);
-}
-
-function calculateIncomeTax(afterInsurance: number, dependentCount: number): number {
-  const X = afterInsurance;
-  let tax0: number;
-  if (X <= 162_500) tax0 = X * 0.05;
-  else if (X <= 275_000) tax0 = X * 0.10 - 8_125;
-  else if (X <= 579_167) tax0 = X * 0.20 - 35_542;
-  else if (X <= 750_000) tax0 = X * 0.23 - 52_917;
-  else if (X <= 1_500_000) tax0 = X * 0.33 - 127_917;
-  else if (X <= 3_000_000) tax0 = X * 0.40 - 232_917;
-  else tax0 = X * 0.45 - 382_917;
-  const taxB = Math.max(0, tax0 - dependentCount * 3_750);
-  return roundJapanese(Math.max(0, taxB * 1.021));
 }
 
 interface Props {
@@ -152,7 +139,8 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
   const totalInsurance = healthInsurance + pensionInsurance + employmentInsurance;
 
   const afterInsuranceSalary = Math.max(0, grandTotal - totalInsurance);
-  const incomeTax = calculateIncomeTax(afterInsuranceSalary, employee.dependentCount ?? 0);
+  const dependentEquivCount = (employee.dependentCount ?? 0) + ((employee.hasSpouse ?? false) ? 1 : 0);
+  const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
   const residentTax = employee.residentTax ?? 0;
 
   const customDeductionsTotal = deductionRows.reduce((s, r) => s + (r.amount || 0), 0);
