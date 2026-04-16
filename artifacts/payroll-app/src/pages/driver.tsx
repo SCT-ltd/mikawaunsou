@@ -723,42 +723,6 @@ export default function DriverPage() {
             </button>
           </div>
 
-          {/* 打刻履歴 */}
-          {records.length > 0 && (
-            <div className="mx-4 mb-4 bg-white rounded-xl border shadow-sm">
-              <div className="px-4 py-3 border-b">
-                <p className="font-semibold text-sm text-muted-foreground">本日の打刻履歴</p>
-              </div>
-              <div className="divide-y">
-                {records.map((r) => (
-                  <div key={r.id} className="px-4 py-3 flex items-start justify-between gap-3">
-                    <div className="flex flex-col gap-0.5 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className={`shrink-0 text-xs px-2 py-1 rounded-full border font-medium ${EVENT_COLORS[r.eventType as EventType]}`}>
-                          {EVENT_LABELS[r.eventType as EventType]}
-                        </span>
-                        {r.note && (
-                          <span className="text-xs text-muted-foreground truncate">📍 {r.note}</span>
-                        )}
-                      </div>
-                      {(r.startOdometer !== null || r.endOdometer !== null) && (
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground ml-0.5">
-                          <span>🚛</span>
-                          {r.startOdometer !== null && <span>出発 {r.startOdometer.toLocaleString("ja-JP")} km</span>}
-                          {r.startOdometer !== null && r.endOdometer !== null && <span className="text-gray-400">→</span>}
-                          {r.endOdometer !== null && <span>帰着 {r.endOdometer.toLocaleString("ja-JP")} km</span>}
-                          {r.startOdometer !== null && r.endOdometer !== null && r.endOdometer >= r.startOdometer && (
-                            <span className="font-semibold text-primary ml-1">（{(r.endOdometer - r.startOdometer).toFixed(1)} km）</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    <span className="shrink-0 font-mono text-sm font-semibold tabular-nums">{formatTime(r.recordedAt)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
           <div className="pb-4 text-center">
             <p className="text-xs text-muted-foreground">三川運送 勤怠管理システム</p>
           </div>
