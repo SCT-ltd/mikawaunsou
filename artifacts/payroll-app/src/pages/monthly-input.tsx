@@ -551,7 +551,7 @@ export default function MonthlyInput() {
     try {
       const res = await fetch(`${BASE}/api/attendance/monthly-summary?year=${year}&month=${month}`);
       if (!res.ok) throw new Error("取得失敗");
-      const summary: { employeeId: number; workDays: number; saturdayWorkDays: number; sundayWorkHours: number; overtimeHours: number }[] = await res.json();
+      const summary: { employeeId: number; workDays: number; saturdayWorkDays: number; sundayWorkHours: number; overtimeHours: number; absenceDays: number }[] = await res.json();
 
       if (summary.length === 0) {
         toast({ title: "取り込み対象なし", description: `${year}年${month}月の打刻データが見つかりませんでした。` });
@@ -567,6 +567,7 @@ export default function MonthlyInput() {
             saturdayWorkDays: s.saturdayWorkDays,
             sundayWorkHours: s.sundayWorkHours,
             overtimeHours: s.overtimeHours,
+            absenceDays: s.absenceDays ?? 0,
           };
         }
         return next;

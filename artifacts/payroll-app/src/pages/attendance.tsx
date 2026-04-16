@@ -4,16 +4,44 @@ import { Button } from "@/components/ui/button";
 import {
   RefreshCw, Clock, QrCode, Pencil, Trash2, Save, X,
   UserCheck, Coffee, LogOut, AlarmClock, Plus, GripVertical,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, CalendarOff,
 } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import QRCode from "react-qr-code";
 
 type EventType = "clock_in" | "clock_out" | "break_start" | "break_end";
 type Status = "未出勤" | "出勤中" | "休憩中" | "退勤済";
+type AbsenceType = "sick" | "paid_leave" | "bereavement" | "morning_half" | "afternoon_half" | "other";
+
+interface AbsenceRecord {
+  id: number;
+  employeeId: number;
+  absenceType: AbsenceType;
+  workDate: string;
+  note: string | null;
+}
+
+const ABSENCE_LABELS: Record<AbsenceType, string> = {
+  sick:           "病欠",
+  paid_leave:     "有給休暇",
+  bereavement:    "忌引き",
+  morning_half:   "午前休み",
+  afternoon_half: "午後休み",
+  other:          "その他",
+};
+
+const ABSENCE_COLORS: Record<AbsenceType, string> = {
+  sick:           "bg-red-100 text-red-700 border-red-200",
+  paid_leave:     "bg-emerald-100 text-emerald-700 border-emerald-200",
+  bereavement:    "bg-purple-100 text-purple-700 border-purple-200",
+  morning_half:   "bg-orange-100 text-orange-700 border-orange-200",
+  afternoon_half: "bg-amber-100 text-amber-700 border-amber-200",
+  other:          "bg-slate-100 text-slate-600 border-slate-200",
+};
 
 interface AttendanceRecord {
   id: number;
@@ -164,6 +192,12 @@ export default function AttendancePage() {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
+  // 欠勤・休暇
+  const [absences, setAbsences] = useState<AbsenceRecord[]>([]);
+  const [absenceMode, setAbsenceMode] = useState(false);
+  const [absenceType, setAbsenceType] = useState<AbsenceType>("sick");
+  const [absenceNote, setAbsenceNote] = useState("");
+
   const isToday = selectedDate === todayJST();
 
   /* ── データ取得 ──────────────────────── */
@@ -179,12 +213,23 @@ export default function AttendancePage() {
     } catch { /* silent */ } finally { setLoading(false); }
   }, []);
 
+  const fetchAbsences = useCallback(async (date: string) => {
+    try {
+      const res = await fetch(`${BASE}/api/absences?date=${date}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const result: AbsenceRecord[] = await res.json();
+      setAbsences(result);
+    } catch { /* silent */ }
+  }, []);
+
   // 日付が変わったら再取得・サイドパネルを閉じる
   useEffect(() => {
     setLoading(true);
     setSelected(null);
+    setAbsenceMode(false);
     fetchData(selectedDate);
-  }, [selectedDate, fetchData]);
+    fetchAbsences(selectedDate);
+  }, [selectedDate, fetchData, fetchAbsences]);
 
   // 今日の場合のみSSE＋ポーリング
   useEffect(() => {
@@ -257,6 +302,35 @@ export default function AttendancePage() {
       });
       setAddMode(false);
       await fetchData(selectedDate);
+    } finally { setSaving(false); }
+  };
+
+  /* ── 欠勤登録 ──────────────────────── */
+  const saveAbsence = async () => {
+    if (!selected) return;
+    setSaving(true);
+    try {
+      await fetch(`${BASE}/api/absences`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          employeeId: selected.employee.id,
+          absenceType,
+          workDate: selectedDate,
+          note: absenceNote || null,
+        }),
+      });
+      setAbsenceMode(false);
+      setAbsenceNote("");
+      await fetchAbsences(selectedDate);
+    } finally { setSaving(false); }
+  };
+
+  const deleteAbsence = async (id: number) => {
+    setSaving(true);
+    try {
+      await fetch(`${BASE}/api/absences/${id}`, { method: "DELETE" });
+      await fetchAbsences(selectedDate);
     } finally { setSaving(false); }
   };
 
@@ -408,6 +482,7 @@ export default function AttendancePage() {
                       const isSelected = selected?.employee.id === d.employee.id;
                       const rowBg = STATUS_STYLE[d.status].rowBg;
                       const longHour = ms >= 10 * 3600000 ? "bg-red-50" : ms >= 8 * 3600000 ? "bg-orange-50" : "";
+                      const empAbsences = absences.filter(a => a.employeeId === d.employee.id);
 
                       return (
                         <tr
@@ -422,6 +497,11 @@ export default function AttendancePage() {
                               <div>
                                 <p className="font-semibold leading-tight">{d.employee.name}</p>
                                 <p className="text-xs text-muted-foreground">{d.employee.employeeCode}</p>
+                                {empAbsences.map(a => (
+                                  <span key={a.id} className={`inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded border mt-0.5 mr-1 ${ABSENCE_COLORS[a.absenceType]}`}>
+                                    {ABSENCE_LABELS[a.absenceType]}
+                                  </span>
+                                ))}
                                 {(() => {
                                   const latest = [...d.records].reverse().find(r => r.note);
                                   return latest?.note ? (
@@ -641,6 +721,85 @@ export default function AttendancePage() {
                       ))}
                     </div>
                   </div>
+                )}
+              </div>
+
+              {/* 欠勤・休暇セクション */}
+              <div className="px-5 py-4 border-t">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                    <CalendarOff className="h-3.5 w-3.5" />欠勤・休暇
+                  </p>
+                  {!absenceMode && (
+                    <button
+                      onClick={() => { setAbsenceMode(true); setAbsenceType("sick"); setAbsenceNote(""); }}
+                      className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                    >
+                      <Plus className="h-3 w-3" />登録
+                    </button>
+                  )}
+                </div>
+
+                {/* 既存の欠勤記録 */}
+                {absences.filter(a => a.employeeId === selected.employee.id).map(a => (
+                  <div key={a.id} className={`flex items-center justify-between rounded-lg border px-3 py-2 mb-2 text-sm ${ABSENCE_COLORS[a.absenceType]}`}>
+                    <div>
+                      <span className="font-semibold text-xs">{ABSENCE_LABELS[a.absenceType]}</span>
+                      {a.note && <p className="text-[10px] mt-0.5 opacity-75">{a.note}</p>}
+                    </div>
+                    <button
+                      onClick={() => deleteAbsence(a.id)}
+                      disabled={saving}
+                      className="p-1 rounded hover:bg-black/10 transition-colors opacity-60 hover:opacity-100"
+                      title="削除"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+
+                {/* 欠勤登録フォーム */}
+                {absenceMode && (
+                  <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 space-y-3">
+                    <p className="text-xs font-medium text-orange-800">欠勤・休暇を登録</p>
+                    <div className="space-y-1">
+                      <Label className="text-xs">種別</Label>
+                      <Select value={absenceType} onValueChange={v => setAbsenceType(v as AbsenceType)}>
+                        <SelectTrigger className="h-8 text-xs bg-white">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="sick">病欠</SelectItem>
+                          <SelectItem value="paid_leave">有給休暇</SelectItem>
+                          <SelectItem value="bereavement">忌引き</SelectItem>
+                          <SelectItem value="morning_half">午前休み（0.5日）</SelectItem>
+                          <SelectItem value="afternoon_half">午後休み（0.5日）</SelectItem>
+                          <SelectItem value="other">その他</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">備考（任意）</Label>
+                      <Textarea
+                        value={absenceNote}
+                        onChange={e => setAbsenceNote(e.target.value)}
+                        className="h-16 text-xs resize-none bg-white"
+                        placeholder="理由・コメント..."
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" className="flex-1 h-7 text-xs" onClick={saveAbsence} disabled={saving}>
+                        <Plus className="h-3 w-3 mr-1" />登録
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setAbsenceMode(false)} disabled={saving}>
+                        キャンセル
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {!absenceMode && absences.filter(a => a.employeeId === selected.employee.id).length === 0 && (
+                  <p className="text-xs text-muted-foreground text-center py-2">この日の欠勤・休暇登録はありません</p>
                 )}
               </div>
 

@@ -15,3 +15,18 @@ export const attendanceRecordsTable = pgTable("attendance_records", {
 
 export type AttendanceRecord = typeof attendanceRecordsTable.$inferSelect;
 export type InsertAttendanceRecord = typeof attendanceRecordsTable.$inferInsert;
+
+// 欠勤・休暇記録
+// absenceType: 'sick'=病欠, 'paid_leave'=有給, 'bereavement'=忌引き,
+//              'morning_half'=午前休み, 'afternoon_half'=午後休み, 'other'=その他
+export const absenceRecordsTable = pgTable("absence_records", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull().references(() => employeesTable.id),
+  absenceType: text("absence_type").notNull(),
+  workDate: date("work_date").notNull(),
+  note: text("note"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export type AbsenceRecord = typeof absenceRecordsTable.$inferSelect;
+export type InsertAbsenceRecord = typeof absenceRecordsTable.$inferInsert;

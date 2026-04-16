@@ -1,6 +1,7 @@
 import { Router, type Response } from "express";
-import { db, attendanceRecordsTable, employeesTable } from "@workspace/db";
+import { db, attendanceRecordsTable, employeesTable, absenceRecordsTable } from "@workspace/db";
 import { asc, eq, and, gte, lte } from "drizzle-orm";
+import { ABSENCE_DAYS } from "./absences";
 
 const router = Router();
 
@@ -329,9 +330,33 @@ router.get("/attendance/monthly-summary", async (req, res) => {
     }
   }
 
+  // 欠勤データを取得して集計に加算
+  const absenceRecs = await db
+    .select()
+    .from(absenceRecordsTable)
+    .where(and(
+      gte(absenceRecordsTable.workDate, from),
+      lte(absenceRecordsTable.workDate, to),
+    ));
+
+  // 欠勤ごとに absenceDays を加算
+  const absenceSummary = new Map<number, number>();
+  for (const a of absenceRecs) {
+    const days = ABSENCE_DAYS[a.absenceType] ?? 1.0;
+    absenceSummary.set(a.employeeId, (absenceSummary.get(a.employeeId) ?? 0) + days);
+  }
+
+  // 欠勤のみの社員も結果に含める
+  for (const [empId, days] of absenceSummary.entries()) {
+    if (!summaryMap.has(empId)) {
+      summaryMap.set(empId, { workDays: 0, saturdayWorkDays: 0, sundayWorkHours: 0, overtimeHours: 0 });
+    }
+  }
+
   const result = Array.from(summaryMap.entries()).map(([employeeId, s]) => ({
     employeeId,
     ...s,
+    absenceDays: Math.round((absenceSummary.get(employeeId) ?? 0) * 10) / 10,
   }));
 
   return res.json(result);

@@ -8,6 +8,7 @@ import journalEntriesRouter from "./journal_entries";
 import dashboardRouter from "./dashboard";
 import allowancesRouter from "./allowances";
 import attendanceRouter from "./attendance";
+import absencesRouter from "./absences";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,6 @@ router.use(journalEntriesRouter);
 router.use(dashboardRouter);
 router.use(allowancesRouter);
 router.use(attendanceRouter);
+router.use(absencesRouter);
 
 export default router;
