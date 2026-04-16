@@ -577,6 +577,20 @@ export default function DriverPage() {
   const handleRecord = async (eventType: EventType) => {
     setRecording(true);
     setError(null);
+
+    // 楽観的更新: APIレスポンスを待たずに即座に状態を反映
+    const optimisticRecord: AttendanceRecord = {
+      id: -1,
+      employeeId,
+      eventType,
+      workDate: new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10),
+      recordedAt: new Date().toISOString(),
+      note: null,
+      startOdometer: null,
+      endOdometer: null,
+    };
+    setRecords(prev => [...prev, optimisticRecord]);
+
     try {
       const startKm = startOdometer.trim() !== "" ? parseFloat(startOdometer) : null;
       const endKm = endOdometer.trim() !== "" ? parseFloat(endOdometer) : null;
@@ -612,6 +626,7 @@ export default function DriverPage() {
       setTimeout(() => setSuccessMsg(null), 5000);
       await fetchData();
     } catch (e: unknown) {
+      // 楽観的更新を元に戻してDB最新状態を再取得
       await fetchData();
       let msg = "記録に失敗しました。もう一度お試しください。";
       if (e instanceof Error) {
