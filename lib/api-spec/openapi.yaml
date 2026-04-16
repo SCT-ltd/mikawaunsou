@@ -878,6 +878,9 @@ components:
         hasSpouse:
           type: boolean
           description: 配偶者の有無
+        standardRemuneration:
+          type: number
+          description: 標準報酬月額（9月定時決定で確定、翌8月まで固定）
         healthInsuranceMonthly:
           type: number
           description: 健康保険料（月額）固定額
@@ -918,6 +921,7 @@ components:
         - commissionRatePerCase
         - dependentCount
         - hasSpouse
+        - standardRemuneration
         - healthInsuranceMonthly
         - pensionMonthly
         - employmentInsuranceApplied
@@ -1009,6 +1013,9 @@ components:
           type: integer
         hasSpouse:
           type: boolean
+        standardRemuneration:
+          type: number
+          description: 標準報酬月額（9月定時決定で確定、翌8月まで固定）
         healthInsuranceMonthly:
           type: number
         pensionMonthly:

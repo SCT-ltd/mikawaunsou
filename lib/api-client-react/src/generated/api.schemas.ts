@@ -91,6 +91,8 @@ export interface Employee {
   dependentCount: number;
   /** 配偶者の有無 */
   hasSpouse: boolean;
+  /** 標準報酬月額（9月定時決定で確定、翌8月まで固定） */
+  standardRemuneration: number;
   /** 健康保険料（月額）固定額 */
   healthInsuranceMonthly: number;
   /** 厚生年金保険料（月額）固定額 */
@@ -142,6 +144,8 @@ export interface UpdateEmployeeBody {
   commissionRatePerCase?: number;
   dependentCount?: number;
   hasSpouse?: boolean;
+  /** 標準報酬月額（9月定時決定で確定、翌8月まで固定） */
+  standardRemuneration?: number;
   healthInsuranceMonthly?: number;
   pensionMonthly?: number;
   employmentInsuranceApplied?: boolean;

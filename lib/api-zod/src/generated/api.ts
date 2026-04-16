@@ -122,6 +122,9 @@ export const ListEmployeesResponseItem = zod.object({
   commissionRatePerCase: zod.number().describe("歩合単価（円\/件）"),
   dependentCount: zod.number().describe("扶養親族数"),
   hasSpouse: zod.boolean().describe("配偶者の有無"),
+  standardRemuneration: zod
+    .number()
+    .describe("標準報酬月額（9月定時決定で確定、翌8月まで固定）"),
   healthInsuranceMonthly: zod.number().describe("健康保険料（月額）固定額"),
   pensionMonthly: zod.number().describe("厚生年金保険料（月額）固定額"),
   employmentInsuranceApplied: zod.boolean().describe("雇用保険適用"),
@@ -181,6 +184,9 @@ export const GetEmployeeResponse = zod.object({
   commissionRatePerCase: zod.number().describe("歩合単価（円\/件）"),
   dependentCount: zod.number().describe("扶養親族数"),
   hasSpouse: zod.boolean().describe("配偶者の有無"),
+  standardRemuneration: zod
+    .number()
+    .describe("標準報酬月額（9月定時決定で確定、翌8月まで固定）"),
   healthInsuranceMonthly: zod.number().describe("健康保険料（月額）固定額"),
   pensionMonthly: zod.number().describe("厚生年金保険料（月額）固定額"),
   employmentInsuranceApplied: zod.boolean().describe("雇用保険適用"),
@@ -215,6 +221,10 @@ export const UpdateEmployeeBody = zod.object({
   commissionRatePerCase: zod.number().optional(),
   dependentCount: zod.number().optional(),
   hasSpouse: zod.boolean().optional(),
+  standardRemuneration: zod
+    .number()
+    .optional()
+    .describe("標準報酬月額（9月定時決定で確定、翌8月まで固定）"),
   healthInsuranceMonthly: zod.number().optional(),
   pensionMonthly: zod.number().optional(),
   employmentInsuranceApplied: zod.boolean().optional(),
@@ -241,6 +251,9 @@ export const UpdateEmployeeResponse = zod.object({
   commissionRatePerCase: zod.number().describe("歩合単価（円\/件）"),
   dependentCount: zod.number().describe("扶養親族数"),
   hasSpouse: zod.boolean().describe("配偶者の有無"),
+  standardRemuneration: zod
+    .number()
+    .describe("標準報酬月額（9月定時決定で確定、翌8月まで固定）"),
   healthInsuranceMonthly: zod.number().describe("健康保険料（月額）固定額"),
   pensionMonthly: zod.number().describe("厚生年金保険料（月額）固定額"),
   employmentInsuranceApplied: zod.boolean().describe("雇用保険適用"),
@@ -279,8 +292,6 @@ export const ListMonthlyRecordsResponseItem = zod.object({
   drivingDistanceKm: zod.number().describe("走行距離（km）"),
   deliveryCases: zod.number().describe("配送件数"),
   absenceDays: zod.number().describe("欠勤日数"),
-  saturdayWorkDays: zod.number().describe("土曜出勤日数").optional(),
-  sundayWorkHours: zod.number().describe("日曜労働時間").optional(),
   notes: zod.string().optional(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),

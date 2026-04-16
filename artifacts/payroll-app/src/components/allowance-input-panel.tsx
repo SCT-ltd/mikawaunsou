@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { Plus, X } from "lucide-react";
-import { calculateIncomeTaxReiwa7, calculateInsuranceByGrade, round50sen } from "@/lib/tax-tables-reiwa8";
+import { calculateIncomeTaxReiwa7, round50sen } from "@/lib/tax-tables-reiwa8";
 
 function roundJapanese(amount: number): number {
   return Math.floor(amount);
@@ -131,12 +131,13 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
   const pensionRate = company?.pensionEmployeeRate ?? 0.0915;
   const employmentInsuranceRate = company?.employmentInsuranceRate ?? 0.006;
 
-  // 社会保険: 健保・厚年は標準報酬月額等級テーブルベース、雇用保険は総支給額ベース
-  const { healthInsurance, pension: pensionInsurance } = calculateInsuranceByGrade(
-    grandTotal,
-    healthInsuranceRate,
-    pensionRate,
-  );
+  // 社会保険: 標準報酬月額（マスタ管理、9月定時決定固定）× 料率
+  // 標準報酬月額が未設定（0）の場合は総支給額をフォールバックとして使用
+  const stdRemuneration = (employee.standardRemuneration && employee.standardRemuneration > 0)
+    ? employee.standardRemuneration
+    : grandTotal;
+  const healthInsurance = round50sen(stdRemuneration * healthInsuranceRate);
+  const pensionInsurance = round50sen(Math.min(stdRemuneration, 650_000) * pensionRate);
   const employmentInsurance = (employee.employmentInsuranceApplied !== false)
     ? round50sen(grandTotal * employmentInsuranceRate)
     : 0;
