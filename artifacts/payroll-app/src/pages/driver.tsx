@@ -119,13 +119,12 @@ export default function DriverPage() {
   const [startOdometer, setStartOdometer] = useState("");
   const [endOdometer, setEndOdometer] = useState("");
   const [itemStatus, setItemStatus] = useState<Map<string, "良" | "否">>(new Map());
-  const [checkShowAll, setCheckShowAll] = useState(false);
   const [gpsStatus, setGpsStatus] = useState<"inactive" | "active" | "denied" | "background">("inactive");
   const [messages, setMessages] = useState<{ id: number; employeeId: number; sender: "office" | "employee"; content: string; createdAt: string }[]>([]);
   const [msgInput, setMsgInput] = useState("");
   const [msgSending, setMsgSending] = useState(false);
-  const [msgOpen, setMsgOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [activeTab, setActiveTab] = useState<"attendance" | "messages" | "checklist">("attendance");
   const msgBottomRef = useRef<HTMLDivElement>(null);
   const watchIdRef = useRef<number | null>(null);
   const liveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -284,15 +283,13 @@ export default function DriverPage() {
     }
   };
 
-  // メッセージ開封時に未読リセット
+  // メッセージタブ開封時に未読リセット＆自動スクロール
   useEffect(() => {
-    if (msgOpen) setUnreadCount(0);
-  }, [msgOpen]);
-
-  // メッセージ自動スクロール
-  useEffect(() => {
-    if (msgOpen) msgBottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, msgOpen]);
+    if (activeTab === "messages") {
+      setUnreadCount(0);
+      setTimeout(() => msgBottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+    }
+  }, [activeTab, messages]);
 
   // ライブ位置情報の継続送信（PINログイン後に開始）
   useEffect(() => {
@@ -570,7 +567,7 @@ export default function DriverPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen bg-gray-50 flex flex-col pb-20">
       {/* ヘッダー */}
       <div className="bg-white border-b px-4 py-4 flex items-center gap-3">
         <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-lg">
@@ -612,215 +609,282 @@ export default function DriverPage() {
         </div>
       )}
 
-      {/* 発着地入力 */}
-      <div className="mx-4 mt-3 mb-1">
-        <p className="text-xs font-semibold text-muted-foreground mb-1.5">📍 発着地（任意）</p>
-        <div className="flex items-center gap-2">
-          <div className="flex-1">
-            <label className="block text-xs text-muted-foreground mb-1">発地</label>
-            <input
-              type="text"
-              value={departure}
-              onChange={(e) => setDeparture(e.target.value)}
-              placeholder="例：本社"
-              className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-base placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm"
-            />
-          </div>
-          <span className="text-gray-400 text-lg mt-4">→</span>
-          <div className="flex-1">
-            <label className="block text-xs text-muted-foreground mb-1">着地</label>
-            <input
-              type="text"
-              value={arrival}
-              onChange={(e) => setArrival(e.target.value)}
-              placeholder="例：大阪営業所"
-              className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-base placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* 走行距離入力 */}
-      <div className="mx-4 mt-2 mb-1">
-        <p className="text-xs font-semibold text-muted-foreground mb-1.5">🚛 走行距離（任意）</p>
-        <div className="flex items-center gap-2">
-          <div className="flex-1">
-            <label className="block text-xs text-muted-foreground mb-1">出発時（km）</label>
-            <div className="relative">
-              <input
-                type="number"
-                inputMode="decimal"
-                min="0"
-                value={startOdometer}
-                onChange={(e) => setStartOdometer(e.target.value)}
-                placeholder="例：12345"
-                className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 pr-10 text-base placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm"
-              />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">km</span>
+      {/* ── 勤怠入力タブ ── */}
+      {activeTab === "attendance" && (
+        <>
+          {/* 発着地入力 */}
+          <div className="mx-4 mt-3 mb-1">
+            <p className="text-xs font-semibold text-muted-foreground mb-1.5">📍 発着地（任意）</p>
+            <div className="flex items-center gap-2">
+              <div className="flex-1">
+                <label className="block text-xs text-muted-foreground mb-1">発地</label>
+                <input
+                  type="text"
+                  value={departure}
+                  onChange={(e) => setDeparture(e.target.value)}
+                  placeholder="例：本社"
+                  className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-base placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm"
+                />
+              </div>
+              <span className="text-gray-400 text-lg mt-4">→</span>
+              <div className="flex-1">
+                <label className="block text-xs text-muted-foreground mb-1">着地</label>
+                <input
+                  type="text"
+                  value={arrival}
+                  onChange={(e) => setArrival(e.target.value)}
+                  placeholder="例：大阪営業所"
+                  className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-base placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm"
+                />
+              </div>
             </div>
           </div>
-          <span className="text-gray-400 text-lg mt-4">→</span>
-          <div className="flex-1">
-            <label className="block text-xs text-muted-foreground mb-1">帰着時（km）</label>
-            <div className="relative">
-              <input
-                type="number"
-                inputMode="decimal"
-                min="0"
-                value={endOdometer}
-                onChange={(e) => setEndOdometer(e.target.value)}
-                placeholder="例：12567"
-                className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 pr-10 text-base placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm"
-              />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">km</span>
+
+          {/* 走行距離入力 */}
+          <div className="mx-4 mt-2 mb-1">
+            <p className="text-xs font-semibold text-muted-foreground mb-1.5">🚛 走行距離（任意）</p>
+            <div className="flex items-center gap-2">
+              <div className="flex-1">
+                <label className="block text-xs text-muted-foreground mb-1">出発時（km）</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    value={startOdometer}
+                    onChange={(e) => setStartOdometer(e.target.value)}
+                    placeholder="例：12345"
+                    className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 pr-10 text-base placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">km</span>
+                </div>
+              </div>
+              <span className="text-gray-400 text-lg mt-4">→</span>
+              <div className="flex-1">
+                <label className="block text-xs text-muted-foreground mb-1">帰着時（km）</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    value={endOdometer}
+                    onChange={(e) => setEndOdometer(e.target.value)}
+                    placeholder="例：12567"
+                    className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 pr-10 text-base placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">km</span>
+                </div>
+              </div>
+            </div>
+            {startOdometer && endOdometer && parseFloat(endOdometer) >= parseFloat(startOdometer) && (
+              <div className="mt-1.5 text-center text-sm font-semibold text-primary">
+                走行距離：{(parseFloat(endOdometer) - parseFloat(startOdometer)).toFixed(1)} km
+              </div>
+            )}
+          </div>
+
+          {/* 4大ボタン */}
+          <div className="flex-1 p-4 grid grid-cols-2 gap-4 content-start mt-2">
+            <button
+              onClick={() => handleRecord("clock_in")}
+              disabled={!canClockIn || recording}
+              className={`rounded-2xl p-6 flex flex-col items-center justify-center gap-3 min-h-[140px] text-white font-bold text-xl shadow-md transition-all active:scale-95
+                ${canClockIn && !recording ? "bg-green-500 hover:bg-green-600" : "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"}`}
+            >
+              <span className="text-4xl">🟢</span>
+              <span>出勤</span>
+            </button>
+            <button
+              onClick={() => handleRecord("clock_out")}
+              disabled={!canClockOut || recording}
+              className={`rounded-2xl p-6 flex flex-col items-center justify-center gap-3 min-h-[140px] text-white font-bold text-xl shadow-md transition-all active:scale-95
+                ${canClockOut && !recording ? "bg-red-500 hover:bg-red-600" : "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"}`}
+            >
+              <span className="text-4xl">🔴</span>
+              <span>退勤</span>
+            </button>
+            <button
+              onClick={() => handleRecord("break_start")}
+              disabled={!canBreakStart || recording}
+              className={`rounded-2xl p-6 flex flex-col items-center justify-center gap-3 min-h-[140px] text-white font-bold text-xl shadow-md transition-all active:scale-95
+                ${canBreakStart && !recording ? "bg-yellow-500 hover:bg-yellow-600" : "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"}`}
+            >
+              <span className="text-4xl">🟡</span>
+              <span>休憩開始</span>
+            </button>
+            <button
+              onClick={() => handleRecord("break_end")}
+              disabled={!canBreakEnd || recording}
+              className={`rounded-2xl p-6 flex flex-col items-center justify-center gap-3 min-h-[140px] text-white font-bold text-xl shadow-md transition-all active:scale-95
+                ${canBreakEnd && !recording ? "bg-blue-500 hover:bg-blue-600" : "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"}`}
+            >
+              <span className="text-4xl">🔵</span>
+              <span>休憩終了</span>
+            </button>
+          </div>
+
+          {/* 打刻履歴 */}
+          {records.length > 0 && (
+            <div className="mx-4 mb-4 bg-white rounded-xl border shadow-sm">
+              <div className="px-4 py-3 border-b">
+                <p className="font-semibold text-sm text-muted-foreground">本日の打刻履歴</p>
+              </div>
+              <div className="divide-y">
+                {records.map((r) => (
+                  <div key={r.id} className="px-4 py-3 flex items-start justify-between gap-3">
+                    <div className="flex flex-col gap-0.5 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className={`shrink-0 text-xs px-2 py-1 rounded-full border font-medium ${EVENT_COLORS[r.eventType as EventType]}`}>
+                          {EVENT_LABELS[r.eventType as EventType]}
+                        </span>
+                        {r.note && (
+                          <span className="text-xs text-muted-foreground truncate">📍 {r.note}</span>
+                        )}
+                      </div>
+                      {(r.startOdometer !== null || r.endOdometer !== null) && (
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground ml-0.5">
+                          <span>🚛</span>
+                          {r.startOdometer !== null && <span>出発 {r.startOdometer.toLocaleString("ja-JP")} km</span>}
+                          {r.startOdometer !== null && r.endOdometer !== null && <span className="text-gray-400">→</span>}
+                          {r.endOdometer !== null && <span>帰着 {r.endOdometer.toLocaleString("ja-JP")} km</span>}
+                          {r.startOdometer !== null && r.endOdometer !== null && r.endOdometer >= r.startOdometer && (
+                            <span className="font-semibold text-primary ml-1">（{(r.endOdometer - r.startOdometer).toFixed(1)} km）</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <span className="shrink-0 font-mono text-sm font-semibold tabular-nums">{formatTime(r.recordedAt)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="pb-4 text-center">
+            <p className="text-xs text-muted-foreground">三川運送 勤怠管理システム</p>
+          </div>
+        </>
+      )}
+
+      {/* ── メッセージタブ ── */}
+      {activeTab === "messages" && (
+        <div className="flex flex-col flex-1 mx-4 mt-3 mb-3 bg-white rounded-xl border shadow-sm overflow-hidden" style={{ minHeight: "420px" }}>
+          {/* チャット一覧 */}
+          <div className="flex-1 overflow-y-auto bg-slate-50 px-3 py-3 space-y-2">
+            {messages.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-40 text-muted-foreground gap-2">
+                <span className="text-4xl opacity-30">💬</span>
+                <p className="text-sm">メッセージはありません</p>
+              </div>
+            ) : messages.map(msg => {
+              const isMe = msg.sender === "employee";
+              return (
+                <div key={msg.id} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
+                  {!isMe && (
+                    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary text-sm font-bold shrink-0 mr-2 mt-1">
+                      事
+                    </div>
+                  )}
+                  <div className="max-w-[80%]">
+                    {!isMe && <p className="text-xs text-muted-foreground mb-1 ml-1">事務所</p>}
+                    <div className={`px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed
+                      ${isMe
+                        ? "bg-primary text-primary-foreground rounded-tr-sm"
+                        : "bg-white border shadow-sm rounded-tl-sm"}`}>
+                      {msg.content}
+                    </div>
+                    <p className={`text-xs text-muted-foreground mt-1 ${isMe ? "text-right mr-1" : "ml-1"}`}>
+                      {new Date(msg.createdAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+            <div ref={msgBottomRef} />
+          </div>
+          {/* 入力欄 */}
+          <div className="px-3 py-3 border-t bg-white flex gap-2 shrink-0">
+            <input
+              type="text"
+              value={msgInput}
+              onChange={e => setMsgInput(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && sendMessage()}
+              placeholder="事務所にメッセージを送る..."
+              className="flex-1 rounded-xl border px-3 py-3 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+            <button
+              onClick={sendMessage}
+              disabled={!msgInput.trim() || msgSending}
+              className="bg-primary text-primary-foreground rounded-xl px-5 py-3 text-sm font-semibold disabled:opacity-40 active:scale-95 transition-all"
+            >
+              送信
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── チェックリストタブ ── */}
+      {activeTab === "checklist" && (
+        <div className="mx-4 mt-3 mb-3 bg-white rounded-xl border shadow-sm overflow-hidden">
+          {/* ヘッダー */}
+          <div className="px-4 py-3 border-b flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-sm">日常点検チェックリスト</span>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-semibold
+                ${checkedCount === totalItems && ngItems.length === 0
+                  ? "bg-green-100 text-green-700"
+                  : ngItems.length > 0
+                    ? "bg-red-100 text-red-700"
+                    : "bg-gray-100 text-gray-500"}`}>
+                {checkedCount} / {totalItems}
+                {ngItems.length > 0 && ` (否${ngItems.length}件)`}
+              </span>
             </div>
           </div>
-        </div>
-        {startOdometer && endOdometer && parseFloat(endOdometer) >= parseFloat(startOdometer) && (
-          <div className="mt-1.5 text-center text-sm font-semibold text-primary">
-            走行距離：{(parseFloat(endOdometer) - parseFloat(startOdometer)).toFixed(1)} km
+          {/* プログレスバー */}
+          <div className="h-1.5 bg-gray-100">
+            <div
+              className="h-full bg-green-500 transition-all duration-300 rounded-r-full"
+              style={{ width: `${totalItems > 0 ? (checkedCount / totalItems) * 100 : 0}%` }}
+            />
           </div>
-        )}
-      </div>
-
-      {/* 4大ボタン */}
-      <div className="flex-1 p-4 grid grid-cols-2 gap-4 content-start mt-2">
-        {/* 出勤 */}
-        <button
-          onClick={() => handleRecord("clock_in")}
-          disabled={!canClockIn || recording}
-          className={`rounded-2xl p-6 flex flex-col items-center justify-center gap-3 min-h-[140px] text-white font-bold text-xl shadow-md transition-all active:scale-95
-            ${canClockIn && !recording
-              ? "bg-green-500 hover:bg-green-600"
-              : "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"}`}
-        >
-          <span className="text-4xl">🟢</span>
-          <span>出勤</span>
-        </button>
-
-        {/* 退勤 */}
-        <button
-          onClick={() => handleRecord("clock_out")}
-          disabled={!canClockOut || recording}
-          className={`rounded-2xl p-6 flex flex-col items-center justify-center gap-3 min-h-[140px] text-white font-bold text-xl shadow-md transition-all active:scale-95
-            ${canClockOut && !recording
-              ? "bg-red-500 hover:bg-red-600"
-              : "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"}`}
-        >
-          <span className="text-4xl">🔴</span>
-          <span>退勤</span>
-        </button>
-
-        {/* 休憩開始 */}
-        <button
-          onClick={() => handleRecord("break_start")}
-          disabled={!canBreakStart || recording}
-          className={`rounded-2xl p-6 flex flex-col items-center justify-center gap-3 min-h-[140px] text-white font-bold text-xl shadow-md transition-all active:scale-95
-            ${canBreakStart && !recording
-              ? "bg-yellow-500 hover:bg-yellow-600"
-              : "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"}`}
-        >
-          <span className="text-4xl">🟡</span>
-          <span>休憩開始</span>
-        </button>
-
-        {/* 休憩終了 */}
-        <button
-          onClick={() => handleRecord("break_end")}
-          disabled={!canBreakEnd || recording}
-          className={`rounded-2xl p-6 flex flex-col items-center justify-center gap-3 min-h-[140px] text-white font-bold text-xl shadow-md transition-all active:scale-95
-            ${canBreakEnd && !recording
-              ? "bg-blue-500 hover:bg-blue-600"
-              : "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"}`}
-        >
-          <span className="text-4xl">🔵</span>
-          <span>休憩終了</span>
-        </button>
-      </div>
-
-      {/* 日常点検チェックリスト */}
-      <div className="mx-4 mb-4 bg-white rounded-xl border shadow-sm overflow-hidden">
-        {/* ヘッダー */}
-        <button
-          className="w-full px-4 py-3 border-b flex items-center justify-between"
-          onClick={() => setCheckShowAll(p => !p)}
-        >
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-sm">日常点検チェックリスト</span>
-            <span className={`text-xs px-2 py-0.5 rounded-full font-semibold
-              ${checkedCount === totalItems && ngItems.length === 0
-                ? "bg-green-100 text-green-700"
-                : ngItems.length > 0
-                  ? "bg-red-100 text-red-700"
-                  : "bg-gray-100 text-gray-500"}`}>
-              {checkedCount} / {totalItems}
-              {ngItems.length > 0 && ` (否${ngItems.length}件)`}
-            </span>
-          </div>
-          <span className="text-gray-400 text-sm">{checkShowAll ? "▲" : "▼"}</span>
-        </button>
-
-        {/* プログレスバー */}
-        <div className="h-1.5 bg-gray-100">
-          <div
-            className="h-full bg-green-500 transition-all duration-300 rounded-r-full"
-            style={{ width: `${totalItems > 0 ? (checkedCount / totalItems) * 100 : 0}%` }}
-          />
-        </div>
-
-        {checkShowAll && (
           <div className="divide-y divide-gray-100">
             {INSPECTION_SECTIONS.map((sec) => (
               <div key={sec.label}>
-                {/* セクションヘッダー */}
                 <div className="px-4 py-2 bg-gray-50">
                   <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">{sec.label}</p>
                 </div>
-                {/* 項目 */}
                 {sec.items.map((item) => {
-                  const status = itemStatus.get(item.id);
+                  const st = itemStatus.get(item.id);
                   return (
                     <div
                       key={item.id}
                       className={`flex items-center gap-3 px-4 py-3.5 transition-colors
-                        ${status === "良" ? "bg-green-50" : status === "否" ? "bg-red-50" : "bg-white"}`}
+                        ${st === "良" ? "bg-green-50" : st === "否" ? "bg-red-50" : "bg-white"}`}
                     >
-                      {/* テキスト */}
                       <div className="flex-1 min-w-0">
                         <p className={`text-sm font-semibold leading-tight
-                          ${status === "良" ? "text-green-800" : status === "否" ? "text-red-800" : "text-gray-800"}`}>
+                          ${st === "良" ? "text-green-800" : st === "否" ? "text-red-800" : "text-gray-800"}`}>
                           {item.area}
                         </p>
                         <p className="text-xs text-gray-400 mt-0.5">{item.content}</p>
                       </div>
-                      {/* 良・否ボタン */}
                       <div className="flex gap-2 shrink-0">
                         <button
                           onClick={() => setItemResult(item.id, "良")}
                           className={`w-12 h-9 rounded-lg text-sm font-bold border-2 transition-all active:scale-95
-                            ${status === "良"
-                              ? "bg-green-500 border-green-500 text-white shadow-sm"
-                              : "bg-white border-gray-200 text-gray-400 hover:border-green-400 hover:text-green-600"}`}
-                        >
-                          良
-                        </button>
+                            ${st === "良" ? "bg-green-500 border-green-500 text-white shadow-sm" : "bg-white border-gray-200 text-gray-400 hover:border-green-400 hover:text-green-600"}`}
+                        >良</button>
                         <button
                           onClick={() => setItemResult(item.id, "否")}
                           className={`w-12 h-9 rounded-lg text-sm font-bold border-2 transition-all active:scale-95
-                            ${status === "否"
-                              ? "bg-red-500 border-red-500 text-white shadow-sm"
-                              : "bg-white border-gray-200 text-gray-400 hover:border-red-400 hover:text-red-600"}`}
-                        >
-                          否
-                        </button>
+                            ${st === "否" ? "bg-red-500 border-red-500 text-white shadow-sm" : "bg-white border-gray-200 text-gray-400 hover:border-red-400 hover:text-red-600"}`}
+                        >否</button>
                       </div>
                     </div>
                   );
                 })}
               </div>
             ))}
-
-            {/* 否（異常）一覧 */}
             {ngItems.length > 0 && (
               <div className="px-4 py-3 bg-red-50 border-t border-red-100">
                 <p className="text-red-700 font-bold text-xs mb-2">⚠️ 異常あり — 管理者に報告してください</p>
@@ -834,8 +898,6 @@ export default function DriverPage() {
                 </ul>
               </div>
             )}
-
-            {/* 全チェック完了メッセージ */}
             {checkedCount === totalItems && ngItems.length === 0 && (
               <div className="px-4 py-4 text-center bg-green-50 border-t border-green-100">
                 <p className="text-green-700 font-bold text-sm">✅ 日常点検完了！　今日も１日安全運転で！！</p>
@@ -847,130 +909,53 @@ export default function DriverPage() {
               </div>
             )}
           </div>
-        )}
-      </div>
-
-      {/* メッセージセクション */}
-      <div className="mx-4 mb-4 bg-white rounded-xl border shadow-sm overflow-hidden">
-        <button
-          className="w-full px-4 py-3 border-b flex items-center justify-between"
-          onClick={() => setMsgOpen(p => !p)}
-        >
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-sm">💬 事務所からのメッセージ</span>
-            {unreadCount > 0 && (
-              <span className="bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                {unreadCount}
-              </span>
-            )}
-          </div>
-          <span className="text-gray-400 text-sm">{msgOpen ? "▲" : "▼"}</span>
-        </button>
-
-        {msgOpen && (
-          <>
-            <div className="h-64 overflow-y-auto bg-slate-50 px-3 py-3 space-y-2">
-              {messages.length === 0 ? (
-                <p className="text-center text-muted-foreground text-sm py-8">メッセージはありません</p>
-              ) : messages.map(msg => {
-                const isMe = msg.sender === "employee";
-                return (
-                  <div key={msg.id} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
-                    {!isMe && (
-                      <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary text-xs font-bold shrink-0 mr-1.5 mt-1">
-                        事
-                      </div>
-                    )}
-                    <div className={`max-w-[80%]`}>
-                      {!isMe && <p className="text-xs text-muted-foreground mb-0.5 ml-0.5">事務所</p>}
-                      <div className={`px-3 py-2 rounded-2xl text-sm
-                        ${isMe
-                          ? "bg-primary text-primary-foreground rounded-tr-sm"
-                          : "bg-white border shadow-sm rounded-tl-sm"
-                        }`}>
-                        {msg.content}
-                      </div>
-                      <p className={`text-xs text-muted-foreground mt-0.5 ${isMe ? "text-right mr-1" : "ml-1"}`}>
-                        {new Date(msg.createdAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-              <div ref={msgBottomRef} />
-            </div>
-            <div className="px-3 py-2.5 border-t flex gap-2">
-              <input
-                type="text"
-                value={msgInput}
-                onChange={e => setMsgInput(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && sendMessage()}
-                placeholder="メッセージを送る..."
-                className="flex-1 rounded-xl border px-3 py-2 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-              <button
-                onClick={sendMessage}
-                disabled={!msgInput.trim() || msgSending}
-                className="bg-primary text-primary-foreground rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-40"
-              >
-                送信
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* 打刻履歴 */}
-      {records.length > 0 && (
-        <div className="mx-4 mb-4 bg-white rounded-xl border shadow-sm">
-          <div className="px-4 py-3 border-b">
-            <p className="font-semibold text-sm text-muted-foreground">本日の打刻履歴</p>
-          </div>
-          <div className="divide-y">
-            {records.map((r) => (
-              <div key={r.id} className="px-4 py-3 flex items-start justify-between gap-3">
-                <div className="flex flex-col gap-0.5 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className={`shrink-0 text-xs px-2 py-1 rounded-full border font-medium ${EVENT_COLORS[r.eventType as EventType]}`}>
-                      {EVENT_LABELS[r.eventType as EventType]}
-                    </span>
-                    {r.note && (
-                      <span className="text-xs text-muted-foreground truncate">
-                        📍 {r.note}
-                      </span>
-                    )}
-                  </div>
-                  {(r.startOdometer !== null || r.endOdometer !== null) && (
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground ml-0.5">
-                      <span>🚛</span>
-                      {r.startOdometer !== null && (
-                        <span>出発 {r.startOdometer.toLocaleString("ja-JP")} km</span>
-                      )}
-                      {r.startOdometer !== null && r.endOdometer !== null && (
-                        <span className="text-gray-400">→</span>
-                      )}
-                      {r.endOdometer !== null && (
-                        <span>帰着 {r.endOdometer.toLocaleString("ja-JP")} km</span>
-                      )}
-                      {r.startOdometer !== null && r.endOdometer !== null && r.endOdometer >= r.startOdometer && (
-                        <span className="font-semibold text-primary ml-1">
-                          （{(r.endOdometer - r.startOdometer).toFixed(1)} km）
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <span className="shrink-0 font-mono text-sm font-semibold tabular-nums">
-                  {formatTime(r.recordedAt)}
-                </span>
-              </div>
-            ))}
-          </div>
         </div>
       )}
 
-      <div className="pb-8 text-center">
-        <p className="text-xs text-muted-foreground">三川運送 勤怠管理システム</p>
+      {/* ── フッターナビゲーション ── */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex z-50 safe-area-pb"
+           style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
+        <button
+          onClick={() => setActiveTab("attendance")}
+          className={`flex-1 flex flex-col items-center justify-center gap-1 py-3 transition-colors
+            ${activeTab === "attendance" ? "text-primary" : "text-gray-400"}`}
+        >
+          <span className="text-2xl">🟢</span>
+          <span className={`text-xs font-semibold ${activeTab === "attendance" ? "text-primary" : "text-gray-400"}`}>勤怠入力</span>
+          {activeTab === "attendance" && <span className="absolute bottom-0 w-12 h-0.5 bg-primary rounded-t-full" />}
+        </button>
+        <button
+          onClick={() => { setActiveTab("messages"); setUnreadCount(0); }}
+          className={`flex-1 flex flex-col items-center justify-center gap-1 py-3 relative transition-colors
+            ${activeTab === "messages" ? "text-primary" : "text-gray-400"}`}
+        >
+          <div className="relative">
+            <span className="text-2xl">💬</span>
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-4 h-4 flex items-center justify-center leading-none">
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+          </div>
+          <span className={`text-xs font-semibold ${activeTab === "messages" ? "text-primary" : "text-gray-400"}`}>メッセージ</span>
+          {activeTab === "messages" && <span className="absolute bottom-0 w-16 h-0.5 bg-primary rounded-t-full" />}
+        </button>
+        <button
+          onClick={() => setActiveTab("checklist")}
+          className={`flex-1 flex flex-col items-center justify-center gap-1 py-3 relative transition-colors
+            ${activeTab === "checklist" ? "text-primary" : "text-gray-400"}`}
+        >
+          <div className="relative">
+            <span className="text-2xl">📋</span>
+            {checkedCount < totalItems && (
+              <span className="absolute -top-1 -right-2 bg-gray-400 text-white text-xs font-bold rounded-full w-4 h-4 flex items-center justify-center leading-none">
+                {totalItems - checkedCount}
+              </span>
+            )}
+          </div>
+          <span className={`text-xs font-semibold ${activeTab === "checklist" ? "text-primary" : "text-gray-400"}`}>チェックリスト</span>
+          {activeTab === "checklist" && <span className="absolute bottom-0 w-20 h-0.5 bg-primary rounded-t-full" />}
+        </button>
       </div>
     </div>
   );
