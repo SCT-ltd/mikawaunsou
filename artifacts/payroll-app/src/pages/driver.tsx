@@ -483,32 +483,6 @@ export default function DriverPage() {
         </div>
       </div>
 
-      {/* GPS追跡ステータスバナー */}
-      {gpsStatus === "active" && (
-        <div className="bg-green-50 border-b border-green-100 px-4 py-2 flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse shrink-0" />
-          <p className="text-xs font-medium text-green-700">GPS追跡中 — 位置情報をリアルタイム送信しています</p>
-        </div>
-      )}
-      {gpsStatus === "background" && (
-        <div className="bg-orange-50 border-b border-orange-200 px-4 py-2.5 flex items-start gap-2">
-          <span className="text-base shrink-0 mt-0.5">⚠️</span>
-          <div>
-            <p className="text-xs font-bold text-orange-800">アプリが非表示になっています</p>
-            <p className="text-xs text-orange-700 mt-0.5">画面に戻ると追跡を再開します。フォアグラウンドで開いたままにしてください。</p>
-          </div>
-        </div>
-      )}
-      {gpsStatus === "denied" && (
-        <div className="bg-red-50 border-b border-red-200 px-4 py-2.5 flex items-start gap-2">
-          <span className="text-base shrink-0 mt-0.5">🚫</span>
-          <div>
-            <p className="text-xs font-bold text-red-800">位置情報が許可されていません</p>
-            <p className="text-xs text-red-700 mt-0.5">スマホの設定→Safari/Chrome→位置情報を「許可」にしてください。</p>
-          </div>
-        </div>
-      )}
-
       {/* 時刻表示 */}
       <div className="bg-white border-b px-4 py-4 text-center">
         <p className="text-4xl font-mono font-bold tabular-nums tracking-widest">
