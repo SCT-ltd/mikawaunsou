@@ -71,6 +71,24 @@ function FitBounds({ locations }: { locations: EmployeeLocation[] }) {
   return null;
 }
 
+interface FlyToTarget {
+  lat: number;
+  lng: number;
+  seq: number;
+}
+
+function FlyToEmployee({ target }: { target: FlyToTarget | null }) {
+  const map = useMap();
+  const prevSeq = useRef<number | null>(null);
+  useEffect(() => {
+    if (!target) return;
+    if (prevSeq.current === target.seq) return;
+    prevSeq.current = target.seq;
+    map.flyTo([target.lat, target.lng], 16, { animate: true, duration: 1 });
+  }, [target, map]);
+  return null;
+}
+
 function formatTime(str: string | null): string {
   if (!str) return "-";
   return new Date(str).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
@@ -81,6 +99,8 @@ export default function RealtimeMapPage() {
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [now, setNow] = useState(new Date());
+  const [flyTarget, setFlyTarget] = useState<FlyToTarget | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
 
   const fetchLocations = async () => {
     try {
@@ -121,6 +141,12 @@ export default function RealtimeMapPage() {
     return `${h}時間${min % 60}分前`;
   };
 
+  const handleEmpClick = (emp: EmployeeLocation) => {
+    if (emp.latitude == null || emp.longitude == null) return;
+    setSelectedId(emp.employeeId);
+    setFlyTarget({ lat: emp.latitude, lng: emp.longitude, seq: Date.now() });
+  };
+
   return (
     <AppLayout>
       <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden">
@@ -149,7 +175,15 @@ export default function RealtimeMapPage() {
                   📍 GPS取得済み ({withGps.length}名)
                 </p>
                 {withGps.map(emp => (
-                  <div key={emp.employeeId} className="px-4 py-2.5 border-b last:border-0 hover:bg-muted/50 transition-colors">
+                  <div
+                    key={emp.employeeId}
+                    className={`px-4 py-2.5 border-b last:border-0 cursor-pointer transition-colors ${
+                      selectedId === emp.employeeId
+                        ? "bg-primary/8 border-l-2 border-l-primary"
+                        : "hover:bg-muted/50"
+                    }`}
+                    onClick={() => handleEmpClick(emp)}
+                  >
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0">
                         <div className="w-2.5 h-2.5 rounded-full shrink-0 ring-2 ring-white" style={{ backgroundColor: STATUS_COLOR[emp.status] }} />
@@ -241,6 +275,7 @@ export default function RealtimeMapPage() {
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             />
             <FitBounds locations={withGps} />
+            <FlyToEmployee target={flyTarget} />
             {withGps.map(emp => (
               <Marker
                 key={emp.employeeId}
