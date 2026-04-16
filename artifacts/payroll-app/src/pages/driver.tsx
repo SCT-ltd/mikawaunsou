@@ -694,20 +694,15 @@ export default function DriverPage() {
               <span className="text-4xl">🟢</span>
               <span>出勤</span>
             </button>
-            <div className="flex flex-col gap-1">
-              <button
-                onClick={() => handleRecord("clock_out")}
-                disabled={!canClockOut || recording}
-                className={`rounded-2xl p-6 flex flex-col items-center justify-center gap-3 min-h-[140px] text-white font-bold text-xl shadow-md transition-all active:scale-95
-                  ${canClockOut && !recording ? "bg-red-500 hover:bg-red-600" : "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"}`}
-              >
-                <span className="text-4xl">🔴</span>
-                <span>退勤</span>
-              </button>
-              {status === "出勤中" && endOdometer.trim() === "" && (
-                <p className="text-xs text-center text-red-500 font-medium px-1">帰着時の走行距離を入力してください</p>
-              )}
-            </div>
+            <button
+              onClick={() => handleRecord("clock_out")}
+              disabled={!canClockOut || recording}
+              className={`rounded-2xl p-6 flex flex-col items-center justify-center gap-3 min-h-[140px] text-white font-bold text-xl shadow-md transition-all active:scale-95
+                ${canClockOut && !recording ? "bg-red-500 hover:bg-red-600" : "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"}`}
+            >
+              <span className="text-4xl">🔴</span>
+              <span>退勤</span>
+            </button>
             <button
               onClick={() => handleRecord("break_start")}
               disabled={!canBreakStart || recording}
