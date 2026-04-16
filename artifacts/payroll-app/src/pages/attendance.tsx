@@ -292,13 +292,12 @@ export default function AttendancePage() {
     if (!selected) return;
     setSaving(true);
     try {
-      const d = new Date();
-      const [h, m] = addTime.split(":").map(Number);
-      d.setHours(h, m, 0, 0);
+      // selectedDate（JST日付）＋入力時刻でタイムスタンプを生成（JST固定）
+      const recordedAt = new Date(`${selectedDate}T${addTime}:00+09:00`).toISOString();
       await fetch(`${BASE}/api/attendance/record`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ employeeId: selected.employee.id, eventType: addEventType, recordedAt: d.toISOString() }),
+        body: JSON.stringify({ employeeId: selected.employee.id, eventType: addEventType, recordedAt }),
       });
       setAddMode(false);
       await fetchData(selectedDate);

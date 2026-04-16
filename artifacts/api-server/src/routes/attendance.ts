@@ -128,25 +128,29 @@ router.get("/attendance/employee/:employeeId/today", async (req, res) => {
 
 // ── 打刻記録（POST → SSEブロードキャスト） ──────────
 router.post("/attendance/record", async (req, res) => {
-  const { employeeId, eventType, note, startOdometer, endOdometer } = req.body as {
+  const { employeeId, eventType, note, startOdometer, endOdometer, recordedAt: recordedAtStr } = req.body as {
     employeeId: number;
     eventType: "clock_in" | "clock_out" | "break_start" | "break_end";
     note?: string;
     startOdometer?: number | null;
     endOdometer?: number | null;
+    recordedAt?: string;
   };
 
   if (!employeeId || !eventType) {
     return res.status(400).json({ error: "employeeId と eventType は必須です" });
   }
 
-  const today = todayJST();
-  const now = new Date();
+  // クライアントからrecordedAtが送られた場合はそのタイムスタンプを使用し、
+  // workDateはそのJST日付から算出する。送られない場合は現在時刻を使用。
+  const now = recordedAtStr ? new Date(recordedAtStr) : new Date();
+  const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const workDate = jst.toISOString().slice(0, 10);
 
   const [record] = await db.insert(attendanceRecordsTable).values({
     employeeId,
     eventType,
-    workDate: today,
+    workDate,
     recordedAt: now,
     note: note ?? null,
     startOdometer: startOdometer ?? null,
