@@ -61,6 +61,48 @@ async function apiFetch(path: string, options?: RequestInit) {
   return res.json();
 }
 
+// ── 日常点検チェックリスト定義 ──────────────────────────────
+interface InspectionItem { id: string; area: string; content: string; }
+
+const INSPECTION_SECTIONS: { label: string; items: InspectionItem[] }[] = [
+  {
+    label: "🚗 運転者席",
+    items: [
+      { id: "eng",   area: "エンジン",                       content: "かかり具合・異音など" },
+      { id: "brk",   area: "ブレーキ・ペダル",               content: "踏みしろ・きき具合" },
+      { id: "pbrk",  area: "駐車ブレーキ・レバー",           content: "引きしろ" },
+      { id: "wiper", area: "ウィンドウォッシャー・ワイパー", content: "液量・噴射状態" },
+      { id: "boil",  area: "ブレーキオイル",                 content: "液量" },
+      { id: "lamp",  area: "前照灯・方向指示器・非常点滅灯", content: "点灯・点滅具合" },
+    ],
+  },
+  {
+    label: "🔧 前部（車両の周り）",
+    items: [
+      { id: "rad",   area: "ラジエーター",       content: "冷却水の量" },
+      { id: "belt",  area: "ファンベルト",        content: "張り具合・損傷" },
+      { id: "oil",   area: "エンジン・オイル",   content: "量・汚れ" },
+      { id: "bat",   area: "バッテリー",          content: "液量" },
+      { id: "tyre_f",area: "タイヤ（前）",        content: "空気圧・損傷・溝の深さ・磨耗" },
+      { id: "wheel", area: "ディスクホイール",    content: "取付状態" },
+    ],
+  },
+  {
+    label: "🔩 後部（車両の周り）・その他",
+    items: [
+      { id: "tail",  area: "制動灯・尾灯",           content: "損傷" },
+      { id: "turn",  area: "方向指示器（後）",        content: "点灯・汚れ" },
+      { id: "hazard",area: "非常点滅灯（後）",        content: "点滅具合" },
+      { id: "refl",  area: "反射器",                  content: "変色" },
+      { id: "tyre_r",area: "タイヤ（後）",             content: "空気圧・損傷・溝の深さ" },
+      { id: "sig",   area: "非常信号用具",             content: "有・無" },
+      { id: "sign",  area: "停止表示板",               content: "有・無" },
+      { id: "cert",  area: "自動車検査証・保険証",     content: "有・無" },
+      { id: "prev",  area: "前日異常箇所の処置確認",  content: "処置確認" },
+    ],
+  },
+];
+
 export default function DriverPage() {
   const params = useParams<{ id: string }>();
   const employeeId = parseInt(params.id ?? "0", 10);
@@ -76,6 +118,19 @@ export default function DriverPage() {
   const [arrival, setArrival] = useState("");
   const [startOdometer, setStartOdometer] = useState("");
   const [endOdometer, setEndOdometer] = useState("");
+  const [checkedItems, setCheckedItems] = useState<Set<string>>(new Set());
+  const [checkShowAll, setCheckShowAll] = useState(false);
+
+  const toggleCheck = (id: string) => {
+    setCheckedItems(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const totalItems = INSPECTION_SECTIONS.reduce((s, sec) => s + sec.items.length, 0);
+  const checkedCount = checkedItems.size;
 
   // PIN認証
   const [pinRequired, setPinRequired] = useState(false);
@@ -479,6 +534,83 @@ export default function DriverPage() {
           <span className="text-4xl">🔵</span>
           <span>休憩終了</span>
         </button>
+      </div>
+
+      {/* 日常点検チェックリスト */}
+      <div className="mx-4 mb-4 bg-white rounded-xl border shadow-sm overflow-hidden">
+        {/* ヘッダー */}
+        <button
+          className="w-full px-4 py-3 border-b flex items-center justify-between"
+          onClick={() => setCheckShowAll(p => !p)}
+        >
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-sm">日常点検チェックリスト</span>
+            <span className={`text-xs px-2 py-0.5 rounded-full font-semibold
+              ${checkedCount === totalItems ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+              {checkedCount} / {totalItems}
+            </span>
+          </div>
+          <span className="text-gray-400 text-sm">{checkShowAll ? "▲" : "▼"}</span>
+        </button>
+
+        {/* プログレスバー */}
+        <div className="h-1.5 bg-gray-100">
+          <div
+            className="h-full bg-green-500 transition-all duration-300 rounded-r-full"
+            style={{ width: `${totalItems > 0 ? (checkedCount / totalItems) * 100 : 0}%` }}
+          />
+        </div>
+
+        {checkShowAll && (
+          <div className="divide-y divide-gray-100">
+            {INSPECTION_SECTIONS.map((sec) => (
+              <div key={sec.label}>
+                {/* セクションヘッダー */}
+                <div className="px-4 py-2 bg-gray-50">
+                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">{sec.label}</p>
+                </div>
+                {/* 項目 */}
+                {sec.items.map((item) => {
+                  const checked = checkedItems.has(item.id);
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => toggleCheck(item.id)}
+                      className={`w-full flex items-center gap-3 px-4 py-3.5 text-left transition-colors active:bg-gray-50
+                        ${checked ? "bg-green-50" : "bg-white"}`}
+                    >
+                      {/* チェックボックス */}
+                      <div className={`w-7 h-7 rounded-lg border-2 flex items-center justify-center shrink-0 transition-all
+                        ${checked
+                          ? "bg-green-500 border-green-500 text-white"
+                          : "border-gray-300 bg-white"}`}>
+                        {checked && <span className="text-base font-bold leading-none">✓</span>}
+                      </div>
+                      {/* テキスト */}
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-semibold leading-tight ${checked ? "text-green-800" : "text-gray-800"}`}>
+                          {item.area}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-0.5">{item.content}</p>
+                      </div>
+                      {/* 良・否バッジ */}
+                      {checked && (
+                        <span className="shrink-0 text-xs font-bold text-green-600 bg-green-100 px-2 py-0.5 rounded-full">良</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+
+            {/* 全チェック完了メッセージ */}
+            {checkedCount === totalItems && (
+              <div className="px-4 py-4 text-center bg-green-50 border-t border-green-100">
+                <p className="text-green-700 font-bold text-sm">✅ 日常点検完了！　今日も１日安全運転で！！</p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 打刻履歴 */}
