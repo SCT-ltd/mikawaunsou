@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import {
   RefreshCw, Clock, QrCode, Pencil, Trash2, Save, X,
   UserCheck, Coffee, LogOut, AlarmClock, Plus, GripVertical,
-  ChevronLeft, ChevronRight, CalendarOff,
+  ChevronLeft, ChevronRight, ChevronUp, ChevronDown, CalendarOff,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -366,6 +366,16 @@ export default function AttendancePage() {
     } finally { setSaving(false); }
   };
 
+  const moveAbsence = (employeeId: string, fromIndex: number, direction: -1 | 1) => {
+    const toIndex = fromIndex + direction;
+    const empAbsences = absences.filter(a => a.employeeId === employeeId);
+    if (toIndex < 0 || toIndex >= empAbsences.length) return;
+    const others = absences.filter(a => a.employeeId !== employeeId);
+    const reordered = [...empAbsences];
+    [reordered[fromIndex], reordered[toIndex]] = [reordered[toIndex], reordered[fromIndex]];
+    setAbsences([...others, ...reordered]);
+  };
+
   /* ── ドラッグ並び替え ─────────────────── */
   const swapRecordTimes = async (indexA: number, indexB: number) => {
     if (!selected || indexA === indexB) return;
@@ -724,7 +734,7 @@ export default function AttendancePage() {
                       <div className="space-y-3">
 
                         {/* 欠勤・休暇エントリー（タイムライン先頭に表示） */}
-                        {empAbsences.map(a => (
+                        {empAbsences.map((a, ai) => (
                           <div key={`absence-${a.id}`} className="flex items-start gap-3">
                             <div className={`relative z-10 w-9 h-9 rounded-full border-2 flex items-center justify-center shrink-0 ${ABSENCE_COLORS[a.absenceType]} border-current`}>
                               <CalendarOff className="h-3.5 w-3.5" />
@@ -736,14 +746,32 @@ export default function AttendancePage() {
                                   <p className="text-sm font-medium opacity-70">終日</p>
                                   {a.note && <p className="text-xs opacity-60 mt-0.5">{a.note}</p>}
                                 </div>
-                                <button
-                                  onClick={() => deleteAbsence(a.id)}
-                                  disabled={saving}
-                                  className="p-1.5 rounded hover:bg-black/10 transition-colors opacity-50 hover:opacity-100"
-                                  title="削除"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
+                                <div className="flex items-center gap-0.5">
+                                  <button
+                                    onClick={() => moveAbsence(a.employeeId, ai, -1)}
+                                    disabled={saving || ai === 0}
+                                    className="p-1.5 rounded hover:bg-black/10 transition-colors opacity-40 hover:opacity-80 disabled:opacity-20 disabled:cursor-not-allowed"
+                                    title="上へ"
+                                  >
+                                    <ChevronUp className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => moveAbsence(a.employeeId, ai, 1)}
+                                    disabled={saving || ai === empAbsences.length - 1}
+                                    className="p-1.5 rounded hover:bg-black/10 transition-colors opacity-40 hover:opacity-80 disabled:opacity-20 disabled:cursor-not-allowed"
+                                    title="下へ"
+                                  >
+                                    <ChevronDown className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => deleteAbsence(a.id)}
+                                    disabled={saving}
+                                    className="p-1.5 rounded hover:bg-black/10 transition-colors opacity-50 hover:opacity-100"
+                                    title="削除"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
                               </div>
                             </div>
                           </div>
