@@ -325,10 +325,10 @@ export default function PayrollList() {
           ) : !selectedPayroll ? (
             <div className="py-12 text-center text-muted-foreground">データが見つかりません</div>
           ) : (
-            <Tabs defaultValue="slip" className="mt-4">
+            <Tabs defaultValue="allowance" className="mt-4">
               <TabsList className="w-full print:hidden">
-                <TabsTrigger value="slip" className="flex-1">給与明細</TabsTrigger>
                 <TabsTrigger value="allowance" className="flex-1">明細入力</TabsTrigger>
+                <TabsTrigger value="slip" className="flex-1">給与明細</TabsTrigger>
               </TabsList>
 
               {/* ── 給与明細タブ ── */}
