@@ -620,6 +620,32 @@ export default function AttendancePage() {
                                     <p className="text-xs text-primary/80 mt-0.5 font-medium">📍 {latest.note}</p>
                                   ) : null;
                                 })()}
+                                {(() => {
+                                  const startVal = d.records.find(r => r.startOdometer != null)?.startOdometer;
+                                  if (startVal == null) return null;
+                                  const endVal = [...d.records].reverse().find(r => r.endOdometer != null)?.endOdometer;
+                                  return (
+                                    <p className="text-xs text-blue-600 font-medium mt-0.5">
+                                      🚛 {startVal.toLocaleString()} km{endVal != null ? ` → ${endVal.toLocaleString()} km` : ""}
+                                    </p>
+                                  );
+                                })()}
+                                {(() => {
+                                  const clockInRec = d.records.find(r => r.eventType === "clock_in" && r.checklistNgItems);
+                                  if (!clockInRec?.checklistNgItems) return null;
+                                  let parsed: { total: number; checked: number; ng: string[] } | null = null;
+                                  try { parsed = JSON.parse(clockInRec.checklistNgItems); } catch { return null; }
+                                  if (!parsed) return null;
+                                  return parsed.ng.length === 0 ? (
+                                    <span className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-full border mt-0.5 bg-green-50 text-green-700 border-green-200">
+                                      ✅ 点検OK {parsed.checked}/{parsed.total}
+                                    </span>
+                                  ) : (
+                                    <span className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-full border mt-0.5 bg-red-50 text-red-700 border-red-200">
+                                      ⚠️ 点検NG {parsed.ng.length}件
+                                    </span>
+                                  );
+                                })()}
                               </div>
                             </div>
                           </td>
