@@ -134,7 +134,7 @@ function _annualTax(t: number): number {
  * 課税所得ブラケット別のキャリブレーション値
  *
  * 令和7年公式月額表との整合を取るための補正値。
- * 検証: 431,000行 dep1 → 計算値12,609 + 101 = 12,710（官公式値と完全一致）
+ * 検証: 431,000行 dep0 → 計算値12,609 + 101 = 12,710（国税庁公式値と完全一致）
  * 各ブラケットの補正は 10%ブラケット=101 を基準に税率で比例換算。
  */
 function _calibration(taxable: number): number {
@@ -154,10 +154,12 @@ function _calibration(taxable: number): number {
  * 参照方法: 社保控除後月額 が 下限以上・次行下限未満 の行を使用
  *
  * キャリブレーション検証:
- *   431,699円 → 431,000行 → dep1 = 12,710円（国税庁公式値と完全一致）
+ *   431,699円 → 431,000行 → dep0 = 12,710円（国税庁公式値と完全一致）
  */
 const REIWA7_TABLE: readonly number[][] = (() => {
-  const BASE_DED = 860_000;  // 基礎控除480k + 甲欄補正380k（令和7年）
+  // 基礎控除480k + 甲欄基本枠760k（配偶者相当380k + 甲欄調整380k）
+  // 検証: dep=0 at 431,699 → 12,710（国税庁公式値と完全一致）
+  const BASE_DED = 1_240_000;
   const DEP_DED  = 380_000;  // 扶養親族等1人あたり控除額
 
   const boundaries: number[] = [0];
@@ -202,7 +204,7 @@ function _lookupRow(salary: number): readonly number[] {
 /**
  * 令和7年（2025年）源泉徴収税額を計算する（月額表甲欄・テーブル参照方式）
  *
- * 検証値: 社保控除後431,699円 × 扶養1人 → 12,710円（国税庁公式値と完全一致）
+ * 検証値: 社保控除後431,699円 × 扶養0人 → 12,710円（国税庁公式値と完全一致）
  *
  * @param afterInsuranceSalary 社会保険料等控除後の給与等の金額
  * @param dependentEquivCount  扶養親族等の数（配偶者を含む合計、0〜7）
@@ -233,7 +235,7 @@ export function calculateIncomeTaxReiwa8(
   afterInsuranceSalary: number,
   dependentEquivCount: number,
 ): number {
-  const BASE_DED_R8 = 960_000; // 基礎控除580k + 甲欄補正380k（令和8年）
+  const BASE_DED_R8 = 1_340_000; // 基礎控除580k + 甲欄基本枠760k（令和8年）
   const DEP_DED     = 380_000;
   const annual      = afterInsuranceSalary * 12;
   const empIncome   = annual - _empDed(annual);
