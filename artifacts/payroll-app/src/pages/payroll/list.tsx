@@ -240,7 +240,7 @@ export default function PayrollList() {
                   </TableCell>
                 </TableRow>
               ) : (
-                payrolls.map((payroll) => (
+                [...payrolls].sort((a, b) => a.employeeCode.localeCompare(b.employeeCode)).map((payroll) => (
                   <TableRow
                     key={payroll.id}
                     className={`cursor-pointer transition-colors ${selectedPayrollId === payroll.id ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-muted/50"}`}
