@@ -146,6 +146,20 @@ export default function DriverPage() {
     sec.items.filter(item => itemStatus.get(item.id) === "否")
   );
 
+  // 全項目入力完了時にDBへ自動保存 → 管理画面にリアルタイム反映
+  useEffect(() => {
+    if (!pinVerified || checkedCount !== totalItems) return;
+    const payload = JSON.stringify({
+      total: totalItems,
+      checked: checkedCount,
+      ng: ngItems.map(i => i.area),
+    });
+    apiFetch(`/attendance/checklist/${employeeId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ checklistNgItems: payload }),
+    }).catch(() => {});
+  }, [itemStatus]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // PIN認証
   const [pinRequired, setPinRequired] = useState(false);
   const [pinVerified, setPinVerified] = useState(false);

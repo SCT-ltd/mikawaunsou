@@ -257,6 +257,42 @@ router.delete("/attendance/records/:id", async (req, res) => {
   return res.status(204).send();
 });
 
+// ── チェックリスト結果のリアルタイム保存 ────────────────
+router.patch("/attendance/checklist/:employeeId", async (req, res) => {
+  const employeeId = parseInt(req.params.employeeId, 10);
+  const { checklistNgItems } = req.body as { checklistNgItems: string };
+
+  if (!checklistNgItems) {
+    return res.status(400).json({ error: "checklistNgItems が必要です" });
+  }
+
+  const today = todayJST();
+  const [clockInRec] = await db
+    .select()
+    .from(attendanceRecordsTable)
+    .where(
+      and(
+        eq(attendanceRecordsTable.employeeId, employeeId),
+        eq(attendanceRecordsTable.workDate, today),
+        eq(attendanceRecordsTable.eventType, "clock_in"),
+      )
+    )
+    .limit(1);
+
+  if (!clockInRec) {
+    return res.status(200).json({ skipped: true });
+  }
+
+  const [updated] = await db
+    .update(attendanceRecordsTable)
+    .set({ checklistNgItems })
+    .where(eq(attendanceRecordsTable.id, clockInRec.id))
+    .returning();
+
+  buildSnapshot().then(snapshot => broadcast(snapshot)).catch(() => {});
+  return res.json(updated);
+});
+
 // ── 社員の打刻履歴（日付指定） ───────────────────────
 router.get("/attendance/employee/:employeeId", async (req, res) => {
   const employeeId = parseInt(req.params.employeeId, 10);
