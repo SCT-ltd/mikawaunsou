@@ -10,11 +10,13 @@ import {
   CalendarRange,
   ClipboardCheck,
   MapPin,
+  MessageSquare,
 } from "lucide-react";
 
 const navigation = [
   { name: "ダッシュボード", href: "/", icon: LayoutDashboard },
   { name: "リアルタイムマップ", href: "/realtime-map", icon: MapPin },
+  { name: "メッセージ", href: "/messages", icon: MessageSquare },
   { name: "勤怠管理", href: "/attendance", icon: ClipboardCheck },
   { name: "月次実績入力", href: "/monthly-input", icon: CalendarDays },
   { name: "給与明細", href: "/payroll", icon: FileText },

@@ -38,6 +38,8 @@
   - calculationType: 'fixed'（固定給型）| 'variable'（変動入力型）| 'unit_time'（単価×時間型）
 - `employee_allowances` — 社員別カスタム手当金額（社員×手当定義×金額）
 - `attendance_records` — 打刻記録（employeeId, eventType: clock_in|clock_out|break_start|break_end, workDate, recordedAt）
+- `messages` — メッセージ（employeeId, sender: 'office'|'employee', content, readAt）
+- `push_subscriptions` — プッシュ通知購読（employeeId, role: 'office'|'employee', endpoint, p256dh, auth）
 
 ## Payroll Calculation Engine
 

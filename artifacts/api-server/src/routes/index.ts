@@ -9,6 +9,7 @@ import dashboardRouter from "./dashboard";
 import allowancesRouter from "./allowances";
 import attendanceRouter from "./attendance";
 import absencesRouter from "./absences";
+import messagesRouter from "./messages";
 
 const router: IRouter = Router();
 
@@ -22,5 +23,6 @@ router.use(dashboardRouter);
 router.use(allowancesRouter);
 router.use(attendanceRouter);
 router.use(absencesRouter);
+router.use(messagesRouter);
 
 export default router;

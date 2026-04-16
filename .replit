@@ -33,3 +33,10 @@ externalPort = 3000
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+VAPID_PUBLIC_KEY = "BJohPulfsrmYkgcLIb68AaE1xiWgCQ76fJIoUvJvHO7HNziYUr8NPYti5YvDyUD4bjEgRH1TuL5sc3LUAMhlMt4"
+VAPID_PRIVATE_KEY = "aXsUy2op0ZLUsmOtUB4J_tlh9O_0QyxuOHQVpJN8wvo"
+VAPID_EMAIL = "mailto:admin@mikawa-unso.local"

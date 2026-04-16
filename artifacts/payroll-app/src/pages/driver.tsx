@@ -121,6 +121,12 @@ export default function DriverPage() {
   const [itemStatus, setItemStatus] = useState<Map<string, "良" | "否">>(new Map());
   const [checkShowAll, setCheckShowAll] = useState(false);
   const [gpsStatus, setGpsStatus] = useState<"inactive" | "active" | "denied" | "background">("inactive");
+  const [messages, setMessages] = useState<{ id: number; employeeId: number; sender: "office" | "employee"; content: string; createdAt: string }[]>([]);
+  const [msgInput, setMsgInput] = useState("");
+  const [msgSending, setMsgSending] = useState(false);
+  const [msgOpen, setMsgOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const msgBottomRef = useRef<HTMLDivElement>(null);
   const watchIdRef = useRef<number | null>(null);
   const liveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastPosSentRef = useRef<{ lat: number; lng: number; time: number } | null>(null);
@@ -199,6 +205,94 @@ export default function DriverPage() {
     };
     return () => es.close();
   }, [employeeId]);
+
+  // メッセージSSE（リアルタイム受信）
+  useEffect(() => {
+    if (!pinVerified) return;
+    const es = new EventSource(`${BASE}/api/messages/stream?employeeId=${employeeId}`);
+    es.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data) as { type: string; message: { id: number; employeeId: number; sender: "office" | "employee"; content: string; createdAt: string } };
+        if (data.type === "message" && data.message.employeeId === employeeId) {
+          setMessages(prev => prev.find(m => m.id === data.message.id) ? prev : [...prev, data.message]);
+          if (data.message.sender === "office") setUnreadCount(c => c + 1);
+        }
+      } catch { /* ignore */ }
+    };
+    return () => es.close();
+  }, [employeeId, pinVerified]);
+
+  // 初回メッセージ取得
+  useEffect(() => {
+    if (!pinVerified) return;
+    apiFetch(`/messages/${employeeId}`)
+      .then((data: { id: number; sender: "office" | "employee"; content: string; createdAt: string }[]) => setMessages(data ?? []))
+      .catch(() => {});
+  }, [employeeId, pinVerified]);
+
+  // プッシュ通知登録（PIN認証後）
+  useEffect(() => {
+    if (!pinVerified) return;
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    (async () => {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const keyRes = await fetch(`${BASE}/api/messages/vapid-public-key`);
+        const { publicKey } = await keyRes.json() as { publicKey: string };
+        if (!publicKey) return;
+        const perm = await Notification.requestPermission();
+        if (perm !== "granted") return;
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey),
+        });
+        const json = sub.toJSON();
+        await fetch(`${BASE}/api/push/subscribe`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            employeeId,
+            role: "employee",
+            endpoint: json.endpoint,
+            p256dh: json.keys?.p256dh,
+            auth: json.keys?.auth,
+          }),
+        });
+      } catch { /* silent */ }
+    })();
+  }, [employeeId, pinVerified]);
+
+  function urlBase64ToUint8Array(base64String: string): Uint8Array {
+    const padding = "=".repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const rawData = window.atob(base64);
+    return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
+  }
+
+  const sendMessage = async () => {
+    if (!msgInput.trim() || msgSending) return;
+    setMsgSending(true);
+    try {
+      await fetch(`${BASE}/api/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ employeeId, sender: "employee", content: msgInput.trim() }),
+      });
+      setMsgInput("");
+    } finally {
+      setMsgSending(false);
+    }
+  };
+
+  // メッセージ開封時に未読リセット
+  useEffect(() => {
+    if (msgOpen) setUnreadCount(0);
+  }, [msgOpen]);
+
+  // メッセージ自動スクロール
+  useEffect(() => {
+    if (msgOpen) msgBottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, msgOpen]);
 
   // ライブ位置情報の継続送信（PINログイン後に開始）
   useEffect(() => {
@@ -753,6 +847,76 @@ export default function DriverPage() {
               </div>
             )}
           </div>
+        )}
+      </div>
+
+      {/* メッセージセクション */}
+      <div className="mx-4 mb-4 bg-white rounded-xl border shadow-sm overflow-hidden">
+        <button
+          className="w-full px-4 py-3 border-b flex items-center justify-between"
+          onClick={() => setMsgOpen(p => !p)}
+        >
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-sm">💬 事務所からのメッセージ</span>
+            {unreadCount > 0 && (
+              <span className="bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                {unreadCount}
+              </span>
+            )}
+          </div>
+          <span className="text-gray-400 text-sm">{msgOpen ? "▲" : "▼"}</span>
+        </button>
+
+        {msgOpen && (
+          <>
+            <div className="h-64 overflow-y-auto bg-slate-50 px-3 py-3 space-y-2">
+              {messages.length === 0 ? (
+                <p className="text-center text-muted-foreground text-sm py-8">メッセージはありません</p>
+              ) : messages.map(msg => {
+                const isMe = msg.sender === "employee";
+                return (
+                  <div key={msg.id} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
+                    {!isMe && (
+                      <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary text-xs font-bold shrink-0 mr-1.5 mt-1">
+                        事
+                      </div>
+                    )}
+                    <div className={`max-w-[80%]`}>
+                      {!isMe && <p className="text-xs text-muted-foreground mb-0.5 ml-0.5">事務所</p>}
+                      <div className={`px-3 py-2 rounded-2xl text-sm
+                        ${isMe
+                          ? "bg-primary text-primary-foreground rounded-tr-sm"
+                          : "bg-white border shadow-sm rounded-tl-sm"
+                        }`}>
+                        {msg.content}
+                      </div>
+                      <p className={`text-xs text-muted-foreground mt-0.5 ${isMe ? "text-right mr-1" : "ml-1"}`}>
+                        {new Date(msg.createdAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+              <div ref={msgBottomRef} />
+            </div>
+            <div className="px-3 py-2.5 border-t flex gap-2">
+              <input
+                type="text"
+                value={msgInput}
+                onChange={e => setMsgInput(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && sendMessage()}
+                placeholder="メッセージを送る..."
+                className="flex-1 rounded-xl border px-3 py-2 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              <button
+                onClick={sendMessage}
+                disabled={!msgInput.trim() || msgSending}
+                className="bg-primary text-primary-foreground rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-40"
+              >
+                送信
+              </button>
+            </div>
+          </>
         )}
       </div>
 
