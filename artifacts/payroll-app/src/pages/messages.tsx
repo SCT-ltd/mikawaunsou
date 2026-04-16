@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { AppLayout } from "@/components/layout/app-layout";
-import { Send, MessageSquare, Bell, BellOff } from "lucide-react";
+import { Send, MessageSquare, Bell, BellOff, Megaphone, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -80,6 +80,12 @@ export default function MessagesPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
 
+  // 一斉送信
+  const [broadcastOpen, setBroadcastOpen] = useState(false);
+  const [broadcastText, setBroadcastText] = useState("");
+  const [broadcasting, setBroadcasting] = useState(false);
+  const [broadcastDone, setBroadcastDone] = useState<number | null>(null);
+
   const fetchConversations = useCallback(async () => {
     const res = await fetch(`${BASE}/api/messages/conversations`);
     if (res.ok) setConversations(await res.json());
@@ -136,6 +142,28 @@ export default function MessagesPage() {
     }
   };
 
+  const sendBroadcast = async () => {
+    if (!broadcastText.trim() || broadcasting) return;
+    setBroadcasting(true);
+    try {
+      const res = await fetch(`${BASE}/api/messages/broadcast`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: broadcastText.trim() }),
+      });
+      const data = await res.json() as { count: number };
+      setBroadcastDone(data.count);
+      setBroadcastText("");
+      await fetchConversations();
+      setTimeout(() => {
+        setBroadcastDone(null);
+        setBroadcastOpen(false);
+      }, 2500);
+    } finally {
+      setBroadcasting(false);
+    }
+  };
+
   const sendMessage = async () => {
     if (!selectedId || !input.trim() || sending) return;
     setSending(true);
@@ -159,21 +187,89 @@ export default function MessagesPage() {
     <AppLayout>
       <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden -m-4 md:-m-6 lg:-m-8">
 
+        {/* 一斉送信モーダル */}
+        {broadcastOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+              <div className="px-5 py-4 border-b flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Megaphone className="h-5 w-5 text-primary" />
+                  <h3 className="font-bold text-base">全員に一斉送信</h3>
+                </div>
+                <button
+                  onClick={() => { setBroadcastOpen(false); setBroadcastText(""); setBroadcastDone(null); }}
+                  className="p-1.5 rounded-lg hover:bg-muted transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="px-5 py-4">
+                {broadcastDone != null ? (
+                  <div className="text-center py-6">
+                    <div className="text-4xl mb-3">✅</div>
+                    <p className="font-bold text-green-700 text-lg">{broadcastDone}名に送信しました</p>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-sm text-muted-foreground mb-3">
+                      在籍中の全従業員（{conversations.length}名）にメッセージを送信します。
+                    </p>
+                    <textarea
+                      value={broadcastText}
+                      onChange={e => setBroadcastText(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendBroadcast(); } }}
+                      placeholder="全員へのメッセージを入力..."
+                      rows={4}
+                      autoFocus
+                      className="w-full rounded-xl border bg-muted/30 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+                    />
+                    <div className="flex justify-end gap-2 mt-3">
+                      <button
+                        onClick={() => { setBroadcastOpen(false); setBroadcastText(""); }}
+                        className="px-4 py-2 rounded-lg text-sm text-muted-foreground hover:bg-muted transition-colors"
+                      >
+                        キャンセル
+                      </button>
+                      <Button
+                        onClick={sendBroadcast}
+                        disabled={!broadcastText.trim() || broadcasting}
+                        className="flex items-center gap-2"
+                      >
+                        <Megaphone className="h-4 w-4" />
+                        {broadcasting ? "送信中..." : `${conversations.length}名に送信`}
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 左：会話一覧 */}
         <div className="w-72 shrink-0 border-r bg-background flex flex-col">
           <div className="px-4 py-3 border-b flex items-center justify-between">
             <h2 className="font-bold text-sm flex items-center gap-1.5">
               <MessageSquare className="h-4 w-4" />メッセージ
             </h2>
-            <button
-              onClick={handleEnablePush}
-              className="p-1.5 rounded hover:bg-muted transition-colors"
-              title={pushEnabled ? "通知ON" : "通知を有効にする"}
-            >
-              {pushEnabled
-                ? <Bell className="h-4 w-4 text-primary" />
-                : <BellOff className="h-4 w-4 text-muted-foreground" />}
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setBroadcastOpen(true)}
+                className="p-1.5 rounded hover:bg-amber-50 hover:text-amber-600 transition-colors"
+                title="全員に一斉送信"
+              >
+                <Megaphone className="h-4 w-4 text-amber-500" />
+              </button>
+              <button
+                onClick={handleEnablePush}
+                className="p-1.5 rounded hover:bg-muted transition-colors"
+                title={pushEnabled ? "通知ON" : "通知を有効にする"}
+              >
+                {pushEnabled
+                  ? <Bell className="h-4 w-4 text-primary" />
+                  : <BellOff className="h-4 w-4 text-muted-foreground" />}
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto">

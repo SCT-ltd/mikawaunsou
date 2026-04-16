@@ -183,6 +183,64 @@ router.post("/messages", async (req, res) => {
   return res.status(201).json(message);
 });
 
+// ── 一斉送信 ───────────────────────────────────────────
+router.post("/messages/broadcast", async (req, res) => {
+  const { content } = req.body as { content: string };
+  if (!content?.trim()) {
+    return res.status(400).json({ error: "メッセージ内容が必要です" });
+  }
+
+  const employees = await db
+    .select()
+    .from(employeesTable)
+    .where(eq(employeesTable.isActive, true));
+
+  const inserted = await Promise.all(
+    employees.map(emp =>
+      db.insert(messagesTable).values({
+        employeeId: emp.id,
+        sender: "office",
+        content: content.trim(),
+      }).returning().then(rows => rows[0]!)
+    )
+  );
+
+  // SSE + プッシュ通知を各従業員へ
+  for (const message of inserted) {
+    broadcastToEmployee(message.employeeId, { type: "message", message });
+
+    const targets = await db.select()
+      .from(pushSubscriptionsTable)
+      .where(and(
+        eq(pushSubscriptionsTable.role, "employee"),
+        eq(pushSubscriptionsTable.employeeId, message.employeeId),
+        eq(pushSubscriptionsTable.active, true),
+      ));
+
+    for (const sub of targets) {
+      try {
+        await webpush.sendNotification(
+          { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+          JSON.stringify({
+            title: "事務所からのお知らせ（全員）",
+            body: content.trim().slice(0, 80),
+            url: `/driver/${message.employeeId}`,
+          })
+        );
+      } catch (err: unknown) {
+        const status = (err as { statusCode?: number }).statusCode;
+        if (status === 410 || status === 404) {
+          await db.update(pushSubscriptionsTable)
+            .set({ active: false })
+            .where(eq(pushSubscriptionsTable.id, sub.id));
+        }
+      }
+    }
+  }
+
+  return res.status(201).json({ count: inserted.length });
+});
+
 // ── プッシュ購読登録 ───────────────────────────────────
 router.post("/push/subscribe", async (req, res) => {
   const { employeeId, role, endpoint, p256dh, auth } = req.body as {
