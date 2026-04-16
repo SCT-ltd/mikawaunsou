@@ -288,17 +288,25 @@ export default function AttendancePage() {
   };
 
   /* ── 手動追加 ──────────────────────── */
+  const [addError, setAddError] = useState<string | null>(null);
+
   const addRecord = async () => {
     if (!selected) return;
     setSaving(true);
+    setAddError(null);
     try {
       // selectedDate（JST日付）＋入力時刻でタイムスタンプを生成（JST固定）
       const recordedAt = new Date(`${selectedDate}T${addTime}:00+09:00`).toISOString();
-      await fetch(`${BASE}/api/attendance/record`, {
+      const res = await fetch(`${BASE}/api/attendance/record`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ employeeId: selected.employee.id, eventType: addEventType, recordedAt }),
       });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setAddError(body.error ?? "保存に失敗しました");
+        return;
+      }
       setAddMode(false);
       await fetchData(selectedDate);
     } finally { setSaving(false); }
@@ -634,10 +642,13 @@ export default function AttendancePage() {
                 {addMode && (
                   <div className="mb-4 rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-3">
                     <p className="text-xs font-medium text-primary">打刻を手動追加</p>
+                    {addError && (
+                      <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1.5">{addError}</p>
+                    )}
                     <div className="grid grid-cols-2 gap-2">
                       <div className="space-y-1">
                         <Label className="text-xs">種別</Label>
-                        <Select value={addEventType} onValueChange={(v) => setAddEventType(v as EventType)}>
+                        <Select value={addEventType} onValueChange={(v) => { setAddEventType(v as EventType); setAddError(null); }}>
                           <SelectTrigger className="h-8 text-xs">
                             <SelectValue />
                           </SelectTrigger>

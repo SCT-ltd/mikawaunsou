@@ -147,6 +147,20 @@ router.post("/attendance/record", async (req, res) => {
   const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
   const workDate = jst.toISOString().slice(0, 10);
 
+  // 同日・同種別の重複チェック
+  const existing = await db
+    .select({ id: attendanceRecordsTable.id })
+    .from(attendanceRecordsTable)
+    .where(and(
+      eq(attendanceRecordsTable.employeeId, employeeId),
+      eq(attendanceRecordsTable.workDate, workDate),
+      eq(attendanceRecordsTable.eventType, eventType),
+    ))
+    .limit(1);
+  if (existing.length > 0) {
+    return res.status(409).json({ error: `この日にすでに「${eventType}」の打刻が登録されています` });
+  }
+
   const [record] = await db.insert(attendanceRecordsTable).values({
     employeeId,
     eventType,
