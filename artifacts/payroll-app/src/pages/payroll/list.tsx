@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
+import { AllowanceInputPanel } from "@/components/allowance-input-panel";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency } from "@/lib/format";
@@ -301,7 +302,8 @@ export default function PayrollList() {
           ) : !selectedPayroll ? (
             <div className="py-12 text-center text-muted-foreground">データが見つかりません</div>
           ) : (
-            <div className="mt-4 bg-white text-black rounded-lg border p-6 space-y-6" id="payroll-slip">
+            <div className="mt-4 space-y-4">
+            <div className="bg-white text-black rounded-lg border p-6 space-y-6" id="payroll-slip">
               <div className="text-center border-b-2 border-black pb-3">
                 <h2 className="text-xl font-bold tracking-widest">{formatMonth(selectedPayroll.year, selectedPayroll.month)} 給与明細書</h2>
               </div>
@@ -415,6 +417,23 @@ export default function PayrollList() {
                   )}
                 </div>
               </div>
+            </div>
+
+            {/* 手当・差引入力パネル */}
+            {employees?.find(e => e.id === selectedPayroll.employeeId) && (
+              <div className="print:hidden">
+                <Separator className="mb-3" />
+                <h3 className="text-sm font-semibold text-muted-foreground mb-3">手当入力</h3>
+                <AllowanceInputPanel
+                  employee={employees.find(e => e.id === selectedPayroll.employeeId)!}
+                  monthlyData={{
+                    workDays: selectedPayroll.workDays ?? 0,
+                    saturdayWorkDays: (selectedPayroll as unknown as { saturdayWorkDays?: number }).saturdayWorkDays ?? 0,
+                    sundayWorkHours: (selectedPayroll as unknown as { sundayWorkHours?: number }).sundayWorkHours ?? 0,
+                  }}
+                />
+              </div>
+            )}
             </div>
           )}
         </SheetContent>
