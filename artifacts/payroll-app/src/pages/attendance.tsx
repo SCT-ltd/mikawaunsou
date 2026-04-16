@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { AppLayout } from "@/components/layout/app-layout";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,6 +42,57 @@ const ABSENCE_COLORS: Record<AbsenceType, string> = {
   afternoon_half: "bg-amber-100 text-amber-700 border-amber-200",
   other:          "bg-slate-100 text-slate-600 border-slate-200",
 };
+
+const geocodeCache = new Map<string, string>();
+
+function GpsAddressLink({ lat, lng }: { lat: number; lng: number }) {
+  const [address, setAddress] = useState<string | null>(null);
+  const fetchedRef = useRef(false);
+  const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
+
+  useEffect(() => {
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
+    if (geocodeCache.has(key)) {
+      setAddress(geocodeCache.get(key)!);
+      return;
+    }
+    fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=ja`,
+      { headers: { "Accept-Language": "ja" } }
+    )
+      .then(r => r.json())
+      .then(data => {
+        const a = data.address ?? {};
+        const parts = [
+          a.prefecture ?? a.state,
+          a.city ?? a.town ?? a.village ?? a.county,
+          a.suburb ?? a.neighbourhood ?? a.city_district,
+          a.road,
+          a.house_number,
+        ].filter(Boolean);
+        const result = parts.length > 0 ? parts.join("") : (data.display_name ?? key);
+        geocodeCache.set(key, result);
+        setAddress(result);
+      })
+      .catch(() => {
+        geocodeCache.set(key, key);
+        setAddress(key);
+      });
+  }, [key, lat, lng]);
+
+  return (
+    <a
+      href={`https://www.google.com/maps?q=${lat},${lng}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline mt-0.5"
+      onClick={(e) => e.stopPropagation()}
+    >
+      🛰️ {address ?? "住所取得中..."}
+    </a>
+  );
+}
 
 interface AttendanceRecord {
   id: number;
@@ -862,15 +913,7 @@ export default function AttendancePage() {
                                         <p className="text-xs text-muted-foreground mt-0.5">📍 {r.note}</p>
                                       )}
                                       {r.latitude != null && r.longitude != null && (
-                                        <a
-                                          href={`https://www.google.com/maps?q=${r.latitude},${r.longitude}`}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline mt-0.5"
-                                          onClick={(e) => e.stopPropagation()}
-                                        >
-                                          🛰️ GPS: {r.latitude.toFixed(5)}, {r.longitude.toFixed(5)}
-                                        </a>
+                                        <GpsAddressLink lat={r.latitude} lng={r.longitude} />
                                       )}
                                     </div>
                                     <div className="flex items-center gap-0.5">
