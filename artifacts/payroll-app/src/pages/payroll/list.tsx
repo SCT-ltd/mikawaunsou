@@ -305,7 +305,7 @@ export default function PayrollList() {
             <Tabs defaultValue="slip" className="mt-4">
               <TabsList className="w-full print:hidden">
                 <TabsTrigger value="slip" className="flex-1">給与明細</TabsTrigger>
-                <TabsTrigger value="allowance" className="flex-1">手当入力</TabsTrigger>
+                <TabsTrigger value="allowance" className="flex-1">明細入力</TabsTrigger>
               </TabsList>
 
               {/* ── 給与明細タブ ── */}
