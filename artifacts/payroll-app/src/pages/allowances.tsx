@@ -541,6 +541,8 @@ function DeductionMasterTab() {
 const employeeEditSchema = z.object({
   dependentCount: z.coerce.number().int().min(0),
   hasSpouse: z.boolean().default(false),
+  standardRemuneration: z.coerce.number().min(0),
+  careInsuranceApplied: z.boolean().default(false),
   employmentInsuranceApplied: z.boolean().default(true),
 });
 type EmployeeEditValues = z.infer<typeof employeeEditSchema>;
@@ -555,7 +557,9 @@ function EmployeeMasterTab() {
   const form = useForm<EmployeeEditValues>({
     resolver: zodResolver(employeeEditSchema),
     defaultValues: {
-      dependentCount: 0, hasSpouse: false, employmentInsuranceApplied: true,
+      dependentCount: 0, hasSpouse: false,
+      standardRemuneration: 0, careInsuranceApplied: false,
+      employmentInsuranceApplied: true,
     },
   });
 
@@ -564,6 +568,8 @@ function EmployeeMasterTab() {
     form.reset({
       dependentCount: emp.dependentCount,
       hasSpouse: emp.hasSpouse ?? false,
+      standardRemuneration: emp.standardRemuneration ?? 0,
+      careInsuranceApplied: emp.careInsuranceApplied ?? false,
       employmentInsuranceApplied: emp.employmentInsuranceApplied ?? true,
     });
   };
@@ -607,6 +613,8 @@ function EmployeeMasterTab() {
                     <TableHead>部署</TableHead>
                     <TableHead>扶養</TableHead>
                     <TableHead>配偶者</TableHead>
+                    <TableHead className="text-right">標準報酬</TableHead>
+                    <TableHead>介護保険</TableHead>
                     <TableHead>雇保</TableHead>
                     <TableHead className="w-20 text-right">操作</TableHead>
                   </TableRow>
@@ -623,6 +631,18 @@ function EmployeeMasterTab() {
                           <Badge variant="outline" className="bg-pink-50 text-pink-700 border-pink-200 text-xs">有</Badge>
                         ) : (
                           <span className="text-muted-foreground text-sm">無</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right text-sm tabular-nums">
+                        {(emp.standardRemuneration && emp.standardRemuneration > 0)
+                          ? emp.standardRemuneration.toLocaleString("ja-JP") + "円"
+                          : <span className="text-muted-foreground">未設定</span>}
+                      </TableCell>
+                      <TableCell>
+                        {(emp.careInsuranceApplied ?? false) ? (
+                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-xs">適用</Badge>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">非適用</span>
                         )}
                       </TableCell>
                       <TableCell>
@@ -683,16 +703,45 @@ function EmployeeMasterTab() {
               {/* 社会保険 */}
               <div>
                 <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">社会保険設定</h4>
-                <p className="text-xs text-muted-foreground mb-3">保険料は計算テーブルマスターの料率を使って自動計算されます。</p>
-                <FormField control={form.control} name="employmentInsuranceApplied" render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-lg border p-3">
-                    <div>
-                      <FormLabel>雇用保険適用</FormLabel>
-                      <p className="text-xs text-muted-foreground">適用外の場合はオフ（役員等）</p>
-                    </div>
-                    <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                  </FormItem>
-                )} />
+                <p className="text-xs text-muted-foreground mb-3">
+                  保険料は計算テーブルマスターの料率 × 標準報酬月額で計算されます。
+                </p>
+                <div className="space-y-3">
+                  <FormField control={form.control} name="standardRemuneration" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>標準報酬月額（円）</FormLabel>
+                      <FormControl>
+                        <div className="flex items-center gap-2">
+                          <Input type="number" min={0} step={1000} placeholder="470000" {...field} className="text-right" />
+                          <span className="text-sm text-muted-foreground shrink-0">円</span>
+                        </div>
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">
+                        4〜6月の平均報酬で決定、9月〜翌8月固定。
+                        健保・厚年の計算基礎となります。
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="careInsuranceApplied" render={({ field }) => (
+                    <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                      <div>
+                        <FormLabel>介護保険適用</FormLabel>
+                        <p className="text-xs text-muted-foreground">40〜64歳の対象者はオン</p>
+                      </div>
+                      <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="employmentInsuranceApplied" render={({ field }) => (
+                    <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                      <div>
+                        <FormLabel>雇用保険適用</FormLabel>
+                        <p className="text-xs text-muted-foreground">適用外の場合はオフ（役員等）</p>
+                      </div>
+                      <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                    </FormItem>
+                  )} />
+                </div>
               </div>
 
               <DialogFooter>
@@ -729,6 +778,7 @@ const TAX_BRACKETS = [
 const companySchema = z.object({
   healthInsuranceEmployeeRate: z.coerce.number().min(0).max(1),
   healthInsuranceEmployerRate: z.coerce.number().min(0).max(1),
+  careInsuranceRate: z.coerce.number().min(0).max(1),
   pensionEmployeeRate: z.coerce.number().min(0).max(1),
   pensionEmployerRate: z.coerce.number().min(0).max(1),
   employmentInsuranceRate: z.coerce.number().min(0).max(1),
@@ -749,7 +799,8 @@ function CalcTableMasterTab() {
   const form = useForm<CompanyFormValues>({
     resolver: zodResolver(companySchema),
     defaultValues: {
-      healthInsuranceEmployeeRate: 0.05, healthInsuranceEmployerRate: 0.05,
+      healthInsuranceEmployeeRate: 0.04925, healthInsuranceEmployerRate: 0.04925,
+      careInsuranceRate: 0.0091,
       pensionEmployeeRate: 0.0915, pensionEmployerRate: 0.0915,
       employmentInsuranceRate: 0.006, employmentInsuranceEmployerRate: 0.0085,
       overtimeRate: 1.25, lateNightAdditionalRate: 0.25, holidayRate: 1.35,
@@ -758,6 +809,7 @@ function CalcTableMasterTab() {
     values: company ? {
       healthInsuranceEmployeeRate: company.healthInsuranceEmployeeRate,
       healthInsuranceEmployerRate: company.healthInsuranceEmployerRate,
+      careInsuranceRate: company.careInsuranceRate,
       pensionEmployeeRate: company.pensionEmployeeRate,
       pensionEmployerRate: company.pensionEmployerRate,
       employmentInsuranceRate: company.employmentInsuranceRate,
@@ -826,6 +878,31 @@ function CalcTableMasterTab() {
                       <FormMessage />
                     </FormItem>
                   )} />
+                </div>
+              </div>
+              <Separator />
+              <div>
+                <p className="text-sm font-medium mb-3 text-muted-foreground">介護保険（40〜64歳対象者のみ適用）</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField control={form.control} name="careInsuranceRate" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>本人負担率</FormLabel>
+                      <FormControl>
+                        <div className="flex items-center gap-2">
+                          <Input type="number" step="0.0001" placeholder="0.0091" {...field} />
+                          <span className="text-sm text-muted-foreground w-14">{pct(field.value || 0)}</span>
+                        </div>
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">協会けんぽ標準: 0.0091（1.82%÷2）</p>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <div className="flex items-end pb-6">
+                    <p className="text-xs text-muted-foreground">
+                      従業員マスタの「介護保険適用」フラグが ON の社員にのみ<br />
+                      この料率で計算されます。
+                    </p>
+                  </div>
                 </div>
               </div>
               <Separator />
