@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/layout/app-layout";
 import {
   useListAllowanceDefinitions,
@@ -13,7 +13,9 @@ import {
   useDeleteDeductionDefinition,
   useListEmployees,
   getListEmployeesQueryKey,
+  useCreateEmployee,
   useUpdateEmployee,
+  useDeleteEmployee,
   useGetCompany,
   getGetCompanyQueryKey,
   useUpdateCompany,
@@ -37,9 +39,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { Plus, Edit2, Trash2, Settings2, Users, Wallet, Calculator, Minus } from "lucide-react";
+import { Plus, Edit2, Trash2, Settings2, Users, Wallet, Calculator, Minus, Search, KeyRound, RotateCcw, UserPlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 const calcTypeLabels: Record<string, { label: string; color: string }> = {
   fixed: { label: "固定給型", color: "bg-blue-50 text-blue-700 border-blue-200" },
@@ -538,43 +542,126 @@ function DeductionMasterTab() {
 
 // ─── 社員マスター Tab ──────────────────────────────────────────────
 
-const employeeEditSchema = z.object({
+const empFullSchema = z.object({
+  employeeCode: z.string().min(1, "社員番号を入力してください"),
+  name: z.string().min(1, "氏名を入力してください"),
+  nameKana: z.string().min(1, "フリガナを入力してください"),
+  department: z.string().min(1, "部署を入力してください"),
+  position: z.string().optional(),
+  hireDate: z.string().min(1, "入社日を入力してください"),
+  isActive: z.boolean().default(true),
   salaryType: z.enum(["fixed", "daily"]).default("daily"),
   baseSalary: z.coerce.number().min(0).default(0),
   residentTax: z.coerce.number().min(0).default(0),
-  dependentCount: z.coerce.number().int().min(0),
+  commissionRatePerKm: z.coerce.number().min(0).default(0),
+  commissionRatePerCase: z.coerce.number().min(0).default(0),
+  dependentCount: z.coerce.number().int().min(0).default(0),
   hasSpouse: z.boolean().default(false),
-  standardRemuneration: z.coerce.number().min(0),
+  standardRemuneration: z.coerce.number().min(0).default(0),
   careInsuranceApplied: z.boolean().default(false),
   employmentInsuranceApplied: z.boolean().default(true),
 });
-type EmployeeEditValues = z.infer<typeof employeeEditSchema>;
+type EmpFullValues = z.infer<typeof empFullSchema>;
 
 function EmployeeMasterTab() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { data: employees, isLoading } = useListEmployees({}, { query: { staleTime: 0, refetchOnMount: true } });
+  const createEmployee = useCreateEmployee();
   const updateEmployee = useUpdateEmployee();
-  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const deleteEmployee = useDeleteEmployee();
 
-  const form = useForm<EmployeeEditValues>({
-    resolver: zodResolver(employeeEditSchema),
+  const [search, setSearch] = useState("");
+  const [showInactive, setShowInactive] = useState(false);
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null);
+
+  const [pinInput, setPinInput] = useState("");
+  const [pinSaving, setPinSaving] = useState(false);
+  const [pinSet, setPinSet] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!editingEmployee) { setPinSet(null); setPinInput(""); return; }
+    fetch(`${BASE}/api/employees/${editingEmployee.id}/pin/status`)
+      .then(r => r.json())
+      .then((d: { pinSet: boolean }) => setPinSet(d.pinSet))
+      .catch(() => {});
+  }, [editingEmployee]);
+
+  const handleSetPin = async () => {
+    if (!/^\d{4}$/.test(pinInput) || !editingEmployee) {
+      toast({ title: "エラー", description: "4桁の数字を入力してください", variant: "destructive" });
+      return;
+    }
+    setPinSaving(true);
+    try {
+      const res = await fetch(`${BASE}/api/employees/${editingEmployee.id}/pin`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin: pinInput }),
+      });
+      if (!res.ok) throw new Error();
+      setPinSet(true); setPinInput("");
+      toast({ title: "PIN設定完了", description: "PINコードを設定しました" });
+    } catch {
+      toast({ title: "エラー", description: "PIN設定に失敗しました", variant: "destructive" });
+    } finally { setPinSaving(false); }
+  };
+
+  const handleResetPin = async () => {
+    if (!editingEmployee) return;
+    setPinSaving(true);
+    try {
+      const res = await fetch(`${BASE}/api/employees/${editingEmployee.id}/pin`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+      setPinSet(false); setPinInput("");
+      toast({ title: "PINリセット完了", description: "PINコードを削除しました" });
+    } catch {
+      toast({ title: "エラー", description: "PINリセットに失敗しました", variant: "destructive" });
+    } finally { setPinSaving(false); }
+  };
+
+  const editForm = useForm<EmpFullValues>({
+    resolver: zodResolver(empFullSchema),
     defaultValues: {
+      employeeCode: "", name: "", nameKana: "", department: "", position: "",
+      hireDate: "", isActive: true, salaryType: "daily", baseSalary: 0,
+      residentTax: 0, commissionRatePerKm: 0, commissionRatePerCase: 0,
+      dependentCount: 0, hasSpouse: false, standardRemuneration: 0,
+      careInsuranceApplied: false, employmentInsuranceApplied: true,
+    },
+  });
+  const createForm = useForm<EmpFullValues>({
+    resolver: zodResolver(empFullSchema),
+    defaultValues: {
+      employeeCode: "", name: "", nameKana: "", department: "配送部", position: "",
+      hireDate: new Date().toISOString().split("T")[0], isActive: true,
       salaryType: "daily", baseSalary: 0, residentTax: 0,
-      dependentCount: 0, hasSpouse: false,
-      standardRemuneration: 0, careInsuranceApplied: false,
-      employmentInsuranceApplied: true,
+      commissionRatePerKm: 0, commissionRatePerCase: 0,
+      dependentCount: 0, hasSpouse: false, standardRemuneration: 0,
+      careInsuranceApplied: false, employmentInsuranceApplied: true,
     },
   });
 
-  const salaryTypeWatch = form.watch("salaryType");
+  const editSalaryType = editForm.watch("salaryType");
+  const createSalaryType = createForm.watch("salaryType");
 
   const handleOpenEdit = (emp: Employee) => {
     setEditingEmployee(emp);
-    form.reset({
+    editForm.reset({
+      employeeCode: emp.employeeCode,
+      name: emp.name,
+      nameKana: emp.nameKana,
+      department: emp.department,
+      position: emp.position || "",
+      hireDate: emp.hireDate.split("T")[0],
+      isActive: emp.isActive,
       salaryType: (emp.salaryType as "fixed" | "daily") ?? "daily",
       baseSalary: emp.baseSalary ?? 0,
       residentTax: emp.residentTax ?? 0,
+      commissionRatePerKm: emp.commissionRatePerKm ?? 0,
+      commissionRatePerCase: emp.commissionRatePerCase ?? 0,
       dependentCount: emp.dependentCount,
       hasSpouse: emp.hasSpouse ?? false,
       standardRemuneration: emp.standardRemuneration ?? 0,
@@ -583,7 +670,7 @@ function EmployeeMasterTab() {
     });
   };
 
-  const onSubmit = async (data: EmployeeEditValues) => {
+  const onEditSubmit = async (data: EmpFullValues) => {
     if (!editingEmployee) return;
     try {
       await updateEmployee.mutateAsync({ id: editingEmployee.id, data });
@@ -595,22 +682,214 @@ function EmployeeMasterTab() {
     }
   };
 
-  const activeEmployees = employees?.filter(e => e.isActive) ?? [];
+  const onCreateSubmit = async (data: EmpFullValues) => {
+    try {
+      const res = await createEmployee.mutateAsync({ data });
+      toast({ title: "登録しました", description: `${res.name}を登録しました。` });
+      queryClient.invalidateQueries({ queryKey: getListEmployeesQueryKey() });
+      setIsCreateOpen(false);
+      createForm.reset();
+    } catch {
+      toast({ title: "エラー", description: "社員の登録に失敗しました。", variant: "destructive" });
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await deleteEmployee.mutateAsync({ id: deleteTarget.id });
+      toast({ title: "削除しました", description: "社員情報を削除しました。" });
+      queryClient.invalidateQueries({ queryKey: getListEmployeesQueryKey() });
+      setDeleteTarget(null);
+      if (editingEmployee?.id === deleteTarget.id) setEditingEmployee(null);
+    } catch {
+      toast({ title: "エラー", description: "社員の削除に失敗しました。", variant: "destructive" });
+    }
+  };
+
+  const filtered = (employees ?? []).filter(emp => {
+    if (!showInactive && !emp.isActive) return false;
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return emp.name.toLowerCase().includes(q) ||
+      emp.nameKana.toLowerCase().includes(q) ||
+      emp.employeeCode.toLowerCase().includes(q) ||
+      emp.department.toLowerCase().includes(q);
+  });
+
+  const EmpFormFields = ({ form: f, salaryType }: { form: ReturnType<typeof useForm<EmpFullValues>>, salaryType: string }) => (
+    <>
+      <div>
+        <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">基本情報</h4>
+        <div className="grid grid-cols-2 gap-3">
+          <FormField control={f.control} name="employeeCode" render={({ field }) => (
+            <FormItem><FormLabel>社員番号 <span className="text-destructive">*</span></FormLabel>
+              <FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+          )} />
+          <FormField control={f.control} name="hireDate" render={({ field }) => (
+            <FormItem><FormLabel>入社日 <span className="text-destructive">*</span></FormLabel>
+              <FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
+          )} />
+          <FormField control={f.control} name="name" render={({ field }) => (
+            <FormItem><FormLabel>氏名 <span className="text-destructive">*</span></FormLabel>
+              <FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+          )} />
+          <FormField control={f.control} name="nameKana" render={({ field }) => (
+            <FormItem><FormLabel>フリガナ <span className="text-destructive">*</span></FormLabel>
+              <FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+          )} />
+          <FormField control={f.control} name="department" render={({ field }) => (
+            <FormItem><FormLabel>部署 <span className="text-destructive">*</span></FormLabel>
+              <FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+          )} />
+          <FormField control={f.control} name="position" render={({ field }) => (
+            <FormItem><FormLabel>役職</FormLabel>
+              <FormControl><Input {...field} value={field.value || ""} /></FormControl></FormItem>
+          )} />
+        </div>
+      </div>
+      <Separator />
+      <div>
+        <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">給与形態</h4>
+        <div className="space-y-3">
+          <FormField control={f.control} name="salaryType" render={({ field }) => (
+            <FormItem><FormLabel>給与タイプ</FormLabel>
+              <Select onValueChange={field.onChange} value={field.value}>
+                <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                <SelectContent>
+                  <SelectItem value="daily">日給制（平日9,808円 / 土曜12,260円 / 日曜1,655円/h）</SelectItem>
+                  <SelectItem value="fixed">固定給（毎月固定額）</SelectItem>
+                </SelectContent>
+              </Select><FormMessage /></FormItem>
+          )} />
+          {salaryType === "fixed" && (
+            <FormField control={f.control} name="baseSalary" render={({ field }) => (
+              <FormItem><FormLabel>月額固定給（円）</FormLabel>
+                <FormControl>
+                  <div className="flex items-center gap-2">
+                    <Input type="number" min={0} step={1000} placeholder="700000" {...field} className="text-right" />
+                    <span className="text-sm text-muted-foreground shrink-0">円</span>
+                  </div>
+                </FormControl><FormMessage /></FormItem>
+            )} />
+          )}
+          <FormField control={f.control} name="residentTax" render={({ field }) => (
+            <FormItem><FormLabel>市町村民税（月額・円）</FormLabel>
+              <FormControl>
+                <div className="flex items-center gap-2">
+                  <Input type="number" min={0} step={100} placeholder="0" {...field} className="text-right" />
+                  <span className="text-sm text-muted-foreground shrink-0">円</span>
+                </div>
+              </FormControl>
+              <p className="text-xs text-muted-foreground">毎月差し引く住民税（特別徴収）の月額</p>
+              <FormMessage /></FormItem>
+          )} />
+          <div className="grid grid-cols-2 gap-3">
+            <FormField control={f.control} name="commissionRatePerKm" render={({ field }) => (
+              <FormItem><FormLabel>歩合単価（円/km）</FormLabel>
+                <FormControl>
+                  <div className="flex items-center gap-1">
+                    <span className="text-muted-foreground text-sm">¥</span>
+                    <Input type="number" step="0.1" {...field} />
+                  </div>
+                </FormControl></FormItem>
+            )} />
+            <FormField control={f.control} name="commissionRatePerCase" render={({ field }) => (
+              <FormItem><FormLabel>歩合単価（円/件）</FormLabel>
+                <FormControl>
+                  <div className="flex items-center gap-1">
+                    <span className="text-muted-foreground text-sm">¥</span>
+                    <Input type="number" {...field} />
+                  </div>
+                </FormControl></FormItem>
+            )} />
+          </div>
+        </div>
+      </div>
+      <Separator />
+      <div>
+        <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">扶養・家族設定</h4>
+        <div className="space-y-3">
+          <FormField control={f.control} name="dependentCount" render={({ field }) => (
+            <FormItem><FormLabel>扶養親族数（人）</FormLabel>
+              <FormControl><Input type="number" min={0} placeholder="0" {...field} /></FormControl>
+              <FormMessage /></FormItem>
+          )} />
+          <FormField control={f.control} name="hasSpouse" render={({ field }) => (
+            <FormItem className="flex items-center justify-between rounded-lg border p-3">
+              <div><FormLabel>配偶者の有無</FormLabel>
+                <p className="text-xs text-muted-foreground">配偶者控除の適用に使用</p></div>
+              <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+            </FormItem>
+          )} />
+        </div>
+      </div>
+      <Separator />
+      <div>
+        <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">社会保険設定</h4>
+        <p className="text-xs text-muted-foreground mb-3">保険料は計算テーブルマスターの料率 × 標準報酬月額で計算されます。</p>
+        <div className="space-y-3">
+          <FormField control={f.control} name="standardRemuneration" render={({ field }) => (
+            <FormItem><FormLabel>標準報酬月額（円）</FormLabel>
+              <FormControl>
+                <div className="flex items-center gap-2">
+                  <Input type="number" min={0} step={1000} placeholder="470000" {...field} className="text-right" />
+                  <span className="text-sm text-muted-foreground shrink-0">円</span>
+                </div>
+              </FormControl>
+              <p className="text-xs text-muted-foreground">4〜6月の平均報酬で決定、9月〜翌8月固定。健保・厚年の計算基礎。</p>
+              <FormMessage /></FormItem>
+          )} />
+          <FormField control={f.control} name="careInsuranceApplied" render={({ field }) => (
+            <FormItem className="flex items-center justify-between rounded-lg border p-3">
+              <div><FormLabel>介護保険適用</FormLabel>
+                <p className="text-xs text-muted-foreground">40〜64歳の対象者はオン</p></div>
+              <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+            </FormItem>
+          )} />
+          <FormField control={f.control} name="employmentInsuranceApplied" render={({ field }) => (
+            <FormItem className="flex items-center justify-between rounded-lg border p-3">
+              <div><FormLabel>雇用保険適用</FormLabel>
+                <p className="text-xs text-muted-foreground">適用外の場合はオフ（役員等）</p></div>
+              <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+            </FormItem>
+          )} />
+        </div>
+      </div>
+    </>
+  );
 
   return (
     <div className="space-y-4">
-      <div>
-        <h3 className="text-lg font-semibold">社員マスター</h3>
-        <p className="text-sm text-muted-foreground">扶養・保険など各社員の基本設定を管理します。社会保険料は計算テーブルマスターの料率を使用して自動計算されます。</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold">社員マスター</h3>
+          <p className="text-sm text-muted-foreground">社員の基本情報・給与形態・保険設定をまとめて管理します。</p>
+        </div>
+        <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+          <UserPlus className="mr-2 h-4 w-4" />新規登録
+        </Button>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1 max-w-xs">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input type="search" placeholder="社員番号・氏名・部署で検索..." className="pl-8 bg-card"
+            value={search} onChange={(e) => setSearch(e.target.value)} />
+        </div>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+          <Switch checked={showInactive} onCheckedChange={setShowInactive} />
+          退職済も表示
+        </label>
       </div>
 
       <Card>
         <CardContent className="p-0">
           {isLoading ? (
             <div className="text-center py-8 text-muted-foreground">読み込み中...</div>
-          ) : activeEmployees.length === 0 ? (
+          ) : filtered.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground border-dashed border rounded-md m-4">
-              社員が登録されていません。
+              社員が見つかりません。
             </div>
           ) : (
             <div className="rounded-md overflow-hidden">
@@ -620,21 +899,26 @@ function EmployeeMasterTab() {
                     <TableHead>社員番号</TableHead>
                     <TableHead>氏名</TableHead>
                     <TableHead>部署</TableHead>
+                    <TableHead>役職</TableHead>
                     <TableHead>給与形態</TableHead>
                     <TableHead>扶養</TableHead>
-                    <TableHead>配偶者</TableHead>
                     <TableHead className="text-right">標準報酬</TableHead>
                     <TableHead>介護保険</TableHead>
                     <TableHead>雇保</TableHead>
+                    <TableHead>在籍</TableHead>
                     <TableHead className="w-20 text-right">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {activeEmployees.map((emp) => (
+                  {filtered.map((emp) => (
                     <TableRow key={emp.id} className="cursor-pointer hover:bg-muted/40" onClick={() => handleOpenEdit(emp)}>
                       <TableCell className="text-muted-foreground text-sm">{emp.employeeCode}</TableCell>
-                      <TableCell className="font-medium">{emp.name}</TableCell>
+                      <TableCell>
+                        <div className="font-medium">{emp.name}</div>
+                        <div className="text-xs text-muted-foreground">{emp.nameKana}</div>
+                      </TableCell>
                       <TableCell className="text-sm">{emp.department}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{emp.position || "-"}</TableCell>
                       <TableCell>
                         {(emp.salaryType ?? "daily") === "daily" ? (
                           <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-xs">日給制</Badge>
@@ -643,13 +927,6 @@ function EmployeeMasterTab() {
                         )}
                       </TableCell>
                       <TableCell className="text-sm">{emp.dependentCount}人</TableCell>
-                      <TableCell>
-                        {(emp.hasSpouse ?? false) ? (
-                          <Badge variant="outline" className="bg-pink-50 text-pink-700 border-pink-200 text-xs">有</Badge>
-                        ) : (
-                          <span className="text-muted-foreground text-sm">無</span>
-                        )}
-                      </TableCell>
                       <TableCell className="text-right text-sm tabular-nums">
                         {(emp.standardRemuneration && emp.standardRemuneration > 0)
                           ? emp.standardRemuneration.toLocaleString("ja-JP") + "円"
@@ -669,6 +946,13 @@ function EmployeeMasterTab() {
                           <Badge variant="outline" className="text-muted-foreground text-xs">非適用</Badge>
                         )}
                       </TableCell>
+                      <TableCell>
+                        {emp.isActive ? (
+                          <Badge className="bg-emerald-600 hover:bg-emerald-700 text-xs">在籍</Badge>
+                        ) : (
+                          <Badge variant="secondary" className="text-xs">退職</Badge>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right">
                         <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleOpenEdit(emp); }}>
                           <Edit2 className="h-4 w-4 text-muted-foreground" />
@@ -683,145 +967,126 @@ function EmployeeMasterTab() {
         </CardContent>
       </Card>
 
-      {/* Employee Edit Dialog */}
-      <Dialog open={!!editingEmployee} onOpenChange={(open) => { if (!open) setEditingEmployee(null); }}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      {/* 新規登録ダイアログ */}
+      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingEmployee?.name}　扶養・保険設定</DialogTitle>
-            <p className="text-sm text-muted-foreground mt-1">{editingEmployee?.employeeCode}　{editingEmployee?.department}</p>
+            <DialogTitle>新規社員登録</DialogTitle>
           </DialogHeader>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              {/* 給与形態 */}
-              <div>
-                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">給与形態</h4>
-                <div className="space-y-3">
-                  <FormField control={form.control} name="salaryType" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>給与タイプ</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="daily">日給制（平日9,808円 / 土曜12,260円 / 日曜1,655円/h）</SelectItem>
-                          <SelectItem value="fixed">固定給（毎月固定額）</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  {salaryTypeWatch === "fixed" && (
-                    <FormField control={form.control} name="baseSalary" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>月額固定給（円）</FormLabel>
-                        <FormControl>
-                          <div className="flex items-center gap-2">
-                            <Input type="number" min={0} step={1000} placeholder="700000" {...field} className="text-right" />
-                            <span className="text-sm text-muted-foreground shrink-0">円</span>
-                          </div>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )} />
-                  )}
-                  <FormField control={form.control} name="residentTax" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>市町村民税（月額・円）</FormLabel>
-                      <FormControl>
-                        <div className="flex items-center gap-2">
-                          <Input type="number" min={0} step={100} placeholder="0" {...field} className="text-right" />
-                          <span className="text-sm text-muted-foreground shrink-0">円</span>
-                        </div>
-                      </FormControl>
-                      <p className="text-xs text-muted-foreground">毎月差し引く住民税（特別徴収）の月額</p>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                </div>
-              </div>
-
-              <Separator />
-
-              {/* 扶養・家族 */}
-              <div>
-                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">扶養・家族設定</h4>
-                <div className="space-y-3">
-                  <FormField control={form.control} name="dependentCount" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>扶養親族数（人）</FormLabel>
-                      <FormControl><Input type="number" min={0} placeholder="0" {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="hasSpouse" render={({ field }) => (
-                    <FormItem className="flex items-center justify-between rounded-lg border p-3">
-                      <div>
-                        <FormLabel>配偶者の有無</FormLabel>
-                        <p className="text-xs text-muted-foreground">配偶者控除の適用に使用</p>
-                      </div>
-                      <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                    </FormItem>
-                  )} />
-                </div>
-              </div>
-
-              <Separator />
-
-              {/* 社会保険 */}
-              <div>
-                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">社会保険設定</h4>
-                <p className="text-xs text-muted-foreground mb-3">
-                  保険料は計算テーブルマスターの料率 × 標準報酬月額で計算されます。
-                </p>
-                <div className="space-y-3">
-                  <FormField control={form.control} name="standardRemuneration" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>標準報酬月額（円）</FormLabel>
-                      <FormControl>
-                        <div className="flex items-center gap-2">
-                          <Input type="number" min={0} step={1000} placeholder="470000" {...field} className="text-right" />
-                          <span className="text-sm text-muted-foreground shrink-0">円</span>
-                        </div>
-                      </FormControl>
-                      <p className="text-xs text-muted-foreground">
-                        4〜6月の平均報酬で決定、9月〜翌8月固定。
-                        健保・厚年の計算基礎となります。
-                      </p>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="careInsuranceApplied" render={({ field }) => (
-                    <FormItem className="flex items-center justify-between rounded-lg border p-3">
-                      <div>
-                        <FormLabel>介護保険適用</FormLabel>
-                        <p className="text-xs text-muted-foreground">40〜64歳の対象者はオン</p>
-                      </div>
-                      <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="employmentInsuranceApplied" render={({ field }) => (
-                    <FormItem className="flex items-center justify-between rounded-lg border p-3">
-                      <div>
-                        <FormLabel>雇用保険適用</FormLabel>
-                        <p className="text-xs text-muted-foreground">適用外の場合はオフ（役員等）</p>
-                      </div>
-                      <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                    </FormItem>
-                  )} />
-                </div>
-              </div>
-
+          <Form {...createForm}>
+            <form onSubmit={createForm.handleSubmit(onCreateSubmit)} className="space-y-6">
+              <EmpFormFields form={createForm} salaryType={createSalaryType} />
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setEditingEmployee(null)}>キャンセル</Button>
-                <Button type="submit" disabled={form.formState.isSubmitting}>保存する</Button>
+                <Button type="button" variant="outline" onClick={() => setIsCreateOpen(false)}>キャンセル</Button>
+                <Button type="submit" disabled={createForm.formState.isSubmitting}>
+                  <UserPlus className="mr-2 h-4 w-4" />登録する
+                </Button>
               </DialogFooter>
             </form>
           </Form>
         </DialogContent>
       </Dialog>
+
+      {/* 編集ダイアログ */}
+      <Dialog open={!!editingEmployee} onOpenChange={(open) => { if (!open) setEditingEmployee(null); }}>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingEmployee?.name}　社員情報編集</DialogTitle>
+            <p className="text-sm text-muted-foreground mt-1">{editingEmployee?.employeeCode}　{editingEmployee?.department}</p>
+          </DialogHeader>
+          <Form {...editForm}>
+            <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-6">
+              <EmpFormFields form={editForm} salaryType={editSalaryType} />
+
+              <Separator />
+
+              {/* 在籍状況 */}
+              <FormField control={editForm.control} name="isActive" render={({ field }) => (
+                <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                  <div><FormLabel className="text-base">在籍状況</FormLabel>
+                    <p className="text-sm text-muted-foreground">退職した場合はオフにしてください</p></div>
+                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                </FormItem>
+              )} />
+
+              <Separator />
+
+              {/* PINコード管理 */}
+              <div>
+                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
+                  <KeyRound className="h-4 w-4" />打刻PINコード管理
+                </h4>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-muted-foreground">現在の状態：</span>
+                    {pinSet === null ? (
+                      <span className="text-muted-foreground">確認中...</span>
+                    ) : pinSet ? (
+                      <span className="font-semibold text-green-600">✓ PIN設定済み</span>
+                    ) : (
+                      <span className="text-muted-foreground">未設定</span>
+                    )}
+                  </div>
+                  <div className="flex gap-2 items-end">
+                    <div className="flex-1 max-w-[160px]">
+                      <label className="text-xs text-muted-foreground block mb-1">新しいPIN（4桁）</label>
+                      <Input type="password" inputMode="numeric" maxLength={4} placeholder="例：1234"
+                        value={pinInput} onChange={(e) => setPinInput(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                        className="tracking-widest text-center text-lg" />
+                    </div>
+                    <Button type="button" onClick={handleSetPin} disabled={pinSaving || pinInput.length !== 4} className="gap-1.5">
+                      <KeyRound className="h-3.5 w-3.5" />{pinSet ? "変更" : "設定"}
+                    </Button>
+                    {pinSet && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button type="button" variant="outline" className="gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/5" disabled={pinSaving}>
+                            <RotateCcw className="h-3.5 w-3.5" />リセット
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>PINコードをリセットしますか？</AlertDialogTitle>
+                            <AlertDialogDescription>PINを削除すると、QRコードはPIN入力なしで使えるようになります。</AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>キャンセル</AlertDialogCancel>
+                            <AlertDialogAction onClick={handleResetPin} className="bg-destructive hover:bg-destructive/90">削除する</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">PINを設定すると、QRコード読み取り後に4桁の入力が必要になります。</p>
+                </div>
+              </div>
+
+              <DialogFooter className="flex-col sm:flex-row gap-2">
+                <Button type="button" variant="destructive" size="sm" className="mr-auto"
+                  onClick={() => setDeleteTarget(editingEmployee)}>
+                  <Trash2 className="mr-1 h-4 w-4" />削除
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setEditingEmployee(null)}>キャンセル</Button>
+                <Button type="submit" disabled={editForm.formState.isSubmitting}>保存する</Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* 削除確認ダイアログ */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>本当に削除しますか？</AlertDialogTitle>
+            <AlertDialogDescription>「{deleteTarget?.name}」を削除します。この操作は取り消せません（論理削除）。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>キャンセル</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">削除する</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
