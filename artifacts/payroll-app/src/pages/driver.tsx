@@ -133,11 +133,23 @@ export default function DriverPage() {
   const checklistSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const checklistLoadedRef = useRef(false);
 
+  // localStorage キー (JST日付)
+  function clLsKey(empId: number): string {
+    const jst = new Date(Date.now() + 9 * 3600000);
+    return `cl_${empId}_${jst.toISOString().slice(0, 10)}`;
+  }
+
   const setItemResult = (id: string, result: "良" | "否") => {
     setItemStatus(prev => {
       const next = new Map(prev);
       if (next.get(id) === result) next.delete(id);
       else next.set(id, result);
+      // localStorageに即座に保存（ページ更新対策）
+      try {
+        const items: Record<string, "良" | "否"> = {};
+        next.forEach((v, k) => { items[k] = v; });
+        localStorage.setItem(clLsKey(employeeId), JSON.stringify(items));
+      } catch { /* quota error は無視 */ }
       return next;
     });
   };
@@ -156,10 +168,24 @@ export default function DriverPage() {
   const [pinVerifying, setPinVerifying] = useState(false);
   const shakeRef = useRef<HTMLDivElement>(null);
 
-  // PIN認証後: 本日のチェックリスト状態を復元
+  // PIN認証後: localStorageからチェックリスト状態を即座に復元
   useEffect(() => {
     if (!pinVerified || checklistLoadedRef.current) return;
     checklistLoadedRef.current = true;
+
+    // ① localStorageから同期的に復元（確実・高速）
+    try {
+      const stored = localStorage.getItem(clLsKey(employeeId));
+      if (stored) {
+        const items = JSON.parse(stored) as Record<string, "良" | "否">;
+        if (Object.keys(items).length > 0) {
+          setItemStatus(new Map(Object.entries(items) as [string, "良" | "否"][]));
+          return; // localStorageにデータがあればDB参照不要
+        }
+      }
+    } catch { /* parse error */ }
+
+    // ② localStorageにない場合はDBから取得（初回や端末変更時）
     apiFetch(`/attendance/checklist/${employeeId}`)
       .then(r => r.json() as Promise<{ checklistNgItems: string | null }>)
       .then(data => {
@@ -170,13 +196,15 @@ export default function DriverPage() {
           };
           if (parsed.items && Object.keys(parsed.items).length > 0) {
             setItemStatus(new Map(Object.entries(parsed.items) as [string, "良" | "否"][]));
+            // DBから取得したデータをlocalStorageにも保存
+            localStorage.setItem(clLsKey(employeeId), JSON.stringify(parsed.items));
           }
         } catch { /* 旧フォーマットは無視 */ }
       })
       .catch(() => {});
   }, [pinVerified, employeeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // チェック変更のたびにDBへ保存（800ms デバウンス）→ 管理画面にリアルタイム反映
+  // チェック変更のたびにDBへも保存（800ms デバウンス）→ 管理画面にリアルタイム反映
   useEffect(() => {
     if (!pinVerified || !checklistLoadedRef.current) return;
     if (checklistSaveTimerRef.current) clearTimeout(checklistSaveTimerRef.current);
