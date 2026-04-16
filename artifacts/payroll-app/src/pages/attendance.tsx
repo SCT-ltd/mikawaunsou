@@ -66,6 +66,15 @@ function todayJST(): string {
   const jst = new Date(Date.now() + 9 * 60 * 60 * 1000);
   return jst.toISOString().slice(0, 10);
 }
+function nowTimeJST(): string {
+  const jst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  return jst.toISOString().slice(11, 16); // "HH:MM"
+}
+// 指定した日付+時刻が現在より未来かどうかチェック（JST基準）
+function isFuture(dateStr: string, timeStr: string): boolean {
+  const dt = new Date(`${dateStr}T${timeStr}:00+09:00`);
+  return dt.getTime() > Date.now() + 60 * 1000; // 1分の余裕
+}
 function formatDateJP(dateStr: string): string {
   const [y, m, d] = dateStr.split("-");
   const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
@@ -259,19 +268,31 @@ export default function AttendancePage() {
     setEditEventType(r.eventType);
     setEditTime(toTimeInput(r.recordedAt));
     setDeleteConfirm(false);
+    setEditError(null);
   };
+  const [editError, setEditError] = useState<string | null>(null);
+
   const saveEdit = async () => {
     if (!editRecord) return;
+    setEditError(null);
+    // JST日付＋入力時刻でタイムスタンプを構築（workDateを基準日として使用）
+    const recordedAt = new Date(`${editRecord.workDate}T${editTime}:00+09:00`).toISOString();
+    if (isFuture(editRecord.workDate, editTime)) {
+      setEditError("未来の時刻は登録できません");
+      return;
+    }
     setSaving(true);
     try {
-      const base = new Date(editRecord.recordedAt);
-      const [h, m] = editTime.split(":").map(Number);
-      base.setHours(h, m, 0, 0);
-      await fetch(`${BASE}/api/attendance/records/${editRecord.id}`, {
+      const res = await fetch(`${BASE}/api/attendance/records/${editRecord.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ eventType: editEventType, recordedAt: base.toISOString() }),
+        body: JSON.stringify({ eventType: editEventType, recordedAt }),
       });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setEditError(body.error ?? "保存に失敗しました");
+        return;
+      }
       setEditRecord(null);
       await fetchData(selectedDate);
     } finally { setSaving(false); }
@@ -292,8 +313,12 @@ export default function AttendancePage() {
 
   const addRecord = async () => {
     if (!selected) return;
-    setSaving(true);
     setAddError(null);
+    if (isFuture(selectedDate, addTime)) {
+      setAddError("未来の時刻は登録できません");
+      return;
+    }
+    setSaving(true);
     try {
       // selectedDate（JST日付）＋入力時刻でタイムスタンプを生成（JST固定）
       const recordedAt = new Date(`${selectedDate}T${addTime}:00+09:00`).toISOString();
@@ -631,7 +656,7 @@ export default function AttendancePage() {
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">本日の打刻履歴</p>
                   <button
-                    onClick={() => { setAddMode(true); setAddTime(toTimeInput(new Date().toISOString())); setAddEventType("clock_in"); }}
+                    onClick={() => { setAddMode(true); setAddTime(nowTimeJST()); setAddEventType("clock_in"); setAddError(null); }}
                     className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
                   >
                     <Plus className="h-3 w-3" />打刻を追加
@@ -662,7 +687,13 @@ export default function AttendancePage() {
                       </div>
                       <div className="space-y-1">
                         <Label className="text-xs">時刻</Label>
-                        <Input type="time" value={addTime} onChange={(e) => setAddTime(e.target.value)} className="h-8 text-xs" />
+                        <Input
+                          type="time"
+                          value={addTime}
+                          max={isToday ? nowTimeJST() : undefined}
+                          onChange={(e) => { setAddTime(e.target.value); setAddError(null); }}
+                          className="h-8 text-xs"
+                        />
                       </div>
                     </div>
                     <div className="flex gap-2">
@@ -855,8 +886,17 @@ export default function AttendancePage() {
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">打刻時刻</Label>
-                <Input type="time" value={editTime} onChange={(e) => setEditTime(e.target.value)} />
+                <Input
+                  type="time"
+                  value={editTime}
+                  max={editRecord.workDate === todayJST() ? nowTimeJST() : undefined}
+                  onChange={(e) => { setEditTime(e.target.value); setEditError(null); }}
+                />
               </div>
+
+              {editError && (
+                <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1.5">{editError}</p>
+              )}
 
               {deleteConfirm && (
                 <div className="rounded-lg border border-red-200 bg-red-50 p-3 space-y-2">

@@ -144,6 +144,11 @@ router.post("/attendance/record", async (req, res) => {
   // クライアントからrecordedAtが送られた場合はそのタイムスタンプを使用し、
   // workDateはそのJST日付から算出する。送られない場合は現在時刻を使用。
   const now = recordedAtStr ? new Date(recordedAtStr) : new Date();
+
+  // 未来の打刻を拒否（1分の余裕を持たせる）
+  if (now.getTime() > Date.now() + 60 * 1000) {
+    return res.status(400).json({ error: "未来の時刻で打刻することはできません" });
+  }
   const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
   const jstDateStr = jst.toISOString().slice(0, 10);
   const jstHour    = jst.getUTCHours(); // JST時間（0〜23）
