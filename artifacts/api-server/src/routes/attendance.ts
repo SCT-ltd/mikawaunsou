@@ -185,25 +185,25 @@ router.post("/attendance/record", async (req, res) => {
     }
   }
 
-  // 同日・同種別の重複チェック
-  const existing = await db
-    .select({ id: attendanceRecordsTable.id })
-    .from(attendanceRecordsTable)
-    .where(and(
-      eq(attendanceRecordsTable.employeeId, employeeId),
-      eq(attendanceRecordsTable.workDate, workDate),
-      eq(attendanceRecordsTable.eventType, eventType),
-    ))
-    .limit(1);
-  if (existing.length > 0) {
-    const EVENT_LABELS: Record<string, string> = {
-      clock_in: "出勤",
-      clock_out: "退勤",
-      break_start: "休憩開始",
-      break_end: "休憩終了",
-    };
-    const label = EVENT_LABELS[eventType] ?? eventType;
-    return res.status(409).json({ error: `この日にすでに「${label}」の打刻が登録されています` });
+  // 同日・同種別の重複チェック（休憩は複数回取得可のため除外）
+  if (eventType === "clock_in" || eventType === "clock_out") {
+    const existing = await db
+      .select({ id: attendanceRecordsTable.id })
+      .from(attendanceRecordsTable)
+      .where(and(
+        eq(attendanceRecordsTable.employeeId, employeeId),
+        eq(attendanceRecordsTable.workDate, workDate),
+        eq(attendanceRecordsTable.eventType, eventType),
+      ))
+      .limit(1);
+    if (existing.length > 0) {
+      const EVENT_LABELS: Record<string, string> = {
+        clock_in: "出勤",
+        clock_out: "退勤",
+      };
+      const label = EVENT_LABELS[eventType] ?? eventType;
+      return res.status(409).json({ error: `この日にすでに「${label}」の打刻が登録されています` });
+    }
   }
 
   const [record] = await db.insert(attendanceRecordsTable).values({
