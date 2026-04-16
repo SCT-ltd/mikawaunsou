@@ -49,7 +49,6 @@ router.post("/payroll/calculate", async (req, res) => {
   const companyRows = await db.select().from(companyTable).limit(1);
   const company = companyRows[0] ?? {
     monthlyAverageWorkHours: 160,
-    socialInsuranceRate: 0.1495,
     employmentInsuranceRate: 0.006,
   };
 
@@ -79,9 +78,11 @@ router.post("/payroll/calculate", async (req, res) => {
     commissionRatePerKm: emp.commissionRatePerKm,
     commissionRatePerCase: emp.commissionRatePerCase,
     dependentCount: emp.dependentCount,
+    hasSpouse: emp.hasSpouse,
+    healthInsuranceMonthly: emp.healthInsuranceMonthly,
+    pensionMonthly: emp.pensionMonthly,
     residentTax: emp.residentTax,
     monthlyAverageWorkHours: company.monthlyAverageWorkHours,
-    socialInsuranceRate: company.socialInsuranceRate,
     employmentInsuranceRate: company.employmentInsuranceRate,
     workDays: record.workDays,
     overtimeHours: record.overtimeHours,

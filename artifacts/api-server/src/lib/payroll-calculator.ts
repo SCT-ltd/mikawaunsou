@@ -1,89 +1,20 @@
 /**
  * 給与計算エンジン（運送業特化）
  * Transportation industry payroll calculation engine
- */
-
-/**
- * 源泉所得税（月額表）ルックアップ
- * Based on 国税庁 給与所得の源泉徴収税額表（月額表）甲欄
- * 
- * Tax brackets are applied on: taxableMonthlyIncome = grossSalary - socialInsurance - employmentInsurance
- * Then dependentCount determines which bracket column applies.
- */
-
-interface TaxBracket {
-  min: number;
-  max: number;
-  // tax per dependent count [0, 1, 2, 3, 4, 5, 6, 7+]
-  // Using simplified formula approach for correctness
-  baseRate: number;      // 基本税率
-  baseDeduction: number; // 定額控除
-}
-
-/**
- * 源泉所得税計算（月額表甲欄）
- * 国税庁 令和6年分 給与所得の源泉徴収税額表（月額表）に準拠
  *
- * 計算方法:
- *   1. 社会保険料等控除後の給与等の月額 X に対して税率・定額を適用 → tax_0（扶養0人分）
- *   2. 扶養親族等1人につき 3,750円を減算
- *   3. 復興特別所得税（×1.021）を乗算
- *
- * 参考: 月額表甲欄の実態を回帰分析した速算式
- *   税額(0扶養) = X × 税率 - 定額
- *   税額(B扶養) = max(0, tax_0 - B × 3,750) × 1.021
+ * 令和8年（2026年）対応:
+ *  - 社会保険料: 協会けんぽ東京支部 標準報酬月額等級テーブル方式
+ *  - 源泉所得税: 国税庁 令和8年分 給与所得の源泉徴収税額表（月額表）甲欄
  */
-export function calculateIncomeTax(
-  afterInsuranceSalary: number,
-  dependentCount: number
-): number {
-  const X = afterInsuranceSalary;
 
-  // 扶養0人の税額（復興税前）を月額表の速算式で計算
-  let tax0: number;
-
-  if (X < 88_000) {
-    tax0 = 0;
-  } else if (X < 257_700) {
-    // 5%帯 (88,000 ≤ X < 257,700)
-    tax0 = X * 0.05 - 4_273;
-  } else if (X < 429_460) {
-    // 10%帯 (257,700 ≤ X < 429,460)
-    tax0 = X * 0.10 - 17_158;
-  } else if (X < 695_000) {
-    // 20%帯 (429,460 ≤ X < 695,000)
-    tax0 = X * 0.20 - 60_104;
-  } else if (X < 900_000) {
-    // 23%帯 (695,000 ≤ X < 900,000)
-    tax0 = X * 0.23 - 80_954;
-  } else if (X < 1_800_000) {
-    // 33%帯 (900,000 ≤ X < 1,800,000)
-    tax0 = X * 0.33 - 170_954;
-  } else if (X < 4_000_000) {
-    // 40%帯 (1,800,000 ≤ X < 4,000,000)
-    tax0 = X * 0.40 - 296_954;
-  } else {
-    // 45%帯 (4,000,000 ≤ X)
-    tax0 = X * 0.45 - 496_954;
-  }
-
-  // 扶養親族等の数に応じた控除：1人につき月額 3,750円
-  const taxB = Math.max(0, tax0 - dependentCount * 3_750);
-
-  // 復興特別所得税（2.1%）加算・端数処理
-  return roundJapanese(Math.max(0, taxB * 1.021));
-}
+import { calculateSocialInsurance, calculateIncomeTaxReiwa8 } from "./tax-tables-reiwa8";
 
 /**
- * 端数処理：50銭以下切り捨て、50銭超え切り上げ（運送業規定）
+ * 端数処理：50銭以下切り捨て、50銭超え切り上げ
  */
 export function roundJapanese(amount: number): number {
   const fraction = amount - Math.floor(amount);
-  if (fraction <= 0.5) {
-    return Math.floor(amount);
-  } else {
-    return Math.ceil(amount);
-  }
+  return fraction <= 0.5 ? Math.floor(amount) : Math.ceil(amount);
 }
 
 export interface CustomAllowanceItem {
@@ -104,9 +35,12 @@ export interface PayrollCalculationInput {
   commissionRatePerKm: number;
   commissionRatePerCase: number;
   dependentCount: number;
+  hasSpouse: boolean;
+  /** 社会保険料の手動設定（> 0 の場合はテーブル計算を上書き） */
+  healthInsuranceMonthly: number;
+  pensionMonthly: number;
   residentTax: number;
   monthlyAverageWorkHours: number;
-  socialInsuranceRate: number;
   employmentInsuranceRate: number;
   // Monthly record
   workDays: number;
@@ -118,6 +52,9 @@ export interface PayrollCalculationInput {
   absenceDays: number;
   // Custom allowances
   customAllowances?: CustomAllowanceItem[];
+  // 日給制用（salaryType === "daily"）
+  saturdayWorkDays?: number;
+  sundayWorkHours?: number;
 }
 
 export interface PayrollCalculationResult {
@@ -155,9 +92,11 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     commissionRatePerKm,
     commissionRatePerCase,
     dependentCount,
+    hasSpouse,
+    healthInsuranceMonthly,
+    pensionMonthly,
     residentTax,
     monthlyAverageWorkHours,
-    socialInsuranceRate,
     employmentInsuranceRate,
     workDays,
     overtimeHours,
@@ -186,7 +125,7 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     drivingDistanceKm * commissionRatePerKm + deliveryCases * commissionRatePerCase
   );
 
-  // 欠勤控除：1日あたり基本給/月平均所定労働日数（22日で計算）
+  // 欠勤控除：1日あたり基本給 ÷ 22日
   const dailyRate = baseSalary / 22;
   const absenceDeduction = roundJapanese(dailyRate * absenceDays);
 
@@ -210,17 +149,36 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     absenceDeduction
   );
 
-  // 社会保険料（健康保険＋厚生年金）：基本給ベースで計算
-  const socialInsurance = roundJapanese(baseSalary * socialInsuranceRate);
+  // ────────────────────────────────────────────────────────────────
+  // 社会保険料（健康保険・厚生年金）
+  // 手動設定がある場合はそちらを優先、ない場合は令和8年等級テーブルで算出
+  // ────────────────────────────────────────────────────────────────
+  let healthInsurance: number;
+  let pension: number;
+
+  if (healthInsuranceMonthly > 0 && pensionMonthly > 0) {
+    healthInsurance = healthInsuranceMonthly;
+    pension = pensionMonthly;
+  } else {
+    const ins = calculateSocialInsurance(grossSalary);
+    healthInsurance = ins.healthInsurance;
+    pension = ins.pension;
+  }
+
+  const socialInsurance = healthInsurance + pension;
 
   // 雇用保険料：支給合計ベース
   const employmentInsurance = roundJapanese(grossSalary * employmentInsuranceRate);
 
-  // 社会保険控除後の給与額
+  // 社会保険等控除後の給与等の金額（月額表の検索キー）
   const afterInsuranceSalary = grossSalary - socialInsurance - employmentInsurance;
 
-  // 源泉所得税
-  const incomeTax = calculateIncomeTax(afterInsuranceSalary, dependentCount);
+  // ────────────────────────────────────────────────────────────────
+  // 源泉所得税（令和8年月額表甲欄）
+  // 扶養親族等の数 = 扶養人数 + 配偶者（控除対象の場合）
+  // ────────────────────────────────────────────────────────────────
+  const dependentEquivCount = dependentCount + (hasSpouse ? 1 : 0);
+  const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
 
   // 控除合計
   const totalDeductions = roundJapanese(
