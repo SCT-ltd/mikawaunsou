@@ -273,16 +273,9 @@ export default function PayrollList() {
                             e.stopPropagation();
                             (async () => {
                               try {
-                                const result = await calculatePayroll.mutateAsync({ data: { employeeId: payroll.employeeId, year, month } });
+                                await calculatePayroll.mutateAsync({ data: { employeeId: payroll.employeeId, year, month } });
                                 queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) });
-                                if (result?.id) {
-                                  queryClient.invalidateQueries({ queryKey: getGetPayrollQueryKey(result.id) });
-                                  setSelectedPayrollId(result.id);
-                                } else {
-                                  setSelectedPayrollId(payroll.id);
-                                }
-                                setActiveTab("allowance");
-                                toast({ title: "計算完了", description: `${payroll.employeeName}の給与計算が完了しました。明細入力を確認してください。` });
+                                toast({ title: "計算完了", description: `${payroll.employeeName}の給与計算が完了しました。` });
                               } catch {
                                 toast({ title: "エラー", description: "計算に失敗しました。月次実績を確認してください。", variant: "destructive" });
                               }
