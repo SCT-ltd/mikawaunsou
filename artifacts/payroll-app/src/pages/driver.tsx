@@ -611,8 +611,18 @@ export default function DriverPage() {
       setEndOdometer("");
       setTimeout(() => setSuccessMsg(null), 5000);
       await fetchData();
-    } catch {
-      setError("記録に失敗しました。もう一度お試しください。");
+    } catch (e: unknown) {
+      await fetchData();
+      let msg = "記録に失敗しました。もう一度お試しください。";
+      if (e instanceof Error) {
+        try {
+          const body = JSON.parse(e.message);
+          if (body?.error) msg = body.error;
+        } catch {
+          if (e.message) msg = e.message;
+        }
+      }
+      setError(msg);
     } finally {
       setRecording(false);
     }

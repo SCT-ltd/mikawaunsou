@@ -196,7 +196,14 @@ router.post("/attendance/record", async (req, res) => {
     ))
     .limit(1);
   if (existing.length > 0) {
-    return res.status(409).json({ error: `この日にすでに「${eventType}」の打刻が登録されています` });
+    const EVENT_LABELS: Record<string, string> = {
+      clock_in: "出勤",
+      clock_out: "退勤",
+      break_start: "休憩開始",
+      break_end: "休憩終了",
+    };
+    const label = EVENT_LABELS[eventType] ?? eventType;
+    return res.status(409).json({ error: `この日にすでに「${label}」の打刻が登録されています` });
   }
 
   const [record] = await db.insert(attendanceRecordsTable).values({
