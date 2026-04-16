@@ -120,9 +120,11 @@ export default function DriverPage() {
   const [endOdometer, setEndOdometer] = useState("");
   const [itemStatus, setItemStatus] = useState<Map<string, "良" | "否">>(new Map());
   const [checkShowAll, setCheckShowAll] = useState(false);
+  const [gpsStatus, setGpsStatus] = useState<"inactive" | "active" | "denied" | "background">("inactive");
   const watchIdRef = useRef<number | null>(null);
   const liveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastPosSentRef = useRef<{ lat: number; lng: number; time: number } | null>(null);
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
 
   const setItemResult = (id: string, result: "良" | "否") => {
     setItemStatus(prev => {
@@ -205,7 +207,6 @@ export default function DriverPage() {
     const sendPos = (lat: number, lng: number, acc?: number) => {
       const now = Date.now();
       const last = lastPosSentRef.current;
-      // 15秒以上経過 or 50m以上移動した場合のみ送信
       const dist = last ? Math.hypot(lat - last.lat, lng - last.lng) * 111320 : Infinity;
       if (last && now - last.time < 15000 && dist < 50) return;
       lastPosSentRef.current = { lat, lng, time: now };
@@ -215,15 +216,50 @@ export default function DriverPage() {
       }).catch(() => {});
     };
 
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => sendPos(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy),
-      () => {},
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 },
-    );
-    watchIdRef.current = watchId;
+    const startWatch = () => {
+      if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
+      const id = navigator.geolocation.watchPosition(
+        (pos) => {
+          setGpsStatus("active");
+          sendPos(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+        },
+        (err) => {
+          if (err.code === err.PERMISSION_DENIED) setGpsStatus("denied");
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 },
+      );
+      watchIdRef.current = id;
+    };
 
-    // watchPositionが動かない環境用フォールバック（15秒ごとにgetCurrentPosition）
+    // Wake Lock（スクリーンを消灯させない）
+    const acquireWakeLock = async () => {
+      if (!("wakeLock" in navigator)) return;
+      try {
+        wakeLockRef.current = await (navigator as unknown as { wakeLock: { request: (type: string) => Promise<WakeLockSentinel> } }).wakeLock.request("screen");
+      } catch {
+        // 取得失敗は無視
+      }
+    };
+
+    // バックグラウンド/フォアグラウンド切り替え検出
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        setGpsStatus("active");
+        startWatch();
+        acquireWakeLock();
+      } else {
+        setGpsStatus("background");
+      }
+    };
+
+    startWatch();
+    acquireWakeLock();
+    setGpsStatus("active");
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    // フォールバック（15秒ごとにgetCurrentPosition）
     const interval = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
       navigator.geolocation.getCurrentPosition(
         (pos) => sendPos(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy),
         () => {},
@@ -235,6 +271,8 @@ export default function DriverPage() {
     return () => {
       if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
       if (liveIntervalRef.current !== null) clearInterval(liveIntervalRef.current);
+      if (wakeLockRef.current) { wakeLockRef.current.release().catch(() => {}); wakeLockRef.current = null; }
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [pinVerified, employeeId]);
 
@@ -444,6 +482,32 @@ export default function DriverPage() {
           {status}
         </div>
       </div>
+
+      {/* GPS追跡ステータスバナー */}
+      {gpsStatus === "active" && (
+        <div className="bg-green-50 border-b border-green-100 px-4 py-2 flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse shrink-0" />
+          <p className="text-xs font-medium text-green-700">GPS追跡中 — 位置情報をリアルタイム送信しています</p>
+        </div>
+      )}
+      {gpsStatus === "background" && (
+        <div className="bg-orange-50 border-b border-orange-200 px-4 py-2.5 flex items-start gap-2">
+          <span className="text-base shrink-0 mt-0.5">⚠️</span>
+          <div>
+            <p className="text-xs font-bold text-orange-800">アプリが非表示になっています</p>
+            <p className="text-xs text-orange-700 mt-0.5">画面に戻ると追跡を再開します。フォアグラウンドで開いたままにしてください。</p>
+          </div>
+        </div>
+      )}
+      {gpsStatus === "denied" && (
+        <div className="bg-red-50 border-b border-red-200 px-4 py-2.5 flex items-start gap-2">
+          <span className="text-base shrink-0 mt-0.5">🚫</span>
+          <div>
+            <p className="text-xs font-bold text-red-800">位置情報が許可されていません</p>
+            <p className="text-xs text-red-700 mt-0.5">スマホの設定→Safari/Chrome→位置情報を「許可」にしてください。</p>
+          </div>
+        </div>
+      )}
 
       {/* 時刻表示 */}
       <div className="bg-white border-b px-4 py-4 text-center">
