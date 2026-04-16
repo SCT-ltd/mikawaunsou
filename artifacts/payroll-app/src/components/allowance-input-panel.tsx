@@ -128,6 +128,7 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
   const totalRows = rows.length + 3;
 
   const healthInsuranceRate = company?.healthInsuranceEmployeeRate ?? 0.04925;
+  const careInsuranceRate = company?.careInsuranceRate ?? 0.0091;
   const pensionRate = company?.pensionEmployeeRate ?? 0.0915;
   const employmentInsuranceRate = company?.employmentInsuranceRate ?? 0.006;
 
@@ -136,12 +137,19 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
   const stdRemuneration = (employee.standardRemuneration && employee.standardRemuneration > 0)
     ? employee.standardRemuneration
     : grandTotal;
+  // 健康保険: 純粋な健保料率
   const healthInsurance = round50sen(stdRemuneration * healthInsuranceRate);
+  // 介護保険: 40〜64歳の対象者のみ追加（careInsuranceApplied フラグで管理）
+  const careInsurance = (employee.careInsuranceApplied === true)
+    ? round50sen(stdRemuneration * careInsuranceRate)
+    : 0;
+  // 厚生年金: 標準報酬月額上限650,000円
   const pensionInsurance = round50sen(Math.min(stdRemuneration, 650_000) * pensionRate);
+  // 雇用保険: 総支給額ベース（標準報酬月額に連動しない）
   const employmentInsurance = (employee.employmentInsuranceApplied !== false)
     ? round50sen(grandTotal * employmentInsuranceRate)
     : 0;
-  const totalInsurance = healthInsurance + pensionInsurance + employmentInsurance;
+  const totalInsurance = healthInsurance + careInsurance + pensionInsurance + employmentInsurance;
 
   const afterInsuranceSalary = Math.max(0, grandTotal - totalInsurance);
   const dependentEquivCount = (employee.dependentCount ?? 0) + ((employee.hasSpouse ?? false) ? 1 : 0);

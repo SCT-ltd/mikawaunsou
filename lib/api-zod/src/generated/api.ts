@@ -35,6 +35,9 @@ export const GetCompanyResponse = zod.object({
   healthInsuranceEmployerRate: zod
     .number()
     .describe("健康保険料率（会社負担）"),
+  careInsuranceRate: zod
+    .number()
+    .describe("介護保険料率（本人負担折半分、40〜64歳対象者に適用）"),
   pensionEmployeeRate: zod.number().describe("厚生年金保険料率（本人負担）"),
   pensionEmployerRate: zod.number().describe("厚生年金保険料率（会社負担）"),
   employmentInsuranceEmployerRate: zod
@@ -59,6 +62,10 @@ export const UpdateCompanyBody = zod.object({
   employmentInsuranceRate: zod.number().optional(),
   healthInsuranceEmployeeRate: zod.number().optional(),
   healthInsuranceEmployerRate: zod.number().optional(),
+  careInsuranceRate: zod
+    .number()
+    .optional()
+    .describe("介護保険料率（本人負担折半分、40〜64歳対象者に適用）"),
   pensionEmployeeRate: zod.number().optional(),
   pensionEmployerRate: zod.number().optional(),
   employmentInsuranceEmployerRate: zod.number().optional(),
@@ -85,6 +92,9 @@ export const UpdateCompanyResponse = zod.object({
   healthInsuranceEmployerRate: zod
     .number()
     .describe("健康保険料率（会社負担）"),
+  careInsuranceRate: zod
+    .number()
+    .describe("介護保険料率（本人負担折半分、40〜64歳対象者に適用）"),
   pensionEmployeeRate: zod.number().describe("厚生年金保険料率（本人負担）"),
   pensionEmployerRate: zod.number().describe("厚生年金保険料率（会社負担）"),
   employmentInsuranceEmployerRate: zod
@@ -125,6 +135,7 @@ export const ListEmployeesResponseItem = zod.object({
   standardRemuneration: zod
     .number()
     .describe("標準報酬月額（9月定時決定で確定、翌8月まで固定）"),
+  careInsuranceApplied: zod.boolean().describe("介護保険適用（40〜64歳対象）"),
   healthInsuranceMonthly: zod.number().describe("健康保険料（月額）固定額"),
   pensionMonthly: zod.number().describe("厚生年金保険料（月額）固定額"),
   employmentInsuranceApplied: zod.boolean().describe("雇用保険適用"),
@@ -187,6 +198,7 @@ export const GetEmployeeResponse = zod.object({
   standardRemuneration: zod
     .number()
     .describe("標準報酬月額（9月定時決定で確定、翌8月まで固定）"),
+  careInsuranceApplied: zod.boolean().describe("介護保険適用（40〜64歳対象）"),
   healthInsuranceMonthly: zod.number().describe("健康保険料（月額）固定額"),
   pensionMonthly: zod.number().describe("厚生年金保険料（月額）固定額"),
   employmentInsuranceApplied: zod.boolean().describe("雇用保険適用"),
@@ -225,6 +237,10 @@ export const UpdateEmployeeBody = zod.object({
     .number()
     .optional()
     .describe("標準報酬月額（9月定時決定で確定、翌8月まで固定）"),
+  careInsuranceApplied: zod
+    .boolean()
+    .optional()
+    .describe("介護保険適用（40〜64歳対象）"),
   healthInsuranceMonthly: zod.number().optional(),
   pensionMonthly: zod.number().optional(),
   employmentInsuranceApplied: zod.boolean().optional(),
@@ -254,6 +270,7 @@ export const UpdateEmployeeResponse = zod.object({
   standardRemuneration: zod
     .number()
     .describe("標準報酬月額（9月定時決定で確定、翌8月まで固定）"),
+  careInsuranceApplied: zod.boolean().describe("介護保険適用（40〜64歳対象）"),
   healthInsuranceMonthly: zod.number().describe("健康保険料（月額）固定額"),
   pensionMonthly: zod.number().describe("厚生年金保険料（月額）固定額"),
   employmentInsuranceApplied: zod.boolean().describe("雇用保険適用"),

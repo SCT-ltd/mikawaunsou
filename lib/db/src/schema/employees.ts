@@ -21,6 +21,7 @@ export const employeesTable = pgTable("employees", {
   dependentCount: integer("dependent_count").notNull().default(0),
   hasSpouse: boolean("has_spouse").notNull().default(false),
   standardRemuneration: doublePrecision("standard_remuneration").notNull().default(0),
+  careInsuranceApplied: boolean("care_insurance_applied").notNull().default(false),
   healthInsuranceMonthly: doublePrecision("health_insurance_monthly").notNull().default(0),
   pensionMonthly: doublePrecision("pension_monthly").notNull().default(0),
   employmentInsuranceApplied: boolean("employment_insurance_applied").notNull().default(true),

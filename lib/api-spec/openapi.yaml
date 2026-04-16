@@ -752,6 +752,9 @@ components:
         healthInsuranceEmployerRate:
           type: number
           description: 健康保険料率（会社負担）
+        careInsuranceRate:
+          type: number
+          description: 介護保険料率（本人負担折半分、40〜64歳対象者に適用）
         pensionEmployeeRate:
           type: number
           description: 厚生年金保険料率（本人負担）
@@ -786,6 +789,7 @@ components:
         - employmentInsuranceRate
         - healthInsuranceEmployeeRate
         - healthInsuranceEmployerRate
+        - careInsuranceRate
         - pensionEmployeeRate
         - pensionEmployerRate
         - employmentInsuranceEmployerRate
@@ -814,6 +818,9 @@ components:
           type: number
         healthInsuranceEmployerRate:
           type: number
+        careInsuranceRate:
+          type: number
+          description: 介護保険料率（本人負担折半分、40〜64歳対象者に適用）
         pensionEmployeeRate:
           type: number
         pensionEmployerRate:
@@ -881,6 +888,9 @@ components:
         standardRemuneration:
           type: number
           description: 標準報酬月額（9月定時決定で確定、翌8月まで固定）
+        careInsuranceApplied:
+          type: boolean
+          description: 介護保険適用（40〜64歳対象）
         healthInsuranceMonthly:
           type: number
           description: 健康保険料（月額）固定額
@@ -922,6 +932,7 @@ components:
         - dependentCount
         - hasSpouse
         - standardRemuneration
+        - careInsuranceApplied
         - healthInsuranceMonthly
         - pensionMonthly
         - employmentInsuranceApplied
@@ -1016,6 +1027,9 @@ components:
         standardRemuneration:
           type: number
           description: 標準報酬月額（9月定時決定で確定、翌8月まで固定）
+        careInsuranceApplied:
+          type: boolean
+          description: 介護保険適用（40〜64歳対象）
         healthInsuranceMonthly:
           type: number
         pensionMonthly:

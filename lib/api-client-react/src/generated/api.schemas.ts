@@ -26,6 +26,8 @@ export interface Company {
   healthInsuranceEmployeeRate: number;
   /** 健康保険料率（会社負担） */
   healthInsuranceEmployerRate: number;
+  /** 介護保険料率（本人負担折半分、40〜64歳対象者に適用） */
+  careInsuranceRate: number;
   /** 厚生年金保険料率（本人負担） */
   pensionEmployeeRate: number;
   /** 厚生年金保険料率（会社負担） */
@@ -51,6 +53,8 @@ export interface UpdateCompanyBody {
   employmentInsuranceRate?: number;
   healthInsuranceEmployeeRate?: number;
   healthInsuranceEmployerRate?: number;
+  /** 介護保険料率（本人負担折半分、40〜64歳対象者に適用） */
+  careInsuranceRate?: number;
   pensionEmployeeRate?: number;
   pensionEmployerRate?: number;
   employmentInsuranceEmployerRate?: number;
@@ -93,6 +97,8 @@ export interface Employee {
   hasSpouse: boolean;
   /** 標準報酬月額（9月定時決定で確定、翌8月まで固定） */
   standardRemuneration: number;
+  /** 介護保険適用（40〜64歳対象） */
+  careInsuranceApplied: boolean;
   /** 健康保険料（月額）固定額 */
   healthInsuranceMonthly: number;
   /** 厚生年金保険料（月額）固定額 */
@@ -146,6 +152,8 @@ export interface UpdateEmployeeBody {
   hasSpouse?: boolean;
   /** 標準報酬月額（9月定時決定で確定、翌8月まで固定） */
   standardRemuneration?: number;
+  /** 介護保険適用（40〜64歳対象） */
+  careInsuranceApplied?: boolean;
   healthInsuranceMonthly?: number;
   pensionMonthly?: number;
   employmentInsuranceApplied?: boolean;

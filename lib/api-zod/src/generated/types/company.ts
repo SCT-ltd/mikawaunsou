@@ -23,6 +23,8 @@ export interface Company {
   healthInsuranceEmployeeRate: number;
   /** 健康保険料率（会社負担） */
   healthInsuranceEmployerRate: number;
+  /** 介護保険料率（本人負担折半分、40〜64歳対象者に適用） */
+  careInsuranceRate: number;
   /** 厚生年金保険料率（本人負担） */
   pensionEmployeeRate: number;
   /** 厚生年金保険料率（会社負担） */

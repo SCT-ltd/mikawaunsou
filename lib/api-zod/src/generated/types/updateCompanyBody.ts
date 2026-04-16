@@ -15,6 +15,8 @@ export interface UpdateCompanyBody {
   employmentInsuranceRate?: number;
   healthInsuranceEmployeeRate?: number;
   healthInsuranceEmployerRate?: number;
+  /** 介護保険料率（本人負担折半分、40〜64歳対象者に適用） */
+  careInsuranceRate?: number;
   pensionEmployeeRate?: number;
   pensionEmployerRate?: number;
   employmentInsuranceEmployerRate?: number;

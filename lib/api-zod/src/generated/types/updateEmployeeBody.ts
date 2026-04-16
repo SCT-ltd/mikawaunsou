@@ -25,6 +25,8 @@ export interface UpdateEmployeeBody {
   hasSpouse?: boolean;
   /** 標準報酬月額（9月定時決定で確定、翌8月まで固定） */
   standardRemuneration?: number;
+  /** 介護保険適用（40〜64歳対象） */
+  careInsuranceApplied?: boolean;
   healthInsuranceMonthly?: number;
   pensionMonthly?: number;
   employmentInsuranceApplied?: boolean;
