@@ -903,6 +903,10 @@ components:
         residentTax:
           type: number
           description: 住民税（月額）
+        salaryType:
+          type: string
+          description: 給与形態（fixed=固定給, daily=日給制）
+          enum: [fixed, daily]
         hireDate:
           type: string
           format: date
@@ -937,6 +941,7 @@ components:
         - pensionMonthly
         - employmentInsuranceApplied
         - residentTax
+        - salaryType
         - hireDate
         - isActive
         - createdAt
@@ -1038,6 +1043,10 @@ components:
           type: boolean
         residentTax:
           type: number
+        salaryType:
+          type: string
+          description: 給与形態（fixed=固定給, daily=日給制）
+          enum: [fixed, daily]
         hireDate:
           type: string
           format: date

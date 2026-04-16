@@ -539,6 +539,9 @@ function DeductionMasterTab() {
 // ─── 社員マスター Tab ──────────────────────────────────────────────
 
 const employeeEditSchema = z.object({
+  salaryType: z.enum(["fixed", "daily"]).default("daily"),
+  baseSalary: z.coerce.number().min(0).default(0),
+  residentTax: z.coerce.number().min(0).default(0),
   dependentCount: z.coerce.number().int().min(0),
   hasSpouse: z.boolean().default(false),
   standardRemuneration: z.coerce.number().min(0),
@@ -557,15 +560,21 @@ function EmployeeMasterTab() {
   const form = useForm<EmployeeEditValues>({
     resolver: zodResolver(employeeEditSchema),
     defaultValues: {
+      salaryType: "daily", baseSalary: 0, residentTax: 0,
       dependentCount: 0, hasSpouse: false,
       standardRemuneration: 0, careInsuranceApplied: false,
       employmentInsuranceApplied: true,
     },
   });
 
+  const salaryTypeWatch = form.watch("salaryType");
+
   const handleOpenEdit = (emp: Employee) => {
     setEditingEmployee(emp);
     form.reset({
+      salaryType: (emp.salaryType as "fixed" | "daily") ?? "daily",
+      baseSalary: emp.baseSalary ?? 0,
+      residentTax: emp.residentTax ?? 0,
       dependentCount: emp.dependentCount,
       hasSpouse: emp.hasSpouse ?? false,
       standardRemuneration: emp.standardRemuneration ?? 0,
@@ -611,6 +620,7 @@ function EmployeeMasterTab() {
                     <TableHead>社員番号</TableHead>
                     <TableHead>氏名</TableHead>
                     <TableHead>部署</TableHead>
+                    <TableHead>給与形態</TableHead>
                     <TableHead>扶養</TableHead>
                     <TableHead>配偶者</TableHead>
                     <TableHead className="text-right">標準報酬</TableHead>
@@ -625,6 +635,13 @@ function EmployeeMasterTab() {
                       <TableCell className="text-muted-foreground text-sm">{emp.employeeCode}</TableCell>
                       <TableCell className="font-medium">{emp.name}</TableCell>
                       <TableCell className="text-sm">{emp.department}</TableCell>
+                      <TableCell>
+                        {(emp.salaryType ?? "daily") === "daily" ? (
+                          <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-xs">日給制</Badge>
+                        ) : (
+                          <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200 text-xs">固定給</Badge>
+                        )}
+                      </TableCell>
                       <TableCell className="text-sm">{emp.dependentCount}人</TableCell>
                       <TableCell>
                         {(emp.hasSpouse ?? false) ? (
@@ -675,6 +692,59 @@ function EmployeeMasterTab() {
           </DialogHeader>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              {/* 給与形態 */}
+              <div>
+                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">給与形態</h4>
+                <div className="space-y-3">
+                  <FormField control={form.control} name="salaryType" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>給与タイプ</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="daily">日給制（平日9,808円 / 土曜12,260円 / 日曜1,655円/h）</SelectItem>
+                          <SelectItem value="fixed">固定給（毎月固定額）</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  {salaryTypeWatch === "fixed" && (
+                    <FormField control={form.control} name="baseSalary" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>月額固定給（円）</FormLabel>
+                        <FormControl>
+                          <div className="flex items-center gap-2">
+                            <Input type="number" min={0} step={1000} placeholder="700000" {...field} className="text-right" />
+                            <span className="text-sm text-muted-foreground shrink-0">円</span>
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  )}
+                  <FormField control={form.control} name="residentTax" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>市町村民税（月額・円）</FormLabel>
+                      <FormControl>
+                        <div className="flex items-center gap-2">
+                          <Input type="number" min={0} step={100} placeholder="0" {...field} className="text-right" />
+                          <span className="text-sm text-muted-foreground shrink-0">円</span>
+                        </div>
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">毎月差し引く住民税（特別徴収）の月額</p>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
+              </div>
+
+              <Separator />
+
               {/* 扶養・家族 */}
               <div>
                 <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">扶養・家族設定</h4>

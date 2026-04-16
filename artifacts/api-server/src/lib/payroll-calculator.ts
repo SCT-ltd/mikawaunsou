@@ -25,7 +25,16 @@ export interface CustomAllowanceItem {
 }
 
 export interface PayrollCalculationInput {
+  /** 固定給の場合: 月額固定給。日給制の場合: 計算に使用しない（0でよい） */
   baseSalary: number;
+  /** 'fixed' = 月額固定, 'daily' = 日給制 */
+  salaryType: string;
+  /** 日給制: 平日日給 */
+  dailyRateWeekday: number;
+  /** 日給制: 土曜日給 */
+  dailyRateSaturday: number;
+  /** 日給制: 日曜時給 */
+  hourlyRateSunday: number;
   transportationAllowance: number;
   safetyDrivingAllowance: number;
   longDistanceAllowance: number;
@@ -44,6 +53,8 @@ export interface PayrollCalculationInput {
   employmentInsuranceRate: number;
   // Monthly record
   workDays: number;
+  saturdayWorkDays: number;
+  sundayWorkHours: number;
   overtimeHours: number;
   lateNightHours: number;
   holidayWorkDays: number;
@@ -52,9 +63,6 @@ export interface PayrollCalculationInput {
   absenceDays: number;
   // Custom allowances
   customAllowances?: CustomAllowanceItem[];
-  // 日給制用（salaryType === "daily"）
-  saturdayWorkDays?: number;
-  sundayWorkHours?: number;
 }
 
 export interface PayrollCalculationResult {
@@ -82,7 +90,10 @@ export interface PayrollCalculationResult {
 
 export function calculatePayroll(input: PayrollCalculationInput): PayrollCalculationResult {
   const {
-    baseSalary,
+    salaryType,
+    dailyRateWeekday,
+    dailyRateSaturday,
+    hourlyRateSunday,
     transportationAllowance,
     safetyDrivingAllowance,
     longDistanceAllowance,
@@ -99,6 +110,8 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     monthlyAverageWorkHours,
     employmentInsuranceRate,
     workDays,
+    saturdayWorkDays,
+    sundayWorkHours,
     overtimeHours,
     lateNightHours,
     holidayWorkDays,
@@ -108,16 +121,34 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     customAllowances = [],
   } = input;
 
-  // 時給単価（時間外計算の基準）
-  const hourlyRate = baseSalary / monthlyAverageWorkHours;
+  // ────────────────────────────────────────────────────────────────
+  // 基本給・時給単価の決定
+  // ────────────────────────────────────────────────────────────────
+  let baseSalary: number;
+  let hourlyRate: number;
 
-  // 時間外手当：(基本給 ÷ 月平均労働時間) × 1.25 × 残業時間
+  if (salaryType === "daily") {
+    // 日給制: 出勤日数 × 日給で基本給を算出
+    baseSalary = roundJapanese(
+      workDays * dailyRateWeekday +
+      saturdayWorkDays * dailyRateSaturday +
+      sundayWorkHours * hourlyRateSunday
+    );
+    // 時間外計算用時給: 平日日給 ÷ 8時間
+    hourlyRate = dailyRateWeekday / 8;
+  } else {
+    // 固定給: 月額固定
+    baseSalary = input.baseSalary;
+    hourlyRate = baseSalary / monthlyAverageWorkHours;
+  }
+
+  // 時間外手当：時給 × 1.25 × 残業時間
   const overtimePay = roundJapanese(hourlyRate * 1.25 * overtimeHours);
 
-  // 深夜手当：(基本給 ÷ 月平均労働時間) × 0.25 × 深夜時間
+  // 深夜手当：時給 × 0.25 × 深夜時間
   const lateNightPay = roundJapanese(hourlyRate * 0.25 * lateNightHours);
 
-  // 休日手当：(基本給 ÷ 月平均労働時間) × 1.35 × (休日出勤数 × 8時間)
+  // 休日手当：時給 × 1.35 × (休日出勤数 × 8時間)
   const holidayPay = roundJapanese(hourlyRate * 1.35 * holidayWorkDays * 8);
 
   // 歩合給：走行距離 × km単価 + 件数 × 件単価
@@ -125,9 +156,13 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     drivingDistanceKm * commissionRatePerKm + deliveryCases * commissionRatePerCase
   );
 
-  // 欠勤控除：1日あたり基本給 ÷ 22日
-  const dailyRate = baseSalary / 22;
-  const absenceDeduction = roundJapanese(dailyRate * absenceDays);
+  // 欠勤控除（日給制は1日分そのまま、固定給は ÷22日）
+  let absenceDeduction: number;
+  if (salaryType === "daily") {
+    absenceDeduction = roundJapanese(dailyRateWeekday * absenceDays);
+  } else {
+    absenceDeduction = roundJapanese((baseSalary / 22) * absenceDays);
+  }
 
   // カスタム手当合計
   const customAllowancesTotal = customAllowances.reduce((sum, a) => sum + a.amount, 0);

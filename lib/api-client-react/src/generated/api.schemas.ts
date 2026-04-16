@@ -107,6 +107,8 @@ export interface Employee {
   employmentInsuranceApplied: boolean;
   /** 住民税（月額） */
   residentTax: number;
+  /** 給与形態（fixed=固定給, daily=日給制） */
+  salaryType: string;
   hireDate: string;
   isActive: boolean;
   createdAt: string;
@@ -158,6 +160,8 @@ export interface UpdateEmployeeBody {
   pensionMonthly?: number;
   employmentInsuranceApplied?: boolean;
   residentTax?: number;
+  /** 給与形態（fixed=固定給, daily=日給制） */
+  salaryType?: string;
   hireDate?: string;
   isActive?: boolean;
 }

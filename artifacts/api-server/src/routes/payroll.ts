@@ -69,6 +69,10 @@ router.post("/payroll/calculate", async (req, res) => {
 
   const result = calculatePayroll({
     baseSalary: emp.baseSalary,
+    salaryType: emp.salaryType,
+    dailyRateWeekday: company.dailyWageWeekday,
+    dailyRateSaturday: company.dailyWageSaturday,
+    hourlyRateSunday: company.hourlyWageSunday,
     transportationAllowance: emp.transportationAllowance,
     safetyDrivingAllowance: emp.safetyDrivingAllowance,
     longDistanceAllowance: emp.longDistanceAllowance,
@@ -85,6 +89,8 @@ router.post("/payroll/calculate", async (req, res) => {
     monthlyAverageWorkHours: company.monthlyAverageWorkHours,
     employmentInsuranceRate: company.employmentInsuranceRate,
     workDays: record.workDays,
+    saturdayWorkDays: record.saturdayWorkDays,
+    sundayWorkHours: record.sundayWorkHours,
     overtimeHours: record.overtimeHours,
     lateNightHours: record.lateNightHours,
     holidayWorkDays: record.holidayWorkDays,
