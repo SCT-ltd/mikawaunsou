@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "1PKmEmuewCsqkJXtfG_5u"
+uri = "file://SYSTEM_GUIDE.md"
+type = "text"
+title = "三川運送 システムガイド"
