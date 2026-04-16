@@ -654,7 +654,7 @@ export default function AttendancePage() {
               {/* 打刻履歴 */}
               <div className="flex-1 overflow-y-auto px-5 py-4">
                 <div className="flex items-center justify-between mb-3">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">本日の打刻履歴</p>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">打刻・休暇履歴</p>
                   <button
                     onClick={() => { setAddMode(true); setAddTime(nowTimeJST()); setAddEventType("clock_in"); setAddError(null); }}
                     className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
@@ -707,102 +707,106 @@ export default function AttendancePage() {
                   </div>
                 )}
 
-                {selected.records.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground text-sm">
-                    本日の打刻はありません
-                  </div>
-                ) : (
-                  <div className="relative">
-                    {/* タイムライン縦線 */}
-                    <div className="absolute left-[18px] top-2 bottom-2 w-px bg-border" />
-                    <div className="space-y-3">
-                      {selected.records.map((r, i) => (
-                        <div
-                          key={r.id}
-                          className={`flex items-start gap-3 transition-opacity ${dragIndex !== null && dragIndex !== i ? "opacity-60" : ""} ${dragOverIndex === i && dragIndex !== i ? "ring-2 ring-primary ring-offset-1 rounded-lg" : ""}`}
-                          draggable
-                          onDragStart={() => setDragIndex(i)}
-                          onDragOver={(e) => { e.preventDefault(); setDragOverIndex(i); }}
-                          onDragEnd={() => { setDragIndex(null); setDragOverIndex(null); }}
-                          onDrop={(e) => { e.preventDefault(); if (dragIndex !== null) swapRecordTimes(dragIndex, i); }}
-                        >
-                          {/* ドット */}
-                          <div className={`relative z-10 w-9 h-9 rounded-full border-2 flex items-center justify-center shrink-0
-                            ${EVENT_COLORS[r.eventType as EventType]} border-current`}>
-                            {EVENT_ICONS[r.eventType as EventType]}
-                          </div>
-                          {/* カード */}
-                          <div className={`flex-1 rounded-lg border px-3 py-2 ${EVENT_COLORS[r.eventType as EventType]}`}>
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <p className="text-xs font-semibold">{EVENT_LABELS[r.eventType as EventType]}</p>
-                                <p className="text-base font-bold tabular-nums">{fmt(r.recordedAt)}</p>
-                                {r.note && (
-                                  <p className="text-xs text-muted-foreground mt-0.5">📍 {r.note}</p>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-0.5">
+                {(() => {
+                  const empAbsences = absences.filter(a => a.employeeId === selected.employee.id);
+                  const hasAny = selected.records.length > 0 || empAbsences.length > 0;
+                  if (!hasAny) {
+                    return (
+                      <div className="text-center py-8 text-muted-foreground text-sm">
+                        本日の打刻・休暇はありません
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="relative">
+                      {/* タイムライン縦線 */}
+                      <div className="absolute left-[18px] top-2 bottom-2 w-px bg-border" />
+                      <div className="space-y-3">
+
+                        {/* 欠勤・休暇エントリー（タイムライン先頭に表示） */}
+                        {empAbsences.map(a => (
+                          <div key={`absence-${a.id}`} className="flex items-start gap-3">
+                            <div className={`relative z-10 w-9 h-9 rounded-full border-2 flex items-center justify-center shrink-0 ${ABSENCE_COLORS[a.absenceType]} border-current`}>
+                              <CalendarOff className="h-3.5 w-3.5" />
+                            </div>
+                            <div className={`flex-1 rounded-lg border px-3 py-2 ${ABSENCE_COLORS[a.absenceType]}`}>
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <p className="text-xs font-semibold">{ABSENCE_LABELS[a.absenceType]}</p>
+                                  <p className="text-sm font-medium opacity-70">終日</p>
+                                  {a.note && <p className="text-xs opacity-60 mt-0.5">{a.note}</p>}
+                                </div>
                                 <button
-                                  onClick={() => openEdit(r)}
-                                  className="p-1.5 rounded hover:bg-black/5 transition-colors opacity-60 hover:opacity-100"
-                                  title="修正"
+                                  onClick={() => deleteAbsence(a.id)}
+                                  disabled={saving}
+                                  className="p-1.5 rounded hover:bg-black/10 transition-colors opacity-50 hover:opacity-100"
+                                  title="削除"
                                 >
-                                  <Pencil className="h-3.5 w-3.5" />
+                                  <Trash2 className="h-3.5 w-3.5" />
                                 </button>
-                                <div
-                                  className="p-1.5 cursor-grab active:cursor-grabbing opacity-40 hover:opacity-70"
-                                  title="ドラッグで並び替え"
-                                >
-                                  <GripVertical className="h-3.5 w-3.5" />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+
+                        {/* 打刻履歴エントリー */}
+                        {selected.records.map((r, i) => (
+                          <div
+                            key={r.id}
+                            className={`flex items-start gap-3 transition-opacity ${dragIndex !== null && dragIndex !== i ? "opacity-60" : ""} ${dragOverIndex === i && dragIndex !== i ? "ring-2 ring-primary ring-offset-1 rounded-lg" : ""}`}
+                            draggable
+                            onDragStart={() => setDragIndex(i)}
+                            onDragOver={(e) => { e.preventDefault(); setDragOverIndex(i); }}
+                            onDragEnd={() => { setDragIndex(null); setDragOverIndex(null); }}
+                            onDrop={(e) => { e.preventDefault(); if (dragIndex !== null) swapRecordTimes(dragIndex, i); }}
+                          >
+                            {/* ドット */}
+                            <div className={`relative z-10 w-9 h-9 rounded-full border-2 flex items-center justify-center shrink-0
+                              ${EVENT_COLORS[r.eventType as EventType]} border-current`}>
+                              {EVENT_ICONS[r.eventType as EventType]}
+                            </div>
+                            {/* カード */}
+                            <div className={`flex-1 rounded-lg border px-3 py-2 ${EVENT_COLORS[r.eventType as EventType]}`}>
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <p className="text-xs font-semibold">{EVENT_LABELS[r.eventType as EventType]}</p>
+                                  <p className="text-base font-bold tabular-nums">{fmt(r.recordedAt)}</p>
+                                  {r.note && (
+                                    <p className="text-xs text-muted-foreground mt-0.5">📍 {r.note}</p>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-0.5">
+                                  <button
+                                    onClick={() => openEdit(r)}
+                                    className="p-1.5 rounded hover:bg-black/5 transition-colors opacity-60 hover:opacity-100"
+                                    title="修正"
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </button>
+                                  <div
+                                    className="p-1.5 cursor-grab active:cursor-grabbing opacity-40 hover:opacity-70"
+                                    title="ドラッグで並び替え"
+                                  >
+                                    <GripVertical className="h-3.5 w-3.5" />
+                                  </div>
                                 </div>
                               </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
 
-              {/* 欠勤・休暇セクション */}
-              <div className="px-5 py-4 border-t">
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                    <CalendarOff className="h-3.5 w-3.5" />欠勤・休暇
-                  </p>
-                  {!absenceMode && (
-                    <button
-                      onClick={() => { setAbsenceMode(true); setAbsenceType("sick"); setAbsenceNote(""); }}
-                      className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                    >
-                      <Plus className="h-3 w-3" />登録
-                    </button>
-                  )}
-                </div>
-
-                {/* 既存の欠勤記録 */}
-                {absences.filter(a => a.employeeId === selected.employee.id).map(a => (
-                  <div key={a.id} className={`flex items-center justify-between rounded-lg border px-3 py-2 mb-2 text-sm ${ABSENCE_COLORS[a.absenceType]}`}>
-                    <div>
-                      <span className="font-semibold text-xs">{ABSENCE_LABELS[a.absenceType]}</span>
-                      {a.note && <p className="text-[10px] mt-0.5 opacity-75">{a.note}</p>}
-                    </div>
-                    <button
-                      onClick={() => deleteAbsence(a.id)}
-                      disabled={saving}
-                      className="p-1 rounded hover:bg-black/10 transition-colors opacity-60 hover:opacity-100"
-                      title="削除"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ))}
-
-                {/* 欠勤登録フォーム */}
-                {absenceMode && (
+              {/* 欠勤・休暇登録フォーム */}
+              {absenceMode && (
+                <div className="px-5 py-4 border-t">
                   <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 space-y-3">
-                    <p className="text-xs font-medium text-orange-800">欠勤・休暇を登録</p>
+                    <p className="text-xs font-medium text-orange-800 flex items-center gap-1.5">
+                      <CalendarOff className="h-3.5 w-3.5" />欠勤・休暇を登録
+                    </p>
                     <div className="space-y-1">
                       <Label className="text-xs">種別</Label>
                       <Select value={absenceType} onValueChange={v => setAbsenceType(v as AbsenceType)}>
@@ -837,12 +841,8 @@ export default function AttendancePage() {
                       </Button>
                     </div>
                   </div>
-                )}
-
-                {!absenceMode && absences.filter(a => a.employeeId === selected.employee.id).length === 0 && (
-                  <p className="text-xs text-muted-foreground text-center py-2">この日の欠勤・休暇登録はありません</p>
-                )}
-              </div>
+                </div>
+              )}
 
               {/* パネルフッター */}
               <div className="px-5 py-3 border-t flex items-center gap-2 bg-muted/10">
@@ -854,6 +854,16 @@ export default function AttendancePage() {
                 >
                   <QrCode className="h-3.5 w-3.5" />QRコード
                 </Button>
+                {!absenceMode && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 text-xs"
+                    onClick={() => { setAbsenceMode(true); setAbsenceType("sick"); setAbsenceNote(""); }}
+                  >
+                    <CalendarOff className="h-3.5 w-3.5" />欠勤・休暇登録
+                  </Button>
+                )}
               </div>
             </>
           )}
