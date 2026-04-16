@@ -14,8 +14,14 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency } from "@/lib/format";
-import { Calculator, Download } from "lucide-react";
+import { Calculator, Download, AlertCircle, X } from "lucide-react";
 import { formatMonth } from "@/lib/format";
+
+interface CalcError {
+  employeeCode: string;
+  name: string;
+  message: string;
+}
 
 export default function PayrollList() {
   const [, setLocation] = useLocation();
@@ -30,16 +36,17 @@ export default function PayrollList() {
   const calculatePayroll = useCalculatePayroll();
 
   const [calculating, setCalculating] = useState(false);
+  const [calcErrors, setCalcErrors] = useState<CalcError[]>([]);
 
   const handleCalculateAll = async () => {
     if (!employees) return;
     setCalculating(true);
+    setCalcErrors([]);
     let success = 0;
-    let errors = 0;
+    const errorList: CalcError[] = [];
 
     try {
       for (const emp of employees) {
-        // Skip confirmed payrolls
         const existing = payrolls?.find(p => p.employeeId === emp.id);
         if (existing?.status === "confirmed") continue;
 
@@ -48,23 +55,34 @@ export default function PayrollList() {
             data: { employeeId: emp.id, year, month }
           });
           success++;
-        } catch (err) {
-          errors++;
+        } catch (err: unknown) {
+          let msg = "不明なエラー";
+          if (err && typeof err === "object") {
+            const e = err as { data?: { error?: string }; message?: string };
+            const apiMsg = (e.data as { error?: string } | null)?.error ?? e.message ?? "";
+            if (apiMsg.toLowerCase().includes("monthly record not found")) {
+              msg = `${formatMonth(year, month)}の月次実績が未入力です`;
+            } else if (apiMsg) {
+              msg = apiMsg;
+            }
+          }
+          errorList.push({ employeeCode: emp.employeeCode, name: emp.name, message: msg });
         }
       }
       
       queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) });
       
-      if (errors > 0) {
+      if (errorList.length > 0) {
+        setCalcErrors(errorList);
         toast({
-          title: "一部計算エラー",
-          description: `${success}件の給与を計算しましたが、${errors}件でエラーが発生しました。実績データが入力されているか確認してください。`,
+          title: success > 0 ? `${success}件の計算が完了しました` : "計算エラー",
+          description: `${errorList.length}件はエラーのため未計算です。下の詳細を確認してください。`,
           variant: "destructive",
         });
       } else {
         toast({
           title: "計算完了",
-          description: "給与計算が完了しました。",
+          description: `${success}件の給与計算が完了しました。`,
         });
       }
     } finally {
@@ -129,6 +147,45 @@ export default function PayrollList() {
             </Button>
           </div>
         </div>
+
+        {calcErrors.length > 0 && (
+          <div className="rounded-md border border-red-200 bg-red-50 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2 min-w-0">
+                <AlertCircle className="h-5 w-5 text-red-500 mt-0.5 shrink-0" />
+                <div className="min-w-0">
+                  <p className="font-semibold text-red-700 text-sm mb-2">
+                    以下の社員の給与計算でエラーが発生しました
+                  </p>
+                  <ul className="space-y-1.5">
+                    {calcErrors.map((e) => (
+                      <li key={e.employeeCode} className="text-sm text-red-700">
+                        <span className="font-semibold">{e.employeeCode} {e.name}</span>
+                        <span className="text-red-500 mx-1">—</span>
+                        <span>{e.message}</span>
+                        {e.message.includes("月次実績") && (
+                          <Link
+                            href={`/monthly-input`}
+                            className="ml-2 inline-flex items-center text-xs font-semibold text-red-600 underline underline-offset-2 hover:text-red-800"
+                          >
+                            月次実績入力へ →
+                          </Link>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+              <button
+                onClick={() => setCalcErrors([])}
+                className="shrink-0 text-red-400 hover:text-red-600 transition-colors"
+                aria-label="閉じる"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="rounded-md border bg-card">
           <Table>
