@@ -165,7 +165,7 @@ export default function PayrollList() {
             </div>
             <Button variant="secondary" onClick={handleCalculateAll} disabled={calculating || !employees?.length}>
               <Calculator className="mr-2 h-4 w-4" />
-              {calculating ? "計算中..." : "一括計算"}
+              {calculating ? "計算中..." : "月次実績から一括計算"}
             </Button>
             <Button variant="outline" onClick={handleExportCsv} disabled={!payrolls || payrolls.length === 0}>
               <Download className="mr-2 h-4 w-4" />
