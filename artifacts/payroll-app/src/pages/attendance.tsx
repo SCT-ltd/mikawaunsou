@@ -103,6 +103,9 @@ interface AttendanceRecord {
   note: string | null;
   latitude: number | null;
   longitude: number | null;
+  startOdometer: number | null;
+  endOdometer: number | null;
+  checklistNgItems: string | null;
 }
 
 interface EmployeeStatus {
@@ -725,6 +728,63 @@ export default function AttendancePage() {
                       </div>
                     </div>
                   ) : null;
+                })()}
+                {(() => {
+                  const allOdo = selected.records.filter(r => r.startOdometer != null || r.endOdometer != null);
+                  if (allOdo.length === 0) return null;
+                  const startVal = allOdo.find(r => r.startOdometer != null)?.startOdometer;
+                  const endVal = [...allOdo].reverse().find(r => r.endOdometer != null)?.endOdometer;
+                  const distance = startVal != null && endVal != null ? Math.round((endVal - startVal) * 10) / 10 : null;
+                  return (
+                    <div className="mt-2 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2.5 flex items-center gap-2">
+                      <span className="text-base">🚛</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-blue-600 leading-none mb-0.5">走行メーター</p>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {startVal != null && (
+                            <span className="text-sm font-semibold text-blue-800">出発 {startVal.toLocaleString()} km</span>
+                          )}
+                          {startVal != null && endVal != null && <span className="text-blue-400 text-xs">→</span>}
+                          {endVal != null && (
+                            <span className="text-sm font-semibold text-blue-800">帰着 {endVal.toLocaleString()} km</span>
+                          )}
+                          {distance != null && (
+                            <span className="text-xs font-bold text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded-full">
+                              走行 {distance} km
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+                {(() => {
+                  const clockInRec = selected.records.find(r => r.eventType === "clock_in" && r.checklistNgItems);
+                  if (!clockInRec?.checklistNgItems) return null;
+                  let parsed: { total: number; checked: number; ng: string[] } | null = null;
+                  try { parsed = JSON.parse(clockInRec.checklistNgItems); } catch { return null; }
+                  if (!parsed) return null;
+                  const allOk = parsed.ng.length === 0;
+                  return (
+                    <div className={`mt-2 rounded-lg border px-3 py-2.5 flex items-start gap-2 ${allOk ? "bg-green-50 border-green-100" : "bg-red-50 border-red-200"}`}>
+                      <span className="text-base shrink-0">{allOk ? "✅" : "⚠️"}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <p className={`text-xs font-bold leading-none ${allOk ? "text-green-700" : "text-red-700"}`}>
+                            日常点検 {allOk ? "異常なし" : `異常${parsed.ng.length}件`}
+                          </p>
+                          <span className="text-xs text-muted-foreground">（{parsed.checked}/{parsed.total}項目確認）</span>
+                        </div>
+                        {parsed.ng.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {parsed.ng.map(item => (
+                              <span key={item} className="text-xs bg-red-100 text-red-700 border border-red-200 px-1.5 py-0.5 rounded-full">{item}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
                 })()}
               </div>
 

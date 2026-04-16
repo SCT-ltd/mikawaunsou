@@ -337,6 +337,13 @@ export default function DriverPage() {
       const startKm = startOdometer.trim() !== "" ? parseFloat(startOdometer) : null;
       const endKm = endOdometer.trim() !== "" ? parseFloat(endOdometer) : null;
       const gps = await getGps();
+      const checklistPayload = eventType === "clock_in"
+        ? JSON.stringify({
+            total: totalItems,
+            checked: checkedCount,
+            ng: ngItems.map(i => i.area),
+          })
+        : null;
       await apiFetch("/attendance/record", {
         method: "POST",
         body: JSON.stringify({
@@ -346,6 +353,7 @@ export default function DriverPage() {
           endOdometer: endKm,
           latitude: gps?.latitude ?? null,
           longitude: gps?.longitude ?? null,
+          checklistNgItems: checklistPayload,
         }),
       });
       const loc = [departure.trim(), arrival.trim()].filter(Boolean).join(" → ");

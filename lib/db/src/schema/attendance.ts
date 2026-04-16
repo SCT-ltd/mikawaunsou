@@ -12,6 +12,7 @@ export const attendanceRecordsTable = pgTable("attendance_records", {
   endOdometer: doublePrecision("end_odometer"),
   latitude: doublePrecision("latitude"),
   longitude: doublePrecision("longitude"),
+  checklistNgItems: text("checklist_ng_items"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
