@@ -385,6 +385,17 @@ export default function AttendancePage() {
     const recs = selected.records;
     const a = recs[indexA];
     const b = recs[indexB];
+
+    // 楽観的更新：ドロップ直後にUIを即反映（時刻を交換）
+    const optimisticRecs = recs.map((r, i) => {
+      if (i === indexA) return { ...r, recordedAt: b.recordedAt };
+      if (i === indexB) return { ...r, recordedAt: a.recordedAt };
+      return r;
+    });
+    setSelected(prev => prev ? { ...prev, records: optimisticRecs } : prev);
+    setDragIndex(null);
+    setDragOverIndex(null);
+
     setSaving(true);
     try {
       await Promise.all([
@@ -402,8 +413,6 @@ export default function AttendancePage() {
       await fetchData(selectedDate);
     } finally {
       setSaving(false);
-      setDragIndex(null);
-      setDragOverIndex(null);
     }
   };
 
