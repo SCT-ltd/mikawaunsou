@@ -1,6 +1,6 @@
 import { Router, type Response } from "express";
-import { db, attendanceRecordsTable, employeesTable, absenceRecordsTable } from "@workspace/db";
-import { asc, eq, and, gte, lte } from "drizzle-orm";
+import { db, attendanceRecordsTable, employeesTable, absenceRecordsTable, liveLocationsTable } from "@workspace/db";
+import { asc, eq, and, gte, lte, sql } from "drizzle-orm";
 import { ABSENCE_DAYS } from "./absences";
 
 const router = Router();
@@ -407,6 +407,76 @@ router.get("/attendance/monthly-summary", async (req, res) => {
     ...s,
     absenceDays: Math.round((absenceSummary.get(employeeId) ?? 0) * 10) / 10,
   }));
+
+  return res.json(result);
+});
+
+// ── ライブ位置情報 更新（ドライバーから定期送信） ────────────
+router.post("/attendance/location/live", async (req, res) => {
+  const { employeeId, latitude, longitude, accuracy } = req.body as {
+    employeeId: number;
+    latitude: number;
+    longitude: number;
+    accuracy?: number;
+  };
+
+  if (!employeeId || latitude == null || longitude == null) {
+    return res.status(400).json({ error: "employeeId, latitude, longitude は必須です" });
+  }
+
+  await db
+    .insert(liveLocationsTable)
+    .values({ employeeId, latitude, longitude, accuracy: accuracy ?? null, updatedAt: new Date() })
+    .onConflictDoUpdate({
+      target: liveLocationsTable.employeeId,
+      set: { latitude, longitude, accuracy: accuracy ?? null, updatedAt: new Date() },
+    });
+
+  return res.status(200).json({ ok: true });
+});
+
+// ── ライブ位置情報 全社員取得（マップ表示用） ─────────────
+router.get("/attendance/location/live", async (req, res) => {
+  const today = todayJST();
+
+  const [employees, liveRows, todayRecords] = await Promise.all([
+    db.select().from(employeesTable).where(eq(employeesTable.isActive, true)).orderBy(asc(employeesTable.employeeCode)),
+    db.select().from(liveLocationsTable),
+    db.select({ employeeId: attendanceRecordsTable.employeeId, eventType: attendanceRecordsTable.eventType, recordedAt: attendanceRecordsTable.recordedAt })
+      .from(attendanceRecordsTable)
+      .where(eq(attendanceRecordsTable.workDate, today))
+      .orderBy(attendanceRecordsTable.recordedAt),
+  ]);
+
+  const liveMap = new Map(liveRows.map(r => [r.employeeId, r]));
+
+  const result = employees.map(emp => {
+    const empRecords = todayRecords.filter(r => r.employeeId === emp.id);
+    const lastEvent = empRecords.length > 0 ? empRecords[empRecords.length - 1] : null;
+
+    let status: string;
+    if (!lastEvent) status = "未出勤";
+    else if (lastEvent.eventType === "clock_in") status = "出勤中";
+    else if (lastEvent.eventType === "break_start") status = "休憩中";
+    else if (lastEvent.eventType === "break_end") status = "出勤中";
+    else status = "退勤済";
+
+    const live = liveMap.get(emp.id);
+    // ライブ位置は5分以内のもののみ有効
+    const isRecent = live ? (Date.now() - new Date(live.updatedAt).getTime()) < 5 * 60 * 1000 : false;
+
+    return {
+      employeeId: emp.id,
+      employeeCode: emp.employeeCode,
+      name: emp.name,
+      department: emp.department,
+      status,
+      latitude: isRecent ? live!.latitude : null,
+      longitude: isRecent ? live!.longitude : null,
+      accuracy: isRecent ? (live!.accuracy ?? null) : null,
+      lastUpdated: isRecent ? live!.updatedAt : null,
+    };
+  });
 
   return res.json(result);
 });

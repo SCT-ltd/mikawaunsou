@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, date, timestamp, doublePrecision } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, date, timestamp, doublePrecision, unique } from "drizzle-orm/pg-core";
 import { employeesTable } from "./employees";
 
 export const attendanceRecordsTable = pgTable("attendance_records", {
@@ -32,3 +32,16 @@ export const absenceRecordsTable = pgTable("absence_records", {
 
 export type AbsenceRecord = typeof absenceRecordsTable.$inferSelect;
 export type InsertAbsenceRecord = typeof absenceRecordsTable.$inferInsert;
+
+// リアルタイム位置情報（社員ごとの最新GPS座標）
+export const liveLocationsTable = pgTable("live_locations", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull().references(() => employeesTable.id),
+  latitude: doublePrecision("latitude").notNull(),
+  longitude: doublePrecision("longitude").notNull(),
+  accuracy: doublePrecision("accuracy"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => [unique("live_locations_employee_unique").on(t.employeeId)]);
+
+export type LiveLocation = typeof liveLocationsTable.$inferSelect;
+export type InsertLiveLocation = typeof liveLocationsTable.$inferInsert;

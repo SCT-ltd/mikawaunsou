@@ -16,18 +16,12 @@ interface EmployeeLocation {
   status: Status;
   latitude: number | null;
   longitude: number | null;
-  lastEventType: string | null;
-  lastGpsTime: string | null;
+  accuracy: number | null;
+  lastUpdated: string | null;
 }
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-const EVENT_JP: Record<string, string> = {
-  clock_in: "出勤",
-  clock_out: "退勤",
-  break_start: "休憩開始",
-  break_end: "休憩終了",
-};
 
 const STATUS_COLOR: Record<Status, string> = {
   "出勤中": "#22c55e",
@@ -90,7 +84,7 @@ export default function RealtimeMapPage() {
 
   const fetchLocations = async () => {
     try {
-      const res = await fetch(`${BASE}/api/attendance/gps-locations`);
+      const res = await fetch(`${BASE}/api/attendance/location/live`);
       if (!res.ok) throw new Error("fetch error");
       const data: EmployeeLocation[] = await res.json();
       setLocations(data);
@@ -104,7 +98,7 @@ export default function RealtimeMapPage() {
 
   useEffect(() => {
     fetchLocations();
-    const interval = setInterval(fetchLocations, 30000);
+    const interval = setInterval(fetchLocations, 10000);
     return () => clearInterval(interval);
   }, []);
 
@@ -167,10 +161,16 @@ export default function RealtimeMapPage() {
                     </div>
                     <div className="mt-0.5 pl-4.5 space-y-0.5">
                       <p className="text-xs text-muted-foreground">{emp.department}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {emp.lastEventType ? EVENT_JP[emp.lastEventType] ?? emp.lastEventType : ""}
-                        {emp.lastGpsTime ? ` — ${formatTime(emp.lastGpsTime)}（${elapsedLabel(emp.lastGpsTime)}）` : ""}
-                      </p>
+                      {emp.lastUpdated && (
+                        <p className="text-xs text-muted-foreground">
+                          位置更新: {formatTime(emp.lastUpdated)}（{elapsedLabel(emp.lastUpdated)}）
+                        </p>
+                      )}
+                      {emp.accuracy != null && (
+                        <p className="text-xs text-muted-foreground/60">
+                          精度: ±{Math.round(emp.accuracy)}m
+                        </p>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -259,9 +259,10 @@ export default function RealtimeMapPage() {
                         {emp.status}
                       </span>
                     </div>
-                    {emp.lastEventType && (
+                    {emp.lastUpdated && (
                       <p className="text-xs text-gray-600">
-                        {EVENT_JP[emp.lastEventType] ?? emp.lastEventType}: {formatTime(emp.lastGpsTime)}
+                        位置更新: {formatTime(emp.lastUpdated)}
+                        {emp.accuracy != null && ` (±${Math.round(emp.accuracy)}m)`}
                       </p>
                     )}
                     {emp.latitude != null && (

@@ -120,6 +120,9 @@ export default function DriverPage() {
   const [endOdometer, setEndOdometer] = useState("");
   const [itemStatus, setItemStatus] = useState<Map<string, "良" | "否">>(new Map());
   const [checkShowAll, setCheckShowAll] = useState(false);
+  const watchIdRef = useRef<number | null>(null);
+  const liveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastPosSentRef = useRef<{ lat: number; lng: number; time: number } | null>(null);
 
   const setItemResult = (id: string, result: "良" | "否") => {
     setItemStatus(prev => {
@@ -194,6 +197,46 @@ export default function DriverPage() {
     };
     return () => es.close();
   }, [employeeId]);
+
+  // ライブ位置情報の継続送信（PINログイン後に開始）
+  useEffect(() => {
+    if (!pinVerified || !navigator.geolocation) return;
+
+    const sendPos = (lat: number, lng: number, acc?: number) => {
+      const now = Date.now();
+      const last = lastPosSentRef.current;
+      // 15秒以上経過 or 50m以上移動した場合のみ送信
+      const dist = last ? Math.hypot(lat - last.lat, lng - last.lng) * 111320 : Infinity;
+      if (last && now - last.time < 15000 && dist < 50) return;
+      lastPosSentRef.current = { lat, lng, time: now };
+      apiFetch("/attendance/location/live", {
+        method: "POST",
+        body: JSON.stringify({ employeeId, latitude: lat, longitude: lng, accuracy: acc }),
+      }).catch(() => {});
+    };
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => sendPos(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy),
+      () => {},
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 },
+    );
+    watchIdRef.current = watchId;
+
+    // watchPositionが動かない環境用フォールバック（15秒ごとにgetCurrentPosition）
+    const interval = setInterval(() => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => sendPos(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy),
+        () => {},
+        { timeout: 8000, maximumAge: 10000 },
+      );
+    }, 15000);
+    liveIntervalRef.current = interval;
+
+    return () => {
+      if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
+      if (liveIntervalRef.current !== null) clearInterval(liveIntervalRef.current);
+    };
+  }, [pinVerified, employeeId]);
 
   const status = getStatus(records);
 
