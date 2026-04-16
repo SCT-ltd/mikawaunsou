@@ -145,7 +145,29 @@ router.post("/attendance/record", async (req, res) => {
   // workDateはそのJST日付から算出する。送られない場合は現在時刻を使用。
   const now = recordedAtStr ? new Date(recordedAtStr) : new Date();
   const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  const workDate = jst.toISOString().slice(0, 10);
+  const jstDateStr = jst.toISOString().slice(0, 10);
+  const jstHour    = jst.getUTCHours(); // JST時間（0〜23）
+
+  // ── 深夜クロスオーバー判定 ─────────────────────────────
+  // 出勤以外の打刻で JST 0〜4時台の場合、前日にオープンシフト（出勤のみ・退勤なし）
+  // があれば、その前日を workDate として割り当てる（25時制対応）
+  let workDate = jstDateStr;
+  if (eventType !== "clock_in" && jstHour < 5) {
+    const prevDate = new Date(jst.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const prevDayRecords = await db
+      .select({ eventType: attendanceRecordsTable.eventType })
+      .from(attendanceRecordsTable)
+      .where(and(
+        eq(attendanceRecordsTable.employeeId, employeeId),
+        eq(attendanceRecordsTable.workDate, prevDate),
+      ));
+    const hasClockIn  = prevDayRecords.some(r => r.eventType === "clock_in");
+    const hasClockOut = prevDayRecords.some(r => r.eventType === "clock_out");
+    if (hasClockIn && !hasClockOut) {
+      // 前日にオープンシフトがある → 前日の打刻として記録
+      workDate = prevDate;
+    }
+  }
 
   // 同日・同種別の重複チェック
   const existing = await db
