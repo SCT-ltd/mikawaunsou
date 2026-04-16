@@ -26,8 +26,10 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { Save, Plus, X, CalendarDays as CalIcon } from "lucide-react";
+import { Save, Plus, X, CalendarDays as CalIcon, RefreshCw } from "lucide-react";
 import { AttendanceCalendarDialog } from "@/components/attendance-calendar-dialog";
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 // ── 給与計算ユーティリティ（フロントエンド用）────────────────────
 
@@ -542,6 +544,44 @@ export default function MonthlyInput() {
   const [edits, setEdits] = useState<Record<number, any>>({});
   const [saving, setSaving] = useState(false);
   const [calendarEmp, setCalendarEmp] = useState<{ id: number; name: string } | null>(null);
+  const [importing, setImporting] = useState(false);
+
+  const handleImportAttendance = async () => {
+    setImporting(true);
+    try {
+      const res = await fetch(`${BASE}/api/attendance/monthly-summary?year=${year}&month=${month}`);
+      if (!res.ok) throw new Error("取得失敗");
+      const summary: { employeeId: number; workDays: number; saturdayWorkDays: number; sundayWorkHours: number; overtimeHours: number }[] = await res.json();
+
+      if (summary.length === 0) {
+        toast({ title: "取り込み対象なし", description: `${year}年${month}月の打刻データが見つかりませんでした。` });
+        return;
+      }
+
+      setEdits(prev => {
+        const next = { ...prev };
+        for (const s of summary) {
+          next[s.employeeId] = {
+            ...(next[s.employeeId] || {}),
+            workDays: s.workDays,
+            saturdayWorkDays: s.saturdayWorkDays,
+            sundayWorkHours: s.sundayWorkHours,
+            overtimeHours: s.overtimeHours,
+          };
+        }
+        return next;
+      });
+
+      toast({
+        title: "勤怠データを取り込みました",
+        description: `${summary.length}名分の出勤日数・残業時間を反映しました。内容を確認して一括保存してください。`,
+      });
+    } catch {
+      toast({ title: "エラー", description: "勤怠データの取り込みに失敗しました。", variant: "destructive" });
+    } finally {
+      setImporting(false);
+    }
+  };
 
   useEffect(() => {
     if (employees && monthlyRecords) {
@@ -645,6 +685,15 @@ export default function MonthlyInput() {
                 </SelectContent>
               </Select>
             </div>
+            <Button
+              variant="outline"
+              onClick={handleImportAttendance}
+              disabled={isLoading || importing || saving || !employees?.length}
+              title="勤怠ダッシュボードの打刻データから出勤日数・残業時間を自動入力します"
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${importing ? "animate-spin" : ""}`} />
+              {importing ? "取り込み中..." : "勤怠から取り込む"}
+            </Button>
             <Button onClick={handleSaveAll} disabled={isLoading || saving || !employees?.length}>
               <Save className="mr-2 h-4 w-4" />
               {saving ? "保存中..." : "一括保存"}

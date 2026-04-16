@@ -1,6 +1,6 @@
 import { Router, type Response } from "express";
 import { db, attendanceRecordsTable, employeesTable } from "@workspace/db";
-import { asc, eq, and } from "drizzle-orm";
+import { asc, eq, and, gte, lte } from "drizzle-orm";
 
 const router = Router();
 
@@ -234,8 +234,6 @@ router.get("/attendance/employee/:employeeId/month", async (req, res) => {
   const lastDay = new Date(year, month, 0).getDate();
   const to = `${year}-${pad(month)}-${pad(lastDay)}`;
 
-  const { gte, lte } = await import("drizzle-orm");
-
   const records = await db
     .select()
     .from(attendanceRecordsTable)
@@ -247,6 +245,96 @@ router.get("/attendance/employee/:employeeId/month", async (req, res) => {
     .orderBy(attendanceRecordsTable.workDate, attendanceRecordsTable.recordedAt);
 
   return res.json(records);
+});
+
+// ── 全社員の月間勤怠集計（月次実績入力への取り込み用） ──
+router.get("/attendance/monthly-summary", async (req, res) => {
+  const year  = parseInt(req.query.year  as string, 10) || new Date().getFullYear();
+  const month = parseInt(req.query.month as string, 10) || (new Date().getMonth() + 1);
+
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const from = `${year}-${pad(month)}-01`;
+  const lastDay = new Date(year, month, 0).getDate();
+  const to   = `${year}-${pad(month)}-${pad(lastDay)}`;
+
+  // 対象月の全打刻を取得
+  const allRecords = await db
+    .select()
+    .from(attendanceRecordsTable)
+    .where(and(
+      gte(attendanceRecordsTable.workDate, from),
+      lte(attendanceRecordsTable.workDate, to),
+    ))
+    .orderBy(attendanceRecordsTable.employeeId, attendanceRecordsTable.workDate, attendanceRecordsTable.recordedAt);
+
+  // 社員×日付でグループ化
+  const byEmpDate = new Map<string, typeof allRecords>();
+  for (const r of allRecords) {
+    const key = `${r.employeeId}:${r.workDate}`;
+    if (!byEmpDate.has(key)) byEmpDate.set(key, []);
+    byEmpDate.get(key)!.push(r);
+  }
+
+  // 日ごとの実働分数を計算（break時間を差し引く）
+  function calcWorkMinutes(recs: typeof allRecords): number {
+    let clockInTime: Date | null = null;
+    let breakStart: Date | null = null;
+    let breakTotal = 0;
+    let totalMs = 0;
+    for (const r of recs) {
+      const t = new Date(r.recordedAt);
+      if (r.eventType === "clock_in")    clockInTime = t;
+      else if (r.eventType === "break_start") breakStart = t;
+      else if (r.eventType === "break_end" && breakStart) {
+        breakTotal += t.getTime() - breakStart.getTime();
+        breakStart = null;
+      } else if (r.eventType === "clock_out" && clockInTime) {
+        totalMs = t.getTime() - clockInTime.getTime() - breakTotal;
+      }
+    }
+    return Math.round(Math.max(0, totalMs) / 60000);
+  }
+
+  // 社員ごとに集計
+  const summaryMap = new Map<number, {
+    workDays: number;
+    saturdayWorkDays: number;
+    sundayWorkHours: number;
+    overtimeHours: number;
+  }>();
+
+  for (const [key, recs] of byEmpDate.entries()) {
+    const [empIdStr, dateStr] = key.split(":");
+    const empId = parseInt(empIdStr, 10);
+    // clock_in がなければカウントしない
+    if (!recs.some(r => r.eventType === "clock_in")) continue;
+
+    if (!summaryMap.has(empId)) {
+      summaryMap.set(empId, { workDays: 0, saturdayWorkDays: 0, sundayWorkHours: 0, overtimeHours: 0 });
+    }
+    const s = summaryMap.get(empId)!;
+    const dow = new Date(dateStr).getDay(); // 0=日, 6=土
+    const workMins = calcWorkMinutes(recs);
+
+    if (dow === 0) {
+      // 日曜：時間単位で加算（小数1位）
+      s.sundayWorkHours = Math.round((s.sundayWorkHours + workMins / 60) * 10) / 10;
+    } else if (dow === 6) {
+      s.saturdayWorkDays += 1;
+    } else {
+      // 平日：出勤日カウント + 8h超過分を残業
+      s.workDays += 1;
+      const overtimeMins = Math.max(0, workMins - 480);
+      s.overtimeHours = Math.round((s.overtimeHours + overtimeMins / 60) * 10) / 10;
+    }
+  }
+
+  const result = Array.from(summaryMap.entries()).map(([employeeId, s]) => ({
+    employeeId,
+    ...s,
+  }));
+
+  return res.json(result);
 });
 
 export default router;
