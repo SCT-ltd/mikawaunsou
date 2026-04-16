@@ -1,6 +1,6 @@
 import { Router, type Response } from "express";
 import { db, attendanceRecordsTable, employeesTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { asc, eq, and } from "drizzle-orm";
 
 const router = Router();
 
@@ -34,7 +34,8 @@ async function buildSnapshot(date?: string) {
   const employees = await db
     .select()
     .from(employeesTable)
-    .where(eq(employeesTable.isActive, true));
+    .where(eq(employeesTable.isActive, true))
+    .orderBy(asc(employeesTable.employeeCode));
 
   const allRecords = await db
     .select()

@@ -1,18 +1,20 @@
 import { Router } from "express";
 import { db, employeesTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 
 const router = Router();
 
 router.get("/employees", async (req, res) => {
   const { active } = req.query;
-  let query = db.select().from(employeesTable);
   if (active !== undefined) {
     const activeFilter = active === "true";
-    const rows = await db.select().from(employeesTable).where(eq(employeesTable.isActive, activeFilter));
+    const rows = await db.select().from(employeesTable)
+      .where(eq(employeesTable.isActive, activeFilter))
+      .orderBy(asc(employeesTable.employeeCode));
     return res.json(rows);
   }
-  const rows = await query;
+  const rows = await db.select().from(employeesTable)
+    .orderBy(asc(employeesTable.employeeCode));
   return res.json(rows);
 });
 
