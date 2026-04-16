@@ -223,7 +223,7 @@ export default function PayrollList() {
                 <TableHead className="text-right">控除合計</TableHead>
                 <TableHead className="text-right">差引支給額</TableHead>
                 <TableHead className="text-center">ステータス</TableHead>
-                <TableHead className="w-[100px]"></TableHead>
+                <TableHead className="w-[200px]"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -259,9 +259,32 @@ export default function PayrollList() {
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      <span className="inline-flex items-center text-sm text-muted-foreground gap-0.5">
-                        詳細 <ChevronRight className="h-3.5 w-3.5" />
-                      </span>
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-xs text-primary hover:text-primary/80"
+                          disabled={calculating || payroll.status === "confirmed"}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            (async () => {
+                              try {
+                                await calculatePayroll.mutateAsync({ data: { employeeId: payroll.employeeId, year, month } });
+                                queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) });
+                                toast({ title: "計算完了", description: `${payroll.employeeName}の給与計算が完了しました。` });
+                              } catch {
+                                toast({ title: "エラー", description: "計算に失敗しました。月次実績を確認してください。", variant: "destructive" });
+                              }
+                            })();
+                          }}
+                        >
+                          <Calculator className="h-3 w-3 mr-1" />
+                          月次実績から計算
+                        </Button>
+                        <span className="inline-flex items-center text-sm text-muted-foreground gap-0.5">
+                          詳細 <ChevronRight className="h-3.5 w-3.5" />
+                        </span>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
