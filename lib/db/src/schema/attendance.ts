@@ -46,3 +46,18 @@ export const liveLocationsTable = pgTable("live_locations", {
 
 export type LiveLocation = typeof liveLocationsTable.$inferSelect;
 export type InsertLiveLocation = typeof liveLocationsTable.$inferInsert;
+
+// 入力中ドラフト（出発・到着地・走行距離 — 打刻前の入力内容をリアルタイム保存）
+export const attendanceDraftsTable = pgTable("attendance_drafts", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull().references(() => employeesTable.id),
+  workDate: date("work_date").notNull(),
+  departure: text("departure"),
+  arrival: text("arrival"),
+  startOdometer: doublePrecision("start_odometer"),
+  endOdometer: doublePrecision("end_odometer"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => [unique("attendance_drafts_emp_date_unique").on(t.employeeId, t.workDate)]);
+
+export type AttendanceDraft = typeof attendanceDraftsTable.$inferSelect;
+export type InsertAttendanceDraft = typeof attendanceDraftsTable.$inferInsert;

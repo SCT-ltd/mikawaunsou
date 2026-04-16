@@ -108,11 +108,19 @@ interface AttendanceRecord {
   checklistNgItems: string | null;
 }
 
+interface AttendanceDraft {
+  departure: string | null;
+  arrival: string | null;
+  startOdometer: number | null;
+  endOdometer: number | null;
+}
+
 interface EmployeeStatus {
   employee: { id: number; employeeCode: string; name: string; department: string };
   status: Status;
   clockInTime: string | null;
   records: AttendanceRecord[];
+  draft: AttendanceDraft | null;
 }
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -616,17 +624,31 @@ export default function AttendancePage() {
                                 ))}
                                 {(() => {
                                   const latest = [...d.records].reverse().find(r => r.note);
-                                  return latest?.note ? (
-                                    <p className="text-xs text-primary/80 mt-0.5 font-medium">📍 {latest.note}</p>
-                                  ) : null;
+                                  if (latest?.note) {
+                                    return <p className="text-xs text-primary/80 mt-0.5 font-medium">📍 {latest.note}</p>;
+                                  }
+                                  // 打刻前はdraftの発着地を表示
+                                  const dep = d.draft?.departure;
+                                  const arr = d.draft?.arrival;
+                                  if (!dep && !arr) return null;
+                                  return (
+                                    <p className="text-xs text-primary/60 mt-0.5">
+                                      📍 {[dep, arr].filter(Boolean).join(" → ")}
+                                      <span className="ml-1 text-[10px] text-gray-400">入力中</span>
+                                    </p>
+                                  );
                                 })()}
                                 {(() => {
-                                  const startVal = d.records.find(r => r.startOdometer != null)?.startOdometer;
+                                  const startVal = d.records.find(r => r.startOdometer != null)?.startOdometer
+                                    ?? d.draft?.startOdometer ?? null;
                                   if (startVal == null) return null;
-                                  const endVal = [...d.records].reverse().find(r => r.endOdometer != null)?.endOdometer;
+                                  const endVal = [...d.records].reverse().find(r => r.endOdometer != null)?.endOdometer
+                                    ?? d.draft?.endOdometer ?? null;
+                                  const isDraft = d.records.find(r => r.startOdometer != null) == null;
                                   return (
-                                    <p className="text-xs text-blue-600 font-medium mt-0.5">
+                                    <p className={`text-xs font-medium mt-0.5 ${isDraft ? "text-blue-400" : "text-blue-600"}`}>
                                       🚛 {startVal.toLocaleString()} km{endVal != null ? ` → ${endVal.toLocaleString()} km` : ""}
+                                      {isDraft && <span className="ml-1 text-[10px] text-gray-400">入力中</span>}
                                     </p>
                                   );
                                 })()}

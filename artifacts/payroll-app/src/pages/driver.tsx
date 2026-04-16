@@ -132,11 +132,18 @@ export default function DriverPage() {
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const checklistSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const checklistLoadedRef = useRef(false);
+  const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftLoadedRef = useRef(false);
 
   // localStorage キー (JST日付)
+  function todayJstStr(): string {
+    return new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
+  }
   function clLsKey(empId: number): string {
-    const jst = new Date(Date.now() + 9 * 3600000);
-    return `cl_${empId}_${jst.toISOString().slice(0, 10)}`;
+    return `cl_${empId}_${todayJstStr()}`;
+  }
+  function draftLsKey(empId: number): string {
+    return `draft_${empId}_${todayJstStr()}`;
   }
 
   const setItemResult = (id: string, result: "良" | "否") => {
@@ -226,6 +233,79 @@ export default function DriverPage() {
       if (checklistSaveTimerRef.current) clearTimeout(checklistSaveTimerRef.current);
     };
   }, [itemStatus]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // PIN認証後: localStorageから発着地・走行距離を即座に復元
+  useEffect(() => {
+    if (!pinVerified || draftLoadedRef.current) return;
+    draftLoadedRef.current = true;
+
+    // ① localStorageから同期的に復元
+    try {
+      const stored = localStorage.getItem(draftLsKey(employeeId));
+      if (stored) {
+        const d = JSON.parse(stored) as {
+          departure?: string; arrival?: string;
+          startOdometer?: string; endOdometer?: string;
+        };
+        if (d.departure)     setDeparture(d.departure);
+        if (d.arrival)       setArrival(d.arrival);
+        if (d.startOdometer) setStartOdometer(d.startOdometer);
+        if (d.endOdometer)   setEndOdometer(d.endOdometer);
+        return;
+      }
+    } catch { /* ignore */ }
+
+    // ② DBから取得（別端末・初回）
+    apiFetch(`/attendance/draft/${employeeId}`)
+      .then(r => r.json() as Promise<{
+        departure?: string | null; arrival?: string | null;
+        startOdometer?: number | null; endOdometer?: number | null;
+      } | null>)
+      .then(data => {
+        if (!data) return;
+        if (data.departure)     setDeparture(data.departure);
+        if (data.arrival)       setArrival(data.arrival);
+        if (data.startOdometer != null) setStartOdometer(String(data.startOdometer));
+        if (data.endOdometer != null)   setEndOdometer(String(data.endOdometer));
+        // DBデータをlocalStorageにも保存
+        try {
+          localStorage.setItem(draftLsKey(employeeId), JSON.stringify({
+            departure: data.departure ?? "",
+            arrival: data.arrival ?? "",
+            startOdometer: data.startOdometer != null ? String(data.startOdometer) : "",
+            endOdometer: data.endOdometer != null ? String(data.endOdometer) : "",
+          }));
+        } catch { /* ignore */ }
+      })
+      .catch(() => {});
+  }, [pinVerified, employeeId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 発着地・走行距離が変わるたびにlocalStorageに即時保存＋DBにデバウンス送信
+  useEffect(() => {
+    if (!pinVerified || !draftLoadedRef.current) return;
+    // localStorageに即時保存
+    try {
+      localStorage.setItem(draftLsKey(employeeId), JSON.stringify({
+        departure, arrival, startOdometer, endOdometer,
+      }));
+    } catch { /* ignore */ }
+    // DBにデバウンス保存（管理画面リアルタイム反映）
+    if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
+    draftSaveTimerRef.current = setTimeout(() => {
+      apiFetch(`/attendance/draft/${employeeId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          departure: departure || null,
+          arrival: arrival || null,
+          startOdometer: startOdometer ? parseFloat(startOdometer) : null,
+          endOdometer: endOdometer ? parseFloat(endOdometer) : null,
+        }),
+      }).catch(() => {});
+    }, 1000);
+    return () => {
+      if (draftSaveTimerRef.current) clearTimeout(draftSaveTimerRef.current);
+    };
+  }, [departure, arrival, startOdometer, endOdometer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 現在時刻を毎秒更新
   useEffect(() => {

@@ -1,5 +1,5 @@
 import { Router, type Response } from "express";
-import { db, attendanceRecordsTable, employeesTable, absenceRecordsTable, liveLocationsTable } from "@workspace/db";
+import { db, attendanceRecordsTable, employeesTable, absenceRecordsTable, liveLocationsTable, attendanceDraftsTable } from "@workspace/db";
 import { asc, eq, and, gte, lte, sql } from "drizzle-orm";
 import { ABSENCE_DAYS } from "./absences";
 
@@ -38,15 +38,22 @@ async function buildSnapshot(date?: string) {
     .where(eq(employeesTable.isActive, true))
     .orderBy(asc(employeesTable.employeeCode));
 
-  const allRecords = await db
-    .select()
-    .from(attendanceRecordsTable)
-    .where(eq(attendanceRecordsTable.workDate, targetDate))
-    .orderBy(attendanceRecordsTable.recordedAt);
+  const [allRecords, allDrafts] = await Promise.all([
+    db
+      .select()
+      .from(attendanceRecordsTable)
+      .where(eq(attendanceRecordsTable.workDate, targetDate))
+      .orderBy(attendanceRecordsTable.recordedAt),
+    db
+      .select()
+      .from(attendanceDraftsTable)
+      .where(eq(attendanceDraftsTable.workDate, targetDate)),
+  ]);
 
   return employees.map(emp => {
     const empRecords = allRecords.filter(r => r.employeeId === emp.id);
     const lastEvent = empRecords.length > 0 ? empRecords[empRecords.length - 1] : null;
+    const draft = allDrafts.find(d => d.employeeId === emp.id) ?? null;
 
     let status: string;
     if (!lastEvent) status = "未出勤";
@@ -67,6 +74,7 @@ async function buildSnapshot(date?: string) {
       status,
       clockInTime: clockIn?.recordedAt ?? null,
       records: empRecords,
+      draft,
     };
   });
 }
@@ -311,6 +319,62 @@ router.patch("/attendance/checklist/:employeeId", async (req, res) => {
 
   buildSnapshot().then(snapshot => broadcast(snapshot)).catch(() => {});
   return res.json(updated);
+});
+
+// ── 入力ドラフト 取得 ─────────────────────────────────
+router.get("/attendance/draft/:employeeId", async (req, res) => {
+  const employeeId = parseInt(req.params.employeeId, 10);
+  const today = todayJST();
+
+  const [draft] = await db
+    .select()
+    .from(attendanceDraftsTable)
+    .where(and(
+      eq(attendanceDraftsTable.employeeId, employeeId),
+      eq(attendanceDraftsTable.workDate, today),
+    ))
+    .limit(1);
+
+  return res.json(draft ?? null);
+});
+
+// ── 入力ドラフト 保存（upsert） ───────────────────────
+router.patch("/attendance/draft/:employeeId", async (req, res) => {
+  const employeeId = parseInt(req.params.employeeId, 10);
+  const { departure, arrival, startOdometer, endOdometer } = req.body as {
+    departure?: string | null;
+    arrival?: string | null;
+    startOdometer?: number | null;
+    endOdometer?: number | null;
+  };
+
+  const today = todayJST();
+
+  const [upserted] = await db
+    .insert(attendanceDraftsTable)
+    .values({
+      employeeId,
+      workDate: today,
+      departure: departure ?? null,
+      arrival: arrival ?? null,
+      startOdometer: startOdometer ?? null,
+      endOdometer: endOdometer ?? null,
+      updatedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: [attendanceDraftsTable.employeeId, attendanceDraftsTable.workDate],
+      set: {
+        departure: departure ?? null,
+        arrival: arrival ?? null,
+        startOdometer: startOdometer ?? null,
+        endOdometer: endOdometer ?? null,
+        updatedAt: new Date(),
+      },
+    })
+    .returning();
+
+  buildSnapshot().then(snapshot => broadcast(snapshot)).catch(() => {});
+  return res.json(upserted);
 });
 
 // ── 社員の打刻履歴（日付指定） ───────────────────────
