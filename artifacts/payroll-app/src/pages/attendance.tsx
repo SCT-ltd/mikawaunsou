@@ -200,9 +200,11 @@ export default function AttendancePage() {
   // ドラッグ並び替え（打刻）
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [dragInsertBefore, setDragInsertBefore] = useState(true);
   // ドラッグ並び替え（欠勤）
   const [absenceDragIndex, setAbsenceDragIndex] = useState<number | null>(null);
   const [absenceDragOverIndex, setAbsenceDragOverIndex] = useState<number | null>(null);
+  const [absenceDragInsertBefore, setAbsenceDragInsertBefore] = useState(true);
 
   // 欠勤・休暇
   const [absences, setAbsences] = useState<AbsenceRecord[]>([]);
@@ -743,95 +745,146 @@ export default function AttendancePage() {
                     <div className="relative">
                       {/* タイムライン縦線 */}
                       <div className="absolute left-[18px] top-2 bottom-2 w-px bg-border" />
-                      <div className="space-y-3">
+                      <div className="flex flex-col gap-3">
 
-                        {/* 欠勤・休暇エントリー（タイムライン先頭に表示） */}
-                        {empAbsences.map((a, ai) => (
-                          <div
-                            key={`absence-${a.id}`}
-                            className={`flex items-start gap-3 transition-opacity ${absenceDragIndex !== null && absenceDragIndex !== ai ? "opacity-60" : ""} ${absenceDragOverIndex === ai && absenceDragIndex !== ai ? "ring-2 ring-primary ring-offset-1 rounded-lg" : ""}`}
-                            draggable
-                            onDragStart={() => setAbsenceDragIndex(ai)}
-                            onDragOver={(e) => { e.preventDefault(); setAbsenceDragOverIndex(ai); }}
-                            onDragEnd={() => { setAbsenceDragIndex(null); setAbsenceDragOverIndex(null); }}
-                            onDrop={(e) => { e.preventDefault(); if (absenceDragIndex !== null) swapAbsences(a.employeeId, absenceDragIndex, ai); }}
-                          >
-                            <div className={`relative z-10 w-9 h-9 rounded-full border-2 flex items-center justify-center shrink-0 ${ABSENCE_COLORS[a.absenceType]} border-current`}>
-                              <CalendarOff className="h-3.5 w-3.5" />
-                            </div>
-                            <div className={`flex-1 rounded-lg border px-3 py-2 ${ABSENCE_COLORS[a.absenceType]}`}>
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <p className="text-xs font-semibold">{ABSENCE_LABELS[a.absenceType]}</p>
-                                  <p className="text-sm font-medium opacity-70">終日</p>
-                                  {a.note && <p className="text-xs opacity-60 mt-0.5">{a.note}</p>}
+                        {/* 欠勤・休暇エントリー */}
+                        {empAbsences.map((a, ai) => {
+                          const isDragging = absenceDragIndex === ai;
+                          const isTarget = absenceDragOverIndex === ai && absenceDragIndex !== null && absenceDragIndex !== ai;
+                          const isOther = absenceDragIndex !== null && absenceDragIndex !== ai;
+                          return (
+                            <div key={`absence-${a.id}`} className="relative">
+                              {/* 挿入ライン（上） */}
+                              {isTarget && absenceDragInsertBefore && (
+                                <div className="absolute -top-2 left-9 right-0 z-20 flex items-center gap-1.5 pointer-events-none">
+                                  <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                                  <div className="flex-1 h-0.5 bg-primary rounded-full shadow-sm shadow-primary/40" />
                                 </div>
-                                <div className="flex items-center gap-0.5">
-                                  <button
-                                    onClick={() => deleteAbsence(a.id)}
-                                    disabled={saving}
-                                    className="p-1.5 rounded hover:bg-black/10 transition-colors opacity-50 hover:opacity-100"
-                                    title="削除"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </button>
-                                  <div
-                                    className="p-1.5 cursor-grab active:cursor-grabbing opacity-40 hover:opacity-70"
-                                    title="ドラッグで並び替え"
-                                  >
-                                    <GripVertical className="h-3.5 w-3.5" />
+                              )}
+                              <div
+                                className={`flex items-start gap-3 select-none transition-all duration-150
+                                  ${isDragging ? "opacity-20 scale-[0.96]" : ""}
+                                  ${isOther ? "opacity-60" : ""}
+                                `}
+                                draggable
+                                onDragStart={(e) => { setAbsenceDragIndex(ai); e.dataTransfer.effectAllowed = "move"; }}
+                                onDragOver={(e) => {
+                                  e.preventDefault();
+                                  e.dataTransfer.dropEffect = "move";
+                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  setAbsenceDragInsertBefore(e.clientY < rect.top + rect.height / 2);
+                                  setAbsenceDragOverIndex(ai);
+                                }}
+                                onDragEnd={() => { setAbsenceDragIndex(null); setAbsenceDragOverIndex(null); }}
+                                onDrop={(e) => { e.preventDefault(); if (absenceDragIndex !== null) swapAbsences(a.employeeId, absenceDragIndex, ai); }}
+                              >
+                                <div className={`relative z-10 w-9 h-9 rounded-full border-2 flex items-center justify-center shrink-0 ${ABSENCE_COLORS[a.absenceType]} border-current ${isDragging ? "shadow-lg" : ""}`}>
+                                  <CalendarOff className="h-3.5 w-3.5" />
+                                </div>
+                                <div className={`flex-1 rounded-lg border px-3 py-2 ${ABSENCE_COLORS[a.absenceType]} ${isDragging ? "shadow-xl" : ""}`}>
+                                  <div className="flex items-center justify-between">
+                                    <div>
+                                      <p className="text-xs font-semibold">{ABSENCE_LABELS[a.absenceType]}</p>
+                                      <p className="text-sm font-medium opacity-70">終日</p>
+                                      {a.note && <p className="text-xs opacity-60 mt-0.5">{a.note}</p>}
+                                    </div>
+                                    <div className="flex items-center gap-0.5">
+                                      <button
+                                        onClick={() => deleteAbsence(a.id)}
+                                        disabled={saving}
+                                        className="p-1.5 rounded hover:bg-black/10 transition-colors opacity-50 hover:opacity-100"
+                                        title="削除"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </button>
+                                      <div className="p-1.5 cursor-grab active:cursor-grabbing opacity-40 hover:opacity-70" title="ドラッグで並び替え">
+                                        <GripVertical className="h-3.5 w-3.5" />
+                                      </div>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
+                              {/* 挿入ライン（下） */}
+                              {isTarget && !absenceDragInsertBefore && (
+                                <div className="absolute -bottom-2 left-9 right-0 z-20 flex items-center gap-1.5 pointer-events-none">
+                                  <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                                  <div className="flex-1 h-0.5 bg-primary rounded-full shadow-sm shadow-primary/40" />
+                                </div>
+                              )}
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
 
                         {/* 打刻履歴エントリー */}
-                        {selected.records.map((r, i) => (
-                          <div
-                            key={r.id}
-                            className={`flex items-start gap-3 transition-opacity ${dragIndex !== null && dragIndex !== i ? "opacity-60" : ""} ${dragOverIndex === i && dragIndex !== i ? "ring-2 ring-primary ring-offset-1 rounded-lg" : ""}`}
-                            draggable
-                            onDragStart={() => setDragIndex(i)}
-                            onDragOver={(e) => { e.preventDefault(); setDragOverIndex(i); }}
-                            onDragEnd={() => { setDragIndex(null); setDragOverIndex(null); }}
-                            onDrop={(e) => { e.preventDefault(); if (dragIndex !== null) swapRecordTimes(dragIndex, i); }}
-                          >
-                            {/* ドット */}
-                            <div className={`relative z-10 w-9 h-9 rounded-full border-2 flex items-center justify-center shrink-0
-                              ${EVENT_COLORS[r.eventType as EventType]} border-current`}>
-                              {EVENT_ICONS[r.eventType as EventType]}
-                            </div>
-                            {/* カード */}
-                            <div className={`flex-1 rounded-lg border px-3 py-2 ${EVENT_COLORS[r.eventType as EventType]}`}>
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <p className="text-xs font-semibold">{EVENT_LABELS[r.eventType as EventType]}</p>
-                                  <p className="text-base font-bold tabular-nums">{fmt(r.recordedAt)}</p>
-                                  {r.note && (
-                                    <p className="text-xs text-muted-foreground mt-0.5">📍 {r.note}</p>
-                                  )}
+                        {selected.records.map((r, i) => {
+                          const isDragging = dragIndex === i;
+                          const isTarget = dragOverIndex === i && dragIndex !== null && dragIndex !== i;
+                          const isOther = dragIndex !== null && dragIndex !== i;
+                          return (
+                            <div key={r.id} className="relative">
+                              {/* 挿入ライン（上） */}
+                              {isTarget && dragInsertBefore && (
+                                <div className="absolute -top-2 left-9 right-0 z-20 flex items-center gap-1.5 pointer-events-none">
+                                  <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                                  <div className="flex-1 h-0.5 bg-primary rounded-full shadow-sm shadow-primary/40" />
                                 </div>
-                                <div className="flex items-center gap-0.5">
-                                  <button
-                                    onClick={() => openEdit(r)}
-                                    className="p-1.5 rounded hover:bg-black/5 transition-colors opacity-60 hover:opacity-100"
-                                    title="修正"
-                                  >
-                                    <Pencil className="h-3.5 w-3.5" />
-                                  </button>
-                                  <div
-                                    className="p-1.5 cursor-grab active:cursor-grabbing opacity-40 hover:opacity-70"
-                                    title="ドラッグで並び替え"
-                                  >
-                                    <GripVertical className="h-3.5 w-3.5" />
+                              )}
+                              <div
+                                className={`flex items-start gap-3 select-none transition-all duration-150
+                                  ${isDragging ? "opacity-20 scale-[0.96]" : ""}
+                                  ${isOther ? "opacity-60" : ""}
+                                `}
+                                draggable
+                                onDragStart={(e) => { setDragIndex(i); e.dataTransfer.effectAllowed = "move"; }}
+                                onDragOver={(e) => {
+                                  e.preventDefault();
+                                  e.dataTransfer.dropEffect = "move";
+                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  setDragInsertBefore(e.clientY < rect.top + rect.height / 2);
+                                  setDragOverIndex(i);
+                                }}
+                                onDragEnd={() => { setDragIndex(null); setDragOverIndex(null); }}
+                                onDrop={(e) => { e.preventDefault(); if (dragIndex !== null) swapRecordTimes(dragIndex, i); }}
+                              >
+                                {/* ドット */}
+                                <div className={`relative z-10 w-9 h-9 rounded-full border-2 flex items-center justify-center shrink-0 ${EVENT_COLORS[r.eventType as EventType]} border-current ${isDragging ? "shadow-lg" : ""}`}>
+                                  {EVENT_ICONS[r.eventType as EventType]}
+                                </div>
+                                {/* カード */}
+                                <div className={`flex-1 rounded-lg border px-3 py-2 ${EVENT_COLORS[r.eventType as EventType]} ${isDragging ? "shadow-xl" : ""}`}>
+                                  <div className="flex items-center justify-between">
+                                    <div>
+                                      <p className="text-xs font-semibold">{EVENT_LABELS[r.eventType as EventType]}</p>
+                                      <p className="text-base font-bold tabular-nums">{fmt(r.recordedAt)}</p>
+                                      {r.note && (
+                                        <p className="text-xs text-muted-foreground mt-0.5">📍 {r.note}</p>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-0.5">
+                                      <button
+                                        onClick={() => openEdit(r)}
+                                        className="p-1.5 rounded hover:bg-black/5 transition-colors opacity-60 hover:opacity-100"
+                                        title="修正"
+                                      >
+                                        <Pencil className="h-3.5 w-3.5" />
+                                      </button>
+                                      <div className="p-1.5 cursor-grab active:cursor-grabbing opacity-40 hover:opacity-70" title="ドラッグで並び替え">
+                                        <GripVertical className="h-3.5 w-3.5" />
+                                      </div>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
+                              {/* 挿入ライン（下） */}
+                              {isTarget && !dragInsertBefore && (
+                                <div className="absolute -bottom-2 left-9 right-0 z-20 flex items-center gap-1.5 pointer-events-none">
+                                  <div className="w-2 h-2 rounded-full bg-primary shrink-0" />
+                                  <div className="flex-1 h-0.5 bg-primary rounded-full shadow-sm shadow-primary/40" />
+                                </div>
+                              )}
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   );
