@@ -1135,8 +1135,22 @@ function EmployeeMasterTab() {
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>本当に削除しますか？</AlertDialogTitle>
-            <AlertDialogDescription>「{deleteTarget?.name}」を削除します。この操作は取り消せません（論理削除）。</AlertDialogDescription>
+            <AlertDialogTitle>社員を完全に削除しますか？</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>「{deleteTarget?.name}」を削除します。</p>
+                <p className="font-semibold text-destructive">⚠️ この操作は元に戻せません。</p>
+                <p>以下のデータがすべて完全に削除されます：</p>
+                <ul className="list-disc list-inside text-sm space-y-0.5 pl-1">
+                  <li>勤怠打刻記録</li>
+                  <li>給与明細</li>
+                  <li>月次記録</li>
+                  <li>メッセージ履歴</li>
+                  <li>欠勤・休暇記録</li>
+                  <li>その他すべての関連データ</li>
+                </ul>
+              </div>
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>キャンセル</AlertDialogCancel>

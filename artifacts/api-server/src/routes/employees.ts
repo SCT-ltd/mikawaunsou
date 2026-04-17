@@ -1,5 +1,18 @@
 import { Router } from "express";
-import { db, employeesTable } from "@workspace/db";
+import {
+  db,
+  employeesTable,
+  attendanceRecordsTable,
+  absenceRecordsTable,
+  attendanceDraftsTable,
+  liveLocationsTable,
+  messagesTable,
+  pushSubscriptionsTable,
+  monthlyRecordsTable,
+  payrollsTable,
+  employeeAllowancesTable,
+  employeeDeductionsTable,
+} from "@workspace/db";
 import { asc, eq } from "drizzle-orm";
 
 const router = Router();
@@ -118,9 +131,25 @@ router.put("/employees/:id", async (req, res) => {
 
 router.delete("/employees/:id", async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  await db.update(employeesTable)
-    .set({ isActive: false, updatedAt: new Date() })
-    .where(eq(employeesTable.id, id));
+
+  // 社員が存在するか確認
+  const [emp] = await db.select({ id: employeesTable.id })
+    .from(employeesTable).where(eq(employeesTable.id, id));
+  if (!emp) return res.status(404).json({ error: "社員が見つかりません" });
+
+  // 関連データを順番に完全削除（外部キー制約順）
+  await db.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.employeeId, id));
+  await db.delete(liveLocationsTable).where(eq(liveLocationsTable.employeeId, id));
+  await db.delete(attendanceDraftsTable).where(eq(attendanceDraftsTable.employeeId, id));
+  await db.delete(employeeAllowancesTable).where(eq(employeeAllowancesTable.employeeId, id));
+  await db.delete(employeeDeductionsTable).where(eq(employeeDeductionsTable.employeeId, id));
+  await db.delete(absenceRecordsTable).where(eq(absenceRecordsTable.employeeId, id));
+  await db.delete(attendanceRecordsTable).where(eq(attendanceRecordsTable.employeeId, id));
+  await db.delete(monthlyRecordsTable).where(eq(monthlyRecordsTable.employeeId, id));
+  await db.delete(payrollsTable).where(eq(payrollsTable.employeeId, id));
+  await db.delete(messagesTable).where(eq(messagesTable.employeeId, id));
+  await db.delete(employeesTable).where(eq(employeesTable.id, id));
+
   return res.status(204).send();
 });
 
