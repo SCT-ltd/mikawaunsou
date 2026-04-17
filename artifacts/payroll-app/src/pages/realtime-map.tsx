@@ -134,6 +134,16 @@ function formatTime(str: string | null): string {
   return new Date(str).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
 }
 
+function formatDateTime(str: string | null): string {
+  if (!str) return "-";
+  const d = new Date(str);
+  const month = d.getMonth() + 1;
+  const day   = d.getDate();
+  const hh    = String(d.getHours()).padStart(2, "0");
+  const mm    = String(d.getMinutes()).padStart(2, "0");
+  return `${month}月${day}日 ${hh}:${mm}`;
+}
+
 export default function RealtimeMapPage() {
   const [locations, setLocations] = useState<EmployeeLocation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -273,7 +283,7 @@ export default function RealtimeMapPage() {
                             >
                               <span style={{ color: cfg.color }} className="font-bold shrink-0">{cfg.emoji}</span>
                               <span className="font-medium text-muted-foreground group-hover:text-foreground">{cfg.label}</span>
-                              <span className="text-muted-foreground/70">{formatTime(ev.recordedAt)}</span>
+                              <span className="text-muted-foreground/70">{formatDateTime(ev.recordedAt)}</span>
                               <MapPin className="h-2.5 w-2.5 text-muted-foreground/50 shrink-0 ml-auto" />
                             </button>
                           );
@@ -342,7 +352,7 @@ export default function RealtimeMapPage() {
                               >
                                 <span style={{ color: cfg.color }} className="font-bold shrink-0">{cfg.emoji}</span>
                                 <span className="font-medium text-muted-foreground group-hover:text-foreground">{cfg.label}</span>
-                                <span className="text-muted-foreground/70">{formatTime(ev.recordedAt)}</span>
+                                <span className="text-muted-foreground/70">{formatDateTime(ev.recordedAt)}</span>
                                 <MapPin className="h-2.5 w-2.5 text-muted-foreground/50 shrink-0 ml-auto" />
                               </button>
                             );
@@ -459,7 +469,7 @@ export default function RealtimeMapPage() {
                       <p className="text-xs font-semibold mb-1" style={{ color: cfg.color }}>
                         {cfg.emoji} {cfg.label}地点
                       </p>
-                      <p className="text-xs text-gray-600">時刻: {formatTime(ev.recordedAt)}</p>
+                      <p className="text-xs text-gray-600">時刻: {formatDateTime(ev.recordedAt)}</p>
                       <a
                         href={`https://www.google.com/maps?q=${ev.latitude},${ev.longitude}`}
                         target="_blank"
