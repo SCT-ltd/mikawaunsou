@@ -571,7 +571,13 @@ router.get("/attendance/location/live", async (req, res) => {
   const [employees, liveRows, todayRecords] = await Promise.all([
     db.select().from(employeesTable).where(eq(employeesTable.isActive, true)).orderBy(asc(employeesTable.employeeCode)),
     db.select().from(liveLocationsTable),
-    db.select({ employeeId: attendanceRecordsTable.employeeId, eventType: attendanceRecordsTable.eventType, recordedAt: attendanceRecordsTable.recordedAt })
+    db.select({
+        employeeId: attendanceRecordsTable.employeeId,
+        eventType: attendanceRecordsTable.eventType,
+        recordedAt: attendanceRecordsTable.recordedAt,
+        latitude: attendanceRecordsTable.latitude,
+        longitude: attendanceRecordsTable.longitude,
+      })
       .from(attendanceRecordsTable)
       .where(eq(attendanceRecordsTable.workDate, today))
       .orderBy(attendanceRecordsTable.recordedAt),
@@ -594,6 +600,16 @@ router.get("/attendance/location/live", async (req, res) => {
     // ライブ位置は5分以内のもののみ有効
     const isRecent = live ? (Date.now() - new Date(live.updatedAt).getTime()) < 5 * 60 * 1000 : false;
 
+    // 今日の各打刻イベントの位置情報（GPS付きのもののみ）
+    const eventLocations = empRecords
+      .filter(r => r.latitude != null && r.longitude != null)
+      .map(r => ({
+        eventType: r.eventType,
+        recordedAt: r.recordedAt,
+        latitude: r.latitude as number,
+        longitude: r.longitude as number,
+      }));
+
     return {
       employeeId: emp.id,
       employeeCode: emp.employeeCode,
@@ -604,6 +620,7 @@ router.get("/attendance/location/live", async (req, res) => {
       longitude: isRecent ? live!.longitude : null,
       accuracy: isRecent ? (live!.accuracy ?? null) : null,
       lastUpdated: isRecent ? live!.updatedAt : null,
+      eventLocations,
     };
   });
 

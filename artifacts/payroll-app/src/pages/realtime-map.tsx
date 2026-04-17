@@ -7,6 +7,14 @@ import { RefreshCw, MapPin, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 type Status = "未出勤" | "出勤中" | "休憩中" | "退勤済";
+type EventType = "clock_in" | "clock_out" | "break_start" | "break_end";
+
+interface EventLocation {
+  eventType: EventType;
+  recordedAt: string;
+  latitude: number;
+  longitude: number;
+}
 
 interface EmployeeLocation {
   employeeId: number;
@@ -18,10 +26,10 @@ interface EmployeeLocation {
   longitude: number | null;
   accuracy: number | null;
   lastUpdated: string | null;
+  eventLocations: EventLocation[];
 }
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-
 
 const STATUS_COLOR: Record<Status, string> = {
   "出勤中": "#22c55e",
@@ -36,7 +44,16 @@ const STATUS_BADGE: Record<Status, string> = {
   "未出勤": "bg-slate-100 text-slate-400 border-slate-100",
 };
 
-function makeIcon(color: string, pulse: boolean) {
+// 打刻イベントの表示設定
+const EVENT_CONFIG: Record<EventType, { label: string; color: string; emoji: string }> = {
+  clock_in:    { label: "出勤",     color: "#16a34a", emoji: "🟢" },
+  clock_out:   { label: "退勤",     color: "#dc2626", emoji: "🔴" },
+  break_start: { label: "休憩開始", color: "#d97706", emoji: "🟡" },
+  break_end:   { label: "休憩終了", color: "#2563eb", emoji: "🔵" },
+};
+
+// ライブ位置マーカー（大・パルス付き）
+function makeLiveIcon(color: string, pulse: boolean) {
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 40" width="32" height="40">
       ${pulse ? `<circle cx="16" cy="16" r="14" fill="${color}" opacity="0.25"/>` : ""}
@@ -50,6 +67,23 @@ function makeIcon(color: string, pulse: boolean) {
     iconSize: [32, 40],
     iconAnchor: [16, 40],
     popupAnchor: [0, -40],
+  });
+}
+
+// 打刻地点マーカー（小・四角バッジ）
+function makeEventIcon(eventType: EventType) {
+  const { color, label } = EVENT_CONFIG[eventType];
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 20" width="48" height="20">
+      <rect x="1" y="1" width="46" height="18" rx="4" fill="${color}" stroke="white" stroke-width="1.5"/>
+      <text x="24" y="14" text-anchor="middle" fill="white" font-size="9" font-family="sans-serif" font-weight="bold">${label}</text>
+    </svg>`;
+  return L.divIcon({
+    html: svg,
+    className: "",
+    iconSize: [48, 20],
+    iconAnchor: [24, 20],
+    popupAnchor: [0, -22],
   });
 }
 
@@ -147,6 +181,15 @@ export default function RealtimeMapPage() {
     setFlyTarget({ lat: emp.latitude, lng: emp.longitude, seq: Date.now() });
   };
 
+  const handleEventClick = (ev: EventLocation) => {
+    setFlyTarget({ lat: ev.latitude, lng: ev.longitude, seq: Date.now() });
+  };
+
+  // 地図に表示する全員の全打刻イベント（eventLocations が未定義のデータに備えてデフォルトを設定）
+  const allEventLocations = locations.flatMap(emp =>
+    (emp.eventLocations ?? []).map(ev => ({ ...ev, name: emp.name, employeeId: emp.employeeId }))
+  );
+
   return (
     <AppLayout>
       <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden">
@@ -177,35 +220,60 @@ export default function RealtimeMapPage() {
                 {withGps.map(emp => (
                   <div
                     key={emp.employeeId}
-                    className={`px-4 py-2.5 border-b last:border-0 cursor-pointer transition-colors ${
+                    className={`border-b last:border-0 transition-colors ${
                       selectedId === emp.employeeId
                         ? "bg-primary/8 border-l-2 border-l-primary"
-                        : "hover:bg-muted/50"
+                        : ""
                     }`}
-                    onClick={() => handleEmpClick(emp)}
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className="w-2.5 h-2.5 rounded-full shrink-0 ring-2 ring-white" style={{ backgroundColor: STATUS_COLOR[emp.status] }} />
-                        <span className="text-sm font-semibold truncate">{emp.name}</span>
+                    {/* 社員行 — クリックでライブ位置へ移動 */}
+                    <div
+                      className="px-4 py-2.5 cursor-pointer hover:bg-muted/50"
+                      onClick={() => handleEmpClick(emp)}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="w-2.5 h-2.5 rounded-full shrink-0 ring-2 ring-white" style={{ backgroundColor: STATUS_COLOR[emp.status] }} />
+                          <span className="text-sm font-semibold truncate">{emp.name}</span>
+                        </div>
+                        <span className={`shrink-0 text-xs font-medium px-1.5 py-0.5 rounded-full border ${STATUS_BADGE[emp.status]}`}>
+                          {emp.status}
+                        </span>
                       </div>
-                      <span className={`shrink-0 text-xs font-medium px-1.5 py-0.5 rounded-full border ${STATUS_BADGE[emp.status]}`}>
-                        {emp.status}
-                      </span>
+                      <div className="mt-0.5 pl-4.5 space-y-0.5">
+                        <p className="text-xs text-muted-foreground">{emp.department}</p>
+                        {emp.lastUpdated && (
+                          <p className="text-xs text-muted-foreground">
+                            現在地更新: {formatTime(emp.lastUpdated)}（{elapsedLabel(emp.lastUpdated)}）
+                          </p>
+                        )}
+                        {emp.accuracy != null && (
+                          <p className="text-xs text-muted-foreground/60">精度: ±{Math.round(emp.accuracy)}m</p>
+                        )}
+                      </div>
                     </div>
-                    <div className="mt-0.5 pl-4.5 space-y-0.5">
-                      <p className="text-xs text-muted-foreground">{emp.department}</p>
-                      {emp.lastUpdated && (
-                        <p className="text-xs text-muted-foreground">
-                          位置更新: {formatTime(emp.lastUpdated)}（{elapsedLabel(emp.lastUpdated)}）
-                        </p>
-                      )}
-                      {emp.accuracy != null && (
-                        <p className="text-xs text-muted-foreground/60">
-                          精度: ±{Math.round(emp.accuracy)}m
-                        </p>
-                      )}
-                    </div>
+
+                    {/* 打刻地点一覧 */}
+                    {(emp.eventLocations ?? []).length > 0 && (
+                      <div className="px-4 pb-2 pl-7 space-y-1">
+                        {(emp.eventLocations ?? []).map((ev, i) => {
+                          const cfg = EVENT_CONFIG[ev.eventType];
+                          return (
+                            <button
+                              key={i}
+                              onClick={() => handleEventClick(ev)}
+                              className="w-full text-left flex items-center gap-1.5 text-xs hover:underline group"
+                              title="クリックで打刻地点へ移動"
+                            >
+                              <span style={{ color: cfg.color }} className="font-bold shrink-0">{cfg.emoji}</span>
+                              <span className="font-medium text-muted-foreground group-hover:text-foreground">{cfg.label}</span>
+                              <span className="text-muted-foreground/70">{formatTime(ev.recordedAt)}</span>
+                              <MapPin className="h-2.5 w-2.5 text-muted-foreground/50 shrink-0 ml-auto" />
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -248,7 +316,13 @@ export default function RealtimeMapPage() {
               {(["出勤中", "休憩中", "退勤済"] as Status[]).map(s => (
                 <div key={s} className="flex items-center gap-1.5">
                   <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: STATUS_COLOR[s] }} />
-                  <span className="text-xs text-muted-foreground">{s}</span>
+                  <span className="text-xs text-muted-foreground">{s} (現在地)</span>
+                </div>
+              ))}
+              {(Object.entries(EVENT_CONFIG) as [EventType, typeof EVENT_CONFIG[EventType]][]).map(([, cfg]) => (
+                <div key={cfg.label} className="flex items-center gap-1.5">
+                  <span className="text-xs">{cfg.emoji}</span>
+                  <span className="text-xs text-muted-foreground">{cfg.label}地点</span>
                 </div>
               ))}
             </div>
@@ -257,7 +331,7 @@ export default function RealtimeMapPage() {
 
         {/* 地図エリア */}
         <div className="flex-1 relative">
-          {withGps.length === 0 && !loading && (
+          {withGps.length === 0 && allEventLocations.length === 0 && !loading && (
             <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-background/80 pointer-events-none">
               <MapPin className="h-10 w-10 text-muted-foreground/30 mb-2" />
               <p className="text-muted-foreground font-medium text-sm">GPS情報を持つ打刻がありません</p>
@@ -276,11 +350,13 @@ export default function RealtimeMapPage() {
             />
             <FitBounds locations={withGps} />
             <FlyToEmployee target={flyTarget} />
+
+            {/* ライブ位置マーカー（現在地・大きいピン） */}
             {withGps.map(emp => (
               <Marker
-                key={emp.employeeId}
+                key={`live-${emp.employeeId}`}
                 position={[emp.latitude!, emp.longitude!]}
-                icon={makeIcon(STATUS_COLOR[emp.status], emp.status === "出勤中")}
+                icon={makeLiveIcon(STATUS_COLOR[emp.status], emp.status === "出勤中")}
               >
                 <Popup>
                   <div className="min-w-[160px]">
@@ -291,7 +367,7 @@ export default function RealtimeMapPage() {
                         className="text-xs font-semibold px-1.5 py-0.5 rounded-full"
                         style={{ backgroundColor: STATUS_COLOR[emp.status] + "33", color: STATUS_COLOR[emp.status] }}
                       >
-                        {emp.status}
+                        {emp.status}（現在地）
                       </span>
                     </div>
                     {emp.lastUpdated && (
@@ -314,6 +390,36 @@ export default function RealtimeMapPage() {
                 </Popup>
               </Marker>
             ))}
+
+            {/* 打刻地点マーカー（出勤・退勤・休憩 — 小さいバッジ） */}
+            {allEventLocations.map((ev, i) => {
+              const cfg = EVENT_CONFIG[ev.eventType];
+              return (
+                <Marker
+                  key={`ev-${ev.employeeId}-${ev.eventType}-${i}`}
+                  position={[ev.latitude, ev.longitude]}
+                  icon={makeEventIcon(ev.eventType)}
+                >
+                  <Popup>
+                    <div className="min-w-[140px]">
+                      <p className="font-bold text-sm mb-0.5">{ev.name}</p>
+                      <p className="text-xs font-semibold mb-1" style={{ color: cfg.color }}>
+                        {cfg.emoji} {cfg.label}地点
+                      </p>
+                      <p className="text-xs text-gray-600">時刻: {formatTime(ev.recordedAt)}</p>
+                      <a
+                        href={`https://www.google.com/maps?q=${ev.latitude},${ev.longitude}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-blue-600 underline mt-1 block"
+                      >
+                        Google Maps で開く →
+                      </a>
+                    </div>
+                  </Popup>
+                </Marker>
+              );
+            })}
           </MapContainer>
         </div>
       </div>
