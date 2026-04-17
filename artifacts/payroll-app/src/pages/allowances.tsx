@@ -887,7 +887,7 @@ function EmployeeMasterTab() {
       nameKana: emp.nameKana,
       department: emp.department,
       position: emp.position || "",
-      dateOfBirth: (emp as unknown as { dateOfBirth?: string | null }).dateOfBirth?.split("T")[0] ?? "",
+      dateOfBirth: (emp as unknown as { dateOfBirth?: string | null }).dateOfBirth?.split("T")[0] || "",
       hireDate: emp.hireDate.split("T")[0],
       isActive: emp.isActive,
       salaryType: (emp.salaryType as "fixed" | "daily") ?? "daily",

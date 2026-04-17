@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 interface DatePartsInputProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -16,17 +16,6 @@ export function DatePartsInput({ value, onChange, className, id, ...rest }: Date
   const monthRef = useRef<HTMLInputElement>(null);
   const dayRef = useRef<HTMLInputElement>(null);
   const [parts, setParts] = useState(() => parseValue(value));
-  const [initialized, setInitialized] = useState(false);
-
-  useEffect(() => {
-    setParts(parseValue(value));
-    setInitialized(true);
-  }, [value]);
-
-  useEffect(() => {
-    if (!initialized) return;
-    setParts(parseValue(value));
-  }, [initialized, value]);
 
   const emit = (next: { y: string; m: string; d: string }) => {
     if (next.y.length === 4 && next.m.length === 2 && next.d.length === 2) {
