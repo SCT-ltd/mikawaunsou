@@ -238,45 +238,62 @@ export default function DriverPage() {
     if (!pinVerified || draftLoadedRef.current) return;
     draftLoadedRef.current = true;
 
-    // ① localStorageから同期的に復元
-    try {
-      const stored = localStorage.getItem(draftLsKey(employeeId));
-      if (stored) {
-        const d = JSON.parse(stored) as {
-          departure?: string; arrival?: string;
-          startOdometer?: string; endOdometer?: string;
-        };
-        if (d.departure)     setDeparture(d.departure);
-        if (d.arrival)       setArrival(d.arrival);
-        if (d.startOdometer) setStartOdometer(d.startOdometer);
-        if (d.endOdometer)   setEndOdometer(d.endOdometer);
-        return;
-      }
-    } catch { /* ignore */ }
-
-    // ② DBから取得（別端末・初回）
+    // DBを正とする（別端末からも常に最新を取得）
     apiFetch(`/attendance/draft/${employeeId}`)
       .then(r => r.json() as Promise<{
         departure?: string | null; arrival?: string | null;
         startOdometer?: number | null; endOdometer?: number | null;
       } | null>)
       .then(data => {
-        if (!data) return;
-        if (data.departure)     setDeparture(data.departure);
-        if (data.arrival)       setArrival(data.arrival);
-        if (data.startOdometer != null) setStartOdometer(String(data.startOdometer));
-        if (data.endOdometer != null)   setEndOdometer(String(data.endOdometer));
-        // DBデータをlocalStorageにも保存
-        try {
-          localStorage.setItem(draftLsKey(employeeId), JSON.stringify({
-            departure: data.departure ?? "",
-            arrival: data.arrival ?? "",
-            startOdometer: data.startOdometer != null ? String(data.startOdometer) : "",
-            endOdometer: data.endOdometer != null ? String(data.endOdometer) : "",
-          }));
-        } catch { /* ignore */ }
+        const hasDbData = data && (data.departure || data.arrival || data.startOdometer != null || data.endOdometer != null);
+        if (hasDbData) {
+          // DB にデータあり → DB を優先（他端末の入力を反映）
+          if (data!.departure)            setDeparture(data!.departure!);
+          if (data!.arrival)              setArrival(data!.arrival!);
+          if (data!.startOdometer != null) setStartOdometer(String(data!.startOdometer));
+          if (data!.endOdometer != null)   setEndOdometer(String(data!.endOdometer));
+          // localStorage にも同期
+          try {
+            localStorage.setItem(draftLsKey(employeeId), JSON.stringify({
+              departure: data!.departure ?? "",
+              arrival: data!.arrival ?? "",
+              startOdometer: data!.startOdometer != null ? String(data!.startOdometer) : "",
+              endOdometer: data!.endOdometer != null ? String(data!.endOdometer) : "",
+            }));
+          } catch { /* ignore */ }
+        } else {
+          // DB に未保存 → localStorage をフォールバック（オフライン時など）
+          try {
+            const stored = localStorage.getItem(draftLsKey(employeeId));
+            if (stored) {
+              const d = JSON.parse(stored) as {
+                departure?: string; arrival?: string;
+                startOdometer?: string; endOdometer?: string;
+              };
+              if (d.departure)     setDeparture(d.departure);
+              if (d.arrival)       setArrival(d.arrival);
+              if (d.startOdometer) setStartOdometer(d.startOdometer);
+              if (d.endOdometer)   setEndOdometer(d.endOdometer);
+            }
+          } catch { /* ignore */ }
+        }
       })
-      .catch(() => {});
+      .catch(() => {
+        // API 失敗時のみ localStorage を使う
+        try {
+          const stored = localStorage.getItem(draftLsKey(employeeId));
+          if (stored) {
+            const d = JSON.parse(stored) as {
+              departure?: string; arrival?: string;
+              startOdometer?: string; endOdometer?: string;
+            };
+            if (d.departure)     setDeparture(d.departure);
+            if (d.arrival)       setArrival(d.arrival);
+            if (d.startOdometer) setStartOdometer(d.startOdometer);
+            if (d.endOdometer)   setEndOdometer(d.endOdometer);
+          }
+        } catch { /* ignore */ }
+      });
   }, [pinVerified, employeeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // localStorageに即時保存（onChange ごとに呼ぶ）
@@ -799,7 +816,7 @@ export default function DriverPage() {
                   type="text"
                   value={departure}
                   onChange={(e) => { const v = e.target.value; setDeparture(v); saveDraftLocal(v, arrival, startOdometer, endOdometer); }}
-                  onBlur={() => saveDraftToApi(departure, arrival, startOdometer, endOdometer)}
+                  onBlur={(e) => saveDraftToApi(e.target.value, arrival, startOdometer, endOdometer)}
                   placeholder="例：本社"
                   className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-base placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm"
                 />
@@ -811,7 +828,7 @@ export default function DriverPage() {
                   type="text"
                   value={arrival}
                   onChange={(e) => { const v = e.target.value; setArrival(v); saveDraftLocal(departure, v, startOdometer, endOdometer); }}
-                  onBlur={() => saveDraftToApi(departure, arrival, startOdometer, endOdometer)}
+                  onBlur={(e) => saveDraftToApi(departure, e.target.value, startOdometer, endOdometer)}
                   placeholder="例：大阪営業所"
                   className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-base placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm"
                 />
@@ -832,7 +849,7 @@ export default function DriverPage() {
                     min="0"
                     value={startOdometer}
                     onChange={(e) => { const v = e.target.value; setStartOdometer(v); saveDraftLocal(departure, arrival, v, endOdometer); }}
-                    onBlur={() => saveDraftToApi(departure, arrival, startOdometer, endOdometer)}
+                    onBlur={(e) => saveDraftToApi(departure, arrival, e.target.value, endOdometer)}
                     placeholder="例：12345"
                     className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 pr-10 text-base placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm"
                   />
@@ -849,7 +866,7 @@ export default function DriverPage() {
                     min="0"
                     value={endOdometer}
                     onChange={(e) => { const v = e.target.value; setEndOdometer(v); saveDraftLocal(departure, arrival, startOdometer, v); }}
-                    onBlur={() => saveDraftToApi(departure, arrival, startOdometer, endOdometer)}
+                    onBlur={(e) => saveDraftToApi(departure, arrival, startOdometer, e.target.value)}
                     placeholder="例：12567"
                     className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 pr-10 text-base placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm"
                   />
