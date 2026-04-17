@@ -548,6 +548,7 @@ const empFullSchema = z.object({
   nameKana: z.string().min(1, "フリガナを入力してください"),
   department: z.string().min(1, "部署を入力してください"),
   position: z.string().optional(),
+  dateOfBirth: z.string().optional().default(""),
   hireDate: z.string().min(1, "入社日を入力してください"),
   isActive: z.boolean().default(true),
   salaryType: z.enum(["fixed", "daily"]).default("daily"),
@@ -586,6 +587,10 @@ function EmpFormFields({ form: f, salaryType }: { form: ReturnType<typeof useFor
           <FormField control={f.control} name="nameKana" render={({ field }) => (
             <FormItem><FormLabel>フリガナ <span className="text-destructive">*</span></FormLabel>
               <FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+          )} />
+          <FormField control={f.control} name="dateOfBirth" render={({ field }) => (
+            <FormItem><FormLabel>生年月日</FormLabel>
+              <FormControl><Input type="date" {...field} value={field.value || ""} /></FormControl><FormMessage /></FormItem>
           )} />
           <FormField control={f.control} name="department" render={({ field }) => (
             <FormItem><FormLabel>部署 <span className="text-destructive">*</span></FormLabel>
@@ -821,7 +826,7 @@ function EmployeeMasterTab() {
     resolver: zodResolver(empFullSchema),
     defaultValues: {
       employeeCode: "", name: "", nameKana: "", department: "", position: "",
-      hireDate: "", isActive: true, salaryType: "daily", baseSalary: 0,
+      dateOfBirth: "", hireDate: "", isActive: true, salaryType: "daily", baseSalary: 0,
       residentTax: 0, commissionRatePerKm: 0, commissionRatePerCase: 0,
       dependentCount: 0, hasSpouse: false, standardRemuneration: 0,
       careInsuranceApplied: false, employmentInsuranceApplied: true,
@@ -832,7 +837,7 @@ function EmployeeMasterTab() {
     resolver: zodResolver(empFullSchema),
     defaultValues: {
       employeeCode: "", name: "", nameKana: "", department: "配送部", position: "",
-      hireDate: new Date().toISOString().split("T")[0], isActive: true,
+      dateOfBirth: "", hireDate: new Date().toISOString().split("T")[0], isActive: true,
       salaryType: "daily", baseSalary: 0, residentTax: 0,
       commissionRatePerKm: 0, commissionRatePerCase: 0,
       dependentCount: 0, hasSpouse: false, standardRemuneration: 0,
@@ -852,6 +857,7 @@ function EmployeeMasterTab() {
       nameKana: emp.nameKana,
       department: emp.department,
       position: emp.position || "",
+      dateOfBirth: (emp as unknown as { dateOfBirth?: string | null }).dateOfBirth?.split("T")[0] ?? "",
       hireDate: emp.hireDate.split("T")[0],
       isActive: emp.isActive,
       salaryType: (emp.salaryType as "fixed" | "daily") ?? "daily",
