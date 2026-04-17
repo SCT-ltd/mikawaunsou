@@ -85,6 +85,7 @@ export default function MessagesPage() {
   const [broadcastText, setBroadcastText] = useState("");
   const [broadcasting, setBroadcasting] = useState(false);
   const [broadcastDone, setBroadcastDone] = useState<number | null>(null);
+  const [broadcastSelected, setBroadcastSelected] = useState<Set<number>>(new Set());
 
   const fetchConversations = useCallback(async () => {
     const res = await fetch(`${BASE}/api/messages/conversations`);
@@ -142,14 +143,40 @@ export default function MessagesPage() {
     }
   };
 
+  const openBroadcast = () => {
+    setBroadcastSelected(new Set(conversations.map(c => c.employee.id)));
+    setBroadcastText("");
+    setBroadcastDone(null);
+    setBroadcastOpen(true);
+  };
+
+  const toggleBroadcastEmployee = (id: number) => {
+    setBroadcastSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleBroadcastAll = () => {
+    if (broadcastSelected.size === conversations.length) {
+      setBroadcastSelected(new Set());
+    } else {
+      setBroadcastSelected(new Set(conversations.map(c => c.employee.id)));
+    }
+  };
+
   const sendBroadcast = async () => {
-    if (!broadcastText.trim() || broadcasting) return;
+    if (!broadcastText.trim() || broadcasting || broadcastSelected.size === 0) return;
     setBroadcasting(true);
     try {
       const res = await fetch(`${BASE}/api/messages/broadcast`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: broadcastText.trim() }),
+        body: JSON.stringify({
+          content: broadcastText.trim(),
+          employeeIds: Array.from(broadcastSelected),
+        }),
       });
       const data = await res.json() as { count: number };
       setBroadcastDone(data.count);
@@ -190,11 +217,11 @@ export default function MessagesPage() {
         {/* 一斉送信モーダル */}
         {broadcastOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
-              <div className="px-5 py-4 border-b flex items-center justify-between">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden flex flex-col max-h-[90vh]">
+              <div className="px-5 py-4 border-b flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2">
                   <Megaphone className="h-5 w-5 text-primary" />
-                  <h3 className="font-bold text-base">全員に一斉送信</h3>
+                  <h3 className="font-bold text-base">一斉送信</h3>
                 </div>
                 <button
                   onClick={() => { setBroadcastOpen(false); setBroadcastText(""); setBroadcastDone(null); }}
@@ -203,7 +230,7 @@ export default function MessagesPage() {
                   <X className="h-4 w-4" />
                 </button>
               </div>
-              <div className="px-5 py-4">
+              <div className="px-5 py-4 flex flex-col gap-4 overflow-y-auto">
                 {broadcastDone != null ? (
                   <div className="text-center py-6">
                     <div className="text-4xl mb-3">✅</div>
@@ -211,19 +238,55 @@ export default function MessagesPage() {
                   </div>
                 ) : (
                   <>
-                    <p className="text-sm text-muted-foreground mb-3">
-                      在籍中の全従業員（{conversations.length}名）にメッセージを送信します。
-                    </p>
+                    {/* 送信先チェックボックス */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-sm font-medium">送信先を選択</p>
+                        <button
+                          onClick={toggleBroadcastAll}
+                          className="text-xs text-primary hover:underline"
+                        >
+                          {broadcastSelected.size === conversations.length ? "全員解除" : "全員選択"}
+                        </button>
+                      </div>
+                      <div className="border rounded-xl overflow-hidden divide-y max-h-48 overflow-y-auto">
+                        {conversations.map(conv => (
+                          <label
+                            key={conv.employee.id}
+                            className="flex items-center gap-3 px-3.5 py-2.5 cursor-pointer hover:bg-muted/40 transition-colors"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={broadcastSelected.has(conv.employee.id)}
+                              onChange={() => toggleBroadcastEmployee(conv.employee.id)}
+                              className="h-4 w-4 rounded accent-primary"
+                            />
+                            <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs shrink-0">
+                              {conv.employee.name[0]}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">{conv.employee.name}</p>
+                              <p className="text-xs text-muted-foreground truncate">{conv.employee.department}</p>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1.5">
+                        {broadcastSelected.size}名を選択中
+                      </p>
+                    </div>
+
+                    {/* メッセージ入力 */}
                     <textarea
                       value={broadcastText}
                       onChange={e => setBroadcastText(e.target.value)}
                       onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendBroadcast(); } }}
-                      placeholder="全員へのメッセージを入力..."
+                      placeholder="送信するメッセージを入力..."
                       rows={4}
                       autoFocus
                       className="w-full rounded-xl border bg-muted/30 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
                     />
-                    <div className="flex justify-end gap-2 mt-3">
+                    <div className="flex justify-end gap-2">
                       <button
                         onClick={() => { setBroadcastOpen(false); setBroadcastText(""); }}
                         className="px-4 py-2 rounded-lg text-sm text-muted-foreground hover:bg-muted transition-colors"
@@ -232,11 +295,11 @@ export default function MessagesPage() {
                       </button>
                       <Button
                         onClick={sendBroadcast}
-                        disabled={!broadcastText.trim() || broadcasting}
+                        disabled={!broadcastText.trim() || broadcasting || broadcastSelected.size === 0}
                         className="flex items-center gap-2"
                       >
                         <Megaphone className="h-4 w-4" />
-                        {broadcasting ? "送信中..." : `${conversations.length}名に送信`}
+                        {broadcasting ? "送信中..." : `${broadcastSelected.size}名に送信`}
                       </Button>
                     </div>
                   </>
@@ -254,9 +317,9 @@ export default function MessagesPage() {
             </h2>
             <div className="flex items-center gap-1">
               <button
-                onClick={() => setBroadcastOpen(true)}
+                onClick={openBroadcast}
                 className="p-1.5 rounded hover:bg-amber-50 hover:text-amber-600 transition-colors"
-                title="全員に一斉送信"
+                title="一斉送信"
               >
                 <Megaphone className="h-4 w-4 text-amber-500" />
               </button>

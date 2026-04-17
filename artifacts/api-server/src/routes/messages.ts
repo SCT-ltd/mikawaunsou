@@ -185,15 +185,19 @@ router.post("/messages", async (req, res) => {
 
 // ── 一斉送信 ───────────────────────────────────────────
 router.post("/messages/broadcast", async (req, res) => {
-  const { content } = req.body as { content: string };
+  const { content, employeeIds } = req.body as { content: string; employeeIds?: number[] };
   if (!content?.trim()) {
     return res.status(400).json({ error: "メッセージ内容が必要です" });
   }
 
-  const employees = await db
+  const allActive = await db
     .select()
     .from(employeesTable)
     .where(eq(employeesTable.isActive, true));
+
+  const employees = Array.isArray(employeeIds) && employeeIds.length > 0
+    ? allActive.filter(e => employeeIds.includes(e.id))
+    : allActive;
 
   const inserted = await Promise.all(
     employees.map(emp =>
