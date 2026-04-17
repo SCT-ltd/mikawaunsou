@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 interface DatePartsInputProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -15,23 +15,22 @@ function parseValue(v?: string) {
 export function DatePartsInput({ value, onChange, className, id, ...rest }: DatePartsInputProps) {
   const monthRef = useRef<HTMLInputElement>(null);
   const dayRef = useRef<HTMLInputElement>(null);
-
   const [parts, setParts] = useState(() => parseValue(value));
-  const [lastSyncedValue, setLastSyncedValue] = useState(value ?? "");
+  const [initialized, setInitialized] = useState(false);
 
-  // 外部 value が変わったとき（社員切り替えやフォームリセット時）に即時同期
-  // useEffect では同じ value でも検知できないケースがあるため、render 中に同期する
-  const incoming = value ?? "";
-  if (incoming !== lastSyncedValue) {
-    setLastSyncedValue(incoming);
+  useEffect(() => {
     setParts(parseValue(value));
-  }
+    setInitialized(true);
+  }, [value]);
+
+  useEffect(() => {
+    if (!initialized) return;
+    setParts(parseValue(value));
+  }, [initialized, value]);
 
   const emit = (next: { y: string; m: string; d: string }) => {
-    if (next.y.length === 4 && next.m.length >= 1 && next.d.length >= 1) {
-      const mm = next.m.padStart(2, "0");
-      const dd = next.d.padStart(2, "0");
-      onChange?.(`${next.y}-${mm}-${dd}`);
+    if (next.y.length === 4 && next.m.length === 2 && next.d.length === 2) {
+      onChange?.(`${next.y}-${next.m}-${next.d}`);
     } else if (!next.y && !next.m && !next.d) {
       onChange?.("");
     }
@@ -47,8 +46,8 @@ export function DatePartsInput({ value, onChange, className, id, ...rest }: Date
 
   const handleMonth = (v: string) => {
     let digits = v.replace(/\D/g, "").slice(0, 2);
-    if (digits.length === 1 && parseInt(digits) > 1) digits = digits.padStart(2, "0");
-    if (parseInt(digits) > 12) digits = "12";
+    if (digits.length === 1 && Number(digits) > 1) digits = digits.padStart(2, "0");
+    if (Number(digits) > 12) digits = "12";
     const next = { ...parts, m: digits };
     setParts(next);
     emit(next);
@@ -57,8 +56,8 @@ export function DatePartsInput({ value, onChange, className, id, ...rest }: Date
 
   const handleDay = (v: string) => {
     let digits = v.replace(/\D/g, "").slice(0, 2);
-    if (digits.length === 1 && parseInt(digits) > 3) digits = digits.padStart(2, "0");
-    if (parseInt(digits) > 31) digits = "31";
+    if (digits.length === 1 && Number(digits) > 3) digits = digits.padStart(2, "0");
+    if (Number(digits) > 31) digits = "31";
     const next = { ...parts, d: digits };
     setParts(next);
     emit(next);
