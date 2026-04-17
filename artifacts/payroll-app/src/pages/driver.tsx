@@ -134,6 +134,7 @@ export default function DriverPage() {
   const checklistLoadedRef = useRef(false);
   const draftLoadedRef = useRef(false);
   const draftValuesRef = useRef({ departure: "", arrival: "", startOdometer: "", endOdometer: "" });
+  const draftFocusedRef = useRef(false);
 
   // localStorage キー (JST日付)
   function todayJstStr(): string {
@@ -371,6 +372,28 @@ export default function DriverPage() {
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("pagehide", handlePageHide);
     };
+  }, [pinVerified, employeeId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // B端末向け: 15秒ごとにDBから最新ドラフトを再取得（編集中は上書きしない）
+  useEffect(() => {
+    if (!pinVerified) return;
+    const t = setInterval(() => {
+      if (draftFocusedRef.current || !draftLoadedRef.current) return;
+      apiFetch(`/attendance/draft/${employeeId}`)
+        .then(r => r.json() as Promise<{
+          departure?: string | null; arrival?: string | null;
+          startOdometer?: number | null; endOdometer?: number | null;
+        } | null>)
+        .then(data => {
+          if (!data || draftFocusedRef.current) return;
+          if (data.departure   !== undefined) setDeparture(data.departure ?? "");
+          if (data.arrival     !== undefined) setArrival(data.arrival ?? "");
+          if (data.startOdometer !== undefined) setStartOdometer(data.startOdometer != null ? String(data.startOdometer) : "");
+          if (data.endOdometer   !== undefined) setEndOdometer(data.endOdometer != null ? String(data.endOdometer) : "");
+        })
+        .catch(() => {});
+    }, 15000);
+    return () => clearInterval(t);
   }, [pinVerified, employeeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 現在時刻を毎秒更新
@@ -869,7 +892,8 @@ export default function DriverPage() {
                   type="text"
                   value={departure}
                   onChange={(e) => { const v = e.target.value; setDeparture(v); saveDraftLocal(v, arrival, startOdometer, endOdometer); }}
-                  onBlur={(e) => flushDraftToApi(e.target.value, arrival, startOdometer, endOdometer)}
+                  onFocus={() => { draftFocusedRef.current = true; }}
+                  onBlur={(e) => { draftFocusedRef.current = false; flushDraftToApi(e.target.value, arrival, startOdometer, endOdometer); }}
                   placeholder="例：本社"
                   className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-base placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm"
                 />
@@ -881,7 +905,8 @@ export default function DriverPage() {
                   type="text"
                   value={arrival}
                   onChange={(e) => { const v = e.target.value; setArrival(v); saveDraftLocal(departure, v, startOdometer, endOdometer); }}
-                  onBlur={(e) => flushDraftToApi(departure, e.target.value, startOdometer, endOdometer)}
+                  onFocus={() => { draftFocusedRef.current = true; }}
+                  onBlur={(e) => { draftFocusedRef.current = false; flushDraftToApi(departure, e.target.value, startOdometer, endOdometer); }}
                   placeholder="例：大阪営業所"
                   className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-base placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm"
                 />
@@ -902,7 +927,8 @@ export default function DriverPage() {
                     min="0"
                     value={startOdometer}
                     onChange={(e) => { const v = e.target.value; setStartOdometer(v); saveDraftLocal(departure, arrival, v, endOdometer); }}
-                    onBlur={(e) => flushDraftToApi(departure, arrival, e.target.value, endOdometer)}
+                    onFocus={() => { draftFocusedRef.current = true; }}
+                    onBlur={(e) => { draftFocusedRef.current = false; flushDraftToApi(departure, arrival, e.target.value, endOdometer); }}
                     placeholder="例：12345"
                     className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 pr-10 text-base placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm"
                   />
@@ -919,7 +945,8 @@ export default function DriverPage() {
                     min="0"
                     value={endOdometer}
                     onChange={(e) => { const v = e.target.value; setEndOdometer(v); saveDraftLocal(departure, arrival, startOdometer, v); }}
-                    onBlur={(e) => flushDraftToApi(departure, arrival, startOdometer, e.target.value)}
+                    onFocus={() => { draftFocusedRef.current = true; }}
+                    onBlur={(e) => { draftFocusedRef.current = false; flushDraftToApi(departure, arrival, startOdometer, e.target.value); }}
                     placeholder="例：12567"
                     className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 pr-10 text-base placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm"
                   />
