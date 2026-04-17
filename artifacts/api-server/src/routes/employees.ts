@@ -45,6 +45,8 @@ router.post("/employees", async (req, res) => {
     residentTax: body.residentTax ?? 0,
     hireDate: body.hireDate,
     isActive: true,
+    scheduledWorkStart: body.scheduledWorkStart ?? "08:00",
+    scheduledWorkEnd: body.scheduledWorkEnd ?? "17:00",
   }).returning();
   return res.status(201).json(emp);
 });
