@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 interface DatePartsInputProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -6,22 +6,26 @@ interface DatePartsInputProps extends React.HTMLAttributes<HTMLDivElement> {
   onChange?: (value: string) => void;
 }
 
+function parseValue(v?: string) {
+  if (!v) return { y: "", m: "", d: "" };
+  const [y = "", m = "", d = ""] = v.split("-");
+  return { y, m, d };
+}
+
 export function DatePartsInput({ value, onChange, className, id, ...rest }: DatePartsInputProps) {
   const monthRef = useRef<HTMLInputElement>(null);
   const dayRef = useRef<HTMLInputElement>(null);
 
-  const parseValue = (v?: string) => {
-    if (!v) return { y: "", m: "", d: "" };
-    const [y = "", m = "", d = ""] = v.split("-");
-    return { y, m, d };
-  };
-
   const [parts, setParts] = useState(() => parseValue(value));
+  const [lastSyncedValue, setLastSyncedValue] = useState(value ?? "");
 
-  // 外部から value が変わったときに同期
-  useEffect(() => {
+  // 外部 value が変わったとき（社員切り替えやフォームリセット時）に即時同期
+  // useEffect では同じ value でも検知できないケースがあるため、render 中に同期する
+  const incoming = value ?? "";
+  if (incoming !== lastSyncedValue) {
+    setLastSyncedValue(incoming);
     setParts(parseValue(value));
-  }, [value]);
+  }
 
   const emit = (next: { y: string; m: string; d: string }) => {
     if (next.y.length === 4 && next.m.length >= 1 && next.d.length >= 1) {
