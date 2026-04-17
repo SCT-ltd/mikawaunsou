@@ -2,12 +2,13 @@
  * 給与計算エンジン（運送業特化）
  * Transportation industry payroll calculation engine
  *
- * 令和7年（2025年）対応:
+ * 令和8年（2026年）対応:
  *  - 社会保険料: 協会けんぽ東京支部 標準報酬月額等級テーブル方式
- *  - 源泉所得税: 国税庁 令和7年分 給与所得の源泉徴収税額表（月額表）甲欄
+ *  - 源泉所得税: 国税庁 令和8年分 給与所得の源泉徴収税額表（月額表）甲欄
+ *    ※ 基礎控除額が令和7年の480,000円から令和8年の580,000円に改正
  */
 
-import { calculateSocialInsurance, calculateIncomeTaxReiwa7 } from "./tax-tables-reiwa8";
+import { calculateSocialInsurance, calculateIncomeTaxReiwa8 } from "./tax-tables-reiwa8";
 
 /**
  * 端数処理：50銭以下切り捨て、50銭超え切り上げ
@@ -209,11 +210,11 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
   const afterInsuranceSalary = grossSalary - socialInsurance - employmentInsurance;
 
   // ────────────────────────────────────────────────────────────────
-  // 源泉所得税（令和7年月額表甲欄）
+  // 源泉所得税（令和8年月額表甲欄）
   // 扶養親族等の数 = 扶養人数 + 配偶者（控除対象の場合）
   // ────────────────────────────────────────────────────────────────
   const dependentEquivCount = dependentCount + (hasSpouse ? 1 : 0);
-  const incomeTax = calculateIncomeTaxReiwa7(afterInsuranceSalary, dependentEquivCount);
+  const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
 
   // 控除合計
   const totalDeductions = roundJapanese(
