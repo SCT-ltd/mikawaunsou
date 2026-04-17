@@ -241,19 +241,19 @@ export default function DriverPage() {
     draftLoadedRef.current = true;
 
     // DBを正とする（別端末からも常に最新を取得）
-    apiFetch(`/attendance/draft/${employeeId}`)
-      .then(r => r.json() as Promise<{
+    // ※ apiFetch は内部で res.json() 済みのオブジェクトを返す
+    apiFetch(`/attendance/draft/${employeeId}`, { cache: "no-store" })
+      .then((data: {
         departure?: string | null; arrival?: string | null;
         startOdometer?: number | null; endOdometer?: number | null;
-      } | null>)
-      .then(data => {
+      } | null) => {
         const hasDbData = data && (data.departure || data.arrival || data.startOdometer != null || data.endOdometer != null);
         if (hasDbData) {
           // DB にデータあり → DB を優先（他端末の入力を反映）
-          if (data!.departure)            setDeparture(data!.departure!);
-          if (data!.arrival)              setArrival(data!.arrival!);
+          setDeparture(data!.departure ?? "");
+          setArrival(data!.arrival ?? "");
           if (data!.startOdometer != null) setStartOdometer(String(data!.startOdometer));
-          if (data!.endOdometer != null)   setEndOdometer(String(data!.endOdometer));
+          if (data!.endOdometer   != null) setEndOdometer(String(data!.endOdometer));
           // localStorage にも同期
           try {
             localStorage.setItem(draftLsKey(employeeId), JSON.stringify({
@@ -344,15 +344,14 @@ export default function DriverPage() {
         saveDraftToApi(v.departure, v.arrival, v.startOdometer, v.endOdometer);
       } else if (document.visibilityState === "visible" && draftLoadedRef.current) {
         // 別端末で更新された値をDBから再取得
-        apiFetch(`/attendance/draft/${employeeId}`)
-          .then(r => r.json() as Promise<{
+        apiFetch(`/attendance/draft/${employeeId}`, { cache: "no-store" })
+          .then((data: {
             departure?: string | null; arrival?: string | null;
             startOdometer?: number | null; endOdometer?: number | null;
-          } | null>)
-          .then(data => {
+          } | null) => {
             if (!data) return;
-            if (data.departure   != null) setDeparture(data.departure ?? "");
-            if (data.arrival     != null) setArrival(data.arrival ?? "");
+            setDeparture(data.departure ?? "");
+            setArrival(data.arrival ?? "");
             if (data.startOdometer != null) setStartOdometer(String(data.startOdometer));
             if (data.endOdometer   != null) setEndOdometer(String(data.endOdometer));
           })
@@ -379,17 +378,16 @@ export default function DriverPage() {
     if (!pinVerified) return;
     const t = setInterval(() => {
       if (draftFocusedRef.current || !draftLoadedRef.current) return;
-      apiFetch(`/attendance/draft/${employeeId}`)
-        .then(r => r.json() as Promise<{
+      apiFetch(`/attendance/draft/${employeeId}`, { cache: "no-store" })
+        .then((data: {
           departure?: string | null; arrival?: string | null;
           startOdometer?: number | null; endOdometer?: number | null;
-        } | null>)
-        .then(data => {
+        } | null) => {
           if (!data || draftFocusedRef.current) return;
-          if (data.departure   !== undefined) setDeparture(data.departure ?? "");
-          if (data.arrival     !== undefined) setArrival(data.arrival ?? "");
-          if (data.startOdometer !== undefined) setStartOdometer(data.startOdometer != null ? String(data.startOdometer) : "");
-          if (data.endOdometer   !== undefined) setEndOdometer(data.endOdometer != null ? String(data.endOdometer) : "");
+          setDeparture(data.departure ?? "");
+          setArrival(data.arrival ?? "");
+          setStartOdometer(data.startOdometer != null ? String(data.startOdometer) : "");
+          setEndOdometer(data.endOdometer   != null ? String(data.endOdometer)   : "");
         })
         .catch(() => {});
     }, 15000);
