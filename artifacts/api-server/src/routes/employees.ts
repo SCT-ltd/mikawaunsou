@@ -20,13 +20,13 @@ router.get("/employees", async (req, res) => {
 
 router.post("/employees", async (req, res) => {
   const body = req.body;
-  const [emp] = await db.insert(employeesTable).values({
-    employeeCode: body.employeeCode,
+  const fields = {
     name: body.name,
     nameKana: body.nameKana,
     department: body.department,
     position: body.position ?? "",
     baseSalary: body.baseSalary,
+    salaryType: body.salaryType ?? "fixed",
     transportationAllowance: body.transportationAllowance ?? 0,
     safetyDrivingAllowance: body.safetyDrivingAllowance ?? 0,
     longDistanceAllowance: body.longDistanceAllowance ?? 0,
@@ -47,6 +47,25 @@ router.post("/employees", async (req, res) => {
     isActive: true,
     scheduledWorkStart: body.scheduledWorkStart ?? "08:00",
     scheduledWorkEnd: body.scheduledWorkEnd ?? "17:00",
+    updatedAt: new Date(),
+  };
+
+  // 同じ社員コードでソフト削除済みレコードがあれば再有効化する
+  const [existing] = await db.select({ id: employeesTable.id })
+    .from(employeesTable)
+    .where(eq(employeesTable.employeeCode, body.employeeCode));
+
+  if (existing) {
+    const [emp] = await db.update(employeesTable)
+      .set(fields)
+      .where(eq(employeesTable.id, existing.id))
+      .returning();
+    return res.status(200).json(emp);
+  }
+
+  const [emp] = await db.insert(employeesTable).values({
+    employeeCode: body.employeeCode,
+    ...fields,
   }).returning();
   return res.status(201).json(emp);
 });
