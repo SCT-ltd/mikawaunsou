@@ -9,10 +9,7 @@ interface DatePartsInputProps extends React.HTMLAttributes<HTMLDivElement> {
 function parseValue(v?: string) {
   if (!v) return { y: "", m: "", d: "" };
   const parts = v.split("-");
-  const y = parts[0] ?? "";
-  const m = parts[1] ?? "";
-  const d = parts[2] ?? "";
-  return { y, m, d };
+  return { y: parts[0] ?? "", m: parts[1] ?? "", d: parts[2] ?? "" };
 }
 
 export function DatePartsInput({ value, onChange, className, id, ...rest }: DatePartsInputProps) {
@@ -20,18 +17,26 @@ export function DatePartsInput({ value, onChange, className, id, ...rest }: Date
   const dayRef = useRef<HTMLInputElement>(null);
   const [parts, setParts] = useState(() => parseValue(value));
 
-  // 外部 value が変わったとき（社員切り替え・フォームリセット）に同期する
+  // 自分のキー入力で onChange → value が変化しても useEffect が上書きしないようにフラグ管理
+  const isLocalChange = useRef(false);
+
   useEffect(() => {
+    if (isLocalChange.current) {
+      isLocalChange.current = false;
+      return;
+    }
+    // 外部からの変更（社員切り替え・フォームリセット）のみ同期する
     setParts(parseValue(value));
   }, [value]);
 
   const emit = (next: { y: string; m: string; d: string }) => {
-    // y が4桁、m/d が1桁以上あれば emit（両方ゼロパディングして送る）
     if (next.y.length === 4 && next.m.length >= 1 && next.d.length >= 1) {
       const mm = next.m.padStart(2, "0");
       const dd = next.d.padStart(2, "0");
+      isLocalChange.current = true;
       onChange?.(`${next.y}-${mm}-${dd}`);
     } else if (!next.y && !next.m && !next.d) {
+      isLocalChange.current = true;
       onChange?.("");
     }
   };
@@ -46,8 +51,11 @@ export function DatePartsInput({ value, onChange, className, id, ...rest }: Date
 
   const handleMonth = (v: string) => {
     let digits = v.replace(/\D/g, "").slice(0, 2);
-    // 2以上の1桁は自動で2桁にパディング（例: "3" → "03"）
-    if (digits.length === 1 && Number(digits) > 1) digits = digits.padStart(2, "0");
+    // 2以上の1桁は即座に2桁化してフォーカスを日へ（例: "3"→"03"）
+    // ただし "1" はそのまま待つ（"10", "11", "12" の可能性があるため）
+    if (digits.length === 1 && Number(digits) >= 2) {
+      digits = digits.padStart(2, "0");
+    }
     if (Number(digits) > 12) digits = "12";
     const next = { ...parts, m: digits };
     setParts(next);
@@ -57,29 +65,30 @@ export function DatePartsInput({ value, onChange, className, id, ...rest }: Date
 
   const handleDay = (v: string) => {
     let digits = v.replace(/\D/g, "").slice(0, 2);
-    // 4以上の1桁は自動で2桁にパディング（例: "5" → "05"）
-    if (digits.length === 1 && Number(digits) > 3) digits = digits.padStart(2, "0");
+    // 4以上の1桁は即座に2桁化（例: "5"→"05"）
+    // 1〜3はそのまま待つ（"10"〜"31" の可能性があるため）
+    if (digits.length === 1 && Number(digits) >= 4) {
+      digits = digits.padStart(2, "0");
+    }
     if (Number(digits) > 31) digits = "31";
     const next = { ...parts, d: digits };
     setParts(next);
     emit(next);
   };
 
-  const handleDayBlur = () => {
-    // フォーカスが外れたとき、1〜3の1桁も2桁にパディングして確定
-    if (parts.d.length === 1) {
-      const padded = parts.d.padStart(2, "0");
-      const next = { ...parts, d: padded };
+  const handleMonthBlur = () => {
+    if (parts.m.length === 1) {
+      const padded = parts.m.padStart(2, "0");
+      const next = { ...parts, m: padded };
       setParts(next);
       emit(next);
     }
   };
 
-  const handleMonthBlur = () => {
-    // フォーカスが外れたとき、1の1桁も2桁にパディングして確定
-    if (parts.m.length === 1) {
-      const padded = parts.m.padStart(2, "0");
-      const next = { ...parts, m: padded };
+  const handleDayBlur = () => {
+    if (parts.d.length === 1) {
+      const padded = parts.d.padStart(2, "0");
+      const next = { ...parts, d: padded };
       setParts(next);
       emit(next);
     }
