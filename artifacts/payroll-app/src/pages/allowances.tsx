@@ -563,7 +563,7 @@ const empFullSchema = z.object({
   dateOfBirth: z.string().optional().default(""),
   hireDate: z.string().min(1, "入社日を入力してください"),
   isActive: z.boolean().default(true),
-  salaryType: z.enum(["fixed", "daily"]).default("daily"),
+  salaryType: z.enum(["fixed", "daily", "hourly"]).default("daily"),
   baseSalary: z.coerce.number().min(0).default(0),
   residentTax: z.coerce.number().min(0).default(0),
   commissionRatePerKm: z.coerce.number().min(0).default(0),
@@ -699,6 +699,7 @@ function EmpFormFields({ form: f, salaryType }: { form: ReturnType<typeof useFor
                 <SelectContent>
                   <SelectItem value="daily">日給制（平日9,808円 / 土曜12,260円 / 日曜1,655円/h）</SelectItem>
                   <SelectItem value="fixed">固定給（毎月固定額）</SelectItem>
+                  <SelectItem value="hourly">時給制（時給単価を入力）</SelectItem>
                 </SelectContent>
               </Select><FormMessage /></FormItem>
           )} />
@@ -709,6 +710,17 @@ function EmpFormFields({ form: f, salaryType }: { form: ReturnType<typeof useFor
                   <div className="flex items-center gap-2">
                     <Input type="number" min={0} step={1000} placeholder="700000" {...field} className="text-right" />
                     <span className="text-sm text-muted-foreground shrink-0">円</span>
+                  </div>
+                </FormControl><FormMessage /></FormItem>
+            )} />
+          )}
+          {salaryType === "hourly" && (
+            <FormField control={f.control} name="baseSalary" render={({ field }) => (
+              <FormItem><FormLabel>時給単価（円）</FormLabel>
+                <FormControl>
+                  <div className="flex items-center gap-2">
+                    <Input type="number" min={0} step={10} placeholder="1200" {...field} className="text-right" />
+                    <span className="text-sm text-muted-foreground shrink-0">円/時</span>
                   </div>
                 </FormControl><FormMessage /></FormItem>
             )} />
@@ -890,7 +902,7 @@ function EmployeeMasterTab() {
       dateOfBirth: (emp as unknown as { dateOfBirth?: string | null }).dateOfBirth?.split("T")[0] || "",
       hireDate: emp.hireDate.split("T")[0],
       isActive: emp.isActive,
-      salaryType: (emp.salaryType as "fixed" | "daily") ?? "daily",
+      salaryType: (emp.salaryType as "fixed" | "daily" | "hourly") ?? "daily",
       baseSalary: emp.baseSalary ?? 0,
       residentTax: emp.residentTax ?? 0,
       commissionRatePerKm: emp.commissionRatePerKm ?? 0,
@@ -1015,6 +1027,8 @@ function EmployeeMasterTab() {
                       <TableCell>
                         {(emp.salaryType ?? "daily") === "daily" ? (
                           <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-xs">日給制</Badge>
+                        ) : (emp.salaryType === "hourly") ? (
+                          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-xs">時給制</Badge>
                         ) : (
                           <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200 text-xs">固定給</Badge>
                         )}
