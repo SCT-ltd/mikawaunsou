@@ -85,6 +85,8 @@ router.put("/employees/:id", async (req, res) => {
       ...(body.residentTax !== undefined && { residentTax: body.residentTax }),
       ...(body.hireDate !== undefined && { hireDate: body.hireDate }),
       ...(body.isActive !== undefined && { isActive: body.isActive }),
+      ...(body.scheduledWorkStart !== undefined && { scheduledWorkStart: body.scheduledWorkStart }),
+      ...(body.scheduledWorkEnd !== undefined && { scheduledWorkEnd: body.scheduledWorkEnd }),
       updatedAt: new Date(),
     })
     .where(eq(employeesTable.id, id))

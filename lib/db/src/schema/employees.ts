@@ -29,6 +29,8 @@ export const employeesTable = pgTable("employees", {
   hireDate: date("hire_date").notNull(),
   isActive: boolean("is_active").notNull().default(true),
   salaryType: text("salary_type").notNull().default("fixed"),
+  scheduledWorkStart: text("scheduled_work_start").default("08:00"),
+  scheduledWorkEnd: text("scheduled_work_end").default("17:00"),
   pin: text("pin"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
