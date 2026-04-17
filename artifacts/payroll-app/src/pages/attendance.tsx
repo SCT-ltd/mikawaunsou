@@ -631,7 +631,6 @@ export default function AttendancePage() {
                                   return (
                                     <p className="text-xs text-primary/60 mt-0.5">
                                       📍 {[dep, arr].filter(Boolean).join(" → ")}
-                                      <span className="ml-1 text-[10px] text-gray-400">入力中</span>
                                     </p>
                                   );
                                 })()}
@@ -645,7 +644,6 @@ export default function AttendancePage() {
                                   return (
                                     <p className={`text-xs font-medium mt-0.5 ${isDraft ? "text-blue-400" : "text-blue-600"}`}>
                                       🚛 {startVal.toLocaleString()} km{endVal != null ? ` → ${endVal.toLocaleString()} km` : ""}
-                                      {isDraft && <span className="ml-1 text-[10px] text-gray-400">入力中</span>}
                                     </p>
                                   );
                                 })()}

@@ -133,7 +133,6 @@ export default function DriverPage() {
   const checklistSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const checklistLoadedRef = useRef(false);
   const draftLoadedRef = useRef(false);
-  const draftDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // localStorage キー (JST日付)
   function todayJstStr(): string {
@@ -311,29 +310,18 @@ export default function DriverPage() {
     }).catch(() => {});
   }
 
-  // localStorageに即時保存 + 1.5秒デバウンスでAPI保存（onChange ごとに呼ぶ）
-  // → タイピング中でもB端末には最大1.5秒以内に反映される
+  // localStorageに即時保存（onChange ごとに呼ぶ — API は呼ばない）
   function saveDraftLocal(dep: string, arr: string, sOdo: string, eOdo: string) {
     if (!pinVerified || !draftLoadedRef.current) return;
-    // localStorage: 即時
     try {
       localStorage.setItem(draftLsKey(employeeId), JSON.stringify({
         departure: dep, arrival: arr, startOdometer: sOdo, endOdometer: eOdo,
       }));
     } catch { /* ignore */ }
-    // API: デバウンス（タイピングが止まって1.5秒後に送信）
-    if (draftDebounceRef.current) clearTimeout(draftDebounceRef.current);
-    draftDebounceRef.current = setTimeout(() => {
-      saveDraftToApi(dep, arr, sOdo, eOdo);
-    }, 1500);
   }
 
-  // onBlur 時: デバウンスをキャンセルして即座にAPI保存
+  // onBlur 時のみ DB 保存（フォーカスアウトで確定）
   function flushDraftToApi(dep: string, arr: string, sOdo: string, eOdo: string) {
-    if (draftDebounceRef.current) {
-      clearTimeout(draftDebounceRef.current);
-      draftDebounceRef.current = null;
-    }
     saveDraftToApi(dep, arr, sOdo, eOdo);
   }
 
