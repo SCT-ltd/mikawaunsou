@@ -42,6 +42,7 @@ import * as z from "zod";
 import { Plus, Edit2, Trash2, Settings2, Users, Wallet, Calculator, Minus, Search, KeyRound, RotateCcw, UserPlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { DatePartsInput } from "@/components/ui/date-parts-input";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -600,7 +601,9 @@ function EmpFormFields({ form: f, salaryType }: { form: ReturnType<typeof useFor
           )} />
           <FormField control={f.control} name="hireDate" render={({ field }) => (
             <FormItem><FormLabel>入社日 <span className="text-destructive">*</span></FormLabel>
-              <FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
+              <FormControl>
+                <DatePartsInput value={field.value || ""} onChange={field.onChange} />
+              </FormControl><FormMessage /></FormItem>
           )} />
           <FormField control={f.control} name="name" render={({ field }) => (
             <FormItem><FormLabel>氏名 <span className="text-destructive">*</span></FormLabel>
@@ -620,7 +623,9 @@ function EmpFormFields({ form: f, salaryType }: { form: ReturnType<typeof useFor
                   </span>
                 )}
               </div>
-              <FormControl><Input type="date" {...field} value={field.value || ""} /></FormControl>
+              <FormControl>
+                <DatePartsInput value={field.value || ""} onChange={field.onChange} />
+              </FormControl>
               <FormMessage />
             </FormItem>
           )} />
