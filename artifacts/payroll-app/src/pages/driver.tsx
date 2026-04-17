@@ -133,6 +133,7 @@ export default function DriverPage() {
   const checklistSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const checklistLoadedRef = useRef(false);
   const draftLoadedRef = useRef(false);
+  const draftValuesRef = useRef({ departure: "", arrival: "", startOdometer: "", endOdometer: "" });
 
   // localStorage キー (JST日付)
   function todayJstStr(): string {
@@ -324,6 +325,53 @@ export default function DriverPage() {
   function flushDraftToApi(dep: string, arr: string, sOdo: string, eOdo: string) {
     saveDraftToApi(dep, arr, sOdo, eOdo);
   }
+
+  // 最新ドラフト値を ref に同期（visibilitychange ハンドラ用）
+  useEffect(() => {
+    draftValuesRef.current = { departure, arrival, startOdometer, endOdometer };
+  }, [departure, arrival, startOdometer, endOdometer]);
+
+  // ページが背面に回ったとき・アプリ切替時 → DB保存（blur が発火しない場面をカバー）
+  // ページが前面に戻ったとき → DB から最新を取得（B端末への反映）
+  useEffect(() => {
+    if (!pinVerified) return;
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        if (!draftLoadedRef.current) return;
+        const v = draftValuesRef.current;
+        saveDraftToApi(v.departure, v.arrival, v.startOdometer, v.endOdometer);
+      } else if (document.visibilityState === "visible" && draftLoadedRef.current) {
+        // 別端末で更新された値をDBから再取得
+        apiFetch(`/attendance/draft/${employeeId}`)
+          .then(r => r.json() as Promise<{
+            departure?: string | null; arrival?: string | null;
+            startOdometer?: number | null; endOdometer?: number | null;
+          } | null>)
+          .then(data => {
+            if (!data) return;
+            if (data.departure   != null) setDeparture(data.departure ?? "");
+            if (data.arrival     != null) setArrival(data.arrival ?? "");
+            if (data.startOdometer != null) setStartOdometer(String(data.startOdometer));
+            if (data.endOdometer   != null) setEndOdometer(String(data.endOdometer));
+          })
+          .catch(() => {});
+      }
+    };
+
+    const handlePageHide = () => {
+      if (!draftLoadedRef.current) return;
+      const v = draftValuesRef.current;
+      saveDraftToApi(v.departure, v.arrival, v.startOdometer, v.endOdometer);
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("pagehide", handlePageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("pagehide", handlePageHide);
+    };
+  }, [pinVerified, employeeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 現在時刻を毎秒更新
   useEffect(() => {
