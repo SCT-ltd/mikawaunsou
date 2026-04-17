@@ -13,11 +13,8 @@ function parseValue(v?: string) {
 }
 
 export function DatePartsInput({ value, onChange, className, id, ...rest }: DatePartsInputProps) {
-  const monthRef = useRef<HTMLInputElement>(null);
-  const dayRef = useRef<HTMLInputElement>(null);
+  const mmddRef = useRef<HTMLInputElement>(null);
   const [parts, setParts] = useState(() => parseValue(value));
-
-  // 自分のキー入力で onChange → value が変化しても useEffect が上書きしないようにフラグ管理
   const isLocalChange = useRef(false);
 
   useEffect(() => {
@@ -25,16 +22,22 @@ export function DatePartsInput({ value, onChange, className, id, ...rest }: Date
       isLocalChange.current = false;
       return;
     }
-    // 外部からの変更（社員切り替え・フォームリセット）のみ同期する
     setParts(parseValue(value));
   }, [value]);
 
+  // 月日を合成した生の4桁文字列（例: "0920"）
+  const rawMmdd = parts.m + parts.d;
+
+  // 表示用: 2桁を超えたら "/" を挿入して "09/20" のように見せる
+  const displayMmdd = rawMmdd.length > 2
+    ? `${rawMmdd.slice(0, 2)}/${rawMmdd.slice(2)}`
+    : rawMmdd;
+
   const emit = (next: { y: string; m: string; d: string }) => {
-    if (next.y.length === 4 && next.m.length >= 1 && next.d.length >= 1) {
-      const mm = next.m.padStart(2, "0");
+    if (next.y.length === 4 && next.m.length === 2 && next.d.length >= 1) {
       const dd = next.d.padStart(2, "0");
       isLocalChange.current = true;
-      onChange?.(`${next.y}-${mm}-${dd}`);
+      onChange?.(`${next.y}-${next.m}-${dd}`);
     } else if (!next.y && !next.m && !next.d) {
       isLocalChange.current = true;
       onChange?.("");
@@ -46,49 +49,23 @@ export function DatePartsInput({ value, onChange, className, id, ...rest }: Date
     const next = { ...parts, y: digits };
     setParts(next);
     emit(next);
-    if (digits.length === 4) monthRef.current?.focus();
+    if (digits.length === 4) mmddRef.current?.focus();
   };
 
-  const handleMonth = (v: string) => {
-    let digits = v.replace(/\D/g, "").slice(0, 2);
-    // 2以上の1桁は即座に2桁化してフォーカスを日へ（例: "3"→"03"）
-    // ただし "1" はそのまま待つ（"10", "11", "12" の可能性があるため）
-    if (digits.length === 1 && Number(digits) >= 2) {
-      digits = digits.padStart(2, "0");
-    }
-    if (Number(digits) > 12) digits = "12";
-    const next = { ...parts, m: digits };
-    setParts(next);
-    emit(next);
-    if (digits.length === 2) dayRef.current?.focus();
-  };
-
-  const handleDay = (v: string) => {
-    let digits = v.replace(/\D/g, "").slice(0, 2);
-    // 4以上の1桁は即座に2桁化（例: "5"→"05"）
-    // 1〜3はそのまま待つ（"10"〜"31" の可能性があるため）
-    if (digits.length === 1 && Number(digits) >= 4) {
-      digits = digits.padStart(2, "0");
-    }
-    if (Number(digits) > 31) digits = "31";
-    const next = { ...parts, d: digits };
+  // 月日フィールド: "/" を取り除いて生の数字4桁として処理する
+  const handleMmdd = (v: string) => {
+    const raw = v.replace(/\D/g, "").slice(0, 4);
+    const m = raw.slice(0, 2);
+    const d = raw.slice(2, 4);
+    const next = { y: parts.y, m, d };
     setParts(next);
     emit(next);
   };
 
-  const handleMonthBlur = () => {
-    if (parts.m.length === 1) {
-      const padded = parts.m.padStart(2, "0");
-      const next = { ...parts, m: padded };
-      setParts(next);
-      emit(next);
-    }
-  };
-
-  const handleDayBlur = () => {
+  const handleMmddBlur = () => {
+    // フォーカスを外したとき、日が1桁なら0埋めして確定
     if (parts.d.length === 1) {
-      const padded = parts.d.padStart(2, "0");
-      const next = { ...parts, d: padded };
+      const next = { ...parts, d: parts.d.padStart(2, "0") };
       setParts(next);
       emit(next);
     }
@@ -117,27 +94,15 @@ export function DatePartsInput({ value, onChange, className, id, ...rest }: Date
       />
       <span className="text-muted-foreground select-none">/</span>
       <input
-        ref={monthRef}
+        ref={mmddRef}
         type="text"
         inputMode="numeric"
-        placeholder="MM"
-        maxLength={2}
-        value={parts.m}
-        onChange={e => handleMonth(e.target.value)}
-        onBlur={handleMonthBlur}
-        className={cn(inputCls, "w-6")}
-      />
-      <span className="text-muted-foreground select-none">/</span>
-      <input
-        ref={dayRef}
-        type="text"
-        inputMode="numeric"
-        placeholder="DD"
-        maxLength={2}
-        value={parts.d}
-        onChange={e => handleDay(e.target.value)}
-        onBlur={handleDayBlur}
-        className={cn(inputCls, "w-6")}
+        placeholder="MMDD"
+        maxLength={5}
+        value={displayMmdd}
+        onChange={e => handleMmdd(e.target.value)}
+        onBlur={handleMmddBlur}
+        className={cn(inputCls, "w-14")}
       />
     </div>
   );
