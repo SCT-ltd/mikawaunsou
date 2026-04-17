@@ -101,6 +101,7 @@ router.put("/employees/:id", async (req, res) => {
       ...(body.nameKana !== undefined && { nameKana: body.nameKana }),
       ...(body.department !== undefined && { department: body.department }),
       ...(body.position !== undefined && { position: body.position }),
+      ...(body.salaryType !== undefined && { salaryType: body.salaryType }),
       ...(body.baseSalary !== undefined && { baseSalary: body.baseSalary }),
       ...(body.transportationAllowance !== undefined && { transportationAllowance: body.transportationAllowance }),
       ...(body.safetyDrivingAllowance !== undefined && { safetyDrivingAllowance: body.safetyDrivingAllowance }),
