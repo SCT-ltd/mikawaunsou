@@ -87,21 +87,27 @@ function makeEventIcon(eventType: EventType) {
   });
 }
 
-function FitBounds({ locations }: { locations: EmployeeLocation[] }) {
+function FitBounds({ locations, eventLocations }: {
+  locations: EmployeeLocation[];
+  eventLocations: { latitude: number; longitude: number }[];
+}) {
   const map = useMap();
   const hasfit = useRef(false);
   useEffect(() => {
     if (hasfit.current) return;
-    const points = locations.filter(l => l.latitude != null && l.longitude != null);
-    if (points.length === 0) return;
-    if (points.length === 1) {
-      map.setView([points[0].latitude!, points[0].longitude!], 14);
+    const livePoints = locations
+      .filter(l => l.latitude != null && l.longitude != null)
+      .map(l => [l.latitude!, l.longitude!] as [number, number]);
+    const evPoints = eventLocations.map(ev => [ev.latitude, ev.longitude] as [number, number]);
+    const allPoints = [...livePoints, ...evPoints];
+    if (allPoints.length === 0) return;
+    if (allPoints.length === 1) {
+      map.setView(allPoints[0], 14);
     } else {
-      const bounds = L.latLngBounds(points.map(p => [p.latitude!, p.longitude!] as [number, number]));
-      map.fitBounds(bounds, { padding: [60, 60] });
+      map.fitBounds(L.latLngBounds(allPoints), { padding: [60, 60] });
     }
     hasfit.current = true;
-  }, [locations, map]);
+  }, [locations, eventLocations, map]);
   return null;
 }
 
@@ -285,20 +291,67 @@ export default function RealtimeMapPage() {
                 <p className="px-4 pt-3 pb-1 text-xs font-bold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
                   <WifiOff className="h-3 w-3" /> GPS未取得 ({withoutGps.length}名)
                 </p>
-                {withoutGps.map(emp => (
-                  <div key={emp.employeeId} className="px-4 py-2 border-b last:border-0 opacity-60">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className="w-2.5 h-2.5 rounded-full shrink-0 bg-slate-300" />
-                        <span className="text-sm truncate">{emp.name}</span>
+                {withoutGps.map(emp => {
+                  const evs = emp.eventLocations ?? [];
+                  const hasEvents = evs.length > 0;
+                  return (
+                    <div
+                      key={emp.employeeId}
+                      className={`border-b last:border-0 transition-colors ${
+                        selectedId === emp.employeeId ? "bg-primary/8 border-l-2 border-l-primary" : ""
+                      } ${hasEvents ? "" : "opacity-60"}`}
+                    >
+                      {/* 社員行 — 打刻地点があればクリック可能 */}
+                      <div
+                        className={`px-4 py-2.5 ${hasEvents ? "cursor-pointer hover:bg-muted/50" : ""}`}
+                        onClick={() => {
+                          if (!hasEvents) return;
+                          setSelectedId(emp.employeeId);
+                          setFlyTarget({ lat: evs[0].latitude, lng: evs[0].longitude, seq: Date.now() });
+                        }}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="w-2.5 h-2.5 rounded-full shrink-0 bg-slate-300" />
+                            <span className="text-sm font-semibold truncate">{emp.name}</span>
+                          </div>
+                          <span className={`shrink-0 text-xs font-medium px-1.5 py-0.5 rounded-full border ${STATUS_BADGE[emp.status]}`}>
+                            {emp.status}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 pl-4.5 space-y-0.5">
+                          <p className="text-xs text-muted-foreground">{emp.department}</p>
+                          <p className="text-xs text-muted-foreground/60 flex items-center gap-1">
+                            <WifiOff className="h-2.5 w-2.5" />
+                            {hasEvents ? `打刻地点 ${evs.length}件（クリックで表示）` : "リアルタイムGPS未取得"}
+                          </p>
+                        </div>
                       </div>
-                      <span className={`shrink-0 text-xs font-medium px-1.5 py-0.5 rounded-full border ${STATUS_BADGE[emp.status]}`}>
-                        {emp.status}
-                      </span>
+
+                      {/* 打刻地点一覧（GPS取得済み社員と同じ） */}
+                      {hasEvents && (
+                        <div className="px-4 pb-2 pl-7 space-y-1">
+                          {evs.map((ev, i) => {
+                            const cfg = EVENT_CONFIG[ev.eventType];
+                            return (
+                              <button
+                                key={i}
+                                onClick={() => handleEventClick(ev)}
+                                className="w-full text-left flex items-center gap-1.5 text-xs hover:underline group"
+                                title="クリックで打刻地点へ移動"
+                              >
+                                <span style={{ color: cfg.color }} className="font-bold shrink-0">{cfg.emoji}</span>
+                                <span className="font-medium text-muted-foreground group-hover:text-foreground">{cfg.label}</span>
+                                <span className="text-muted-foreground/70">{formatTime(ev.recordedAt)}</span>
+                                <MapPin className="h-2.5 w-2.5 text-muted-foreground/50 shrink-0 ml-auto" />
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
-                    <p className="text-xs text-muted-foreground mt-0.5 pl-4.5">{emp.department}</p>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
@@ -348,7 +401,7 @@ export default function RealtimeMapPage() {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             />
-            <FitBounds locations={withGps} />
+            <FitBounds locations={withGps} eventLocations={allEventLocations} />
             <FlyToEmployee target={flyTarget} />
 
             {/* ライブ位置マーカー（現在地・大きいピン） */}
