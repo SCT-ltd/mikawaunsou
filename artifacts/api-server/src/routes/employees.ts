@@ -45,8 +45,8 @@ router.post("/employees", async (req, res) => {
     residentTax: body.residentTax ?? 0,
     hireDate: body.hireDate,
     isActive: true,
-    scheduledWorkStart: body.scheduledWorkStart ?? "08:00",
-    scheduledWorkEnd: body.scheduledWorkEnd ?? "17:00",
+    scheduledWorkStart: body.scheduledWorkStart || null,
+    scheduledWorkEnd: body.scheduledWorkEnd || null,
     updatedAt: new Date(),
   };
 
@@ -106,8 +106,8 @@ router.put("/employees/:id", async (req, res) => {
       ...(body.residentTax !== undefined && { residentTax: body.residentTax }),
       ...(body.hireDate !== undefined && { hireDate: body.hireDate }),
       ...(body.isActive !== undefined && { isActive: body.isActive }),
-      ...(body.scheduledWorkStart !== undefined && { scheduledWorkStart: body.scheduledWorkStart }),
-      ...(body.scheduledWorkEnd !== undefined && { scheduledWorkEnd: body.scheduledWorkEnd }),
+      ...(body.scheduledWorkStart !== undefined && { scheduledWorkStart: body.scheduledWorkStart || null }),
+      ...(body.scheduledWorkEnd !== undefined && { scheduledWorkEnd: body.scheduledWorkEnd || null }),
       updatedAt: new Date(),
     })
     .where(eq(employeesTable.id, id))

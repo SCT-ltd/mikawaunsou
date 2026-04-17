@@ -560,8 +560,8 @@ const empFullSchema = z.object({
   standardRemuneration: z.coerce.number().min(0).default(0),
   careInsuranceApplied: z.boolean().default(false),
   employmentInsuranceApplied: z.boolean().default(true),
-  scheduledWorkStart: z.string().default("08:00"),
-  scheduledWorkEnd: z.string().default("17:00"),
+  scheduledWorkStart: z.string().optional().default(""),
+  scheduledWorkEnd: z.string().optional().default(""),
 });
 type EmpFullValues = z.infer<typeof empFullSchema>;
 
@@ -600,23 +600,51 @@ function EmpFormFields({ form: f, salaryType }: { form: ReturnType<typeof useFor
       <Separator />
       <div>
         <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">就労時間</h4>
-        <div className="flex items-center gap-3">
-          <FormField control={f.control} name="scheduledWorkStart" render={({ field }) => (
-            <FormItem className="flex-1">
-              <FormLabel>開始時刻</FormLabel>
-              <FormControl><Input type="time" {...field} /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
-          <span className="text-muted-foreground mt-6">～</span>
-          <FormField control={f.control} name="scheduledWorkEnd" render={({ field }) => (
-            <FormItem className="flex-1">
-              <FormLabel>終了時刻</FormLabel>
-              <FormControl><Input type="time" {...field} /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
-        </div>
+        {(() => {
+          const start = f.watch("scheduledWorkStart");
+          const end = f.watch("scheduledWorkEnd");
+          const isUnset = !start && !end;
+          return (
+            <div className="space-y-3">
+              <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={isUnset}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      f.setValue("scheduledWorkStart", "");
+                      f.setValue("scheduledWorkEnd", "");
+                    } else {
+                      f.setValue("scheduledWorkStart", "08:00");
+                      f.setValue("scheduledWorkEnd", "17:00");
+                    }
+                  }}
+                  className="h-4 w-4 rounded border-gray-300"
+                />
+                <span className="text-muted-foreground">就労時間未定（取引先による）</span>
+              </label>
+              {!isUnset && (
+                <div className="flex items-center gap-3">
+                  <FormField control={f.control} name="scheduledWorkStart" render={({ field }) => (
+                    <FormItem className="flex-1">
+                      <FormLabel>開始時刻</FormLabel>
+                      <FormControl><Input type="time" {...field} value={field.value ?? ""} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <span className="text-muted-foreground mt-6">～</span>
+                  <FormField control={f.control} name="scheduledWorkEnd" render={({ field }) => (
+                    <FormItem className="flex-1">
+                      <FormLabel>終了時刻</FormLabel>
+                      <FormControl><Input type="time" {...field} value={field.value ?? ""} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
       <Separator />
       <div>
@@ -797,7 +825,7 @@ function EmployeeMasterTab() {
       residentTax: 0, commissionRatePerKm: 0, commissionRatePerCase: 0,
       dependentCount: 0, hasSpouse: false, standardRemuneration: 0,
       careInsuranceApplied: false, employmentInsuranceApplied: true,
-      scheduledWorkStart: "08:00", scheduledWorkEnd: "17:00",
+      scheduledWorkStart: "", scheduledWorkEnd: "",
     },
   });
   const createForm = useForm<EmpFullValues>({
@@ -809,7 +837,7 @@ function EmployeeMasterTab() {
       commissionRatePerKm: 0, commissionRatePerCase: 0,
       dependentCount: 0, hasSpouse: false, standardRemuneration: 0,
       careInsuranceApplied: false, employmentInsuranceApplied: true,
-      scheduledWorkStart: "08:00", scheduledWorkEnd: "17:00",
+      scheduledWorkStart: "", scheduledWorkEnd: "",
     },
   });
 
@@ -836,8 +864,8 @@ function EmployeeMasterTab() {
       standardRemuneration: emp.standardRemuneration ?? 0,
       careInsuranceApplied: emp.careInsuranceApplied ?? false,
       employmentInsuranceApplied: emp.employmentInsuranceApplied ?? true,
-      scheduledWorkStart: (emp as unknown as { scheduledWorkStart?: string }).scheduledWorkStart ?? "08:00",
-      scheduledWorkEnd: (emp as unknown as { scheduledWorkEnd?: string }).scheduledWorkEnd ?? "17:00",
+      scheduledWorkStart: (emp as unknown as { scheduledWorkStart?: string | null }).scheduledWorkStart ?? "",
+      scheduledWorkEnd: (emp as unknown as { scheduledWorkEnd?: string | null }).scheduledWorkEnd ?? "",
     });
   };
 
