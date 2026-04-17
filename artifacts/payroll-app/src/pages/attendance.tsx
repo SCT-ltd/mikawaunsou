@@ -522,10 +522,7 @@ export default function AttendancePage() {
                     <ChevronLeft className="h-4 w-4" />
                   </button>
                   <button
-                    onClick={() => {
-                      const el = document.getElementById("attendance-date-input") as HTMLInputElement | null;
-                      el?.showPicker?.();
-                    }}
+                    type="button"
                     className="px-3 py-1.5 text-sm font-semibold hover:bg-muted transition-colors min-w-[180px] text-center relative"
                   >
                     {formatDateJP(selectedDate)}
