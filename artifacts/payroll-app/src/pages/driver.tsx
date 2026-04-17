@@ -133,6 +133,7 @@ export default function DriverPage() {
   const checklistSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const checklistLoadedRef = useRef(false);
   const draftLoadedRef = useRef(false);
+  const draftDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // localStorage キー (JST日付)
   function todayJstStr(): string {
@@ -296,17 +297,7 @@ export default function DriverPage() {
       });
   }, [pinVerified, employeeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // localStorageに即時保存（onChange ごとに呼ぶ）
-  function saveDraftLocal(dep: string, arr: string, sOdo: string, eOdo: string) {
-    if (!pinVerified || !draftLoadedRef.current) return;
-    try {
-      localStorage.setItem(draftLsKey(employeeId), JSON.stringify({
-        departure: dep, arrival: arr, startOdometer: sOdo, endOdometer: eOdo,
-      }));
-    } catch { /* ignore */ }
-  }
-
-  // APIへ保存（onBlur 時にのみ呼ぶ — タイピング中はリクエストを送らない）
+  // APIへ保存（共通）
   function saveDraftToApi(dep: string, arr: string, sOdo: string, eOdo: string) {
     if (!pinVerified || !draftLoadedRef.current) return;
     apiFetch(`/attendance/draft/${employeeId}`, {
@@ -318,6 +309,32 @@ export default function DriverPage() {
         endOdometer: eOdo ? parseFloat(eOdo) : null,
       }),
     }).catch(() => {});
+  }
+
+  // localStorageに即時保存 + 1.5秒デバウンスでAPI保存（onChange ごとに呼ぶ）
+  // → タイピング中でもB端末には最大1.5秒以内に反映される
+  function saveDraftLocal(dep: string, arr: string, sOdo: string, eOdo: string) {
+    if (!pinVerified || !draftLoadedRef.current) return;
+    // localStorage: 即時
+    try {
+      localStorage.setItem(draftLsKey(employeeId), JSON.stringify({
+        departure: dep, arrival: arr, startOdometer: sOdo, endOdometer: eOdo,
+      }));
+    } catch { /* ignore */ }
+    // API: デバウンス（タイピングが止まって1.5秒後に送信）
+    if (draftDebounceRef.current) clearTimeout(draftDebounceRef.current);
+    draftDebounceRef.current = setTimeout(() => {
+      saveDraftToApi(dep, arr, sOdo, eOdo);
+    }, 1500);
+  }
+
+  // onBlur 時: デバウンスをキャンセルして即座にAPI保存
+  function flushDraftToApi(dep: string, arr: string, sOdo: string, eOdo: string) {
+    if (draftDebounceRef.current) {
+      clearTimeout(draftDebounceRef.current);
+      draftDebounceRef.current = null;
+    }
+    saveDraftToApi(dep, arr, sOdo, eOdo);
   }
 
   // 現在時刻を毎秒更新
@@ -816,7 +833,7 @@ export default function DriverPage() {
                   type="text"
                   value={departure}
                   onChange={(e) => { const v = e.target.value; setDeparture(v); saveDraftLocal(v, arrival, startOdometer, endOdometer); }}
-                  onBlur={(e) => saveDraftToApi(e.target.value, arrival, startOdometer, endOdometer)}
+                  onBlur={(e) => flushDraftToApi(e.target.value, arrival, startOdometer, endOdometer)}
                   placeholder="例：本社"
                   className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-base placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm"
                 />
@@ -828,7 +845,7 @@ export default function DriverPage() {
                   type="text"
                   value={arrival}
                   onChange={(e) => { const v = e.target.value; setArrival(v); saveDraftLocal(departure, v, startOdometer, endOdometer); }}
-                  onBlur={(e) => saveDraftToApi(departure, e.target.value, startOdometer, endOdometer)}
+                  onBlur={(e) => flushDraftToApi(departure, e.target.value, startOdometer, endOdometer)}
                   placeholder="例：大阪営業所"
                   className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-base placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm"
                 />
@@ -849,7 +866,7 @@ export default function DriverPage() {
                     min="0"
                     value={startOdometer}
                     onChange={(e) => { const v = e.target.value; setStartOdometer(v); saveDraftLocal(departure, arrival, v, endOdometer); }}
-                    onBlur={(e) => saveDraftToApi(departure, arrival, e.target.value, endOdometer)}
+                    onBlur={(e) => flushDraftToApi(departure, arrival, e.target.value, endOdometer)}
                     placeholder="例：12345"
                     className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 pr-10 text-base placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm"
                   />
@@ -866,7 +883,7 @@ export default function DriverPage() {
                     min="0"
                     value={endOdometer}
                     onChange={(e) => { const v = e.target.value; setEndOdometer(v); saveDraftLocal(departure, arrival, startOdometer, v); }}
-                    onBlur={(e) => saveDraftToApi(departure, arrival, startOdometer, e.target.value)}
+                    onBlur={(e) => flushDraftToApi(departure, arrival, startOdometer, e.target.value)}
                     placeholder="例：12567"
                     className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 pr-10 text-base placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary/40 shadow-sm"
                   />
