@@ -542,6 +542,17 @@ function DeductionMasterTab() {
 
 // ─── 社員マスター Tab ──────────────────────────────────────────────
 
+function calcAge(dob: string | null | undefined): number | null {
+  if (!dob) return null;
+  const birth = new Date(dob);
+  if (isNaN(birth.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const m = today.getMonth() - birth.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+  return age;
+}
+
 const empFullSchema = z.object({
   employeeCode: z.string().min(1, "社員番号を入力してください"),
   name: z.string().min(1, "氏名を入力してください"),
@@ -567,6 +578,17 @@ const empFullSchema = z.object({
 type EmpFullValues = z.infer<typeof empFullSchema>;
 
 function EmpFormFields({ form: f, salaryType }: { form: ReturnType<typeof useForm<EmpFullValues>>, salaryType: string }) {
+  const dobValue = f.watch("dateOfBirth");
+  const age = calcAge(dobValue);
+
+  // 生年月日が入力されている場合のみ介護保険適用を自動設定（40〜64歳）
+  useEffect(() => {
+    if (!dobValue) return;
+    const a = calcAge(dobValue);
+    if (a === null) return;
+    f.setValue("careInsuranceApplied", a >= 40 && a <= 64, { shouldDirty: false });
+  }, [dobValue, f]);
+
   return (
     <>
       <div>
@@ -589,8 +611,18 @@ function EmpFormFields({ form: f, salaryType }: { form: ReturnType<typeof useFor
               <FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
           )} />
           <FormField control={f.control} name="dateOfBirth" render={({ field }) => (
-            <FormItem><FormLabel>生年月日</FormLabel>
-              <FormControl><Input type="date" {...field} value={field.value || ""} /></FormControl><FormMessage /></FormItem>
+            <FormItem>
+              <div className="flex items-center gap-2">
+                <FormLabel>生年月日</FormLabel>
+                {age !== null && (
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                    {age}歳{age >= 40 && age <= 64 ? "・介護保険対象" : ""}
+                  </span>
+                )}
+              </div>
+              <FormControl><Input type="date" {...field} value={field.value || ""} /></FormControl>
+              <FormMessage />
+            </FormItem>
           )} />
           <FormField control={f.control} name="department" render={({ field }) => (
             <FormItem><FormLabel>部署 <span className="text-destructive">*</span></FormLabel>
@@ -742,13 +774,6 @@ function EmpFormFields({ form: f, salaryType }: { form: ReturnType<typeof useFor
               </FormControl>
               <p className="text-xs text-muted-foreground">4〜6月の平均報酬で決定、9月〜翌8月固定。健保・厚年の計算基礎。</p>
               <FormMessage /></FormItem>
-          )} />
-          <FormField control={f.control} name="careInsuranceApplied" render={({ field }) => (
-            <FormItem className="flex items-center justify-between rounded-lg border p-3">
-              <div><FormLabel>介護保険適用</FormLabel>
-                <p className="text-xs text-muted-foreground">40〜64歳の対象者はオン</p></div>
-              <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-            </FormItem>
           )} />
           <FormField control={f.control} name="employmentInsuranceApplied" render={({ field }) => (
             <FormItem className="flex items-center justify-between rounded-lg border p-3">
