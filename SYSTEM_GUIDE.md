@@ -1,7 +1,7 @@
 # 三川運送 給与・バックオフィス管理システム — システムガイド
 
 > 最終更新：2026年4月  
-> バージョン：1.0
+> バージョン：2.0
 
 ---
 
@@ -27,12 +27,17 @@
 |------|------|
 | 給与明細作成 | 基本給・残業・深夜・歩合・各種手当の自動計算 |
 | 社会保険料計算 | 健保・厚年・雇保の料率ベース自動計算 |
-| 源泉所得税 | 国税庁月額表（甲欄）に準拠した自動計算 |
+| 源泉所得税 | 国税庁月額表甲欄（令和8年版）に準拠した自動計算 |
 | 振替伝票 | 給与支払に伴う仕訳の自動生成 |
 | CSV出力 | 弥生会計・freee・マネーフォワード・汎用形式 |
 | 勤怠打刻 | QRコード＋PIN認証によるドライバー向け打刻 |
+| GPS追跡 | 打刻時の座標保存＋リアルタイム位置マップ |
 | リアルタイム勤怠 | 事務所ダッシュボードでのSSEリアルタイム更新 |
+| メッセージ | 事務所↔ドライバー間のLINE風双方向チャット |
+| プッシュ通知 | Web Push APIによるドライバーへのリアルタイム通知 |
 | 日給制対応 | 平日/土曜/日曜ごとの単価による基本給自動計算 |
+| 勤怠カレンダー | 月別・社員別の勤怠実績一覧 |
+| チェックリスト | ドライバーの日常点検記録 |
 
 ### システム構成
 
@@ -179,26 +184,92 @@
 
 ---
 
-### 2-7. ドライバー打刻画面 `/driver`
+### 2-7. 勤怠カレンダー `/calendar`
+
+月単位で全社員の勤怠実績をカレンダー形式で確認できます。
+
+- 年・月の切り替えが可能
+- 出勤・休憩・退勤のステータスをひと目で確認
+
+---
+
+### 2-8. リアルタイムマップ `/realtime-map`
+
+GPS情報を持つドライバーの現在地・打刻地点を地図上で確認できます。
+
+#### 左サイドパネル
+
+| セクション | 説明 |
+|-----------|------|
+| GPS取得済み | リアルタイムで位置情報を送信中の社員。クリックで現在地へズーム。打刻地点（出勤/退勤/休憩）をボタンで表示 |
+| GPS未取得 | リアルタイムGPS未送信の社員。打刻時の座標が記録されていればクリック可能。打刻地点ごとに「M月D日 HH:MM」で時刻表示 |
+
+#### 地図上のマーカー
+
+| マーカー | 説明 |
+|---------|------|
+| 大ピン（パルス付き） | 出勤中社員の現在地 |
+| 🟢出勤 | clock_in 打刻地点 |
+| 🔴退勤 | clock_out 打刻地点 |
+| 🟡休憩開始 | break_start 打刻地点 |
+| 🔵休憩終了 | break_end 打刻地点 |
+
+各マーカーをクリックするとポップアップで氏名・時刻・Google Maps リンクを表示します。
+
+---
+
+### 2-9. メッセージ `/messages`
+
+事務所とドライバー間でLINE風のチャットができます。
+
+#### 機能
+
+| 機能 | 説明 |
+|------|------|
+| 個別チャット | 社員を選択して1対1でメッセージ送受信 |
+| 一斉送信 | 全ドライバーへ同時送信 |
+| プッシュ通知 | ドライバーのブラウザにリアルタイム通知（Web Push）|
+| SSEリアルタイム | 事務所側もSSEで自動更新 |
+
+- **Enter**で送信、**Shift+Enter**で改行
+
+---
+
+### 2-10. ドライバー打刻画面 `/driver/:id`
 
 ドライバー専用のQRコード打刻ページです。事務所のタブレット等に常時表示します。
 
 #### 打刻フロー
 
 ```
-QRコードを読み取る
+QRコードを読み取る（URL に社員ID が埋め込まれている）
     ↓
 PIN設定あり → 4桁テンキー入力 → 照合OK → 打刻画面
 PIN設定なし → 直接打刻画面
     ↓
 「出勤」「退勤」「休憩開始」「休憩終了」ボタンを押す
     ↓
-打刻完了（一定時間後に初期画面に戻る）
+打刻完了（GPS座標も同時に記録される）
 ```
+
+#### 3タブ構成
+
+| タブ | 内容 |
+|------|------|
+| 打刻 | 出退勤ボタン＋発着地・走行距離のメモ入力 |
+| メッセージ | 事務所からのメッセージ受信・返信 |
+| チェックリスト | 日常点検（各項目の OK / NG 記録）|
+
+#### 発着地・走行距離のドラフト保存
+
+- 入力中の内容はリアルタイムでローカルストレージに保存
+- フォーカスを外すとDBに自動保存（マルチ端末間で同期）
+- 15秒ごとにDBから最新状態をポーリングして同期
+- 別端末で入力した内容が画面復帰時に自動反映される
 
 ---
 
-### 2-8. 会社設定 `/settings`
+### 2-11. 会社設定 `/settings`
 
 #### 基本設定
 
@@ -220,7 +291,7 @@ PIN設定なし → 直接打刻画面
 
 ---
 
-### 2-9. マスター管理 `/master`
+### 2-12. マスター管理 `/master`
 
 #### 計算テーブルマスター
 
@@ -297,7 +368,8 @@ PIN設定なし → 直接打刻画面
 
 ### 3-5. 源泉所得税
 
-国税庁「給与所得の源泉徴収税額表（月額表）甲欄」に基づく計算
+国税庁「給与所得の源泉徴収税額表（月額表）**甲欄・令和8年版**」に基づく計算  
+基礎控除額：580,000円
 
 ```
 課税対象額 = 総支給額 - 保険料合計
@@ -332,9 +404,29 @@ PIN設定なし → 直接打刻画面
 - **設定なし**：QRコード読み取りのみで打刻可能
 - PINの設定・変更・リセットは社員編集画面から行います
 
-### 4-3. リアルタイム更新（SSE）
+### 4-3. GPS座標の記録
 
-事務所の勤怠ダッシュボードは、今日の打刻に限りSSE（Server-Sent Events）でリアルタイム自動更新されます。過去日は REST API による静的表示となります。
+打刻時にブラウザのGeolocation APIで座標を取得し、`attendance_records` の `latitude` / `longitude` カラムに保存します。GPS許可がない場合は NULL のまま打刻されます。
+
+### 4-4. リアルタイム更新（SSE）
+
+| 対象 | 更新方式 |
+|------|---------|
+| 勤怠ダッシュボード（今日）| SSE（Server-Sent Events）で自動更新 |
+| 勤怠ダッシュボード（過去日）| REST APIによる静的表示 |
+| リアルタイムマップ | 10秒ポーリング |
+| ドライバー画面 | 15秒ポーリング（ドラフト同期）|
+
+### 4-5. マルチ端末ドラフト同期
+
+ドライバーが複数台の端末（A端末・B端末）で操作した場合も、発着地・走行距離のメモは自動同期されます。
+
+| タイミング | 動作 |
+|-----------|------|
+| 入力中 | ローカルストレージに即時保存 |
+| フォーカスを外した時 | DBに保存 |
+| 画面を切り替えて戻った時 | DBから最新を取得 |
+| 15秒ごと（編集中でない時）| DBから最新を取得 |
 
 ---
 
@@ -360,9 +452,9 @@ PIN設定なし → 直接打刻画面
 | overtime_rate | double | 時間外割増率 |
 | late_night_additional_rate | double | 深夜割増率（追加分） |
 | holiday_rate | double | 休日割増率 |
-| **daily_wage_weekday** | double | **平日日給（円）** |
-| **daily_wage_saturday** | double | **土曜日給（円）** |
-| **hourly_wage_sunday** | double | **日曜時給（円）** |
+| daily_wage_weekday | double | 平日日給（円） |
+| daily_wage_saturday | double | 土曜日給（円） |
+| hourly_wage_sunday | double | 日曜時給（円） |
 
 #### `employees`（社員マスタ）
 
@@ -384,7 +476,7 @@ PIN設定なし → 直接打刻画面
 | resident_tax | double | 住民税月額 |
 | hire_date | date | 入社日 |
 | is_active | boolean | 在籍フラグ |
-| **salary_type** | text | **給与形態（fixed / daily）** |
+| salary_type | text | 給与形態（fixed / daily） |
 | pin | text | 打刻PINコード（ハッシュ化） |
 
 #### `monthly_records`（月次実績）
@@ -396,8 +488,8 @@ PIN設定なし → 直接打刻画面
 | year | integer | 年 |
 | month | integer | 月 |
 | work_days | double | 平日出勤日数 |
-| **saturday_work_days** | double | **土曜出勤日数** |
-| **sunday_work_hours** | double | **日曜勤務時間** |
+| saturday_work_days | double | 土曜出勤日数 |
+| sunday_work_hours | double | 日曜勤務時間 |
 | overtime_hours | double | 残業時間 |
 | late_night_hours | double | 深夜労働時間 |
 | holiday_work_days | double | 休日出勤日数 |
@@ -437,6 +529,45 @@ PIN設定なし → 直接打刻画面
 | event_type | text | clock_in / clock_out / break_start / break_end |
 | work_date | date | 勤務日 |
 | recorded_at | timestamp | 打刻日時 |
+| **latitude** | double | **打刻時のGPS緯度** |
+| **longitude** | double | **打刻時のGPS経度** |
+| checklist_ng_items | text | 日常点検NGチェック項目（JSON）|
+
+#### `absence_records`（欠勤記録）
+
+| カラム | 型 | 説明 |
+|--------|----|------|
+| id | serial | 主キー |
+| employee_id | integer | 社員ID |
+| absence_date | date | 欠勤日 |
+| reason | text | 欠勤理由 |
+
+#### `live_locations`（リアルタイム位置情報）
+
+社員ごとの最新GPS座標（1レコード/社員）。定期的にドライバー端末から上書き更新されます。
+
+| カラム | 型 | 説明 |
+|--------|----|------|
+| id | serial | 主キー |
+| employee_id | integer | 社員ID（UNIQUE）|
+| latitude | double | 緯度 |
+| longitude | double | 経度 |
+| accuracy | double | 精度（メートル）|
+| updated_at | timestamp | 最終更新日時 |
+
+#### `attendance_drafts`（ドラフト保存）
+
+ドライバー画面の発着地・走行距離のドラフトデータ。社員・日付の組み合わせで1レコード。
+
+| カラム | 型 | 説明 |
+|--------|----|------|
+| id | serial | 主キー |
+| employee_id | integer | 社員ID |
+| work_date | date | 勤務日 |
+| departure | text | 出発地 |
+| arrival | text | 到着地 |
+| start_odometer | double | 出庫時の走行距離計 |
+| end_odometer | double | 入庫時の走行距離計 |
 
 #### `allowance_definitions`（カスタム手当マスタ）
 
@@ -477,6 +608,8 @@ PIN設定なし → 直接打刻画面
 | PUT | `/api/employees/:id/pin` | PIN設定・変更 |
 | POST | `/api/employees/:id/pin/verify` | PIN照合 |
 | DELETE | `/api/employees/:id/pin` | PINリセット |
+| GET | `/api/employees/:id/allowances` | 社員手当取得 |
+| PUT | `/api/employees/:id/allowances` | 社員手当更新 |
 
 ### 月次実績
 
@@ -502,11 +635,31 @@ PIN設定なし → 直接打刻画面
 
 | メソッド | パス | 説明 |
 |----------|------|------|
-| GET | `/api/attendance/today?date=YYYY-MM-DD` | 勤怠状況取得 |
+| GET | `/api/attendance/today?date=YYYY-MM-DD` | 全社員の勤怠状況取得 |
 | GET | `/api/attendance/stream` | SSEストリーム（今日のみ）|
-| POST | `/api/attendance/record` | 打刻記録 |
+| GET | `/api/attendance/employee/:employeeId/today` | 特定社員の今日の記録 |
+| POST | `/api/attendance/record` | 打刻記録（GPS座標含む）|
 | PATCH | `/api/attendance/records/:id` | 打刻修正 |
 | DELETE | `/api/attendance/records/:id` | 打刻削除 |
+| GET | `/api/attendance/checklist/:employeeId` | チェックリスト取得 |
+| PATCH | `/api/attendance/checklist/:employeeId` | チェックリスト保存 |
+| GET | `/api/attendance/draft/:employeeId` | ドラフト取得 |
+| PATCH | `/api/attendance/draft/:employeeId` | ドラフト保存 |
+| GET | `/api/attendance/employee/:employeeId` | 社員の打刻履歴 |
+| GET | `/api/attendance/employee/:employeeId/month` | 社員の月次勤怠 |
+| GET | `/api/attendance/monthly-summary` | 全社員の月次サマリー |
+| POST | `/api/attendance/location/live` | GPS現在地を送信・更新 |
+| GET | `/api/attendance/location/live` | 全社員のライブ位置取得（マップ用）|
+| GET | `/api/attendance/gps-locations` | 打刻GPS地点一覧 |
+
+### 欠勤
+
+| メソッド | パス | 説明 |
+|----------|------|------|
+| GET | `/api/absences?year=&month=` | 欠勤記録一覧 |
+| GET | `/api/absences/month` | 月次欠勤サマリー |
+| POST | `/api/absences` | 欠勤登録 |
+| DELETE | `/api/absences/:id` | 欠勤削除 |
 
 ### 振替伝票
 
@@ -523,8 +676,18 @@ PIN設定なし → 直接打刻画面
 | GET | `/api/allowance-definitions` | 手当定義一覧 |
 | POST | `/api/allowance-definitions` | 手当定義追加 |
 | PUT | `/api/allowance-definitions/:id` | 手当定義更新 |
-| GET | `/api/employees/:id/allowances` | 社員手当取得 |
-| PUT | `/api/employees/:id/allowances` | 社員手当更新 |
+
+### メッセージ・プッシュ通知
+
+| メソッド | パス | 説明 |
+|----------|------|------|
+| GET | `/api/messages/vapid-public-key` | Web Push用VAPID公開鍵取得 |
+| GET | `/api/messages/stream` | SSEメッセージストリーム |
+| GET | `/api/messages/conversations` | 会話一覧（社員ごとの最新メッセージ）|
+| GET | `/api/messages/:employeeId` | 社員との会話履歴 |
+| POST | `/api/messages` | メッセージ送信 |
+| POST | `/api/messages/broadcast` | 全社員へ一斉送信 |
+| POST | `/api/push/subscribe` | ドライバーのプッシュ通知登録 |
 
 ---
 
@@ -539,7 +702,9 @@ PIN設定なし → 直接打刻画面
 | バックエンド | Express 5 + TypeScript |
 | データベース | PostgreSQL + Drizzle ORM |
 | バリデーション | Zod v4 + drizzle-zod |
-| API自動生成 | Orval（OpenAPI → React Query hooks）|
+| 地図 | Leaflet + React-Leaflet |
+| プッシュ通知 | Web Push API（VAPID）|
+| リアルタイム | SSE（Server-Sent Events）|
 
 ### ディレクトリ構成
 
@@ -562,7 +727,7 @@ workspace/
 
 ```bash
 # スキーマ変更をDBに反映
-pnpm --filter @workspace/db run push
+pnpm --filter @workspace/db run push-force
 
 # OpenAPI仕様からAPIクライアントを再生成
 pnpm --filter @workspace/api-spec run codegen
@@ -588,6 +753,10 @@ pnpm --filter @workspace/payroll-app run dev
 ### 注意事項
 
 - **給与確定後の修正は不可**です。確定前に内容を必ず確認してください。
-- **DBスキーマ変更時**は `pnpm --filter @workspace/db run push` を実行してください。主キーの型変更は行わないでください。
+- **DBスキーマ変更時**は `pnpm --filter @workspace/db run push-force` を実行してください。主キーの型変更は行わないでください。
 - **日給レート変更**は会社設定画面から行ってください。変更は即時反映されます（過去月の計算済みデータには影響しません）。
 - **PINコード**は暗号化してDBに保存されます。管理者でも平文を確認することはできません。
+- **三川家（EMP001/EMP015/EMP016）** は固定給・雇用保険非適用の設定です。
+- **源泉所得税**は令和8年（2026年）月額表甲欄に基づきます。基礎控除額は580,000円です。
+- **`apiFetch`** はレスポンスの JSON を内部で解析済みのオブジェクトを返します。`.then(r => r.json())` の二重呼び出し禁止。
+- **ドラフト保存**は `onChange → localStorage` のみ、`onBlur → DB保存`。GET には必ず `cache: 'no-store'` を付けること。
