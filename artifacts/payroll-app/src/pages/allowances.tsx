@@ -566,6 +566,8 @@ const empFullSchema = z.object({
   salaryType: z.enum(["fixed", "daily", "hourly"]).default("daily"),
   baseSalary: z.coerce.number().min(0).default(0),
   residentTax: z.coerce.number().min(0).default(0),
+  healthInsuranceMonthly: z.coerce.number().min(0).default(0),
+  pensionMonthly: z.coerce.number().min(0).default(0),
   commissionRatePerKm: z.coerce.number().min(0).default(0),
   commissionRatePerCase: z.coerce.number().min(0).default(0),
   mikawaCommissionRate: z.coerce.number().min(0).max(100).default(0),
@@ -741,6 +743,30 @@ function EmpFormFields({ form: f, salaryType }: { form: ReturnType<typeof useFor
               <p className="text-xs text-muted-foreground">毎月差し引く住民税（特別徴収）の月額</p>
               <FormMessage /></FormItem>
           )} />
+          <div className="grid grid-cols-2 gap-3">
+            <FormField control={f.control} name="healthInsuranceMonthly" render={({ field }) => (
+              <FormItem><FormLabel>健康保険料（月額・円）</FormLabel>
+                <FormControl>
+                  <div className="flex items-center gap-1">
+                    <Input type="number" min={0} step={1} placeholder="0" {...field} className="text-right" />
+                    <span className="text-sm text-muted-foreground shrink-0">円</span>
+                  </div>
+                </FormControl>
+                <p className="text-xs text-muted-foreground">0の場合は標準報酬等級表から自動計算</p>
+                <FormMessage /></FormItem>
+            )} />
+            <FormField control={f.control} name="pensionMonthly" render={({ field }) => (
+              <FormItem><FormLabel>厚生年金保険料（月額・円）</FormLabel>
+                <FormControl>
+                  <div className="flex items-center gap-1">
+                    <Input type="number" min={0} step={1} placeholder="0" {...field} className="text-right" />
+                    <span className="text-sm text-muted-foreground shrink-0">円</span>
+                  </div>
+                </FormControl>
+                <p className="text-xs text-muted-foreground">0の場合は標準報酬等級表から自動計算</p>
+                <FormMessage /></FormItem>
+            )} />
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <FormField control={f.control} name="commissionRatePerKm" render={({ field }) => (
               <FormItem><FormLabel>歩合単価（円/km）</FormLabel>
@@ -943,7 +969,8 @@ function EmployeeMasterTab() {
     defaultValues: {
       employeeCode: "", name: "", nameKana: "", department: "", position: "",
       dateOfBirth: "", hireDate: "", isActive: true, salaryType: "daily", baseSalary: 0,
-      residentTax: 0, commissionRatePerKm: 0, commissionRatePerCase: 0,
+      residentTax: 0, healthInsuranceMonthly: 0, pensionMonthly: 0,
+      commissionRatePerKm: 0, commissionRatePerCase: 0,
       mikawaCommissionRate: 0,
       useBluewingLogic: false, bluewingCommissionRate: 0,
       bluewingFixedOvertimeHours: 0, bluewingFixedOvertimeAmount: 0,
@@ -958,6 +985,7 @@ function EmployeeMasterTab() {
       employeeCode: "", name: "", nameKana: "", department: "配送部", position: "",
       dateOfBirth: "", hireDate: new Date().toISOString().split("T")[0], isActive: true,
       salaryType: "daily", baseSalary: 0, residentTax: 0,
+      healthInsuranceMonthly: 0, pensionMonthly: 0,
       commissionRatePerKm: 0, commissionRatePerCase: 0,
       mikawaCommissionRate: 0,
       useBluewingLogic: false, bluewingCommissionRate: 0,
@@ -985,6 +1013,8 @@ function EmployeeMasterTab() {
       salaryType: (emp.salaryType as "fixed" | "daily" | "hourly") ?? "daily",
       baseSalary: emp.baseSalary ?? 0,
       residentTax: emp.residentTax ?? 0,
+      healthInsuranceMonthly: (emp as unknown as { healthInsuranceMonthly?: number }).healthInsuranceMonthly ?? 0,
+      pensionMonthly: (emp as unknown as { pensionMonthly?: number }).pensionMonthly ?? 0,
       commissionRatePerKm: emp.commissionRatePerKm ?? 0,
       commissionRatePerCase: emp.commissionRatePerCase ?? 0,
       mikawaCommissionRate: ((emp as unknown as { mikawaCommissionRate?: number }).mikawaCommissionRate ?? 0) * 100,
