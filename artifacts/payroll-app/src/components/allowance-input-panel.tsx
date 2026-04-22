@@ -65,7 +65,10 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
   const deductionRowAmountRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const focusRowAmount = (idx: number) => {
-    setTimeout(() => rowAmountRefs.current[idx]?.focus(), 30);
+    setTimeout(() => {
+      const el = rowAmountRefs.current[idx];
+      if (el) { el.focus(); el.select(); }
+    }, 30);
   };
 
   useEffect(() => {
@@ -384,11 +387,17 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
                           e.preventDefault();
+                          const focusDeduction = (i: number) => {
+                            setTimeout(() => {
+                              const el = deductionRowAmountRefs.current[i];
+                              if (el) { el.focus(); el.select(); }
+                            }, 30);
+                          };
                           if (idx + 1 < deductionRows.length) {
-                            setTimeout(() => deductionRowAmountRefs.current[idx + 1]?.focus(), 30);
+                            focusDeduction(idx + 1);
                           } else {
                             setDeductionRows(prev => [...prev, { defId: null, amount: 0 }]);
-                            setTimeout(() => deductionRowAmountRefs.current[idx + 1]?.focus(), 30);
+                            focusDeduction(idx + 1);
                           }
                         }
                       }}
