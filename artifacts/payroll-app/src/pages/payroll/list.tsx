@@ -366,29 +366,68 @@ export default function PayrollList() {
                       <h3 className="font-bold border-l-4 border-black pl-2 bg-gray-100 py-1 text-sm mb-2">支給項目</h3>
                       <table className="w-full text-sm">
                         <tbody>
-                          {[
-                            ["基本給", selectedPayroll.baseSalary],
-                            ["時間外手当", selectedPayroll.overtimePay],
-                            ["深夜手当", selectedPayroll.lateNightPay],
-                            ["休日手当", selectedPayroll.holidayPay],
-                            ["歩合給", selectedPayroll.commissionPay],
-                            ["通勤手当", selectedPayroll.transportationAllowance],
-                            ["無事故手当", selectedPayroll.safetyDrivingAllowance],
-                            ["長距離手当", selectedPayroll.longDistanceAllowance],
-                            ["役職手当", selectedPayroll.positionAllowance],
-                          ].map(([label, val]) => (
-                            <tr key={String(label)} className="border-b border-dotted border-gray-300">
-                              <td className="py-1.5 text-gray-700">{label}</td>
-                              <td className="py-1.5 text-right">{formatCurrency(Number(val))}</td>
-                            </tr>
-                          ))}
                           {/* @ts-expect-error */}
-                          {(selectedPayroll.customAllowancesTotal ?? 0) > 0 && (
-                            <tr className="border-b border-dotted border-gray-300">
-                              <td className="py-1.5 text-gray-700">その他手当</td>
+                          {(selectedPayroll as any).useBluewingLogic ? (
+                            <>
+                              {[
+                                ["基本給", selectedPayroll.baseSalary],
+                                ["時間外手当（超過分）", selectedPayroll.overtimePay],
+                                ["固定残業代（職務手当）", selectedPayroll.earlyOvertimeAllowance],
+                                ["休日手当", selectedPayroll.holidayPay],
+                                ["通勤手当", selectedPayroll.transportationAllowance],
+                                ["無事故手当", selectedPayroll.safetyDrivingAllowance],
+                                ["長距離手当", selectedPayroll.longDistanceAllowance],
+                                ["役職手当", selectedPayroll.positionAllowance],
+                              ].map(([label, val]) => Number(val) !== 0 && (
+                                <tr key={String(label)} className="border-b border-dotted border-gray-300">
+                                  <td className="py-1.5 text-gray-700">{label}</td>
+                                  <td className="py-1.5 text-right">{formatCurrency(Number(val))}</td>
+                                </tr>
+                              ))}
                               {/* @ts-expect-error */}
-                              <td className="py-1.5 text-right">{formatCurrency(selectedPayroll.customAllowancesTotal)}</td>
-                            </tr>
+                              {(selectedPayroll.customAllowancesTotal ?? 0) > 0 && (
+                                <tr className="border-b border-dotted border-gray-300">
+                                  <td className="py-1.5 text-gray-700">その他手当</td>
+                                  {/* @ts-expect-error */}
+                                  <td className="py-1.5 text-right">{formatCurrency(selectedPayroll.customAllowancesTotal)}</td>
+                                </tr>
+                              )}
+                              {/* @ts-expect-error */}
+                              {(selectedPayroll as any).bluewingPerformanceAllowance > 0 && (
+                                <tr className="border-b border-dotted border-blue-300 bg-blue-50">
+                                  <td className="py-1.5 text-blue-800 font-medium">業績手当（BW）</td>
+                                  {/* @ts-expect-error */}
+                                  <td className="py-1.5 text-right font-medium text-blue-800">{formatCurrency((selectedPayroll as any).bluewingPerformanceAllowance)}</td>
+                                </tr>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              {[
+                                ["基本給", selectedPayroll.baseSalary],
+                                ["時間外手当", selectedPayroll.overtimePay],
+                                ["深夜手当", selectedPayroll.lateNightPay],
+                                ["休日手当", selectedPayroll.holidayPay],
+                                ["歩合給", selectedPayroll.commissionPay],
+                                ["通勤手当", selectedPayroll.transportationAllowance],
+                                ["無事故手当", selectedPayroll.safetyDrivingAllowance],
+                                ["長距離手当", selectedPayroll.longDistanceAllowance],
+                                ["役職手当", selectedPayroll.positionAllowance],
+                              ].map(([label, val]) => (
+                                <tr key={String(label)} className="border-b border-dotted border-gray-300">
+                                  <td className="py-1.5 text-gray-700">{label}</td>
+                                  <td className="py-1.5 text-right">{formatCurrency(Number(val))}</td>
+                                </tr>
+                              ))}
+                              {/* @ts-expect-error */}
+                              {(selectedPayroll.customAllowancesTotal ?? 0) > 0 && (
+                                <tr className="border-b border-dotted border-gray-300">
+                                  <td className="py-1.5 text-gray-700">その他手当</td>
+                                  {/* @ts-expect-error */}
+                                  <td className="py-1.5 text-right">{formatCurrency(selectedPayroll.customAllowancesTotal)}</td>
+                                </tr>
+                              )}
+                            </>
                           )}
                           <tr className="border-t-2 border-black font-bold bg-gray-50">
                             <td className="py-1.5 pl-1">総支給額 (A)</td>
@@ -396,6 +435,28 @@ export default function PayrollList() {
                           </tr>
                         </tbody>
                       </table>
+
+                      {/* ブルーウィング計算内訳 */}
+                      {/* @ts-expect-error */}
+                      {(selectedPayroll as any).useBluewingLogic && (
+                        <>
+                          <h3 className="font-bold border-l-4 border-blue-600 pl-2 bg-blue-50 py-1 text-sm mt-4 mb-2 text-blue-900">BW業績手当 計算内訳</h3>
+                          <table className="w-full text-xs text-gray-600 bg-blue-50/40 rounded">
+                            <tbody>
+                              <tr className="border-b border-dotted border-blue-200">
+                                <td className="py-1 pl-2">売上（BW）</td>
+                                {/* @ts-expect-error */}
+                                <td className="py-1 text-right pr-2">{formatCurrency((selectedPayroll as any).bluewingSalesAmount ?? 0)}</td>
+                              </tr>
+                              <tr className="border-b border-dotted border-blue-200">
+                                <td className="py-1 pl-2 text-blue-700 font-medium">業績手当</td>
+                                {/* @ts-expect-error */}
+                                <td className="py-1 text-right pr-2 text-blue-700 font-medium">{formatCurrency((selectedPayroll as any).bluewingPerformanceAllowance ?? 0)}</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </>
+                      )}
 
                       <h3 className="font-bold border-l-4 border-black pl-2 bg-gray-100 py-1 text-sm mt-4 mb-2">勤怠実績</h3>
                       <table className="w-full text-sm">

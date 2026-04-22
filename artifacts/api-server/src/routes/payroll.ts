@@ -270,7 +270,7 @@ router.post("/payroll/calculate", async (req, res) => {
       longDistanceAllowance: emp.longDistanceAllowance ?? 0,
       positionAllowance: emp.positionAllowance ?? 0,
       familyAllowance: emp.familyAllowance ?? 0,
-      earlyOvertimeAllowance: emp.earlyOvertimeAllowance ?? 0,
+      earlyOvertimeAllowance: emp.bluewingFixedOvertimeAmount ?? 0,
       customAllowancesTotal: customAllowancesFixedTotal,
       absenceDeduction: 0,
       grossSalary,
