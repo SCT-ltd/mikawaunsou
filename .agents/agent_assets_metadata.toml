@@ -6,3 +6,9 @@ id = "1PKmEmuewCsqkJXtfG_5u"
 uri = "file://SYSTEM_GUIDE.md"
 type = "text"
 title = "三川運送 システムガイド"
+
+[[outputs]]
+id = "LGmAfS8drkJyTYP2khyam"
+uri = "file://docs/payroll-calculation-logic.md"
+type = "text"
+title = "給与計算ロジック説明書"
