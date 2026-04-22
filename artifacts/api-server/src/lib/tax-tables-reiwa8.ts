@@ -11,7 +11,7 @@
 // 1. 社会保険料（健康保険・厚生年金）等級テーブル
 // ────────────────────────────────────────────────────────────────────────────
 
-const HEALTH_RATE_HALF = 0.04925;   // 健康保険料率 9.85% の折半
+const HEALTH_RATE_HALF = 0.04925;   // 健康保険料率デフォルト（健保のみ、介護なし）
 const PENSION_RATE_HALF = 0.09150;  // 厚生年金保険料率 18.300% の折半
 const PENSION_MAX_STD = 650_000;    // 厚生年金標準報酬月額の上限
 
@@ -79,22 +79,37 @@ function round50sen(x: number): number {
 }
 
 /**
- * 報酬月額から社会保険料（健保折半＋厚年折半）を計算する
- * @param monthlySalary 報酬月額（実際の支給額）
+ * 報酬月額から標準報酬月額等級を取得する
  */
-export function calculateSocialInsurance(monthlySalary: number): {
+export function getInsuranceGrade(monthlySalary: number): { stdMonthly: number; hasPension: boolean } {
+  const grade = INSURANCE_GRADES.find(
+    ([min, max]) => monthlySalary >= min && monthlySalary < max
+  ) ?? INSURANCE_GRADES[INSURANCE_GRADES.length - 1];
+  return { stdMonthly: grade[2], hasPension: grade[3] };
+}
+
+/**
+ * 報酬月額から社会保険料（健保折半＋厚年折半）を計算する
+ *
+ * @param monthlySalary  報酬月額（standard_remuneration が設定されていればその値を渡す）
+ * @param options        会社設定レート（指定なしの場合はデフォルト値）
+ *   healthRate:  健康保険料率（従業員折半、介護込みの場合は込み料率を渡す）
+ *   pensionRate: 厚生年金保険料率（従業員折半）
+ */
+export function calculateSocialInsurance(
+  monthlySalary: number,
+  options?: { healthRate?: number; pensionRate?: number },
+): {
   healthInsurance: number;
   pension: number;
   total: number;
 } {
-  const grade = INSURANCE_GRADES.find(
-    ([min, max]) => monthlySalary >= min && monthlySalary < max
-  ) ?? INSURANCE_GRADES[INSURANCE_GRADES.length - 1];
-
-  const [, , stdMonthly, hasKosei] = grade;
-  const healthInsurance = round50sen(stdMonthly * HEALTH_RATE_HALF);
-  const pension = hasKosei
-    ? round50sen(Math.min(stdMonthly, PENSION_MAX_STD) * PENSION_RATE_HALF)
+  const { stdMonthly, hasPension } = getInsuranceGrade(monthlySalary);
+  const healthRate = options?.healthRate ?? HEALTH_RATE_HALF;
+  const pensionRate = options?.pensionRate ?? PENSION_RATE_HALF;
+  const healthInsurance = round50sen(stdMonthly * healthRate);
+  const pension = hasPension
+    ? round50sen(Math.min(stdMonthly, PENSION_MAX_STD) * pensionRate)
     : 0;
 
   return { healthInsurance, pension, total: healthInsurance + pension };

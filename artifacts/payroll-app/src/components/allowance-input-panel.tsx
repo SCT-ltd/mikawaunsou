@@ -19,29 +19,18 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { Plus, X } from "lucide-react";
-import { calculateIncomeTaxReiwa7, round50sen } from "@/lib/tax-tables-reiwa8";
+import { calculateIncomeTaxReiwa8, getInsuranceGrade, round50sen } from "@/lib/tax-tables-reiwa8";
 
 function roundJapanese(amount: number): number {
   return Math.floor(amount);
 }
 
-interface SavedPayroll {
-  grossSalary: number;
-  netSalary: number;
-  socialInsurance: number;
-  employmentInsurance: number;
-  incomeTax: number;
-  residentTax: number;
-  totalDeductions: number;
-}
-
 interface Props {
   employee: Employee;
   monthlyData?: { workDays: number; saturdayWorkDays: number; sundayWorkHours: number };
-  savedPayroll?: SavedPayroll | null;
 }
 
-export function AllowanceInputPanel({ employee, monthlyData, savedPayroll }: Props) {
+export function AllowanceInputPanel({ employee, monthlyData }: Props) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const employeeId = employee.id;
@@ -143,60 +132,60 @@ export function AllowanceInputPanel({ employee, monthlyData, savedPayroll }: Pro
   const grandTotal = baseSalaryInput + allowancesTotal;
   const totalRows = rows.length + 3;
 
-  const healthInsuranceRate = company?.healthInsuranceEmployeeRate ?? 0.04925;
+  const healthInsuranceRate = company?.healthInsuranceEmployeeRate ?? 0.0575;
   const careInsuranceRate = company?.careInsuranceRate ?? 0.0091;
   const pensionRate = company?.pensionEmployeeRate ?? 0.0915;
-  const employmentInsuranceRate = company?.employmentInsuranceRate ?? 0.006;
 
-  // 社会保険: 手動設定がある場合はそれを優先、なければ標準報酬月額×料率で自動計算
-  const empAny = employee as unknown as {
-    healthInsuranceMonthly?: number;
-    pensionMonthly?: number;
-    incomeTaxMonthly?: number;
-    otherDeductionMonthly?: number;
-  };
-  const stdRemuneration = (employee.standardRemuneration && employee.standardRemuneration > 0)
-    ? employee.standardRemuneration
-    : grandTotal;
-  // 健康保険: 手動設定 > 自動計算
-  const healthInsurance = (empAny.healthInsuranceMonthly && empAny.healthInsuranceMonthly > 0)
-    ? empAny.healthInsuranceMonthly
-    : round50sen(stdRemuneration * healthInsuranceRate);
-  // 介護保険: 40〜64歳の対象者のみ追加
-  const careInsurance = (employee.careInsuranceApplied === true)
-    ? round50sen(stdRemuneration * careInsuranceRate)
+  // ────────────────────────────────────────────────────────────────
+  // 標準報酬月額の決定
+  // standard_remuneration > 0: 設定値の等級テーブル検索
+  // standard_remuneration = 0: grandTotal の等級テーブル検索（自動判定）
+  // ★ grandTotal への直接フォールバックを廃止
+  // ────────────────────────────────────────────────────────────────
+  const empSR = (employee as unknown as { standardRemuneration?: number }).standardRemuneration ?? 0;
+  const gradeBase = empSR > 0 ? empSR : grandTotal;
+  const { stdMonthly } = getInsuranceGrade(gradeBase);
+
+  // 健康保険：標準報酬月額等級 × 会社料率（手動設定廃止）
+  const healthInsurance = round50sen(stdMonthly * healthInsuranceRate);
+
+  // 介護保険：40〜64歳対象者のみ追加（health_insurance_employee_rate が介護込みの場合は 0）
+  // health_insurance_employee_rate が 0.0575（5.75%）= 健保4.84%+介護0.91% の場合は既に含む
+  // care_insurance_applied フラグで判断し、料率が既に介護込みのときは重複加算しない
+  const careInsurance = (employee.careInsuranceApplied === true && healthInsuranceRate < 0.055)
+    ? round50sen(stdMonthly * careInsuranceRate)
     : 0;
-  // 厚生年金: 手動設定 > 自動計算
-  const pensionInsurance = (empAny.pensionMonthly && empAny.pensionMonthly > 0)
-    ? empAny.pensionMonthly
-    : round50sen(Math.min(stdRemuneration, 650_000) * pensionRate);
-  // BW社員判定
-  const isBwEmployee = !!(employee as unknown as { useBluewingLogic?: boolean }).useBluewingLogic;
 
-  // 雇用保険: 雇用保険はパネルの総支給額ベース（BW社員は savedPayroll の実際値を優先）
-  const employmentInsuranceBase = (isBwEmployee && savedPayroll?.employmentInsurance != null)
-    ? savedPayroll.employmentInsurance
-    : round50sen(grandTotal * employmentInsuranceRate);
+  // 厚生年金：標準報酬月額等級 × 会社料率、上限650万（手動設定廃止）
+  const pensionInsurance = round50sen(Math.min(stdMonthly, 650_000) * pensionRate);
+
+  // 雇用保険：grossSalary × 0.55%（全社員統一・BW特別扱い廃止）
   const employmentInsurance = (employee.employmentInsuranceApplied !== false)
-    ? employmentInsuranceBase
+    ? round50sen(grandTotal * 0.0055)
     : 0;
+
   const totalInsurance = healthInsurance + careInsurance + pensionInsurance + employmentInsurance;
 
-  // 社保控除後の金額（所得税計算ベース）= パネルの総支給額 - 社保
+  // ────────────────────────────────────────────────────────────────
+  // 源泉所得税（令和8年月額表甲欄）
+  // 社保控除後の金額 = grandTotal − totalInsurance
+  // 手動固定値優先ロジック廃止 → 常に動的計算
+  // ────────────────────────────────────────────────────────────────
   const afterInsuranceSalary = Math.max(0, grandTotal - totalInsurance);
   const dependentEquivCount = (employee.dependentCount ?? 0) + ((employee.hasSpouse ?? false) ? 1 : 0);
-  // 所得税: 手動設定 > 自動計算（令和7年月額表甲欄）
-  const incomeTax = (empAny.incomeTaxMonthly && empAny.incomeTaxMonthly > 0)
-    ? empAny.incomeTaxMonthly
-    : calculateIncomeTaxReiwa7(afterInsuranceSalary, dependentEquivCount);
+  const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
+
   const residentTax = employee.residentTax ?? 0;
 
   const customDeductionsTotal = deductionRows.reduce((s, r) => s + (r.amount || 0), 0);
-  // その他控除（積立金等）: 社員マスタの固定控除 + 手動入力控除の合計
-  const otherDeductionFixed = empAny.otherDeductionMonthly ?? 0;
-  // 控除合計・差引: パネル入力値からリアルタイム計算
+  const otherDeductionFixed = (employee as unknown as { otherDeductionMonthly?: number }).otherDeductionMonthly ?? 0;
+
+  // 控除合計・差引: パネル入力値からリアルタイム計算（令和8年ベース）
   const totalDeductions = roundJapanese(totalInsurance + incomeTax + residentTax + customDeductionsTotal + otherDeductionFixed);
   const netSalary = roundJapanese(grandTotal - totalDeductions);
+
+  // BW社員フラグ（UI表示用のみ）
+  const isBwEmployee = !!(employee as unknown as { useBluewingLogic?: boolean }).useBluewingLogic;
 
   const fmt = (v: number) => v > 0 ? v.toLocaleString("ja-JP") : v === 0 ? "0" : "—";
 
@@ -482,9 +471,9 @@ export function AllowanceInputPanel({ employee, monthlyData, savedPayroll }: Pro
         )}
         {company && (
           <div className="mx-0 mt-2 mb-1 px-3 py-2 bg-muted/40 border rounded text-xs text-muted-foreground">
-            適用料率：健保 {(healthInsuranceRate * 100).toFixed(2)}%・厚年 {(pensionRate * 100).toFixed(2)}%・雇保 {(employmentInsuranceRate * 100).toFixed(2)}%
-            {empAny.healthInsuranceMonthly && empAny.healthInsuranceMonthly > 0 && (
-              <span className="ml-2 text-amber-600">（健保・厚年は手動設定値を適用中）</span>
+            適用料率：健保 {(healthInsuranceRate * 100).toFixed(2)}%・厚年 {(pensionRate * 100).toFixed(2)}%・雇保 0.55%
+            {empSR > 0 && (
+              <span className="ml-2 text-blue-600">（健保・厚年は標準報酬月額 {empSR.toLocaleString("ja-JP")} 円ベース）</span>
             )}
           </div>
         )}

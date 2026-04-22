@@ -4,8 +4,12 @@
  *
  * 令和8年（2026年）対応:
  *  - 社会保険料: 協会けんぽ東京支部 標準報酬月額等級テーブル方式
+ *    ※ standard_remuneration が設定されている場合はその等級を使用
+ *    ※ standard_remuneration = 0 の場合は grossSalary でフォールバック
+ *  - 雇用保険料: grossSalary × 0.55%（全社員統一）
  *  - 源泉所得税: 国税庁 令和8年分 給与所得の源泉徴収税額表（月額表）甲欄
  *    ※ 基礎控除額が令和7年の480,000円から令和8年の580,000円に改正
+ *    ※ 手動固定値優先ロジック廃止 → 常に動的計算
  */
 
 import { calculateSocialInsurance, calculateIncomeTaxReiwa8 } from "./tax-tables-reiwa8";
@@ -46,12 +50,18 @@ export interface PayrollCalculationInput {
   commissionRatePerCase: number;
   dependentCount: number;
   hasSpouse: boolean;
-  /** 社会保険料の手動設定（> 0 の場合はテーブル計算を上書き） */
-  healthInsuranceMonthly: number;
-  pensionMonthly: number;
+  /**
+   * 標準報酬月額（健保・厚年の計算基礎）
+   * > 0 の場合はその値で等級テーブルを検索
+   * = 0 の場合は grossSalary で等級を自動判定
+   */
+  standardRemuneration: number;
+  /** 健康保険料率（従業員折半、介護保険込みの場合は合算値） */
+  healthInsuranceRate?: number;
+  /** 厚生年金保険料率（従業員折半） */
+  pensionInsuranceRate?: number;
   residentTax: number;
   monthlyAverageWorkHours: number;
-  employmentInsuranceRate: number;
   // Monthly record
   workDays: number;
   saturdayWorkDays: number;
@@ -105,11 +115,11 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     commissionRatePerCase,
     dependentCount,
     hasSpouse,
-    healthInsuranceMonthly,
-    pensionMonthly,
+    standardRemuneration,
+    healthInsuranceRate,
+    pensionInsuranceRate,
     residentTax,
     monthlyAverageWorkHours,
-    employmentInsuranceRate,
     workDays,
     saturdayWorkDays,
     sundayWorkHours,
@@ -187,24 +197,20 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
 
   // ────────────────────────────────────────────────────────────────
   // 社会保険料（健康保険・厚生年金）
-  // 手動設定がある場合はそちらを優先、ない場合は令和8年等級テーブルで算出
+  // standard_remuneration > 0: その値で等級を検索（標準報酬月額ベース）
+  // standard_remuneration = 0: grossSalary で等級を自動判定
   // ────────────────────────────────────────────────────────────────
-  let healthInsurance: number;
-  let pension: number;
-
-  if (healthInsuranceMonthly > 0 && pensionMonthly > 0) {
-    healthInsurance = healthInsuranceMonthly;
-    pension = pensionMonthly;
-  } else {
-    const ins = calculateSocialInsurance(grossSalary);
-    healthInsurance = ins.healthInsurance;
-    pension = ins.pension;
-  }
-
+  const insBase = (standardRemuneration ?? 0) > 0 ? standardRemuneration : grossSalary;
+  const ins = calculateSocialInsurance(insBase, {
+    healthRate: healthInsuranceRate,
+    pensionRate: pensionInsuranceRate,
+  });
+  const healthInsurance = ins.healthInsurance;
+  const pension = ins.pension;
   const socialInsurance = healthInsurance + pension;
 
-  // 雇用保険料：支給合計ベース
-  const employmentInsurance = roundJapanese(grossSalary * employmentInsuranceRate);
+  // 雇用保険料：grossSalary × 0.55%（全社員統一）
+  const employmentInsurance = roundJapanese(grossSalary * 0.0055);
 
   // 社会保険等控除後の給与等の金額（月額表の検索キー）
   const afterInsuranceSalary = grossSalary - socialInsurance - employmentInsurance;
@@ -212,6 +218,7 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
   // ────────────────────────────────────────────────────────────────
   // 源泉所得税（令和8年月額表甲欄）
   // 扶養親族等の数 = 扶養人数 + 配偶者（控除対象の場合）
+  // 手動固定値優先ロジック廃止 → 常に動的計算
   // ────────────────────────────────────────────────────────────────
   const dependentEquivCount = dependentCount + (hasSpouse ? 1 : 0);
   const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);

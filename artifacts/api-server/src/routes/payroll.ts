@@ -100,28 +100,22 @@ router.post("/payroll/calculate", async (req, res) => {
     // 支給合計 = 最終給与（最低保証 or 売上給与の大きい方）
     const grossSalary = mikawaResult.finalSalary;
 
-    // 社会保険料（手動設定優先）
-    let healthInsurance: number;
-    let pension: number;
-    if (emp.healthInsuranceMonthly > 0 && emp.pensionMonthly > 0) {
-      healthInsurance = emp.healthInsuranceMonthly;
-      pension = emp.pensionMonthly;
-    } else {
-      const ins = calculateSocialInsurance(grossSalary);
-      healthInsurance = ins.healthInsurance;
-      pension = ins.pension;
-    }
-    const socialInsurance = healthInsurance + pension;
+    // 社会保険料：standard_remuneration > 0 ならその等級で計算、0 なら grossSalary で自動判定
+    // 健保料率は会社設定値（介護保険込み）を使用
+    const mikawaInsBase = (emp.standardRemuneration ?? 0) > 0 ? emp.standardRemuneration : grossSalary;
+    const mikawaIns = calculateSocialInsurance(mikawaInsBase, {
+      healthRate: company.healthInsuranceEmployeeRate ?? 0.04925,
+      pensionRate: company.pensionEmployeeRate ?? 0.0915,
+    });
+    const socialInsurance = mikawaIns.healthInsurance + mikawaIns.pension;
 
-    // 雇用保険料
-    const employmentInsurance = roundJapanese(grossSalary * company.employmentInsuranceRate);
+    // 雇用保険料：grossSalary × 0.55%（全社員統一）
+    const employmentInsurance = roundJapanese(grossSalary * 0.0055);
 
-    // 源泉所得税（手動設定があればそれを優先、なければ令和8年月額表甲欄）
+    // 源泉所得税：常に動的計算（令和8年月額表甲欄）
     const afterInsuranceSalary = grossSalary - socialInsurance - employmentInsurance;
     const dependentEquivCount = emp.dependentCount + (emp.hasSpouse ? 1 : 0);
-    const incomeTax = (emp.incomeTaxMonthly > 0)
-      ? emp.incomeTaxMonthly
-      : calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
+    const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
 
     const totalDeductions = roundJapanese(socialInsurance + employmentInsurance + incomeTax + emp.residentTax + (emp.otherDeductionMonthly ?? 0));
     const netSalary = roundJapanese(grossSalary - totalDeductions);
@@ -242,28 +236,24 @@ router.post("/payroll/calculate", async (req, res) => {
 
     const grossSalary = bwResult.grossSalary;
 
-    // 社会保険料（手動設定優先）
-    let healthInsurance: number;
-    let pension: number;
-    if (emp.healthInsuranceMonthly > 0 && emp.pensionMonthly > 0) {
-      healthInsurance = emp.healthInsuranceMonthly;
-      pension = emp.pensionMonthly;
-    } else {
-      const ins = calculateSocialInsurance(grossSalary);
-      healthInsurance = ins.healthInsurance;
-      pension = ins.pension;
-    }
-    const socialInsurance = healthInsurance + pension;
+    // 社会保険料：standard_remuneration > 0 ならその等級で計算、0 なら grossSalary で自動判定
+    // 健保料率は会社設定値（介護保険込み）を使用
+    const bwInsBase = (emp.standardRemuneration ?? 0) > 0 ? emp.standardRemuneration : grossSalary;
+    const bwIns = calculateSocialInsurance(bwInsBase, {
+      healthRate: company.healthInsuranceEmployeeRate ?? 0.04925,
+      pensionRate: company.pensionEmployeeRate ?? 0.0915,
+    });
+    const socialInsurance = bwIns.healthInsurance + bwIns.pension;
 
+    // 雇用保険料：grossSalary × 0.55%（全社員統一）
     const employmentInsurance = emp.employmentInsuranceApplied
-      ? roundJapanese(grossSalary * (company.employmentInsuranceRate ?? 0.006))
+      ? roundJapanese(grossSalary * 0.0055)
       : 0;
 
+    // 源泉所得税：常に動的計算（令和8年月額表甲欄）
     const afterInsuranceSalary = grossSalary - socialInsurance - employmentInsurance;
     const dependentEquivCount = (emp.dependentCount ?? 0) + (emp.hasSpouse ? 1 : 0);
-    const incomeTax = ((emp.incomeTaxMonthly ?? 0) > 0)
-      ? (emp.incomeTaxMonthly ?? 0)
-      : calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
+    const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
 
     const totalDeductions = roundJapanese(socialInsurance + employmentInsurance + incomeTax + (emp.residentTax ?? 0) + (emp.otherDeductionMonthly ?? 0));
     const netSalary = roundJapanese(grossSalary - totalDeductions);
@@ -344,11 +334,11 @@ router.post("/payroll/calculate", async (req, res) => {
     commissionRatePerCase: emp.commissionRatePerCase,
     dependentCount: emp.dependentCount,
     hasSpouse: emp.hasSpouse,
-    healthInsuranceMonthly: emp.healthInsuranceMonthly,
-    pensionMonthly: emp.pensionMonthly,
+    standardRemuneration: emp.standardRemuneration ?? 0,
+    healthInsuranceRate: company.healthInsuranceEmployeeRate ?? 0.04925,
+    pensionInsuranceRate: company.pensionEmployeeRate ?? 0.0915,
     residentTax: emp.residentTax,
     monthlyAverageWorkHours: company.monthlyAverageWorkHours,
-    employmentInsuranceRate: company.employmentInsuranceRate,
     workDays: record.workDays,
     saturdayWorkDays: record.saturdayWorkDays,
     sundayWorkHours: record.sundayWorkHours,
