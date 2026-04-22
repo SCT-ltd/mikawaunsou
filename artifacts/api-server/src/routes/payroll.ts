@@ -116,12 +116,14 @@ router.post("/payroll/calculate", async (req, res) => {
     // 雇用保険料
     const employmentInsurance = roundJapanese(grossSalary * company.employmentInsuranceRate);
 
-    // 源泉所得税（令和8年月額表甲欄）
+    // 源泉所得税（手動設定があればそれを優先、なければ令和8年月額表甲欄）
     const afterInsuranceSalary = grossSalary - socialInsurance - employmentInsurance;
     const dependentEquivCount = emp.dependentCount + (emp.hasSpouse ? 1 : 0);
-    const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
+    const incomeTax = (emp.incomeTaxMonthly > 0)
+      ? emp.incomeTaxMonthly
+      : calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
 
-    const totalDeductions = roundJapanese(socialInsurance + employmentInsurance + incomeTax + emp.residentTax);
+    const totalDeductions = roundJapanese(socialInsurance + employmentInsurance + incomeTax + emp.residentTax + (emp.otherDeductionMonthly ?? 0));
     const netSalary = roundJapanese(grossSalary - totalDeductions);
 
     const mikawaPayrollData = {
@@ -259,9 +261,11 @@ router.post("/payroll/calculate", async (req, res) => {
 
     const afterInsuranceSalary = grossSalary - socialInsurance - employmentInsurance;
     const dependentEquivCount = (emp.dependentCount ?? 0) + (emp.hasSpouse ? 1 : 0);
-    const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
+    const incomeTax = ((emp.incomeTaxMonthly ?? 0) > 0)
+      ? (emp.incomeTaxMonthly ?? 0)
+      : calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
 
-    const totalDeductions = roundJapanese(socialInsurance + employmentInsurance + incomeTax + (emp.residentTax ?? 0));
+    const totalDeductions = roundJapanese(socialInsurance + employmentInsurance + incomeTax + (emp.residentTax ?? 0) + (emp.otherDeductionMonthly ?? 0));
     const netSalary = roundJapanese(grossSalary - totalDeductions);
 
     const bwPayrollData = {

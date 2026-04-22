@@ -568,6 +568,8 @@ const empFullSchema = z.object({
   residentTax: z.coerce.number().min(0).default(0),
   healthInsuranceMonthly: z.coerce.number().min(0).default(0),
   pensionMonthly: z.coerce.number().min(0).default(0),
+  incomeTaxMonthly: z.coerce.number().min(0).default(0),
+  otherDeductionMonthly: z.coerce.number().min(0).default(0),
   commissionRatePerKm: z.coerce.number().min(0).default(0),
   commissionRatePerCase: z.coerce.number().min(0).default(0),
   mikawaCommissionRate: z.coerce.number().min(0).max(100).default(0),
@@ -764,6 +766,30 @@ function EmpFormFields({ form: f, salaryType }: { form: ReturnType<typeof useFor
                   </div>
                 </FormControl>
                 <p className="text-xs text-muted-foreground">0の場合は標準報酬等級表から自動計算</p>
+                <FormMessage /></FormItem>
+            )} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <FormField control={f.control} name="incomeTaxMonthly" render={({ field }) => (
+              <FormItem><FormLabel>源泉所得税（月額・円）</FormLabel>
+                <FormControl>
+                  <div className="flex items-center gap-1">
+                    <Input type="number" min={0} step={1} placeholder="0" {...field} className="text-right" />
+                    <span className="text-sm text-muted-foreground shrink-0">円</span>
+                  </div>
+                </FormControl>
+                <p className="text-xs text-muted-foreground">0の場合は税額表から自動計算</p>
+                <FormMessage /></FormItem>
+            )} />
+            <FormField control={f.control} name="otherDeductionMonthly" render={({ field }) => (
+              <FormItem><FormLabel>その他控除（積立金等・月額・円）</FormLabel>
+                <FormControl>
+                  <div className="flex items-center gap-1">
+                    <Input type="number" min={0} step={100} placeholder="0" {...field} className="text-right" />
+                    <span className="text-sm text-muted-foreground shrink-0">円</span>
+                  </div>
+                </FormControl>
+                <p className="text-xs text-muted-foreground">積立金・組合費等の固定控除額</p>
                 <FormMessage /></FormItem>
             )} />
           </div>
@@ -970,6 +996,7 @@ function EmployeeMasterTab() {
       employeeCode: "", name: "", nameKana: "", department: "", position: "",
       dateOfBirth: "", hireDate: "", isActive: true, salaryType: "daily", baseSalary: 0,
       residentTax: 0, healthInsuranceMonthly: 0, pensionMonthly: 0,
+      incomeTaxMonthly: 0, otherDeductionMonthly: 0,
       commissionRatePerKm: 0, commissionRatePerCase: 0,
       mikawaCommissionRate: 0,
       useBluewingLogic: false, bluewingCommissionRate: 0,
@@ -985,7 +1012,7 @@ function EmployeeMasterTab() {
       employeeCode: "", name: "", nameKana: "", department: "配送部", position: "",
       dateOfBirth: "", hireDate: new Date().toISOString().split("T")[0], isActive: true,
       salaryType: "daily", baseSalary: 0, residentTax: 0,
-      healthInsuranceMonthly: 0, pensionMonthly: 0,
+      healthInsuranceMonthly: 0, pensionMonthly: 0, incomeTaxMonthly: 0, otherDeductionMonthly: 0,
       commissionRatePerKm: 0, commissionRatePerCase: 0,
       mikawaCommissionRate: 0,
       useBluewingLogic: false, bluewingCommissionRate: 0,
@@ -1015,6 +1042,8 @@ function EmployeeMasterTab() {
       residentTax: emp.residentTax ?? 0,
       healthInsuranceMonthly: (emp as unknown as { healthInsuranceMonthly?: number }).healthInsuranceMonthly ?? 0,
       pensionMonthly: (emp as unknown as { pensionMonthly?: number }).pensionMonthly ?? 0,
+      incomeTaxMonthly: (emp as unknown as { incomeTaxMonthly?: number }).incomeTaxMonthly ?? 0,
+      otherDeductionMonthly: (emp as unknown as { otherDeductionMonthly?: number }).otherDeductionMonthly ?? 0,
       commissionRatePerKm: emp.commissionRatePerKm ?? 0,
       commissionRatePerCase: emp.commissionRatePerCase ?? 0,
       mikawaCommissionRate: ((emp as unknown as { mikawaCommissionRate?: number }).mikawaCommissionRate ?? 0) * 100,

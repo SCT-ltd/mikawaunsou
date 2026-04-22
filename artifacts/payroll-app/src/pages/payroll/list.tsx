@@ -485,8 +485,12 @@ export default function PayrollList() {
                             ["健康保険・厚生年金", selectedPayroll.socialInsurance],
                             ["雇用保険料", selectedPayroll.employmentInsurance],
                             ["源泉所得税", selectedPayroll.incomeTax],
-                            ["住民税", selectedPayroll.residentTax],
+                            ["市県民税", selectedPayroll.residentTax],
                             ["欠勤控除", selectedPayroll.absenceDeduction],
+                            ...((() => {
+                              const misc = selectedPayroll.totalDeductions - (selectedPayroll.socialInsurance ?? 0) - (selectedPayroll.employmentInsurance ?? 0) - (selectedPayroll.incomeTax ?? 0) - (selectedPayroll.residentTax ?? 0) - (selectedPayroll.absenceDeduction ?? 0);
+                              return misc > 0 ? [["積立金・その他", misc]] : [];
+                            })()),
                           ].map(([label, val]) => (
                             <tr key={String(label)} className="border-b border-dotted border-gray-300">
                               <td className="py-1.5 text-gray-700">{label}</td>

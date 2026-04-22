@@ -127,6 +127,8 @@ router.put("/employees/:id", async (req, res) => {
       ...(body.careInsuranceApplied !== undefined && { careInsuranceApplied: body.careInsuranceApplied }),
       ...(body.healthInsuranceMonthly !== undefined && { healthInsuranceMonthly: body.healthInsuranceMonthly }),
       ...(body.pensionMonthly !== undefined && { pensionMonthly: body.pensionMonthly }),
+      ...(body.incomeTaxMonthly !== undefined && { incomeTaxMonthly: body.incomeTaxMonthly }),
+      ...(body.otherDeductionMonthly !== undefined && { otherDeductionMonthly: body.otherDeductionMonthly }),
       ...(body.employmentInsuranceApplied !== undefined && { employmentInsuranceApplied: body.employmentInsuranceApplied }),
       ...(body.residentTax !== undefined && { residentTax: body.residentTax }),
       ...(body.dateOfBirth !== undefined && { dateOfBirth: body.dateOfBirth || null }),
