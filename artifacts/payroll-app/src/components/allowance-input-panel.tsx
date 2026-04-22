@@ -170,16 +170,22 @@ export function AllowanceInputPanel({ employee, monthlyData, savedPayroll }: Pro
   const pensionInsurance = (empAny.pensionMonthly && empAny.pensionMonthly > 0)
     ? empAny.pensionMonthly
     : round50sen(Math.min(stdRemuneration, 650_000) * pensionRate);
-  // 雇用保険: savedPayrollの総支給額ベース（なければパネル計算値）
-  const actualGross = savedPayroll?.grossSalary ?? grandTotal;
+  // BW社員判定
+  const isBwEmployee = !!(employee as unknown as { useBluewingLogic?: boolean }).useBluewingLogic;
+
+  // 雇用保険: 雇用保険はパネルの総支給額ベース（BW社員は savedPayroll の実際値を優先）
+  const employmentInsuranceBase = (isBwEmployee && savedPayroll?.employmentInsurance != null)
+    ? savedPayroll.employmentInsurance
+    : round50sen(grandTotal * employmentInsuranceRate);
   const employmentInsurance = (employee.employmentInsuranceApplied !== false)
-    ? (savedPayroll?.employmentInsurance ?? round50sen(actualGross * employmentInsuranceRate))
+    ? employmentInsuranceBase
     : 0;
   const totalInsurance = healthInsurance + careInsurance + pensionInsurance + employmentInsurance;
 
-  const afterInsuranceSalary = Math.max(0, actualGross - totalInsurance);
+  // 社保控除後の金額（所得税計算ベース）= パネルの総支給額 - 社保
+  const afterInsuranceSalary = Math.max(0, grandTotal - totalInsurance);
   const dependentEquivCount = (employee.dependentCount ?? 0) + ((employee.hasSpouse ?? false) ? 1 : 0);
-  // 所得税: 手動設定 > 自動計算（令和7年月額表甲欄）※savedPayrollは使わない（古い計算値の可能性）
+  // 所得税: 手動設定 > 自動計算（令和7年月額表甲欄）
   const incomeTax = (empAny.incomeTaxMonthly && empAny.incomeTaxMonthly > 0)
     ? empAny.incomeTaxMonthly
     : calculateIncomeTaxReiwa7(afterInsuranceSalary, dependentEquivCount);
@@ -188,10 +194,9 @@ export function AllowanceInputPanel({ employee, monthlyData, savedPayroll }: Pro
   const customDeductionsTotal = deductionRows.reduce((s, r) => s + (r.amount || 0), 0);
   // その他控除（積立金等）: 社員マスタの固定控除 + 手動入力控除の合計
   const otherDeductionFixed = empAny.otherDeductionMonthly ?? 0;
-  // 控除合計・差引は常に最新のオーバーライド値で再計算（savedPayrollは使わない）
+  // 控除合計・差引: パネル入力値からリアルタイム計算
   const totalDeductions = roundJapanese(totalInsurance + incomeTax + residentTax + customDeductionsTotal + otherDeductionFixed);
-  const displayGross = savedPayroll?.grossSalary ?? grandTotal;
-  const netSalary = roundJapanese(displayGross - totalDeductions);
+  const netSalary = roundJapanese(grandTotal - totalDeductions);
 
   const fmt = (v: number) => v > 0 ? v.toLocaleString("ja-JP") : v === 0 ? "0" : "—";
 
@@ -332,13 +337,13 @@ export function AllowanceInputPanel({ employee, monthlyData, savedPayroll }: Pro
             <tr className="bg-blue-50 font-semibold">
               <td className="border border-border px-2 py-1.5 text-muted-foreground text-center" colSpan={2}>
                 総支給金額
-                {savedPayroll && grandTotal !== displayGross && (
-                  <span className="ml-1 text-xs text-blue-600 font-normal">（BW計算含む）</span>
+                {isBwEmployee && (
+                  <span className="ml-1 text-xs text-blue-600 font-normal">※BW分除く</span>
                 )}
               </td>
               <td className="border border-border" />
               <td className="border border-border px-2 py-1.5 text-right tabular-nums font-bold text-blue-800">
-                {displayGross > 0 ? displayGross.toLocaleString("ja-JP") : "—"}
+                {grandTotal > 0 ? grandTotal.toLocaleString("ja-JP") : "—"}
               </td>
             </tr>
 
@@ -470,9 +475,17 @@ export function AllowanceInputPanel({ employee, monthlyData, savedPayroll }: Pro
           </tbody>
         </table>
 
+        {isBwEmployee && (
+          <div className="mx-0 mt-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
+            <strong>BW社員:</strong> 上記は基本給・手当のみ。時間外手当・業績手当（BW計算）は「給与明細」タブで確認してください。
+          </div>
+        )}
         {company && (
           <div className="mx-0 mt-2 mb-1 px-3 py-2 bg-muted/40 border rounded text-xs text-muted-foreground">
             適用料率：健保 {(healthInsuranceRate * 100).toFixed(2)}%・厚年 {(pensionRate * 100).toFixed(2)}%・雇保 {(employmentInsuranceRate * 100).toFixed(2)}%
+            {empAny.healthInsuranceMonthly && empAny.healthInsuranceMonthly > 0 && (
+              <span className="ml-2 text-amber-600">（健保・厚年は手動設定値を適用中）</span>
+            )}
           </div>
         )}
       </div>
