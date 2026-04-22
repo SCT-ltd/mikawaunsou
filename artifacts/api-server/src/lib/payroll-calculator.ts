@@ -285,6 +285,87 @@ export interface MikawaPayrollResult {
 
 const MIKAWA_DAILY_BASE = 9808; // 最低保証計算用日給基礎単価（円）
 
+// ────────────────────────────────────────────────────────────────────────────
+// ブルーウィング給与計算ロジック
+// ────────────────────────────────────────────────────────────────────────────
+
+export interface BluewingPayrollInput {
+  /** ブルーウィングからの売上金額（円） */
+  bluewingSalesAmount: number;
+  /** 歩合率（例: 0.375 = 37.5%） */
+  commissionRate: number;
+  /** 固定残業時間（職務手当に含まれるみなし残業時間） */
+  fixedOvertimeHours: number;
+  /** 実残業時間（日報ベースの総残業時間） */
+  overtimeHours: number;
+  /** 残業単価（円/時） */
+  overtimeUnitPrice: number;
+  /** 基本給（日給×出勤日数 等） */
+  baseSalary: number;
+  /** 固定手当合計（燃料・駐車等）※残業代・休日除く */
+  fixedAllowancesTotal: number;
+  /** 休日出勤代 */
+  holidayPay: number;
+  /** 固定残業代（職務手当）として支給する金額 */
+  fixedOvertimeAmount: number;
+}
+
+export interface BluewingPayrollResult {
+  /** 実残業時間（固定みなし超過分） */
+  actualOvertimeHours: number;
+  /** 実残業代（超過分のみ） */
+  actualOvertimePay: number;
+  /** A = 売上×歩合率 − 実残業代 */
+  targetAmount: number;
+  /** B = 基本給 + 固定手当 + 休日出勤（残業代除く） */
+  baseTotal: number;
+  /** 業績手当 = max(0, A − B)  ※マイナスの場合は0 */
+  performanceAllowance: number;
+  /** 最終支給総額 = B + 実残業代 + 固定残業代(職務手当) + 業績手当 */
+  grossSalary: number;
+}
+
+export function calculateBluewingPayroll(input: BluewingPayrollInput): BluewingPayrollResult {
+  const {
+    bluewingSalesAmount,
+    commissionRate,
+    fixedOvertimeHours,
+    overtimeHours,
+    overtimeUnitPrice,
+    baseSalary,
+    fixedAllowancesTotal,
+    holidayPay,
+    fixedOvertimeAmount,
+  } = input;
+
+  // ① 実残業時間（固定みなしを超えた分）
+  const actualOvertimeHours = Math.max(0, overtimeHours - fixedOvertimeHours);
+
+  // ② 実残業代（超過分 × 単価）
+  const actualOvertimePay = actualOvertimeHours * overtimeUnitPrice;
+
+  // ③ A = 売上×歩合率 − 実残業代
+  const targetAmount = Math.floor(bluewingSalesAmount * commissionRate - actualOvertimePay);
+
+  // ④ B = 基本給 + 固定手当 + 休日出勤（残業代を除く実支給ベース）
+  const baseTotal = Math.floor(baseSalary + fixedAllowancesTotal + holidayPay);
+
+  // ⑤ 業績手当 = max(0, A - B)
+  const performanceAllowance = Math.max(0, targetAmount - baseTotal);
+
+  // ⑥ 最終支給総額
+  const grossSalary = Math.floor(baseTotal + actualOvertimePay + fixedOvertimeAmount + performanceAllowance);
+
+  return {
+    actualOvertimeHours,
+    actualOvertimePay,
+    targetAmount,
+    baseTotal,
+    performanceAllowance,
+    grossSalary,
+  };
+}
+
 export function calculateMikawaPayroll(input: MikawaPayrollInput): MikawaPayrollResult {
   const {
     salesAmount,

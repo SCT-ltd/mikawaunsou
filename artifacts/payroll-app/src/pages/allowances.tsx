@@ -569,6 +569,10 @@ const empFullSchema = z.object({
   commissionRatePerKm: z.coerce.number().min(0).default(0),
   commissionRatePerCase: z.coerce.number().min(0).default(0),
   mikawaCommissionRate: z.coerce.number().min(0).max(100).default(0),
+  useBluewingLogic: z.boolean().default(false),
+  bluewingCommissionRate: z.coerce.number().min(0).max(100).default(0),
+  bluewingFixedOvertimeHours: z.coerce.number().min(0).default(0),
+  bluewingFixedOvertimeAmount: z.coerce.number().min(0).default(0),
   dependentCount: z.coerce.number().int().min(0).default(0),
   hasSpouse: z.boolean().default(false),
   standardRemuneration: z.coerce.number().min(0).default(0),
@@ -777,6 +781,59 @@ function EmpFormFields({ form: f, salaryType }: { form: ReturnType<typeof useFor
       </div>
       <Separator />
       <div>
+        <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">ブルーウィング設定</h4>
+        <div className="space-y-3">
+          <FormField control={f.control} name="useBluewingLogic" render={({ field }) => (
+            <FormItem className="flex items-center justify-between rounded-lg border p-3">
+              <div>
+                <FormLabel>ブルーウィングロジック使用</FormLabel>
+                <p className="text-xs text-muted-foreground">ONにすると月次でブルーウィング売上を入力すると自動計算</p>
+              </div>
+              <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+            </FormItem>
+          )} />
+          <FormField control={f.control} name="bluewingCommissionRate" render={({ field }) => (
+            <FormItem>
+              <FormLabel>ブルーウィング歩合率（%）</FormLabel>
+              <FormControl>
+                <div className="flex items-center gap-2">
+                  <Input type="number" min={0} max={100} step={0.1} placeholder="例: 37.5" {...field}
+                    className="text-right max-w-[160px]" />
+                  <span className="text-sm text-muted-foreground shrink-0">%</span>
+                </div>
+              </FormControl>
+              <p className="text-xs text-muted-foreground">
+                岡田: 37.5 / 古田・平澤・横井・中村: 37 / 玉川・土田・鴨志田: 36.8
+              </p>
+              <FormMessage />
+            </FormItem>
+          )} />
+          <div className="grid grid-cols-2 gap-3">
+            <FormField control={f.control} name="bluewingFixedOvertimeHours" render={({ field }) => (
+              <FormItem>
+                <FormLabel>固定残業みなし時間（h）</FormLabel>
+                <FormControl>
+                  <Input type="number" min={0} step={0.5} placeholder="例: 25" {...field} className="text-right" />
+                </FormControl>
+                <p className="text-xs text-muted-foreground">岡田・横井他: 25 / 平澤・玉川: 40</p>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <FormField control={f.control} name="bluewingFixedOvertimeAmount" render={({ field }) => (
+              <FormItem>
+                <FormLabel>固定残業代（職務手当）（円）</FormLabel>
+                <FormControl>
+                  <Input type="number" min={0} step={1000} placeholder="例: 50000" {...field} className="text-right" />
+                </FormControl>
+                <p className="text-xs text-muted-foreground">岡田・横井他: 50,000 / 古田: 40,000 / 平澤・玉川: 120,000</p>
+                <FormMessage />
+              </FormItem>
+            )} />
+          </div>
+        </div>
+      </div>
+      <Separator />
+      <div>
         <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">扶養・家族設定</h4>
         <div className="space-y-3">
           <FormField control={f.control} name="dependentCount" render={({ field }) => (
@@ -888,6 +945,8 @@ function EmployeeMasterTab() {
       dateOfBirth: "", hireDate: "", isActive: true, salaryType: "daily", baseSalary: 0,
       residentTax: 0, commissionRatePerKm: 0, commissionRatePerCase: 0,
       mikawaCommissionRate: 0,
+      useBluewingLogic: false, bluewingCommissionRate: 0,
+      bluewingFixedOvertimeHours: 0, bluewingFixedOvertimeAmount: 0,
       dependentCount: 0, hasSpouse: false, standardRemuneration: 0,
       careInsuranceApplied: false, employmentInsuranceApplied: true,
       scheduledWorkStart: "", scheduledWorkEnd: "",
@@ -901,6 +960,8 @@ function EmployeeMasterTab() {
       salaryType: "daily", baseSalary: 0, residentTax: 0,
       commissionRatePerKm: 0, commissionRatePerCase: 0,
       mikawaCommissionRate: 0,
+      useBluewingLogic: false, bluewingCommissionRate: 0,
+      bluewingFixedOvertimeHours: 0, bluewingFixedOvertimeAmount: 0,
       dependentCount: 0, hasSpouse: false, standardRemuneration: 0,
       careInsuranceApplied: false, employmentInsuranceApplied: true,
       scheduledWorkStart: "", scheduledWorkEnd: "",
@@ -927,6 +988,10 @@ function EmployeeMasterTab() {
       commissionRatePerKm: emp.commissionRatePerKm ?? 0,
       commissionRatePerCase: emp.commissionRatePerCase ?? 0,
       mikawaCommissionRate: ((emp as unknown as { mikawaCommissionRate?: number }).mikawaCommissionRate ?? 0) * 100,
+      useBluewingLogic: (emp as unknown as { useBluewingLogic?: boolean }).useBluewingLogic ?? false,
+      bluewingCommissionRate: ((emp as unknown as { bluewingCommissionRate?: number }).bluewingCommissionRate ?? 0) * 100,
+      bluewingFixedOvertimeHours: (emp as unknown as { bluewingFixedOvertimeHours?: number }).bluewingFixedOvertimeHours ?? 0,
+      bluewingFixedOvertimeAmount: (emp as unknown as { bluewingFixedOvertimeAmount?: number }).bluewingFixedOvertimeAmount ?? 0,
       dependentCount: emp.dependentCount,
       hasSpouse: emp.hasSpouse ?? false,
       standardRemuneration: emp.standardRemuneration ?? 0,
@@ -940,7 +1005,11 @@ function EmployeeMasterTab() {
   const onEditSubmit = async (data: EmpFullValues) => {
     if (!editingEmployee) return;
     try {
-      const saveData = { ...data, mikawaCommissionRate: (data.mikawaCommissionRate ?? 0) / 100 };
+      const saveData = {
+        ...data,
+        mikawaCommissionRate: (data.mikawaCommissionRate ?? 0) / 100,
+        bluewingCommissionRate: (data.bluewingCommissionRate ?? 0) / 100,
+      };
       await updateEmployee.mutateAsync({ id: editingEmployee.id, data: saveData });
       toast({ title: "保存しました", description: `${editingEmployee.name}の情報を更新しました。` });
       queryClient.invalidateQueries({ queryKey: getListEmployeesQueryKey() });
@@ -952,7 +1021,11 @@ function EmployeeMasterTab() {
 
   const onCreateSubmit = async (data: EmpFullValues) => {
     try {
-      const saveData = { ...data, mikawaCommissionRate: (data.mikawaCommissionRate ?? 0) / 100 };
+      const saveData = {
+        ...data,
+        mikawaCommissionRate: (data.mikawaCommissionRate ?? 0) / 100,
+        bluewingCommissionRate: (data.bluewingCommissionRate ?? 0) / 100,
+      };
       const res = await createEmployee.mutateAsync({ data: saveData });
       toast({ title: "登録しました", description: `${res.name}を登録しました。` });
       queryClient.invalidateQueries({ queryKey: getListEmployeesQueryKey() });

@@ -111,6 +111,16 @@ export interface Employee {
   salaryType: string;
   hireDate: string;
   isActive: boolean;
+  /** 三川歩合率（小数） */
+  mikawaCommissionRate: number;
+  /** ブルーウィングロジック使用 */
+  useBluewingLogic: boolean;
+  /** ブルーウィング歩合率（小数） */
+  bluewingCommissionRate: number;
+  /** ブルーウィング固定残業時間（みなし時間） */
+  bluewingFixedOvertimeHours: number;
+  /** ブルーウィング固定残業代（職務手当額） */
+  bluewingFixedOvertimeAmount: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -164,6 +174,16 @@ export interface UpdateEmployeeBody {
   salaryType?: string;
   hireDate?: string;
   isActive?: boolean;
+  /** 三川歩合率（小数） */
+  mikawaCommissionRate?: number;
+  /** ブルーウィングロジック使用 */
+  useBluewingLogic?: boolean;
+  /** ブルーウィング歩合率（小数） */
+  bluewingCommissionRate?: number;
+  /** ブルーウィング固定残業時間（みなし時間） */
+  bluewingFixedOvertimeHours?: number;
+  /** ブルーウィング固定残業代（職務手当額） */
+  bluewingFixedOvertimeAmount?: number;
 }
 
 export interface MonthlyRecord {
@@ -187,6 +207,16 @@ export interface MonthlyRecord {
   /** 欠勤日数 */
   absenceDays: number;
   notes?: string;
+  /** 三川売上金額 */
+  salesAmount?: number;
+  /** 三川歩合率 */
+  commissionRate?: number;
+  /** 固定残業時間 */
+  fixedOvertimeHours?: number;
+  /** 残業単価 */
+  overtimeUnitPrice?: number;
+  /** ブルーウィング売上金額 */
+  bluewingSalesAmount?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -214,6 +244,11 @@ export interface UpdateMonthlyRecordBody {
   deliveryCases?: number;
   absenceDays?: number;
   notes?: string;
+  salesAmount?: number;
+  commissionRate?: number;
+  fixedOvertimeHours?: number;
+  overtimeUnitPrice?: number;
+  bluewingSalesAmount?: number;
 }
 
 export type PayrollStatus = (typeof PayrollStatus)[keyof typeof PayrollStatus];
@@ -273,6 +308,16 @@ export interface Payroll {
   lateNightHours: number;
   holidayWorkDays: number;
   workDays: number;
+  /** カスタム手当合計 */
+  customAllowancesTotal?: number;
+  /** 業績手当 */
+  performanceAllowance?: number;
+  /** ブルーウィングロジック使用 */
+  useBluewingLogic?: boolean;
+  /** ブルーウィング売上金額 */
+  bluewingSalesAmount?: number;
+  /** ブルーウィング業績手当 */
+  bluewingPerformanceAllowance?: number;
   createdAt: string;
   updatedAt: string;
 }

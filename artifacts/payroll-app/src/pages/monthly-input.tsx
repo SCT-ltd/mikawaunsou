@@ -594,13 +594,14 @@ export default function MonthlyInput() {
           initialEdits[emp.id] = {
             ...record,
             commissionRate: (record as unknown as { commissionRate?: number }).commissionRate || empDefaultRate,
+            bluewingSalesAmount: (record as unknown as { bluewingSalesAmount?: number }).bluewingSalesAmount ?? 0,
           };
         } else {
           initialEdits[emp.id] = {
             workDays: 0, overtimeHours: 0, lateNightHours: 0,
             holidayWorkDays: 0, drivingDistanceKm: 0, deliveryCases: 0,
             absenceDays: 0, saturdayWorkDays: 0, sundayWorkHours: 0, notes: "",
-            salesAmount: 0, commissionRate: empDefaultRate,
+            salesAmount: 0, commissionRate: empDefaultRate, bluewingSalesAmount: 0,
           };
         }
       });
@@ -641,18 +642,32 @@ export default function MonthlyInput() {
               notes: editData.notes,
               salesAmount: editData.salesAmount ?? 0,
               commissionRate: editData.commissionRate ?? 0,
+              bluewingSalesAmount: editData.bluewingSalesAmount ?? 0,
             }
           });
         } else {
-          const hasData = editData.workDays > 0 || editData.drivingDistanceKm > 0 || editData.deliveryCases > 0;
+          const hasData = editData.workDays > 0 || editData.drivingDistanceKm > 0 || editData.deliveryCases > 0 || (editData.bluewingSalesAmount ?? 0) > 0;
           if (hasData) {
             await createRecord.mutateAsync({
               data: { employeeId: emp.id, year, month, ...editData }
             });
           }
         }
+        // ブルーウィングロジック：売上入力済の社員は自動計算
+        const isBluewing = (emp as unknown as { useBluewingLogic?: boolean }).useBluewingLogic;
+        if (isBluewing && (editData.bluewingSalesAmount ?? 0) > 0) {
+          try {
+            await fetch(`${BASE}/api/payroll/calculate`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ employeeId: emp.id, year, month, useBluewingLogic: true }),
+            });
+          } catch {
+            // 自動計算失敗は無視（保存は成功）
+          }
+        }
       }
-      toast({ title: "保存完了", description: `${month}月分の実績を保存しました。` });
+      toast({ title: "保存完了", description: `${month}月分の実績を保存しました。ブルーウィング社員の給与は自動計算されました。` });
       queryClient.invalidateQueries({ queryKey: getListMonthlyRecordsQueryKey({ year, month }) });
     } catch {
       toast({ title: "エラー", description: "一部のデータの保存に失敗しました。", variant: "destructive" });
@@ -726,17 +741,18 @@ export default function MonthlyInput() {
                   <TableHead className="w-[90px]">配送件数</TableHead>
                   <TableHead className="w-[130px]">売上金額(円)</TableHead>
                   <TableHead className="w-[100px]">歩合率(%)</TableHead>
+                  <TableHead className="w-[140px] bg-blue-50">BW売上(円)</TableHead>
                   <TableHead className="w-[180px]">備考</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={13} className="text-center py-8 text-muted-foreground">読み込み中...</TableCell>
+                    <TableCell colSpan={14} className="text-center py-8 text-muted-foreground">読み込み中...</TableCell>
                   </TableRow>
                 ) : !employees || employees.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={13} className="text-center py-8 text-muted-foreground">有効な社員が見つかりません</TableCell>
+                    <TableCell colSpan={14} className="text-center py-8 text-muted-foreground">有効な社員が見つかりません</TableCell>
                   </TableRow>
                 ) : (
                   employees.map((emp) => {
@@ -815,6 +831,15 @@ export default function MonthlyInput() {
                               const pct = parseFloat(e.target.value) || 0;
                               handleEditChange(emp.id, 'commissionRate', String(pct / 100));
                             }} />
+                        </TableCell>
+                        <TableCell className="p-2 bg-blue-50/60">
+                          {(emp as unknown as { useBluewingLogic?: boolean }).useBluewingLogic ? (
+                            <Input type="number" min="0" step="1" className="h-8 w-full text-right border-blue-300 focus-visible:ring-blue-400"
+                              value={rowData.bluewingSalesAmount || ""}
+                              onChange={(e) => handleEditChange(emp.id, 'bluewingSalesAmount', e.target.value)} />
+                          ) : (
+                            <div className="h-8 flex items-center justify-center text-xs text-muted-foreground">—</div>
+                          )}
                         </TableCell>
                         <TableCell className="p-2">
                           <Input type="text" className="h-8 w-full" placeholder="摘要"

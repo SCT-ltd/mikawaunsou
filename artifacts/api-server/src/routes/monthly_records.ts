@@ -24,6 +24,7 @@ const RECORD_FIELDS = {
   commissionRate: monthlyRecordsTable.commissionRate,
   fixedOvertimeHours: monthlyRecordsTable.fixedOvertimeHours,
   overtimeUnitPrice: monthlyRecordsTable.overtimeUnitPrice,
+  bluewingSalesAmount: monthlyRecordsTable.bluewingSalesAmount,
   createdAt: monthlyRecordsTable.createdAt,
   updatedAt: monthlyRecordsTable.updatedAt,
 };
@@ -66,6 +67,7 @@ router.post("/monthly-records", async (req, res) => {
       commissionRate: body.commissionRate ?? existing[0].commissionRate,
       fixedOvertimeHours: body.fixedOvertimeHours ?? existing[0].fixedOvertimeHours,
       overtimeUnitPrice: body.overtimeUnitPrice ?? existing[0].overtimeUnitPrice,
+      bluewingSalesAmount: body.bluewingSalesAmount ?? existing[0].bluewingSalesAmount,
       updatedAt: new Date(),
     }).where(eq(monthlyRecordsTable.id, existing[0].id)).returning();
     return res.status(201).json(updated);
@@ -89,6 +91,7 @@ router.post("/monthly-records", async (req, res) => {
     commissionRate: body.commissionRate ?? 0,
     fixedOvertimeHours: body.fixedOvertimeHours ?? 0,
     overtimeUnitPrice: body.overtimeUnitPrice ?? 2111,
+    bluewingSalesAmount: body.bluewingSalesAmount ?? 0,
   }).returning();
   return res.status(201).json(record);
 });
@@ -121,6 +124,7 @@ router.put("/monthly-records/:id", async (req, res) => {
     ...(body.commissionRate !== undefined && { commissionRate: body.commissionRate }),
     ...(body.fixedOvertimeHours !== undefined && { fixedOvertimeHours: body.fixedOvertimeHours }),
     ...(body.overtimeUnitPrice !== undefined && { overtimeUnitPrice: body.overtimeUnitPrice }),
+    ...(body.bluewingSalesAmount !== undefined && { bluewingSalesAmount: body.bluewingSalesAmount }),
     updatedAt: new Date(),
   }).where(eq(monthlyRecordsTable.id, id)).returning();
   if (!updated) return res.status(404).json({ error: "Record not found" });
