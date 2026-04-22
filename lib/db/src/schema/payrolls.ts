@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, doublePrecision, text, timestamp, unique } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, doublePrecision, text, timestamp, unique, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { employeesTable } from "./employees";
@@ -34,6 +34,10 @@ export const payrollsTable = pgTable("payrolls", {
   holidayWorkDays: doublePrecision("holiday_work_days").notNull().default(0),
   workDays: doublePrecision("work_days").notNull().default(0),
   notes: text("notes"),
+  useMikawaLogic: boolean("use_mikawa_logic").notNull().default(false),
+  salesAmount: doublePrecision("sales_amount").notNull().default(0),
+  commissionRate: doublePrecision("commission_rate").notNull().default(0),
+  performanceAllowance: doublePrecision("performance_allowance").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [

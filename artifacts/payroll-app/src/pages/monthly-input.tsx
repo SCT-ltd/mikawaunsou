@@ -595,7 +595,8 @@ export default function MonthlyInput() {
           initialEdits[emp.id] = {
             workDays: 0, overtimeHours: 0, lateNightHours: 0,
             holidayWorkDays: 0, drivingDistanceKm: 0, deliveryCases: 0,
-            absenceDays: 0, saturdayWorkDays: 0, sundayWorkHours: 0, notes: ""
+            absenceDays: 0, saturdayWorkDays: 0, sundayWorkHours: 0, notes: "",
+            salesAmount: 0, commissionRate: 0,
           };
         }
       });
@@ -633,7 +634,9 @@ export default function MonthlyInput() {
               absenceDays: editData.absenceDays,
               saturdayWorkDays: editData.saturdayWorkDays ?? 0,
               sundayWorkHours: editData.sundayWorkHours ?? 0,
-              notes: editData.notes
+              notes: editData.notes,
+              salesAmount: editData.salesAmount ?? 0,
+              commissionRate: editData.commissionRate ?? 0,
             }
           });
         } else {
@@ -717,17 +720,19 @@ export default function MonthlyInput() {
                   <TableHead className="w-[90px]">休日出勤</TableHead>
                   <TableHead className="w-[110px]">走行距離(km)</TableHead>
                   <TableHead className="w-[90px]">配送件数</TableHead>
+                  <TableHead className="w-[130px]">売上金額(円)</TableHead>
+                  <TableHead className="w-[100px]">歩合率(%)</TableHead>
                   <TableHead className="w-[180px]">備考</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">読み込み中...</TableCell>
+                    <TableCell colSpan={13} className="text-center py-8 text-muted-foreground">読み込み中...</TableCell>
                   </TableRow>
                 ) : !employees || employees.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">有効な社員が見つかりません</TableCell>
+                    <TableCell colSpan={13} className="text-center py-8 text-muted-foreground">有効な社員が見つかりません</TableCell>
                   </TableRow>
                 ) : (
                   employees.map((emp) => {
@@ -793,6 +798,19 @@ export default function MonthlyInput() {
                           <Input type="number" min="0" className="h-8 w-full text-right"
                             value={rowData.deliveryCases || ""}
                             onChange={(e) => handleEditChange(emp.id, 'deliveryCases', e.target.value)} />
+                        </TableCell>
+                        <TableCell className="p-2">
+                          <Input type="number" min="0" step="1" className="h-8 w-full text-right"
+                            value={rowData.salesAmount || ""}
+                            onChange={(e) => handleEditChange(emp.id, 'salesAmount', e.target.value)} />
+                        </TableCell>
+                        <TableCell className="p-2">
+                          <Input type="number" min="0" max="100" step="0.1" className="h-8 w-full text-right"
+                            value={rowData.commissionRate ? (rowData.commissionRate * 100).toFixed(1) : ""}
+                            onChange={(e) => {
+                              const pct = parseFloat(e.target.value) || 0;
+                              handleEditChange(emp.id, 'commissionRate', String(pct / 100));
+                            }} />
                         </TableCell>
                         <TableCell className="p-2">
                           <Input type="text" className="h-8 w-full" placeholder="摘要"

@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { db, payrollsTable, employeesTable, monthlyRecordsTable, companyTable, allowanceDefinitionsTable, employeeAllowancesTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
-import { calculatePayroll, calculateMikawaPayroll } from "../lib/payroll-calculator";
+import { calculatePayroll, calculateMikawaPayroll, roundJapanese } from "../lib/payroll-calculator";
+import { calculateSocialInsurance, calculateIncomeTaxReiwa8 } from "../lib/tax-tables-reiwa8";
 
 const router = Router();
 
@@ -39,11 +40,6 @@ router.post("/payroll/calculate", async (req, res) => {
     month,
     // 三川ロジックフラグ（省略時 false = 既存ロジック）
     useMikawaLogic = false,
-    // 三川ロジック専用パラメータ（useMikawaLogic=true の時のみ使用）
-    salesAmount,
-    commissionRate,
-    fixedOvertimeHours = 0,
-    overtimeUnitPrice = 2111,
   } = req.body;
 
   const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, employeeId));
@@ -80,39 +76,115 @@ router.post("/payroll/calculate", async (req, res) => {
 
   // ────────────────────────────────────────────────────────────────
   // 三川ロジック分岐
-  // useMikawaLogic=true の場合: calculateMikawaPayroll を呼び計算結果のみ返却
-  //   （現段階では DB 構造は変更しないため payrolls テーブルへの保存はしない）
-  // useMikawaLogic=false の場合: 既存の calculatePayroll フローへ
+  // useMikawaLogic=true: monthly_records の売上・歩合率を使い計算後 DB 保存
+  // useMikawaLogic=false: 既存の calculatePayroll フロー
   // ────────────────────────────────────────────────────────────────
   if (useMikawaLogic) {
-    if (salesAmount == null || commissionRate == null) {
+    if (record.salesAmount <= 0 || record.commissionRate <= 0) {
       return res.status(400).json({
-        error: "useMikawaLogic=true の場合、salesAmount と commissionRate は必須です",
+        error: "月次実績に売上金額（salesAmount）と歩合率（commissionRate）を入力してください。",
       });
     }
+
     const mikawaResult = calculateMikawaPayroll({
-      salesAmount: Number(salesAmount),
-      commissionRate: Number(commissionRate),
+      salesAmount: record.salesAmount,
+      commissionRate: record.commissionRate,
       workDays: record.workDays,
       overtimeHours: record.overtimeHours,
-      fixedOvertimeHours: Number(fixedOvertimeHours),
-      overtimeUnitPrice: Number(overtimeUnitPrice),
+      fixedOvertimeHours: record.fixedOvertimeHours,
+      overtimeUnitPrice: record.overtimeUnitPrice,
     });
-    return res.json({
+
+    // 支給合計 = 最終給与（最低保証 or 売上給与の大きい方）
+    const grossSalary = mikawaResult.finalSalary;
+
+    // 社会保険料（手動設定優先）
+    let healthInsurance: number;
+    let pension: number;
+    if (emp.healthInsuranceMonthly > 0 && emp.pensionMonthly > 0) {
+      healthInsurance = emp.healthInsuranceMonthly;
+      pension = emp.pensionMonthly;
+    } else {
+      const ins = calculateSocialInsurance(grossSalary);
+      healthInsurance = ins.healthInsurance;
+      pension = ins.pension;
+    }
+    const socialInsurance = healthInsurance + pension;
+
+    // 雇用保険料
+    const employmentInsurance = roundJapanese(grossSalary * company.employmentInsuranceRate);
+
+    // 源泉所得税（令和8年月額表甲欄）
+    const afterInsuranceSalary = grossSalary - socialInsurance - employmentInsurance;
+    const dependentEquivCount = emp.dependentCount + (emp.hasSpouse ? 1 : 0);
+    const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
+
+    const totalDeductions = roundJapanese(socialInsurance + employmentInsurance + incomeTax + emp.residentTax);
+    const netSalary = roundJapanese(grossSalary - totalDeductions);
+
+    const mikawaPayrollData = {
+      // 支給内訳
+      baseSalary: mikawaResult.minimumSalary,
+      commissionPay: mikawaResult.salesSalary,
+      overtimePay: mikawaResult.overtimePay,
+      lateNightPay: 0,
+      holidayPay: 0,
+      transportationAllowance: emp.transportationAllowance,
+      safetyDrivingAllowance: emp.safetyDrivingAllowance,
+      longDistanceAllowance: emp.longDistanceAllowance,
+      positionAllowance: emp.positionAllowance,
+      familyAllowance: emp.familyAllowance,
+      earlyOvertimeAllowance: emp.earlyOvertimeAllowance,
+      customAllowancesTotal: 0,
+      absenceDeduction: 0,
+      grossSalary,
+      // 控除
+      socialInsurance,
+      employmentInsurance,
+      incomeTax,
+      residentTax: emp.residentTax,
+      totalDeductions,
+      netSalary,
+      // 勤怠実績
+      workDays: record.workDays,
+      overtimeHours: record.overtimeHours,
+      lateNightHours: 0,
+      holidayWorkDays: 0,
+      // 三川専用
       useMikawaLogic: true,
-      employeeId,
-      employeeName: emp.name,
-      employeeCode: emp.employeeCode,
-      year,
-      month,
-      workDays: record.workDays,
-      overtimeHours: record.overtimeHours,
-      salesAmount: Number(salesAmount),
-      commissionRate: Number(commissionRate),
-      fixedOvertimeHours: Number(fixedOvertimeHours),
-      overtimeUnitPrice: Number(overtimeUnitPrice),
-      ...mikawaResult,
-    });
+      salesAmount: record.salesAmount,
+      commissionRate: record.commissionRate,
+      performanceAllowance: mikawaResult.performanceAllowance,
+    };
+
+    // DB 保存（upsert）
+    const existingMikawa = await db.select().from(payrollsTable)
+      .where(and(
+        eq(payrollsTable.employeeId, employeeId),
+        eq(payrollsTable.year, year),
+        eq(payrollsTable.month, month)
+      )).limit(1);
+
+    let mikawaPayroll;
+    if (existingMikawa.length > 0 && existingMikawa[0].status !== "confirmed") {
+      [mikawaPayroll] = await db.update(payrollsTable).set({
+        ...mikawaPayrollData,
+        status: "draft",
+        updatedAt: new Date(),
+      }).where(eq(payrollsTable.id, existingMikawa[0].id)).returning();
+    } else if (existingMikawa.length === 0) {
+      [mikawaPayroll] = await db.insert(payrollsTable).values({
+        employeeId,
+        year,
+        month,
+        status: "draft",
+        ...mikawaPayrollData,
+      }).returning();
+    } else {
+      mikawaPayroll = existingMikawa[0];
+    }
+
+    return res.json(buildPayrollResponse(mikawaPayroll, emp));
   }
 
   const result = calculatePayroll({

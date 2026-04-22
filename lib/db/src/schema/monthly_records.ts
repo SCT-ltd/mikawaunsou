@@ -18,6 +18,10 @@ export const monthlyRecordsTable = pgTable("monthly_records", {
   saturdayWorkDays: doublePrecision("saturday_work_days").notNull().default(0),
   sundayWorkHours: doublePrecision("sunday_work_hours").notNull().default(0),
   notes: text("notes"),
+  salesAmount: doublePrecision("sales_amount").notNull().default(0),
+  commissionRate: doublePrecision("commission_rate").notNull().default(0),
+  fixedOvertimeHours: doublePrecision("fixed_overtime_hours").notNull().default(0),
+  overtimeUnitPrice: doublePrecision("overtime_unit_price").notNull().default(2111),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [
