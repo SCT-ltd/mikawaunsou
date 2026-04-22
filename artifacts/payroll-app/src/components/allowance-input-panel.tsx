@@ -25,12 +25,23 @@ function roundJapanese(amount: number): number {
   return Math.floor(amount);
 }
 
+interface SavedPayroll {
+  grossSalary: number;
+  netSalary: number;
+  socialInsurance: number;
+  employmentInsurance: number;
+  incomeTax: number;
+  residentTax: number;
+  totalDeductions: number;
+}
+
 interface Props {
   employee: Employee;
   monthlyData?: { workDays: number; saturdayWorkDays: number; sundayWorkHours: number };
+  savedPayroll?: SavedPayroll | null;
 }
 
-export function AllowanceInputPanel({ employee, monthlyData }: Props) {
+export function AllowanceInputPanel({ employee, monthlyData, savedPayroll }: Props) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const employeeId = employee.id;
@@ -137,33 +148,50 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
   const pensionRate = company?.pensionEmployeeRate ?? 0.0915;
   const employmentInsuranceRate = company?.employmentInsuranceRate ?? 0.006;
 
-  // 社会保険: 標準報酬月額（マスタ管理、9月定時決定固定）× 料率
-  // 標準報酬月額が未設定（0）の場合は総支給額をフォールバックとして使用
+  // 社会保険: 手動設定がある場合はそれを優先、なければ標準報酬月額×料率で自動計算
+  const empAny = employee as unknown as {
+    healthInsuranceMonthly?: number;
+    pensionMonthly?: number;
+    incomeTaxMonthly?: number;
+    otherDeductionMonthly?: number;
+  };
   const stdRemuneration = (employee.standardRemuneration && employee.standardRemuneration > 0)
     ? employee.standardRemuneration
     : grandTotal;
-  // 健康保険: 純粋な健保料率
-  const healthInsurance = round50sen(stdRemuneration * healthInsuranceRate);
-  // 介護保険: 40〜64歳の対象者のみ追加（careInsuranceApplied フラグで管理）
+  // 健康保険: 手動設定 > 自動計算
+  const healthInsurance = (empAny.healthInsuranceMonthly && empAny.healthInsuranceMonthly > 0)
+    ? empAny.healthInsuranceMonthly
+    : round50sen(stdRemuneration * healthInsuranceRate);
+  // 介護保険: 40〜64歳の対象者のみ追加
   const careInsurance = (employee.careInsuranceApplied === true)
     ? round50sen(stdRemuneration * careInsuranceRate)
     : 0;
-  // 厚生年金: 標準報酬月額上限650,000円
-  const pensionInsurance = round50sen(Math.min(stdRemuneration, 650_000) * pensionRate);
-  // 雇用保険: 総支給額ベース（標準報酬月額に連動しない）
+  // 厚生年金: 手動設定 > 自動計算
+  const pensionInsurance = (empAny.pensionMonthly && empAny.pensionMonthly > 0)
+    ? empAny.pensionMonthly
+    : round50sen(Math.min(stdRemuneration, 650_000) * pensionRate);
+  // 雇用保険: savedPayrollの総支給額ベース（なければパネル計算値）
+  const actualGross = savedPayroll?.grossSalary ?? grandTotal;
   const employmentInsurance = (employee.employmentInsuranceApplied !== false)
-    ? round50sen(grandTotal * employmentInsuranceRate)
+    ? (savedPayroll?.employmentInsurance ?? round50sen(actualGross * employmentInsuranceRate))
     : 0;
   const totalInsurance = healthInsurance + careInsurance + pensionInsurance + employmentInsurance;
 
-  const afterInsuranceSalary = Math.max(0, grandTotal - totalInsurance);
+  const afterInsuranceSalary = Math.max(0, actualGross - totalInsurance);
   const dependentEquivCount = (employee.dependentCount ?? 0) + ((employee.hasSpouse ?? false) ? 1 : 0);
-  const incomeTax = calculateIncomeTaxReiwa7(afterInsuranceSalary, dependentEquivCount);
+  // 所得税: 手動設定 > 自動計算（令和7年月額表甲欄）※savedPayrollは使わない（古い計算値の可能性）
+  const incomeTax = (empAny.incomeTaxMonthly && empAny.incomeTaxMonthly > 0)
+    ? empAny.incomeTaxMonthly
+    : calculateIncomeTaxReiwa7(afterInsuranceSalary, dependentEquivCount);
   const residentTax = employee.residentTax ?? 0;
 
   const customDeductionsTotal = deductionRows.reduce((s, r) => s + (r.amount || 0), 0);
-  const totalDeductions = roundJapanese(totalInsurance + incomeTax + residentTax + customDeductionsTotal);
-  const netSalary = roundJapanese(grandTotal - totalDeductions);
+  // その他控除（積立金等）: 社員マスタの固定控除 + 手動入力控除の合計
+  const otherDeductionFixed = empAny.otherDeductionMonthly ?? 0;
+  // 控除合計・差引は常に最新のオーバーライド値で再計算（savedPayrollは使わない）
+  const totalDeductions = roundJapanese(totalInsurance + incomeTax + residentTax + customDeductionsTotal + otherDeductionFixed);
+  const displayGross = savedPayroll?.grossSalary ?? grandTotal;
+  const netSalary = roundJapanese(displayGross - totalDeductions);
 
   const fmt = (v: number) => v > 0 ? v.toLocaleString("ja-JP") : v === 0 ? "0" : "—";
 
@@ -302,10 +330,15 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
             </tr>
 
             <tr className="bg-blue-50 font-semibold">
-              <td className="border border-border px-2 py-1.5 text-muted-foreground text-center" colSpan={2}>総支給金額</td>
+              <td className="border border-border px-2 py-1.5 text-muted-foreground text-center" colSpan={2}>
+                総支給金額
+                {savedPayroll && grandTotal !== displayGross && (
+                  <span className="ml-1 text-xs text-blue-600 font-normal">（BW計算含む）</span>
+                )}
+              </td>
               <td className="border border-border" />
               <td className="border border-border px-2 py-1.5 text-right tabular-nums font-bold text-blue-800">
-                {grandTotal > 0 ? grandTotal.toLocaleString("ja-JP") : "—"}
+                {displayGross > 0 ? displayGross.toLocaleString("ja-JP") : "—"}
               </td>
             </tr>
 

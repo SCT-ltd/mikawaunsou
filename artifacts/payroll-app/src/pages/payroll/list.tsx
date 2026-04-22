@@ -532,6 +532,15 @@ export default function PayrollList() {
                         sundayWorkHours: (rec as { sundayWorkHours?: number } | undefined)?.sundayWorkHours ?? 0,
                       };
                     })()}
+                    savedPayroll={selectedPayroll.grossSalary > 0 ? {
+                      grossSalary: selectedPayroll.grossSalary,
+                      netSalary: selectedPayroll.netSalary,
+                      socialInsurance: selectedPayroll.socialInsurance,
+                      employmentInsurance: selectedPayroll.employmentInsurance,
+                      incomeTax: selectedPayroll.incomeTax,
+                      residentTax: selectedPayroll.residentTax,
+                      totalDeductions: selectedPayroll.totalDeductions,
+                    } : null}
                   />
                 ) : (
                   <div className="py-12 text-center text-muted-foreground">社員データが見つかりません</div>
