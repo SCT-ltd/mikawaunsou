@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db, payrollsTable, employeesTable, monthlyRecordsTable, companyTable, allowanceDefinitionsTable, employeeAllowancesTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
-import { calculatePayroll } from "../lib/payroll-calculator";
+import { calculatePayroll, calculateMikawaPayroll } from "../lib/payroll-calculator";
 
 const router = Router();
 
@@ -33,7 +33,18 @@ router.get("/payroll", async (req, res) => {
 });
 
 router.post("/payroll/calculate", async (req, res) => {
-  const { employeeId, year, month } = req.body;
+  const {
+    employeeId,
+    year,
+    month,
+    // 三川ロジックフラグ（省略時 false = 既存ロジック）
+    useMikawaLogic = false,
+    // 三川ロジック専用パラメータ（useMikawaLogic=true の時のみ使用）
+    salesAmount,
+    commissionRate,
+    fixedOvertimeHours = 0,
+    overtimeUnitPrice = 2111,
+  } = req.body;
 
   const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, employeeId));
   if (!emp) return res.status(404).json({ error: "Employee not found" });
@@ -66,6 +77,43 @@ router.post("/payroll/calculate", async (req, res) => {
       amount: row?.amount ?? 0,
     };
   }).filter(a => a.amount > 0);
+
+  // ────────────────────────────────────────────────────────────────
+  // 三川ロジック分岐
+  // useMikawaLogic=true の場合: calculateMikawaPayroll を呼び計算結果のみ返却
+  //   （現段階では DB 構造は変更しないため payrolls テーブルへの保存はしない）
+  // useMikawaLogic=false の場合: 既存の calculatePayroll フローへ
+  // ────────────────────────────────────────────────────────────────
+  if (useMikawaLogic) {
+    if (salesAmount == null || commissionRate == null) {
+      return res.status(400).json({
+        error: "useMikawaLogic=true の場合、salesAmount と commissionRate は必須です",
+      });
+    }
+    const mikawaResult = calculateMikawaPayroll({
+      salesAmount: Number(salesAmount),
+      commissionRate: Number(commissionRate),
+      workDays: record.workDays,
+      overtimeHours: record.overtimeHours,
+      fixedOvertimeHours: Number(fixedOvertimeHours),
+      overtimeUnitPrice: Number(overtimeUnitPrice),
+    });
+    return res.json({
+      useMikawaLogic: true,
+      employeeId,
+      employeeName: emp.name,
+      employeeCode: emp.employeeCode,
+      year,
+      month,
+      workDays: record.workDays,
+      overtimeHours: record.overtimeHours,
+      salesAmount: Number(salesAmount),
+      commissionRate: Number(commissionRate),
+      fixedOvertimeHours: Number(fixedOvertimeHours),
+      overtimeUnitPrice: Number(overtimeUnitPrice),
+      ...mikawaResult,
+    });
+  }
 
   const result = calculatePayroll({
     baseSalary: emp.baseSalary,
