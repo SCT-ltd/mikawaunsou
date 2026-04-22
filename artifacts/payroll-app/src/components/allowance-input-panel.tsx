@@ -97,9 +97,11 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
     : null;
 
   useEffect(() => {
-    if (isDaily && computedDailyBaseSalary !== null) {
+    if (isDaily && computedDailyBaseSalary !== null && (employee.baseSalary ?? 0) === 0) {
+      // 日給制かつ baseSalary 未設定の場合のみ自動計算値を使用
       setBaseSalaryInput(computedDailyBaseSalary);
     } else {
+      // 手動設定値（または固定給）を優先
       setBaseSalaryInput(employee.baseSalary ?? 0);
     }
   }, [employee.baseSalary, employeeId, isDaily, computedDailyBaseSalary]);
@@ -194,34 +196,29 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
               <td className="border border-border px-2 py-1">
                 <div className="font-medium">基本給</div>
                 {isDaily && (
-                  <div className="text-muted-foreground leading-tight" style={{ fontSize: "9px" }}>日給制（自動計算）</div>
+                  <div className="text-muted-foreground leading-tight" style={{ fontSize: "9px" }}>日給制（手動設定可）</div>
                 )}
               </td>
               <td className="border border-border px-1 py-1 text-center">
                 <span className="px-1 py-0.5 rounded border bg-red-50 text-red-700 border-red-200" style={{ fontSize: "10px" }}>課税</span>
               </td>
               <td className="border border-border px-1 py-0.5">
-                {isDaily ? (
-                  <div className="h-6 w-full text-right px-1 text-xs font-medium flex items-center justify-end tabular-nums text-blue-700">
-                    {baseSalaryInput.toLocaleString("ja-JP")}
-                  </div>
-                ) : (
-                  <Input
-                    ref={baseSalaryRef}
-                    type="number"
-                    min="0"
-                    className="h-6 w-full text-right border-0 shadow-none bg-transparent focus-visible:ring-1 focus-visible:ring-primary px-1 text-xs font-medium"
-                    value={baseSalaryInput || ""}
-                    onChange={(e) => {
-                      const v = e.target.value === "" ? 0 : parseInt(e.target.value, 10);
-                      setBaseSalaryInput(isNaN(v) ? 0 : v);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") { e.preventDefault(); focusRowAmount(0); }
-                    }}
-                    placeholder="0"
-                  />
-                )}
+                <Input
+                  ref={baseSalaryRef}
+                  type="number"
+                  min="0"
+                  className="h-6 w-full text-right border-0 shadow-none bg-transparent focus-visible:ring-1 focus-visible:ring-primary px-1 text-xs font-medium"
+                  value={baseSalaryInput || ""}
+                  onChange={(e) => {
+                    const v = e.target.value === "" ? 0 : parseInt(e.target.value, 10);
+                    setBaseSalaryInput(isNaN(v) ? 0 : v);
+                  }}
+                  onFocus={(e) => e.target.select()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { e.preventDefault(); focusRowAmount(0); }
+                  }}
+                  placeholder="0"
+                />
               </td>
             </tr>
 
