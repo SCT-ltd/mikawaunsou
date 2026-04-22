@@ -221,6 +221,10 @@ router.post("/payroll/calculate", async (req, res) => {
     // 休日出勤代（日給制: 休日単価 × 休日出勤日数）
     const holidayPay = Math.floor((company.dailyWageSaturday ?? 12260) * (record.holidayWorkDays ?? 0));
 
+    // 深夜手当（BW）: 時給 × 0.25 × 深夜時間
+    const hourlyRate = dailyWage / 8;
+    const bwLateNightPay = roundJapanese(hourlyRate * 0.25 * (record.lateNightHours ?? 0));
+
     const bwResult = calculateBluewingPayroll({
       bluewingSalesAmount: record.bluewingSalesAmount,
       commissionRate: emp.bluewingCommissionRate > 0 ? emp.bluewingCommissionRate : 0,
@@ -231,6 +235,7 @@ router.post("/payroll/calculate", async (req, res) => {
       fixedAllowancesTotal,
       holidayPay,
       fixedOvertimeAmount: emp.bluewingFixedOvertimeAmount ?? 0,
+      lateNightPay: bwLateNightPay,
     });
 
     const grossSalary = bwResult.grossSalary;
@@ -263,7 +268,7 @@ router.post("/payroll/calculate", async (req, res) => {
       baseSalary: baseSalaryCalc,
       commissionPay: 0,
       overtimePay: bwResult.actualOvertimePay,
-      lateNightPay: 0,
+      lateNightPay: bwLateNightPay,
       holidayPay,
       transportationAllowance: emp.transportationAllowance ?? 0,
       safetyDrivingAllowance: emp.safetyDrivingAllowance ?? 0,
@@ -282,7 +287,7 @@ router.post("/payroll/calculate", async (req, res) => {
       netSalary,
       workDays: record.workDays ?? 0,
       overtimeHours: record.overtimeHours ?? 0,
-      lateNightHours: 0,
+      lateNightHours: record.lateNightHours ?? 0,
       holidayWorkDays: record.holidayWorkDays ?? 0,
       useBluewingLogic: true,
       bluewingSalesAmount: record.bluewingSalesAmount,
