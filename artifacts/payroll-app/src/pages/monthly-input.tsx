@@ -724,25 +724,25 @@ export default function MonthlyInput() {
           </div>
         </div>
 
-        <div className="rounded-md border bg-card">
+        <div className="rounded-md border bg-card monthly-input-table">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50">
                   <TableHead className="min-w-[160px] sticky left-0 bg-muted/50 z-10">社員名</TableHead>
-                  <TableHead className="w-[90px]">平日出勤</TableHead>
-                  <TableHead className="w-[90px]">土曜出勤</TableHead>
-                  <TableHead className="w-[90px]">日曜(h)</TableHead>
-                  <TableHead className="w-[90px]">欠勤日数</TableHead>
-                  <TableHead className="w-[90px]">残業(h)</TableHead>
-                  <TableHead className="w-[90px]">深夜(h)</TableHead>
-                  <TableHead className="w-[90px]">休日出勤</TableHead>
-                  <TableHead className="w-[110px]">走行距離(km)</TableHead>
-                  <TableHead className="w-[90px]">配送件数</TableHead>
-                  <TableHead className="w-[130px]">売上金額(円)</TableHead>
-                  <TableHead className="w-[100px]">歩合率(%)</TableHead>
-                  <TableHead className="w-[140px] bg-blue-50">BW売上(円)</TableHead>
-                  <TableHead className="w-[180px]">備考</TableHead>
+                  <TableHead className="w-[78px] text-center">平日出勤</TableHead>
+                  <TableHead className="w-[78px] text-center">土曜出勤</TableHead>
+                  <TableHead className="w-[72px] text-center">日曜(h)</TableHead>
+                  <TableHead className="w-[72px] text-center">欠勤日数</TableHead>
+                  <TableHead className="w-[78px] text-center">残業(h)</TableHead>
+                  <TableHead className="w-[72px] text-center">深夜(h)</TableHead>
+                  <TableHead className="w-[72px] text-center">休日出勤</TableHead>
+                  <TableHead className="w-[96px] text-center">走行距離(km)</TableHead>
+                  <TableHead className="w-[72px] text-center">配送件数</TableHead>
+                  <TableHead className="w-[120px] text-center">売上金額(円)</TableHead>
+                  <TableHead className="w-[84px] text-center">歩合率(%)</TableHead>
+                  <TableHead className="w-[130px] bg-blue-50 text-center">BW売上(円)</TableHead>
+                  <TableHead className="w-[160px]">備考</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -774,75 +774,75 @@ export default function MonthlyInput() {
                             <CalIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50 group-hover:text-primary transition-colors" />
                           </button>
                         </TableCell>
-                        <TableCell className="p-2">
-                          <Input type="number" min="0" max="31" step="0.5" className="h-8 w-full text-right"
+                        <TableCell className="p-1">
+                          <Input type="number" min="0" max="31" step="0.5" className="h-7 w-full text-right text-xs px-1"
                             value={rowData.workDays || ""}
                             onChange={(e) => handleEditChange(emp.id, 'workDays', e.target.value)} />
                         </TableCell>
-                        <TableCell className="p-2">
-                          <Input type="number" min="0" max="31" step="0.5" className="h-8 w-full text-right"
+                        <TableCell className="p-1">
+                          <Input type="number" min="0" max="31" step="0.5" className="h-7 w-full text-right text-xs px-1"
                             value={rowData.saturdayWorkDays || ""}
                             onChange={(e) => handleEditChange(emp.id, 'saturdayWorkDays', e.target.value)} />
                         </TableCell>
-                        <TableCell className="p-2">
-                          <Input type="number" min="0" step="0.5" className="h-8 w-full text-right"
+                        <TableCell className="p-1">
+                          <Input type="number" min="0" step="0.5" className="h-7 w-full text-right text-xs px-1"
                             value={rowData.sundayWorkHours || ""}
                             onChange={(e) => handleEditChange(emp.id, 'sundayWorkHours', e.target.value)} />
                         </TableCell>
-                        <TableCell className="p-2">
-                          <Input type="number" min="0" max="31" step="0.5" className="h-8 w-full text-right"
+                        <TableCell className="p-1">
+                          <Input type="number" min="0" max="31" step="0.5" className="h-7 w-full text-right text-xs px-1"
                             value={rowData.absenceDays || ""}
                             onChange={(e) => handleEditChange(emp.id, 'absenceDays', e.target.value)} />
                         </TableCell>
-                        <TableCell className="p-2">
-                          <Input type="number" min="0" step="0.5" className="h-8 w-full text-right"
+                        <TableCell className="p-1">
+                          <Input type="number" min="0" step="0.5" className="h-7 w-full text-right text-xs px-1"
                             value={rowData.overtimeHours || ""}
                             onChange={(e) => handleEditChange(emp.id, 'overtimeHours', e.target.value)} />
                         </TableCell>
-                        <TableCell className="p-2">
-                          <Input type="number" min="0" step="0.5" className="h-8 w-full text-right"
+                        <TableCell className="p-1">
+                          <Input type="number" min="0" step="0.5" className="h-7 w-full text-right text-xs px-1"
                             value={rowData.lateNightHours || ""}
                             onChange={(e) => handleEditChange(emp.id, 'lateNightHours', e.target.value)} />
                         </TableCell>
-                        <TableCell className="p-2">
-                          <Input type="number" min="0" max="31" step="0.5" className="h-8 w-full text-right"
+                        <TableCell className="p-1">
+                          <Input type="number" min="0" max="31" step="0.5" className="h-7 w-full text-right text-xs px-1"
                             value={rowData.holidayWorkDays || ""}
                             onChange={(e) => handleEditChange(emp.id, 'holidayWorkDays', e.target.value)} />
                         </TableCell>
-                        <TableCell className="p-2">
-                          <Input type="number" min="0" step="0.1" className="h-8 w-full text-right"
+                        <TableCell className="p-1">
+                          <Input type="number" min="0" step="0.1" className="h-7 w-full text-right text-xs px-1"
                             value={rowData.drivingDistanceKm || ""}
                             onChange={(e) => handleEditChange(emp.id, 'drivingDistanceKm', e.target.value)} />
                         </TableCell>
-                        <TableCell className="p-2">
-                          <Input type="number" min="0" className="h-8 w-full text-right"
+                        <TableCell className="p-1">
+                          <Input type="number" min="0" className="h-7 w-full text-right text-xs px-1"
                             value={rowData.deliveryCases || ""}
                             onChange={(e) => handleEditChange(emp.id, 'deliveryCases', e.target.value)} />
                         </TableCell>
-                        <TableCell className="p-2">
-                          <Input type="number" min="0" step="1" className="h-8 w-full text-right"
+                        <TableCell className="p-1">
+                          <Input type="number" min="0" step="1" className="h-7 w-full text-right text-xs px-1"
                             value={rowData.salesAmount || ""}
                             onChange={(e) => handleEditChange(emp.id, 'salesAmount', e.target.value)} />
                         </TableCell>
-                        <TableCell className="p-2">
-                          <Input type="number" min="0" max="100" step="0.1" className="h-8 w-full text-right"
+                        <TableCell className="p-1">
+                          <Input type="number" min="0" max="100" step="0.1" className="h-7 w-full text-right text-xs px-1"
                             value={rowData.commissionRate ? (rowData.commissionRate * 100).toFixed(1) : ""}
                             onChange={(e) => {
                               const pct = parseFloat(e.target.value) || 0;
                               handleEditChange(emp.id, 'commissionRate', String(pct / 100));
                             }} />
                         </TableCell>
-                        <TableCell className="p-2 bg-blue-50/60">
+                        <TableCell className="p-1 bg-blue-50/60">
                           {(emp as unknown as { useBluewingLogic?: boolean }).useBluewingLogic ? (
-                            <Input type="number" min="0" step="1" className="h-8 w-full text-right border-blue-300 focus-visible:ring-blue-400"
+                            <Input type="number" min="0" step="1" className="h-7 w-full text-right text-xs px-1 border-blue-300 focus-visible:ring-blue-400"
                               value={rowData.bluewingSalesAmount || ""}
                               onChange={(e) => handleEditChange(emp.id, 'bluewingSalesAmount', e.target.value)} />
                           ) : (
-                            <div className="h-8 flex items-center justify-center text-xs text-muted-foreground">—</div>
+                            <div className="h-7 flex items-center justify-center text-xs text-muted-foreground">—</div>
                           )}
                         </TableCell>
-                        <TableCell className="p-2">
-                          <Input type="text" className="h-8 w-full" placeholder="摘要"
+                        <TableCell className="p-1">
+                          <Input type="text" className="h-7 w-full text-xs px-1" placeholder="摘要"
                             value={rowData.notes || ""}
                             onChange={(e) => handleEditChange(emp.id, 'notes', e.target.value)} />
                         </TableCell>

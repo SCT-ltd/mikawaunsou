@@ -136,3 +136,14 @@
     @apply font-semibold;
   }
 }
+
+/* テーブル内数値入力のスピンボタンを非表示にしてスペースを確保 */
+.monthly-input-table input[type="number"]::-webkit-inner-spin-button,
+.monthly-input-table input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+.monthly-input-table input[type="number"] {
+  -moz-appearance: textfield;
+}
