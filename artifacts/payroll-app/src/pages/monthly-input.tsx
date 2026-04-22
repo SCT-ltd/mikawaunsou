@@ -588,15 +588,19 @@ export default function MonthlyInput() {
     if (employees && monthlyRecords) {
       const initialEdits: Record<number, any> = {};
       employees.forEach(emp => {
+        const empDefaultRate = (emp as unknown as { mikawaCommissionRate?: number }).mikawaCommissionRate ?? 0;
         const record = monthlyRecords.find(r => r.employeeId === emp.id);
         if (record) {
-          initialEdits[emp.id] = { ...record };
+          initialEdits[emp.id] = {
+            ...record,
+            commissionRate: (record as unknown as { commissionRate?: number }).commissionRate || empDefaultRate,
+          };
         } else {
           initialEdits[emp.id] = {
             workDays: 0, overtimeHours: 0, lateNightHours: 0,
             holidayWorkDays: 0, drivingDistanceKm: 0, deliveryCases: 0,
             absenceDays: 0, saturdayWorkDays: 0, sundayWorkHours: 0, notes: "",
-            salesAmount: 0, commissionRate: 0,
+            salesAmount: 0, commissionRate: empDefaultRate,
           };
         }
       });

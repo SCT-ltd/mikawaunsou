@@ -568,6 +568,7 @@ const empFullSchema = z.object({
   residentTax: z.coerce.number().min(0).default(0),
   commissionRatePerKm: z.coerce.number().min(0).default(0),
   commissionRatePerCase: z.coerce.number().min(0).default(0),
+  mikawaCommissionRate: z.coerce.number().min(0).max(100).default(0),
   dependentCount: z.coerce.number().int().min(0).default(0),
   hasSpouse: z.boolean().default(false),
   standardRemuneration: z.coerce.number().min(0).default(0),
@@ -756,6 +757,22 @@ function EmpFormFields({ form: f, salaryType }: { form: ReturnType<typeof useFor
                 </FormControl></FormItem>
             )} />
           </div>
+          <FormField control={f.control} name="mikawaCommissionRate" render={({ field }) => (
+            <FormItem>
+              <FormLabel>三川歩合率（%）</FormLabel>
+              <FormControl>
+                <div className="flex items-center gap-2">
+                  <Input type="number" min={0} max={100} step={0.1} placeholder="例: 37.5" {...field}
+                    className="text-right max-w-[160px]" />
+                  <span className="text-sm text-muted-foreground shrink-0">%</span>
+                </div>
+              </FormControl>
+              <p className="text-xs text-muted-foreground">
+                三川ロジック給与計算時に使用するデフォルト歩合率。月次実績で個別変更可能。
+              </p>
+              <FormMessage />
+            </FormItem>
+          )} />
         </div>
       </div>
       <Separator />
@@ -870,6 +887,7 @@ function EmployeeMasterTab() {
       employeeCode: "", name: "", nameKana: "", department: "", position: "",
       dateOfBirth: "", hireDate: "", isActive: true, salaryType: "daily", baseSalary: 0,
       residentTax: 0, commissionRatePerKm: 0, commissionRatePerCase: 0,
+      mikawaCommissionRate: 0,
       dependentCount: 0, hasSpouse: false, standardRemuneration: 0,
       careInsuranceApplied: false, employmentInsuranceApplied: true,
       scheduledWorkStart: "", scheduledWorkEnd: "",
@@ -882,6 +900,7 @@ function EmployeeMasterTab() {
       dateOfBirth: "", hireDate: new Date().toISOString().split("T")[0], isActive: true,
       salaryType: "daily", baseSalary: 0, residentTax: 0,
       commissionRatePerKm: 0, commissionRatePerCase: 0,
+      mikawaCommissionRate: 0,
       dependentCount: 0, hasSpouse: false, standardRemuneration: 0,
       careInsuranceApplied: false, employmentInsuranceApplied: true,
       scheduledWorkStart: "", scheduledWorkEnd: "",
@@ -907,6 +926,7 @@ function EmployeeMasterTab() {
       residentTax: emp.residentTax ?? 0,
       commissionRatePerKm: emp.commissionRatePerKm ?? 0,
       commissionRatePerCase: emp.commissionRatePerCase ?? 0,
+      mikawaCommissionRate: ((emp as unknown as { mikawaCommissionRate?: number }).mikawaCommissionRate ?? 0) * 100,
       dependentCount: emp.dependentCount,
       hasSpouse: emp.hasSpouse ?? false,
       standardRemuneration: emp.standardRemuneration ?? 0,
@@ -920,7 +940,8 @@ function EmployeeMasterTab() {
   const onEditSubmit = async (data: EmpFullValues) => {
     if (!editingEmployee) return;
     try {
-      await updateEmployee.mutateAsync({ id: editingEmployee.id, data });
+      const saveData = { ...data, mikawaCommissionRate: (data.mikawaCommissionRate ?? 0) / 100 };
+      await updateEmployee.mutateAsync({ id: editingEmployee.id, data: saveData });
       toast({ title: "保存しました", description: `${editingEmployee.name}の情報を更新しました。` });
       queryClient.invalidateQueries({ queryKey: getListEmployeesQueryKey() });
       setEditingEmployee(null);
@@ -931,7 +952,8 @@ function EmployeeMasterTab() {
 
   const onCreateSubmit = async (data: EmpFullValues) => {
     try {
-      const res = await createEmployee.mutateAsync({ data });
+      const saveData = { ...data, mikawaCommissionRate: (data.mikawaCommissionRate ?? 0) / 100 };
+      const res = await createEmployee.mutateAsync({ data: saveData });
       toast({ title: "登録しました", description: `${res.name}を登録しました。` });
       queryClient.invalidateQueries({ queryKey: getListEmployeesQueryKey() });
       setIsCreateOpen(false);
