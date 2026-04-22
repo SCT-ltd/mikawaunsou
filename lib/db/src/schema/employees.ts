@@ -31,6 +31,8 @@ export const employeesTable = pgTable("employees", {
   pensionMonthly: doublePrecision("pension_monthly").notNull().default(0),
   employmentInsuranceApplied: boolean("employment_insurance_applied").notNull().default(true),
   residentTax: doublePrecision("resident_tax").notNull().default(0),
+  incomeTaxMonthly: doublePrecision("income_tax_monthly").notNull().default(0),
+  otherDeductionMonthly: doublePrecision("other_deduction_monthly").notNull().default(0),
   dateOfBirth: date("date_of_birth"),
   hireDate: date("hire_date").notNull(),
   isActive: boolean("is_active").notNull().default(true),

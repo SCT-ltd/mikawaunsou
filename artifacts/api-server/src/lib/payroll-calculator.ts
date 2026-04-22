@@ -347,17 +347,18 @@ export function calculateBluewingPayroll(input: BluewingPayrollInput): BluewingP
   // ② 実残業代（超過分 × 単価、四捨五入）
   const actualOvertimePay = Math.round(actualOvertimeHours * overtimeUnitPrice);
 
-  // ③ A = 売上×歩合率 − 実残業代
-  const targetAmount = Math.floor(bluewingSalesAmount * commissionRate - actualOvertimePay);
+  // ③ A = 売上×歩合率（実残業代を引かない）
+  const targetAmount = Math.floor(bluewingSalesAmount * commissionRate);
 
-  // ④ B = 基本給 + 固定手当 + 休日出勤 + 深夜手当（残業代を除く実支給ベース）
-  const baseTotal = Math.floor(baseSalary + fixedAllowancesTotal + holidayPay + lateNightPay);
+  // ④ B = 基本給 + 固定残業代 + 休日出勤（カスタム手当・深夜手当は含めない）
+  const baseTotal = Math.floor(baseSalary + fixedOvertimeAmount + holidayPay);
 
-  // ⑤ 業績手当 = max(0, A - B)
-  const performanceAllowance = Math.max(0, targetAmount - baseTotal);
+  // ⑤ 業績手当 = max(0, A - B)を1,000円単位で四捨五入
+  const rawPerformance = Math.max(0, targetAmount - baseTotal);
+  const performanceAllowance = Math.round(rawPerformance / 1000) * 1000;
 
-  // ⑥ 最終支給総額
-  const grossSalary = Math.floor(baseTotal + actualOvertimePay + fixedOvertimeAmount + performanceAllowance);
+  // ⑥ 最終支給総額 = B + 実残業代 + カスタム手当合計 + 深夜手当 + 業績手当
+  const grossSalary = Math.floor(baseTotal + actualOvertimePay + fixedAllowancesTotal + lateNightPay + performanceAllowance);
 
   return {
     actualOvertimeHours,
