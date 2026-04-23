@@ -40,11 +40,6 @@ export interface PayrollCalculationInput {
   dailyRateSaturday: number;
   /** 日給制: 日曜時給 */
   hourlyRateSunday: number;
-  transportationAllowance: number;
-  safetyDrivingAllowance: number;
-  longDistanceAllowance: number;
-  positionAllowance: number;
-  familyAllowance: number;
   earlyOvertimeAllowance: number;
   commissionRatePerKm: number;
   commissionRatePerCase: number;
@@ -61,6 +56,8 @@ export interface PayrollCalculationInput {
   /** 厚生年金保険料率（従業員折半） */
   pensionInsuranceRate?: number;
   residentTax: number;
+  otherDeductionMonthly?: number;
+  customDeductionsTotal?: number;
   monthlyAverageWorkHours: number;
   // Monthly record
   workDays: number;
@@ -82,11 +79,6 @@ export interface PayrollCalculationResult {
   lateNightPay: number;
   holidayPay: number;
   commissionPay: number;
-  transportationAllowance: number;
-  safetyDrivingAllowance: number;
-  longDistanceAllowance: number;
-  positionAllowance: number;
-  familyAllowance: number;
   earlyOvertimeAllowance: number;
   customAllowancesTotal: number;
   absenceDeduction: number;
@@ -104,12 +96,7 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     salaryType,
     dailyRateWeekday,
     dailyRateSaturday,
-    hourlyRateSunday,
-    transportationAllowance,
-    safetyDrivingAllowance,
-    longDistanceAllowance,
-    positionAllowance,
-    familyAllowance,
+    hourlyRateSunday,
     earlyOvertimeAllowance,
     commissionRatePerKm,
     commissionRatePerCase,
@@ -129,6 +116,8 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     drivingDistanceKm,
     deliveryCases,
     absenceDays,
+    otherDeductionMonthly = 0,
+    customDeductionsTotal = 0,
     customAllowances = [],
   } = input;
 
@@ -185,11 +174,6 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     lateNightPay +
     holidayPay +
     commissionPay +
-    transportationAllowance +
-    safetyDrivingAllowance +
-    longDistanceAllowance +
-    positionAllowance +
-    familyAllowance +
     earlyOvertimeAllowance +
     customAllowancesTotal -
     absenceDeduction
@@ -213,7 +197,8 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
   const employmentInsurance = roundJapanese(grossSalary * 0.0055);
 
   // 社会保険等控除後の給与等の金額（月額表の検索キー）
-  const afterInsuranceSalary = grossSalary - socialInsurance - employmentInsurance;
+  const nonTaxableAllowancesTotal = customAllowances.reduce((sum, a) => sum + (a.isTaxable === false ? a.amount : 0), 0);
+  const afterInsuranceSalary = grossSalary - nonTaxableAllowancesTotal - socialInsurance - employmentInsurance;
 
   // ────────────────────────────────────────────────────────────────
   // 源泉所得税（令和8年月額表甲欄）
@@ -236,12 +221,7 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     overtimePay,
     lateNightPay,
     holidayPay,
-    commissionPay,
-    transportationAllowance,
-    safetyDrivingAllowance,
-    longDistanceAllowance,
-    positionAllowance,
-    familyAllowance,
+    commissionPay,
     earlyOvertimeAllowance,
     customAllowancesTotal,
     absenceDeduction,

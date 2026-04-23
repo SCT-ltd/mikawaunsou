@@ -135,22 +135,10 @@ export default function PayrollDetail() {
                     <td className="py-2">歩合給</td>
                     <td className="py-2 text-right">{formatCurrency(payroll.commissionPay)}</td>
                   </tr>
-                  <tr className="border-b border-dotted border-gray-300">
-                    <td className="py-2">通勤手当</td>
-                    <td className="py-2 text-right">{formatCurrency(payroll.transportationAllowance)}</td>
-                  </tr>
-                  <tr className="border-b border-dotted border-gray-300">
-                    <td className="py-2">無事故手当</td>
-                    <td className="py-2 text-right">{formatCurrency(payroll.safetyDrivingAllowance)}</td>
-                  </tr>
-                  <tr className="border-b border-dotted border-gray-300">
-                    <td className="py-2">長距離手当</td>
-                    <td className="py-2 text-right">{formatCurrency(payroll.longDistanceAllowance)}</td>
-                  </tr>
-                  <tr className="border-b border-dotted border-gray-300">
-                    <td className="py-2">役職手当</td>
-                    <td className="py-2 text-right">{formatCurrency(payroll.positionAllowance)}</td>
-                  </tr>
+                  
+                  
+                  
+                  
                   {/* @ts-expect-error customAllowancesTotal might be injected */}
                   {payroll.customAllowancesTotal > 0 && (
                     <tr className="border-b border-dotted border-gray-300">

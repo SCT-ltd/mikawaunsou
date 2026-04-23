@@ -374,10 +374,6 @@ export default function PayrollList() {
                                 ["時間外手当（超過分）", selectedPayroll.overtimePay],
                                 ["固定残業代（職務手当）", selectedPayroll.earlyOvertimeAllowance],
                                 ["休日手当", selectedPayroll.holidayPay],
-                                ["通勤手当", selectedPayroll.transportationAllowance],
-                                ["無事故手当", selectedPayroll.safetyDrivingAllowance],
-                                ["長距離手当", selectedPayroll.longDistanceAllowance],
-                                ["役職手当", selectedPayroll.positionAllowance],
                               ].map(([label, val]) => Number(val) !== 0 && (
                                 <tr key={String(label)} className="border-b border-dotted border-gray-300">
                                   <td className="py-1.5 text-gray-700">{label}</td>
@@ -409,10 +405,6 @@ export default function PayrollList() {
                                 ["深夜手当", selectedPayroll.lateNightPay],
                                 ["休日手当", selectedPayroll.holidayPay],
                                 ["歩合給", selectedPayroll.commissionPay],
-                                ["通勤手当", selectedPayroll.transportationAllowance],
-                                ["無事故手当", selectedPayroll.safetyDrivingAllowance],
-                                ["長距離手当", selectedPayroll.longDistanceAllowance],
-                                ["役職手当", selectedPayroll.positionAllowance],
                               ].map(([label, val]) => (
                                 <tr key={String(label)} className="border-b border-dotted border-gray-300">
                                   <td className="py-1.5 text-gray-700">{label}</td>

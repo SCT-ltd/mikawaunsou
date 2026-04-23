@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, payrollsTable, employeesTable, monthlyRecordsTable, companyTable, allowanceDefinitionsTable, employeeAllowancesTable } from "@workspace/db";
+import { db, payrollsTable, employeesTable, monthlyRecordsTable, companyTable, allowanceDefinitionsTable, employeeAllowancesTable, deductionDefinitionsTable, employeeDeductionsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { calculatePayroll, calculateMikawaPayroll, calculateBluewingPayroll, roundJapanese } from "../lib/payroll-calculator";
 import { calculateSocialInsurance, calculateIncomeTaxReiwa8 } from "../lib/tax-tables-reiwa8";
@@ -104,8 +104,7 @@ router.post("/payroll/calculate", async (req, res) => {
     // 健保料率は会社設定値（介護保険込み）を使用
     const mikawaInsBase = (emp.standardRemuneration ?? 0) > 0 ? emp.standardRemuneration : grossSalary;
     const mikawaIns = calculateSocialInsurance(mikawaInsBase, {
-      healthRate: company.healthInsuranceEmployeeRate ?? 0.04925,
-      pensionRate: company.pensionEmployeeRate ?? 0.0915,
+      careInsuranceApplied: emp.careInsuranceApplied ?? false,
     });
     const socialInsurance = mikawaIns.healthInsurance + mikawaIns.pension;
 
@@ -113,11 +112,12 @@ router.post("/payroll/calculate", async (req, res) => {
     const employmentInsurance = roundJapanese(grossSalary * 0.0055);
 
     // 源泉所得税：常に動的計算（令和8年月額表甲欄）
-    const afterInsuranceSalary = grossSalary - socialInsurance - employmentInsurance;
+    const nonTaxableCustomAllowancesTotal = customAllowances.reduce((s, a) => s + (a.isTaxable === false ? a.amount : 0), 0);
+    const afterInsuranceSalary = grossSalary - nonTaxableCustomAllowancesTotal - socialInsurance - employmentInsurance;
     const dependentEquivCount = emp.dependentCount + (emp.hasSpouse ? 1 : 0);
     const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
 
-    const totalDeductions = roundJapanese(socialInsurance + employmentInsurance + incomeTax + emp.residentTax + (emp.otherDeductionMonthly ?? 0));
+    const totalDeductions = roundJapanese(socialInsurance + employmentInsurance + incomeTax + emp.residentTax + (emp.otherDeductionMonthly ?? 0) + customDeductionsTotal);
     const netSalary = roundJapanese(grossSalary - totalDeductions);
 
     const mikawaPayrollData = {
@@ -126,12 +126,7 @@ router.post("/payroll/calculate", async (req, res) => {
       commissionPay: mikawaResult.salesSalary,
       overtimePay: mikawaResult.overtimePay,
       lateNightPay: 0,
-      holidayPay: 0,
-      transportationAllowance: emp.transportationAllowance,
-      safetyDrivingAllowance: emp.safetyDrivingAllowance,
-      longDistanceAllowance: emp.longDistanceAllowance,
-      positionAllowance: emp.positionAllowance,
-      familyAllowance: emp.familyAllowance,
+      holidayPay: 0,
       earlyOvertimeAllowance: emp.earlyOvertimeAllowance,
       customAllowancesTotal: 0,
       absenceDeduction: 0,
@@ -204,13 +199,7 @@ router.post("/payroll/calculate", async (req, res) => {
     );
 
     // 固定手当合計（カスタム手当 + マスタ固定手当）
-    const masterFixedAllowances =
-      (emp.transportationAllowance ?? 0) +
-      (emp.safetyDrivingAllowance ?? 0) +
-      (emp.longDistanceAllowance ?? 0) +
-      (emp.positionAllowance ?? 0) +
-      (emp.familyAllowance ?? 0) +
-      (emp.earlyOvertimeAllowance ?? 0);
+    const masterFixedAllowances = (emp.earlyOvertimeAllowance ?? 0);
     const customAllowancesFixedTotal = customAllowances.reduce((s, a) => s + a.amount, 0);
     const fixedAllowancesTotal = masterFixedAllowances + customAllowancesFixedTotal;
 
@@ -240,8 +229,7 @@ router.post("/payroll/calculate", async (req, res) => {
     // 健保料率は会社設定値（介護保険込み）を使用
     const bwInsBase = (emp.standardRemuneration ?? 0) > 0 ? emp.standardRemuneration : grossSalary;
     const bwIns = calculateSocialInsurance(bwInsBase, {
-      healthRate: company.healthInsuranceEmployeeRate ?? 0.04925,
-      pensionRate: company.pensionEmployeeRate ?? 0.0915,
+      careInsuranceApplied: emp.careInsuranceApplied ?? false,
     });
     const socialInsurance = bwIns.healthInsurance + bwIns.pension;
 
@@ -255,7 +243,7 @@ router.post("/payroll/calculate", async (req, res) => {
     const dependentEquivCount = (emp.dependentCount ?? 0) + (emp.hasSpouse ? 1 : 0);
     const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
 
-    const totalDeductions = roundJapanese(socialInsurance + employmentInsurance + incomeTax + (emp.residentTax ?? 0) + (emp.otherDeductionMonthly ?? 0));
+    const totalDeductions = roundJapanese(socialInsurance + employmentInsurance + incomeTax + (emp.residentTax ?? 0) + (emp.otherDeductionMonthly ?? 0) + customDeductionsTotal);
     const netSalary = roundJapanese(grossSalary - totalDeductions);
 
     const bwPayrollData = {
@@ -264,11 +252,6 @@ router.post("/payroll/calculate", async (req, res) => {
       overtimePay: bwResult.actualOvertimePay,
       lateNightPay: bwLateNightPay,
       holidayPay,
-      transportationAllowance: emp.transportationAllowance ?? 0,
-      safetyDrivingAllowance: emp.safetyDrivingAllowance ?? 0,
-      longDistanceAllowance: emp.longDistanceAllowance ?? 0,
-      positionAllowance: emp.positionAllowance ?? 0,
-      familyAllowance: emp.familyAllowance ?? 0,
       earlyOvertimeAllowance: emp.bluewingFixedOvertimeAmount ?? 0,
       customAllowancesTotal: customAllowancesFixedTotal,
       absenceDeduction: 0,
@@ -323,12 +306,7 @@ router.post("/payroll/calculate", async (req, res) => {
     salaryType: emp.salaryType,
     dailyRateWeekday: company.dailyWageWeekday,
     dailyRateSaturday: company.dailyWageSaturday,
-    hourlyRateSunday: company.hourlyWageSunday,
-    transportationAllowance: emp.transportationAllowance,
-    safetyDrivingAllowance: emp.safetyDrivingAllowance,
-    longDistanceAllowance: emp.longDistanceAllowance,
-    positionAllowance: emp.positionAllowance,
-    familyAllowance: emp.familyAllowance,
+    hourlyRateSunday: company.hourlyWageSunday,
     earlyOvertimeAllowance: emp.earlyOvertimeAllowance,
     commissionRatePerKm: emp.commissionRatePerKm,
     commissionRatePerCase: emp.commissionRatePerCase,
@@ -349,6 +327,8 @@ router.post("/payroll/calculate", async (req, res) => {
     deliveryCases: record.deliveryCases,
     absenceDays: record.absenceDays,
     customAllowances,
+    otherDeductionMonthly: emp.otherDeductionMonthly,
+    customDeductionsTotal,
   });
 
   // Upsert payroll

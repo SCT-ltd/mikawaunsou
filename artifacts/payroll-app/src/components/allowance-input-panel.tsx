@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { Plus, X } from "lucide-react";
-import { calculateIncomeTaxReiwa8, getInsuranceGrade, round50sen } from "@/lib/tax-tables-reiwa8";
+import { calculateIncomeTaxReiwa8, getInsuranceGrade, round50sen, calculateSocialInsurance } from "@/lib/tax-tables-reiwa8";
 
 function roundJapanese(amount: number): number {
   return Math.floor(amount);
@@ -132,46 +132,32 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
   const grandTotal = baseSalaryInput + allowancesTotal;
   const totalRows = rows.length + 3;
 
-  const healthInsuranceRate = company?.healthInsuranceEmployeeRate ?? 0.0575;
-  const careInsuranceRate = company?.careInsuranceRate ?? 0.0091;
-  const pensionRate = company?.pensionEmployeeRate ?? 0.0915;
-
-  // ────────────────────────────────────────────────────────────────
-  // 標準報酬月額の決定
-  // standard_remuneration > 0: 設定値の等級テーブル検索
-  // standard_remuneration = 0: grandTotal の等級テーブル検索（自動判定）
-  // ★ grandTotal への直接フォールバックを廃止
+    // ────────────────────────────────────────────────────────────────
+  // 社会保険料の計算（令和8年版テーブル参照に統一）
   // ────────────────────────────────────────────────────────────────
   const empSR = (employee as unknown as { standardRemuneration?: number }).standardRemuneration ?? 0;
   const gradeBase = empSR > 0 ? empSR : grandTotal;
-  const { stdMonthly } = getInsuranceGrade(gradeBase);
+  
+  const socIns = calculateSocialInsurance(gradeBase, { careInsuranceApplied: employee.careInsuranceApplied ?? false });
+  const healthInsurance = socIns.healthInsurance;
+  const pensionInsurance = socIns.pension;
 
-  // 健康保険：標準報酬月額等級 × 会社料率（手動設定廃止）
-  const healthInsurance = round50sen(stdMonthly * healthInsuranceRate);
-
-  // 介護保険：40〜64歳対象者のみ追加（health_insurance_employee_rate が介護込みの場合は 0）
-  // health_insurance_employee_rate が 0.0575（5.75%）= 健保4.84%+介護0.91% の場合は既に含む
-  // care_insurance_applied フラグで判断し、料率が既に介護込みのときは重複加算しない
-  const careInsurance = (employee.careInsuranceApplied === true && healthInsuranceRate < 0.055)
-    ? round50sen(stdMonthly * careInsuranceRate)
-    : 0;
-
-  // 厚生年金：標準報酬月額等級 × 会社料率、上限650万（手動設定廃止）
-  const pensionInsurance = round50sen(Math.min(stdMonthly, 650_000) * pensionRate);
-
-  // 雇用保険：grossSalary × 0.55%（全社員統一・BW特別扱い廃止）
+  // 雇用保険：grossSalary × 0.55%（全社員統一）
   const employmentInsurance = (employee.employmentInsuranceApplied !== false)
     ? round50sen(grandTotal * 0.0055)
     : 0;
 
-  const totalInsurance = healthInsurance + careInsurance + pensionInsurance + employmentInsurance;
+  const totalInsurance = healthInsurance + pensionInsurance + employmentInsurance;
 
   // ────────────────────────────────────────────────────────────────
   // 源泉所得税（令和8年月額表甲欄）
-  // 社保控除後の金額 = grandTotal − totalInsurance
-  // 手動固定値優先ロジック廃止 → 常に動的計算
   // ────────────────────────────────────────────────────────────────
-  const afterInsuranceSalary = Math.max(0, grandTotal - totalInsurance);
+  const nonTaxableAllowancesTotal = rows.reduce((s, r) => {
+    const def = allowanceDefinitions?.find(d => d.id === r.defId);
+    return s + (def?.isTaxable === false ? (r.amount || 0) : 0);
+  }, 0);
+
+  const afterInsuranceSalary = Math.max(0, grandTotal - nonTaxableAllowancesTotal - totalInsurance);
   const dependentEquivCount = (employee.dependentCount ?? 0) + ((employee.hasSpouse ?? false) ? 1 : 0);
   const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
 
@@ -471,9 +457,9 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
         )}
         {company && (
           <div className="mx-0 mt-2 mb-1 px-3 py-2 bg-muted/40 border rounded text-xs text-muted-foreground">
-            適用料率：健保 {(healthInsuranceRate * 100).toFixed(2)}%・厚年 {(pensionRate * 100).toFixed(2)}%・雇保 0.55%
+            適用料率：健保・厚年は「令和8年度 保険料額表」ベース・雇保 0.55%
             {empSR > 0 && (
-              <span className="ml-2 text-blue-600">（健保・厚年は標準報酬月額 {empSR.toLocaleString("ja-JP")} 円ベース）</span>
+              <span className="ml-2 text-blue-600">（標準報酬月額 {empSR.toLocaleString("ja-JP")} 円等級）</span>
             )}
           </div>
         )}
