@@ -1,7 +1,11 @@
 import { Sidebar } from "./sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useAuth } from "@/lib/auth-context";
+import { Button } from "@/components/ui/button";
+import { LogOut, User } from "lucide-react";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
+  const { user, logout } = useAuth();
   return (
     <TooltipProvider delayDuration={300}>
       <div className="flex h-screen overflow-hidden bg-background">
@@ -14,9 +18,20 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               </h1>
             </div>
             <div className="flex items-center gap-4">
-              <div className="text-sm font-medium text-muted-foreground">
+              <div className="text-sm font-medium text-muted-foreground hidden sm:block">
                 {new Date().getFullYear()}年{new Date().getMonth() + 1}月
               </div>
+              {user && (
+                <div className="flex items-center gap-3 border-l pl-4 ml-2">
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <User className="h-4 w-4 text-primary" />
+                    <span>{user.username}</span>
+                  </div>
+                  <Button variant="ghost" size="icon" onClick={logout} title="ログアウト">
+                    <LogOut className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
             </div>
           </header>
           <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">

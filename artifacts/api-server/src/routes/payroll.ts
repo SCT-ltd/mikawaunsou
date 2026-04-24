@@ -1,10 +1,194 @@
 import { Router } from "express";
-import { db, payrollsTable, employeesTable, monthlyRecordsTable, companyTable, allowanceDefinitionsTable, employeeAllowancesTable, deductionDefinitionsTable, employeeDeductionsTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { db, payrollsTable, employeesTable, monthlyRecordsTable, companyTable, allowanceDefinitionsTable, employeeAllowancesTable, deductionDefinitionsTable, employeeDeductionsTable, employeeResidentTaxesTable } from "@workspace/db";
+import { eq, and, or, desc, lte } from "drizzle-orm";
 import { calculatePayroll, calculateMikawaPayroll, calculateBluewingPayroll, roundJapanese } from "../lib/payroll-calculator";
 import { calculateSocialInsurance, calculateIncomeTaxReiwa8 } from "../lib/tax-tables-reiwa8";
 
 const router = Router();
+
+/**
+ * 給与計算のコアロジックを共通化
+ */
+async function performPayrollCalculation(params: {
+  emp: any,
+  record: any,
+  company: any,
+  customAllowances: any[],
+  year: number,
+  month: number
+}) {
+  const { emp, record, company, customAllowances, year, month } = params;
+  
+  // 該当月（またはそれ以前で最新）の住民税を取得
+  const effectiveMonthStr = `${year}-${String(month).padStart(2, "0")}`;
+  const residentTaxRows = await db.select()
+    .from(employeeResidentTaxesTable)
+    .where(and(
+      eq(employeeResidentTaxesTable.employeeId, emp.id),
+      lte(employeeResidentTaxesTable.effectiveMonth, effectiveMonthStr)
+    ))
+    .orderBy(desc(employeeResidentTaxesTable.effectiveMonth))
+    .limit(1);
+  
+  const residentTax = residentTaxRows.length > 0 ? Number(residentTaxRows[0].amount) : Number(emp.residentTax) || 0;
+
+  const isBW = !!emp.useBluewingLogic;
+  const isMikawa = !!emp.mikawaCommissionRate && !isBW;
+
+  if (isMikawa) {
+    const mikawaResult = calculateMikawaPayroll({
+      salesAmount: Number(record.salesAmount) || 0,
+      commissionRate: Number(record.commissionRate) || Number(emp.mikawaCommissionRate) || 0,
+      workDays: Number(record.workDays) || 0,
+      overtimeHours: Number(record.overtimeHours) || 0,
+      fixedOvertimeHours: Number(emp.fixedOvertimeHours) || 0,
+      overtimeUnitPrice: Number(emp.overtimeUnitPrice) || 0,
+    });
+
+    const grossSalary = mikawaResult.finalSalary;
+    const mikawaInsBase = emp.standardRemuneration ?? 0;
+    const mikawaIns = calculateSocialInsurance(mikawaInsBase, { 
+      careInsuranceApplied: emp.careInsuranceApplied ?? false,
+      healthRate: company.healthInsuranceEmployeeRate,
+      pensionRate: company.pensionEmployeeRate
+    });
+    const socialInsurance = mikawaIns.healthInsurance + (emp.pensionApplied ? mikawaIns.pension : 0);
+    const employmentInsurance = roundJapanese(grossSalary * 0.0055);
+    const nonTaxableCustomAllowancesTotal = customAllowances.reduce((s, a) => s + (a.isTaxable === false ? a.amount : 0), 0);
+    const afterInsuranceSalary = grossSalary - nonTaxableCustomAllowancesTotal - socialInsurance - employmentInsurance;
+    const dependentEquivCount = (Number(emp.dependentCount) || 0) + (emp.hasSpouse ? 1 : 0);
+    const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
+    const totalDeductions = roundJapanese(socialInsurance + employmentInsurance + incomeTax + residentTax + (Number(emp.otherDeductionMonthly) || 0));
+
+    return {
+      baseSalary: mikawaResult.minimumSalary,
+      commissionPay: mikawaResult.salesSalary,
+      overtimePay: mikawaResult.overtimePay,
+      lateNightPay: 0,
+      holidayPay: 0,
+      grossSalary,
+      socialInsurance,
+      employmentInsurance,
+      incomeTax,
+      residentTax,
+      totalDeductions,
+      netSalary: roundJapanese(grossSalary - totalDeductions),
+      salesAmount: Number(record.salesAmount) || 0,
+      commissionRate: Number(record.commissionRate) || Number(emp.mikawaCommissionRate) || 0,
+      performanceAllowance: mikawaResult.performanceAllowance,
+      // 随時改定用スナップショット
+      salaryForStandardRemunerationReview: grossSalary,
+      fixedPayComponentTotal: mikawaResult.minimumSalary - mikawaResult.overtimePay,
+      variablePayComponentTotal: mikawaResult.performanceAllowance + mikawaResult.overtimePay,
+      workingDaysForMonthlyChange: Number(record.workDays) || 0,
+      monthlyChangeTargetable: emp.fixedPayChangeFlag || false,
+    };
+  } else if (isBW) {
+    const dailyWage = company.dailyWageWeekday ?? 9808;
+    const dailySaturday = company.dailyWageSaturday ?? 12260;
+    const baseSalaryCalc = Math.floor((Number(record.workDays) || 0) * dailyWage + (Number(record.saturdayWorkDays) || 0) * dailySaturday);
+    const masterFixedAllowances = (Number(emp.earlyOvertimeAllowance) || 0);
+    const customAllowancesFixedTotal = customAllowances.reduce((s, a) => s + a.amount, 0);
+    const fixedAllowancesTotal = masterFixedAllowances + customAllowancesFixedTotal;
+    const holidayPay = Math.floor((company.dailyWageSaturday ?? 12260) * (Number(record.holidayWorkDays) || 0));
+    const hourlyRate = dailyWage / 8;
+    const bwLateNightPay = roundJapanese(hourlyRate * 0.25 * (Number(record.lateNightHours) || 0));
+
+    const bwResult = calculateBluewingPayroll({
+      bluewingSalesAmount: Number(record.bluewingSalesAmount) || 0,
+      commissionRate: Number(emp.bluewingCommissionRate) || 0,
+      fixedOvertimeHours: Number(emp.bluewingFixedOvertimeHours) || 0,
+      overtimeHours: Number(record.overtimeHours) || 0,
+      overtimeUnitPrice: Number(record.overtimeUnitPrice) || 2111,
+      baseSalary: baseSalaryCalc,
+      fixedAllowancesTotal,
+      holidayPay,
+      fixedOvertimeAmount: Number(emp.bluewingFixedOvertimeAmount) || 0,
+      lateNightPay: bwLateNightPay,
+    });
+
+    const grossSalary = bwResult.grossSalary;
+    const bwInsBase = emp.standardRemuneration ?? 0;
+    const bwIns = calculateSocialInsurance(bwInsBase, { 
+      careInsuranceApplied: emp.careInsuranceApplied ?? false,
+      healthRate: company.healthInsuranceEmployeeRate,
+      pensionRate: company.pensionEmployeeRate
+    });
+    const socialInsurance = bwIns.healthInsurance + (emp.pensionApplied ? bwIns.pension : 0);
+    const employmentInsurance = emp.employmentInsuranceApplied ? roundJapanese(grossSalary * 0.0055) : 0;
+    const nonTaxableAllowancesTotal = customAllowances.reduce((s, a) => s + (a.isTaxable === false ? a.amount : 0), 0);
+    const afterInsuranceSalary = grossSalary - nonTaxableAllowancesTotal - socialInsurance - employmentInsurance;
+    const dependentEquivCount = (Number(emp.dependentCount) || 0) + (emp.hasSpouse ? 1 : 0);
+    const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
+    const totalDeductions = roundJapanese(socialInsurance + employmentInsurance + incomeTax + residentTax + (Number(emp.otherDeductionMonthly) || 0));
+
+    return {
+      baseSalary: baseSalaryCalc,
+      overtimePay: bwResult.actualOvertimePay,
+      lateNightPay: bwLateNightPay,
+      holidayPay,
+      earlyOvertimeAllowance: Number(emp.bluewingFixedOvertimeAmount) || 0,
+      customAllowancesTotal: customAllowancesFixedTotal,
+      grossSalary,
+      socialInsurance,
+      employmentInsurance,
+      incomeTax,
+      residentTax,
+      totalDeductions,
+      netSalary: roundJapanese(grossSalary - totalDeductions),
+      useBluewingLogic: true,
+      bluewingSalesAmount: Number(record.bluewingSalesAmount) || 0,
+      performanceAllowance: bwResult.performanceAllowance,
+      // 随時改定用スナップショット
+      salaryForStandardRemunerationReview: grossSalary,
+      fixedPayComponentTotal: baseSalaryCalc + (Number(emp.bluewingFixedOvertimeAmount) || 0) + masterFixedAllowances,
+      variablePayComponentTotal: bwResult.performanceAllowance + bwResult.actualOvertimePay + holidayPay + bwLateNightPay,
+      workingDaysForMonthlyChange: (Number(record.workDays) || 0) + (Number(record.saturdayWorkDays) || 0) + (Number(record.holidayWorkDays) || 0),
+      monthlyChangeTargetable: emp.fixedPayChangeFlag || false,
+    };
+  } else {
+    return calculatePayroll({
+      baseSalary: Number(emp.baseSalary) || 0,
+      salaryType: emp.salaryType,
+      dailyRateWeekday: company.dailyWageWeekday,
+      dailyRateSaturday: company.dailyWageSaturday,
+      hourlyRateSunday: company.hourlyWageSunday,
+      earlyOvertimeAllowance: Number(emp.earlyOvertimeAllowance) || 0,
+      commissionRatePerKm: Number(emp.commissionRatePerKm) || 0,
+      commissionRatePerCase: Number(emp.commissionRatePerCase) || 0,
+      dependentCount: Number(emp.dependentCount) || 0,
+      hasSpouse: emp.hasSpouse,
+      standardRemuneration: emp.standardRemuneration ?? 0,
+      healthInsuranceRate: company.healthInsuranceEmployeeRate,
+      pensionInsuranceRate: company.pensionEmployeeRate,
+      residentTax,
+      pensionApplied: emp.pensionApplied,
+      monthlyAverageWorkHours: company.monthlyAverageWorkHours,
+      workDays: Number(record.workDays) || 0,
+      saturdayWorkDays: Number(record.saturdayWorkDays) || 0,
+      sundayWorkHours: Number(record.sundayWorkHours) || 0,
+      overtimeHours: Number(record.overtimeHours) || 0,
+      lateNightHours: Number(record.lateNightHours) || 0,
+      holidayWorkDays: Number(record.holidayWorkDays) || 0,
+      drivingDistanceKm: Number(record.drivingDistanceKm) || 0,
+      deliveryCases: Number(record.deliveryCases) || 0,
+      absenceDays: Number(record.absenceDays) || 0,
+      customAllowances,
+      otherDeductionMonthly: Number(emp.otherDeductionMonthly) || 0,
+      customDeductionsTotal: 0,
+    });
+
+    return {
+      ...standardResult,
+      // 随時改定用スナップショット
+      salaryForStandardRemunerationReview: standardResult.grossSalary,
+      fixedPayComponentTotal: standardResult.baseSalary + (Number(emp.earlyOvertimeAllowance) || 0),
+      variablePayComponentTotal: standardResult.overtimePay + standardResult.commissionPay + standardResult.lateNightPay + standardResult.holidayPay + standardResult.customAllowancesTotal,
+      workingDaysForMonthlyChange: (Number(record.workDays) || 0) + (Number(record.saturdayWorkDays) || 0) + (Number(record.holidayWorkDays) || 0),
+      monthlyChangeTargetable: emp.fixedPayChangeFlag || false,
+    };
+  }
+}
 
 function buildPayrollResponse(p: typeof payrollsTable.$inferSelect, emp: typeof employeesTable.$inferSelect) {
   return {
@@ -33,16 +217,47 @@ router.get("/payroll", async (req, res) => {
   return res.json(rows.map(r => buildPayrollResponse(r.payroll, r.employee)));
 });
 
+/**
+ * 概算プレビューAPI
+ */
+router.post("/payroll/preview", async (req, res) => {
+  const { employeeId, year, month, record: recordOverride } = req.body;
+
+  const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, employeeId));
+  if (!emp) return res.status(404).json({ error: "Employee not found" });
+
+  const companyRows = await db.select().from(companyTable).limit(1);
+  const company = companyRows[0] ?? { monthlyAverageWorkHours: 160 };
+
+  const customAllowanceDefs = await db.select().from(allowanceDefinitionsTable).where(eq(allowanceDefinitionsTable.isActive, true));
+  const empAllowanceRows = await db.select().from(employeeAllowancesTable).where(eq(employeeAllowancesTable.employeeId, employeeId));
+  const customAllowances = customAllowanceDefs.map(def => {
+    const row = empAllowanceRows.find(r => r.allowanceDefinitionId === def.id);
+    return { allowanceDefinitionId: def.id, allowanceName: def.name, isTaxable: def.isTaxable, amount: row?.amount ?? 0 };
+  }).filter(a => a.amount > 0);
+
+  try {
+    const result = await performPayrollCalculation({
+      emp,
+      record: recordOverride,
+      company,
+      customAllowances,
+      year,
+      month
+    });
+
+    return res.json({
+      status: "success",
+      result,
+      warnings: []
+    });
+  } catch (error: any) {
+    return res.status(400).json({ status: "error", error: error.message });
+  }
+});
+
 router.post("/payroll/calculate", async (req, res) => {
-  const {
-    employeeId,
-    year,
-    month,
-    // 三川ロジックフラグ（省略時 false = 既存ロジック）
-    useMikawaLogic = false,
-    // ブルーウィングロジックフラグ
-    useBluewingLogic = false,
-  } = req.body;
+  const { employeeId, year, month } = req.body;
 
   const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, employeeId));
   if (!emp) return res.status(404).json({ error: "Employee not found" });
@@ -53,285 +268,21 @@ router.post("/payroll/calculate", async (req, res) => {
       eq(monthlyRecordsTable.year, year),
       eq(monthlyRecordsTable.month, month)
     ));
-  if (!record) return res.status(404).json({ error: "Monthly record not found. Please enter monthly data first." });
+  if (!record) return res.status(404).json({ error: "Monthly record not found." });
 
   const companyRows = await db.select().from(companyTable).limit(1);
-  const company = companyRows[0] ?? {
-    monthlyAverageWorkHours: 160,
-    employmentInsuranceRate: 0.006,
-  };
+  const company = companyRows[0] ?? { monthlyAverageWorkHours: 160 };
 
-  // カスタム手当を取得
-  const customAllowanceDefs = await db.select().from(allowanceDefinitionsTable)
-    .where(eq(allowanceDefinitionsTable.isActive, true));
-  const empAllowanceRows = await db.select().from(employeeAllowancesTable)
-    .where(eq(employeeAllowancesTable.employeeId, employeeId));
+  const customAllowanceDefs = await db.select().from(allowanceDefinitionsTable).where(eq(allowanceDefinitionsTable.isActive, true));
+  const empAllowanceRows = await db.select().from(employeeAllowancesTable).where(eq(employeeAllowancesTable.employeeId, employeeId));
   const customAllowances = customAllowanceDefs.map(def => {
     const row = empAllowanceRows.find(r => r.allowanceDefinitionId === def.id);
-    return {
-      allowanceDefinitionId: def.id,
-      allowanceName: def.name,
-      isTaxable: def.isTaxable,
-      amount: row?.amount ?? 0,
-    };
+    return { allowanceDefinitionId: def.id, allowanceName: def.name, isTaxable: def.isTaxable, amount: row?.amount ?? 0 };
   }).filter(a => a.amount > 0);
 
-  // ────────────────────────────────────────────────────────────────
-  // 三川ロジック分岐
-  // useMikawaLogic=true: monthly_records の売上・歩合率を使い計算後 DB 保存
-  // useMikawaLogic=false: 既存の calculatePayroll フロー
-  // ────────────────────────────────────────────────────────────────
-  if (useMikawaLogic) {
-    if (record.salesAmount <= 0 || record.commissionRate <= 0) {
-      return res.status(400).json({
-        error: "月次実績に売上金額（salesAmount）と歩合率（commissionRate）を入力してください。",
-      });
-    }
+  const result = await performPayrollCalculation({ emp, record, company, customAllowances, year, month });
 
-    const mikawaResult = calculateMikawaPayroll({
-      salesAmount: record.salesAmount,
-      commissionRate: record.commissionRate,
-      workDays: record.workDays,
-      overtimeHours: record.overtimeHours,
-      fixedOvertimeHours: record.fixedOvertimeHours,
-      overtimeUnitPrice: record.overtimeUnitPrice,
-    });
-
-    // 支給合計 = 最終給与（最低保証 or 売上給与の大きい方）
-    const grossSalary = mikawaResult.finalSalary;
-
-    // 社会保険料：standard_remuneration > 0 ならその等級で計算、0 なら grossSalary で自動判定
-    // 健保料率は会社設定値（介護保険込み）を使用
-    const mikawaInsBase = (emp.standardRemuneration ?? 0) > 0 ? emp.standardRemuneration : grossSalary;
-    const mikawaIns = calculateSocialInsurance(mikawaInsBase, {
-      careInsuranceApplied: emp.careInsuranceApplied ?? false,
-    });
-    const socialInsurance = mikawaIns.healthInsurance + mikawaIns.pension;
-
-    // 雇用保険料：grossSalary × 0.55%（全社員統一）
-    const employmentInsurance = roundJapanese(grossSalary * 0.0055);
-
-    // 源泉所得税：常に動的計算（令和8年月額表甲欄）
-    const nonTaxableCustomAllowancesTotal = customAllowances.reduce((s, a) => s + (a.isTaxable === false ? a.amount : 0), 0);
-    const afterInsuranceSalary = grossSalary - nonTaxableCustomAllowancesTotal - socialInsurance - employmentInsurance;
-    const dependentEquivCount = emp.dependentCount + (emp.hasSpouse ? 1 : 0);
-    const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
-
-    const totalDeductions = roundJapanese(socialInsurance + employmentInsurance + incomeTax + emp.residentTax + (emp.otherDeductionMonthly ?? 0) + customDeductionsTotal);
-    const netSalary = roundJapanese(grossSalary - totalDeductions);
-
-    const mikawaPayrollData = {
-      // 支給内訳
-      baseSalary: mikawaResult.minimumSalary,
-      commissionPay: mikawaResult.salesSalary,
-      overtimePay: mikawaResult.overtimePay,
-      lateNightPay: 0,
-      holidayPay: 0,
-      earlyOvertimeAllowance: emp.earlyOvertimeAllowance,
-      customAllowancesTotal: 0,
-      absenceDeduction: 0,
-      grossSalary,
-      // 控除
-      socialInsurance,
-      employmentInsurance,
-      incomeTax,
-      residentTax: emp.residentTax,
-      totalDeductions,
-      netSalary,
-      // 勤怠実績
-      workDays: record.workDays,
-      overtimeHours: record.overtimeHours,
-      lateNightHours: 0,
-      holidayWorkDays: 0,
-      // 三川専用
-      useMikawaLogic: true,
-      salesAmount: record.salesAmount,
-      commissionRate: record.commissionRate,
-      performanceAllowance: mikawaResult.performanceAllowance,
-    };
-
-    // DB 保存（upsert）
-    const existingMikawa = await db.select().from(payrollsTable)
-      .where(and(
-        eq(payrollsTable.employeeId, employeeId),
-        eq(payrollsTable.year, year),
-        eq(payrollsTable.month, month)
-      )).limit(1);
-
-    let mikawaPayroll;
-    if (existingMikawa.length > 0 && existingMikawa[0].status !== "confirmed") {
-      [mikawaPayroll] = await db.update(payrollsTable).set({
-        ...mikawaPayrollData,
-        status: "draft",
-        updatedAt: new Date(),
-      }).where(eq(payrollsTable.id, existingMikawa[0].id)).returning();
-    } else if (existingMikawa.length === 0) {
-      [mikawaPayroll] = await db.insert(payrollsTable).values({
-        employeeId,
-        year,
-        month,
-        status: "draft",
-        ...mikawaPayrollData,
-      }).returning();
-    } else {
-      mikawaPayroll = existingMikawa[0];
-    }
-
-    return res.json(buildPayrollResponse(mikawaPayroll, emp));
-  }
-
-  // ────────────────────────────────────────────────────────────────
-  // ブルーウィングロジック分岐
-  // ────────────────────────────────────────────────────────────────
-  if (useBluewingLogic || emp.useBluewingLogic) {
-    if ((record.bluewingSalesAmount ?? 0) <= 0) {
-      return res.status(400).json({
-        error: "月次実績にブルーウィング売上金額（bluewingSalesAmount）を入力してください。",
-      });
-    }
-
-    // 日給計算（日給制前提）
-    const dailyWage = company.dailyWageWeekday ?? 9808;
-    const dailySaturday = company.dailyWageSaturday ?? 12260;
-    const baseSalaryCalc = Math.floor(
-      (record.workDays ?? 0) * dailyWage +
-      (record.saturdayWorkDays ?? 0) * dailySaturday
-    );
-
-    // 固定手当合計（カスタム手当 + マスタ固定手当）
-    const masterFixedAllowances = (emp.earlyOvertimeAllowance ?? 0);
-    const customAllowancesFixedTotal = customAllowances.reduce((s, a) => s + a.amount, 0);
-    const fixedAllowancesTotal = masterFixedAllowances + customAllowancesFixedTotal;
-
-    // 休日出勤代（日給制: 休日単価 × 休日出勤日数）
-    const holidayPay = Math.floor((company.dailyWageSaturday ?? 12260) * (record.holidayWorkDays ?? 0));
-
-    // 深夜手当（BW）: 時給 × 0.25 × 深夜時間
-    const hourlyRate = dailyWage / 8;
-    const bwLateNightPay = roundJapanese(hourlyRate * 0.25 * (record.lateNightHours ?? 0));
-
-    const bwResult = calculateBluewingPayroll({
-      bluewingSalesAmount: record.bluewingSalesAmount,
-      commissionRate: emp.bluewingCommissionRate > 0 ? emp.bluewingCommissionRate : 0,
-      fixedOvertimeHours: emp.bluewingFixedOvertimeHours ?? 0,
-      overtimeHours: record.overtimeHours ?? 0,
-      overtimeUnitPrice: record.overtimeUnitPrice ?? 2111,
-      baseSalary: baseSalaryCalc,
-      fixedAllowancesTotal,
-      holidayPay,
-      fixedOvertimeAmount: emp.bluewingFixedOvertimeAmount ?? 0,
-      lateNightPay: bwLateNightPay,
-    });
-
-    const grossSalary = bwResult.grossSalary;
-
-    // 社会保険料：standard_remuneration > 0 ならその等級で計算、0 なら grossSalary で自動判定
-    // 健保料率は会社設定値（介護保険込み）を使用
-    const bwInsBase = (emp.standardRemuneration ?? 0) > 0 ? emp.standardRemuneration : grossSalary;
-    const bwIns = calculateSocialInsurance(bwInsBase, {
-      careInsuranceApplied: emp.careInsuranceApplied ?? false,
-    });
-    const socialInsurance = bwIns.healthInsurance + bwIns.pension;
-
-    // 雇用保険料：grossSalary × 0.55%（全社員統一）
-    const employmentInsurance = emp.employmentInsuranceApplied
-      ? roundJapanese(grossSalary * 0.0055)
-      : 0;
-
-    // 源泉所得税：常に動的計算（令和8年月額表甲欄）
-    const afterInsuranceSalary = grossSalary - socialInsurance - employmentInsurance;
-    const dependentEquivCount = (emp.dependentCount ?? 0) + (emp.hasSpouse ? 1 : 0);
-    const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
-
-    const totalDeductions = roundJapanese(socialInsurance + employmentInsurance + incomeTax + (emp.residentTax ?? 0) + (emp.otherDeductionMonthly ?? 0) + customDeductionsTotal);
-    const netSalary = roundJapanese(grossSalary - totalDeductions);
-
-    const bwPayrollData = {
-      baseSalary: baseSalaryCalc,
-      commissionPay: 0,
-      overtimePay: bwResult.actualOvertimePay,
-      lateNightPay: bwLateNightPay,
-      holidayPay,
-      earlyOvertimeAllowance: emp.bluewingFixedOvertimeAmount ?? 0,
-      customAllowancesTotal: customAllowancesFixedTotal,
-      absenceDeduction: 0,
-      grossSalary,
-      socialInsurance,
-      employmentInsurance,
-      incomeTax,
-      residentTax: emp.residentTax ?? 0,
-      totalDeductions,
-      netSalary,
-      workDays: record.workDays ?? 0,
-      overtimeHours: record.overtimeHours ?? 0,
-      lateNightHours: record.lateNightHours ?? 0,
-      holidayWorkDays: record.holidayWorkDays ?? 0,
-      useBluewingLogic: true,
-      bluewingSalesAmount: record.bluewingSalesAmount,
-      bluewingPerformanceAllowance: bwResult.performanceAllowance,
-      performanceAllowance: bwResult.performanceAllowance,
-    };
-
-    const existingBw = await db.select().from(payrollsTable)
-      .where(and(
-        eq(payrollsTable.employeeId, employeeId),
-        eq(payrollsTable.year, year),
-        eq(payrollsTable.month, month)
-      )).limit(1);
-
-    let bwPayroll;
-    if (existingBw.length > 0 && existingBw[0].status !== "confirmed") {
-      [bwPayroll] = await db.update(payrollsTable).set({
-        ...bwPayrollData,
-        status: "draft",
-        updatedAt: new Date(),
-      }).where(eq(payrollsTable.id, existingBw[0].id)).returning();
-    } else if (existingBw.length === 0) {
-      [bwPayroll] = await db.insert(payrollsTable).values({
-        employeeId,
-        year,
-        month,
-        status: "draft",
-        ...bwPayrollData,
-      }).returning();
-    } else {
-      bwPayroll = existingBw[0];
-    }
-
-    return res.json(buildPayrollResponse(bwPayroll!, emp));
-  }
-
-  const result = calculatePayroll({
-    baseSalary: emp.baseSalary,
-    salaryType: emp.salaryType,
-    dailyRateWeekday: company.dailyWageWeekday,
-    dailyRateSaturday: company.dailyWageSaturday,
-    hourlyRateSunday: company.hourlyWageSunday,
-    earlyOvertimeAllowance: emp.earlyOvertimeAllowance,
-    commissionRatePerKm: emp.commissionRatePerKm,
-    commissionRatePerCase: emp.commissionRatePerCase,
-    dependentCount: emp.dependentCount,
-    hasSpouse: emp.hasSpouse,
-    standardRemuneration: emp.standardRemuneration ?? 0,
-    healthInsuranceRate: company.healthInsuranceEmployeeRate ?? 0.04925,
-    pensionInsuranceRate: company.pensionEmployeeRate ?? 0.0915,
-    residentTax: emp.residentTax,
-    monthlyAverageWorkHours: company.monthlyAverageWorkHours,
-    workDays: record.workDays,
-    saturdayWorkDays: record.saturdayWorkDays,
-    sundayWorkHours: record.sundayWorkHours,
-    overtimeHours: record.overtimeHours,
-    lateNightHours: record.lateNightHours,
-    holidayWorkDays: record.holidayWorkDays,
-    drivingDistanceKm: record.drivingDistanceKm,
-    deliveryCases: record.deliveryCases,
-    absenceDays: record.absenceDays,
-    customAllowances,
-    otherDeductionMonthly: emp.otherDeductionMonthly,
-    customDeductionsTotal,
-  });
-
-  // Upsert payroll
+  // Upsert
   const existing = await db.select().from(payrollsTable)
     .where(and(
       eq(payrollsTable.employeeId, employeeId),
@@ -340,27 +291,20 @@ router.post("/payroll/calculate", async (req, res) => {
     )).limit(1);
 
   let payroll;
+  const payrollData = {
+    ...result,
+    workDays: record.workDays,
+    overtimeHours: record.overtimeHours,
+    lateNightHours: record.lateNightHours || 0,
+    holidayWorkDays: record.holidayWorkDays || 0,
+    updatedAt: new Date(),
+  };
+
   if (existing.length > 0 && existing[0].status !== "confirmed") {
-    [payroll] = await db.update(payrollsTable).set({
-      ...result,
-      overtimeHours: record.overtimeHours,
-      lateNightHours: record.lateNightHours,
-      holidayWorkDays: record.holidayWorkDays,
-      workDays: record.workDays,
-      status: "draft",
-      updatedAt: new Date(),
-    }).where(eq(payrollsTable.id, existing[0].id)).returning();
+    [payroll] = await db.update(payrollsTable).set({ ...payrollData, status: "draft" }).where(eq(payrollsTable.id, existing[0].id)).returning();
   } else if (existing.length === 0) {
     [payroll] = await db.insert(payrollsTable).values({
-      employeeId,
-      year,
-      month,
-      status: "draft",
-      ...result,
-      overtimeHours: record.overtimeHours,
-      lateNightHours: record.lateNightHours,
-      holidayWorkDays: record.holidayWorkDays,
-      workDays: record.workDays,
+      employeeId, year, month, status: "draft", ...payrollData
     }).returning();
   } else {
     payroll = existing[0];
@@ -406,6 +350,121 @@ router.post("/payroll/:id/confirm", async (req, res) => {
   if (!updated) return res.status(404).json({ error: "Payroll not found" });
   const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, updated.employeeId));
   return res.json(buildPayrollResponse(updated, emp));
+});
+
+/**
+ * 随時改定（月変）候補抽出API
+ */
+router.get("/payroll/gekkei/candidates", async (req, res) => {
+  // 固定的賃金変動があった社員を取得
+  const targets = await db.select().from(employeesTable)
+    .where(eq(employeesTable.fixedPayChangeFlag, true));
+
+  const results = [];
+
+  for (const emp of targets) {
+    if (!emp.fixedPayChangeEffectiveMonth) continue;
+    const [startYear, startMonth] = emp.fixedPayChangeEffectiveMonth.split("-").map(Number);
+    
+    // 変動実施月から3ヶ月分の確定済み給与を取得
+    // 実際には「変動後最初の給与支払月」から3ヶ月
+    const targetMonths = [];
+    let currY = startYear;
+    let currM = startMonth;
+    for (let i = 0; i < 3; i++) {
+      targetMonths.push({ year: currY, month: currM });
+      currM++;
+      if (currM > 12) { currM = 1; currY++; }
+    }
+
+    const payrolls = await db.select().from(payrollsTable).where(
+      and(
+        eq(payrollsTable.employeeId, emp.id),
+        eq(payrollsTable.status, "confirmed"),
+        and(
+          // 簡易的な月範囲指定（実際にはIN句などが望ましい）
+          or(
+            and(eq(payrollsTable.year, targetMonths[0].year), eq(payrollsTable.month, targetMonths[0].month)),
+            and(eq(payrollsTable.year, targetMonths[1].year), eq(payrollsTable.month, targetMonths[1].month)),
+            and(eq(payrollsTable.year, targetMonths[2].year), eq(payrollsTable.month, targetMonths[2].month))
+          )
+        )
+      )
+    );
+
+    if (payrolls.length < 3) {
+      results.push({
+        employee: emp,
+        status: "monitoring",
+        reason: "実績データ不足",
+        currentPayrolls: payrolls
+      });
+      continue;
+    }
+
+    // 判定ロジック
+    const totalSalary = payrolls.reduce((s, p) => s + p.salaryForStandardRemunerationReview, 0);
+    const avgSalary = Math.floor(totalSalary / 3);
+    const hasEnoughDays = payrolls.every(p => p.workingDaysForMonthlyChange >= 17);
+
+    if (!hasEnoughDays) {
+      results.push({
+        employee: emp,
+        status: "excluded",
+        reason: "支払基礎日数不足 (17日未満の月あり)",
+        currentPayrolls: payrolls
+      });
+      continue;
+    }
+
+    // 等級判定（簡易的に、社保額表のamountを使って判定）
+    // 本来は等級テーブルを引く必要がある
+    const currentStd = emp.standardRemuneration;
+    // ... 実際にはここで等級差を計算 ...
+    // 今回は簡易的に「2等級以上の差がある」とするフラグや値を返す
+    
+    results.push({
+      employee: emp,
+      status: "eligible",
+      avgSalary,
+      currentStd,
+      payrolls,
+      // 改定予定月（変動月から4ヶ月目）の算出
+      revisionEffectiveMonth: (() => {
+        let [y, m] = emp.fixedPayChangeEffectiveMonth.split("-").map(Number);
+        m += 3; // 1月変動なら4月
+        if (m > 12) { m -= 12; y += 1; }
+        return `${y}-${String(m).padStart(2, "0")}`;
+      })()
+    });
+  }
+
+  return res.json(results);
+});
+
+/**
+ * 随時改定（月変）承認・反映API
+ */
+router.post("/payroll/gekkei/approve", async (req, res) => {
+  const { employeeId, nextStandardRemuneration, revisionEffectiveDate } = req.body;
+  const userId = (req.session as any).userId;
+
+  const [updated] = await db.update(employeesTable)
+    .set({
+      standardRemuneration: nextStandardRemuneration,
+      standardRemunerationAppliedFrom: revisionEffectiveDate, // 改定日
+      monthlyChangeReviewStatus: "approved",
+      fixedPayChangeFlag: false,
+      monthlyChangeApprovedAt: new Date(),
+      monthlyChangeApprovedBy: userId,
+      updatedAt: new Date(),
+    })
+    .where(eq(employeesTable.id, employeeId))
+    .returning();
+
+  if (!updated) return res.status(404).json({ error: "Employee not found" });
+
+  return res.json({ success: true, employee: updated });
 });
 
 router.get("/payroll/:id/csv", async (req, res) => {

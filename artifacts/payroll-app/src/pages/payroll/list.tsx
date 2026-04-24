@@ -46,28 +46,6 @@ export default function PayrollList() {
   const [selectedPayrollId, setSelectedPayrollId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState("allowance");
 
-  const { data: monthlyRecords } = useListMonthlyRecords({ year, month });
-
-  const { data: selectedPayroll, isLoading: detailLoading } = useGetPayroll(
-    selectedPayrollId ?? 0,
-    { query: { enabled: !!selectedPayrollId, queryKey: getGetPayrollQueryKey(selectedPayrollId ?? 0) } }
-  );
-  const confirmPayroll = useConfirmPayroll();
-
-  const handleConfirm = async () => {
-    if (!selectedPayrollId) return;
-    try {
-      await confirmPayroll.mutateAsync({ id: selectedPayrollId });
-      queryClient.invalidateQueries({ queryKey: getGetPayrollQueryKey(selectedPayrollId) });
-      queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) });
-      toast({ title: "給与確定", description: "給与明細を確定済みに変更しました。" });
-    } catch {
-      toast({ title: "エラー", description: "確定に失敗しました。", variant: "destructive" });
-    }
-  };
-
-  const handlePrint = () => window.print();
-
   const handleCalculateAll = async () => {
     if (!employees) return;
     setCalculating(true);
@@ -121,7 +99,6 @@ export default function PayrollList() {
   };
 
   const handleExportCsv = async () => {
-    // We construct the URL and create a temporary link to download it
     const url = `/api/payrolls/export/csv?year=${year}&month=${month}`;
     const a = document.createElement("a");
     a.href = url;
@@ -300,239 +277,291 @@ export default function PayrollList() {
 
       {/* 給与明細詳細シート */}
       <Sheet open={!!selectedPayrollId} onOpenChange={(open) => { if (!open) setSelectedPayrollId(null); }}>
-        <SheetContent className="w-full sm:max-w-2xl overflow-y-auto print:fixed print:inset-0 print:max-w-none">
-          <SheetHeader className="print:hidden">
-            <div className="flex items-center justify-between">
-              <SheetTitle>給与明細詳細</SheetTitle>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={handlePrint}>
-                  <FileText className="mr-1.5 h-3.5 w-3.5" />
-                  印刷
-                </Button>
-                {selectedPayroll && selectedPayroll.status !== "confirmed" && (
-                  <Button
-                    size="sm"
-                    onClick={handleConfirm}
-                    disabled={confirmPayroll.isPending}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                  >
-                    <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
-                    明細を確定
-                  </Button>
-                )}
-              </div>
-            </div>
-          </SheetHeader>
-
-          {detailLoading ? (
-            <div className="flex items-center justify-center py-12 text-muted-foreground">読み込み中...</div>
-          ) : !selectedPayroll ? (
-            <div className="py-12 text-center text-muted-foreground">データが見つかりません</div>
-          ) : (
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
-              <TabsList className="w-full print:hidden">
-                <TabsTrigger value="allowance" className="flex-1">明細入力</TabsTrigger>
-                <TabsTrigger value="slip" className="flex-1">給与明細</TabsTrigger>
-              </TabsList>
-
-              {/* ── 給与明細タブ ── */}
-              <TabsContent value="slip">
-                <div className="bg-white text-black rounded-lg border p-6 space-y-6 mt-2" id="payroll-slip">
-                  <div className="text-center border-b-2 border-black pb-3">
-                    <h2 className="text-xl font-bold tracking-widest">{formatMonth(selectedPayroll.year, selectedPayroll.month)} 給与明細書</h2>
-                  </div>
-
-                  <div className="flex items-start justify-between gap-4 flex-wrap">
-                    <div>
-                      <p className="text-base font-bold">{selectedPayroll.employeeName} 殿</p>
-                      <p className="text-xs text-gray-500 mt-0.5">社員番号: {selectedPayroll.employeeCode}</p>
-                      <div className="mt-1">
-                        {selectedPayroll.status === "confirmed" ? (
-                          <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs">確定済</Badge>
-                        ) : (
-                          <Badge variant="secondary" className="bg-amber-50 text-amber-700 border-amber-200 text-xs">計算中（未確定）</Badge>
-                        )}
-                      </div>
-                    </div>
-                    <div className="border-2 border-black p-3 rounded text-right">
-                      <p className="text-xs text-gray-500 mb-0.5">差引支給額</p>
-                      <p className="text-xl font-bold">{formatCurrency(selectedPayroll.netSalary)}</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* 支給項目 */}
-                    <div>
-                      <h3 className="font-bold border-l-4 border-black pl-2 bg-gray-100 py-1 text-sm mb-2">支給項目</h3>
-                      <table className="w-full text-sm">
-                        <tbody>
-                          {/* @ts-expect-error */}
-                          {(selectedPayroll as any).useBluewingLogic ? (
-                            <>
-                              {[
-                                ["基本給", selectedPayroll.baseSalary],
-                                ["時間外手当（超過分）", selectedPayroll.overtimePay],
-                                ["固定残業代（職務手当）", selectedPayroll.earlyOvertimeAllowance],
-                                ["休日手当", selectedPayroll.holidayPay],
-                              ].map(([label, val]) => Number(val) !== 0 && (
-                                <tr key={String(label)} className="border-b border-dotted border-gray-300">
-                                  <td className="py-1.5 text-gray-700">{label}</td>
-                                  <td className="py-1.5 text-right">{formatCurrency(Number(val))}</td>
-                                </tr>
-                              ))}
-                              {/* @ts-expect-error */}
-                              {(selectedPayroll.customAllowancesTotal ?? 0) > 0 && (
-                                <tr className="border-b border-dotted border-gray-300">
-                                  <td className="py-1.5 text-gray-700">その他手当</td>
-                                  {/* @ts-expect-error */}
-                                  <td className="py-1.5 text-right">{formatCurrency(selectedPayroll.customAllowancesTotal)}</td>
-                                </tr>
-                              )}
-                              {/* @ts-expect-error */}
-                              {(selectedPayroll as any).bluewingPerformanceAllowance > 0 && (
-                                <tr className="border-b border-dotted border-blue-300 bg-blue-50">
-                                  <td className="py-1.5 text-blue-800 font-medium">業績手当（BW）</td>
-                                  {/* @ts-expect-error */}
-                                  <td className="py-1.5 text-right font-medium text-blue-800">{formatCurrency((selectedPayroll as any).bluewingPerformanceAllowance)}</td>
-                                </tr>
-                              )}
-                            </>
-                          ) : (
-                            <>
-                              {[
-                                ["基本給", selectedPayroll.baseSalary],
-                                ["時間外手当", selectedPayroll.overtimePay],
-                                ["深夜手当", selectedPayroll.lateNightPay],
-                                ["休日手当", selectedPayroll.holidayPay],
-                                ["歩合給", selectedPayroll.commissionPay],
-                              ].map(([label, val]) => (
-                                <tr key={String(label)} className="border-b border-dotted border-gray-300">
-                                  <td className="py-1.5 text-gray-700">{label}</td>
-                                  <td className="py-1.5 text-right">{formatCurrency(Number(val))}</td>
-                                </tr>
-                              ))}
-                              {/* @ts-expect-error */}
-                              {(selectedPayroll.customAllowancesTotal ?? 0) > 0 && (
-                                <tr className="border-b border-dotted border-gray-300">
-                                  <td className="py-1.5 text-gray-700">その他手当</td>
-                                  {/* @ts-expect-error */}
-                                  <td className="py-1.5 text-right">{formatCurrency(selectedPayroll.customAllowancesTotal)}</td>
-                                </tr>
-                              )}
-                            </>
-                          )}
-                          <tr className="border-t-2 border-black font-bold bg-gray-50">
-                            <td className="py-1.5 pl-1">総支給額 (A)</td>
-                            <td className="py-1.5 text-right">{formatCurrency(selectedPayroll.grossSalary)}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      {/* ブルーウィング計算内訳 */}
-                      {/* @ts-expect-error */}
-                      {(selectedPayroll as any).useBluewingLogic && (
-                        <>
-                          <h3 className="font-bold border-l-4 border-blue-600 pl-2 bg-blue-50 py-1 text-sm mt-4 mb-2 text-blue-900">BW業績手当 計算内訳</h3>
-                          <table className="w-full text-xs text-gray-600 bg-blue-50/40 rounded">
-                            <tbody>
-                              <tr className="border-b border-dotted border-blue-200">
-                                <td className="py-1 pl-2">売上（BW）</td>
-                                {/* @ts-expect-error */}
-                                <td className="py-1 text-right pr-2">{formatCurrency((selectedPayroll as any).bluewingSalesAmount ?? 0)}</td>
-                              </tr>
-                              <tr className="border-b border-dotted border-blue-200">
-                                <td className="py-1 pl-2 text-blue-700 font-medium">業績手当</td>
-                                {/* @ts-expect-error */}
-                                <td className="py-1 text-right pr-2 text-blue-700 font-medium">{formatCurrency((selectedPayroll as any).bluewingPerformanceAllowance ?? 0)}</td>
-                              </tr>
-                            </tbody>
-                          </table>
-                        </>
-                      )}
-
-                      <h3 className="font-bold border-l-4 border-black pl-2 bg-gray-100 py-1 text-sm mt-4 mb-2">勤怠実績</h3>
-                      <table className="w-full text-sm">
-                        <tbody>
-                          {[
-                            ["出勤日数", `${selectedPayroll.workDays} 日`],
-                            ["時間外労働", `${selectedPayroll.overtimeHours} 時間`],
-                            ["深夜労働", `${selectedPayroll.lateNightHours} 時間`],
-                            ["休日労働日数", `${selectedPayroll.holidayWorkDays} 日`],
-                          ].map(([label, val]) => (
-                            <tr key={String(label)} className="border-b border-dotted border-gray-300">
-                              <td className="py-1.5 text-gray-700">{label}</td>
-                              <td className="py-1.5 text-right">{val}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    {/* 控除項目 */}
-                    <div>
-                      <h3 className="font-bold border-l-4 border-black pl-2 bg-gray-100 py-1 text-sm mb-2">控除項目</h3>
-                      <table className="w-full text-sm">
-                        <tbody>
-                          {[
-                            ["健康保険・厚生年金", selectedPayroll.socialInsurance],
-                            ["雇用保険料", selectedPayroll.employmentInsurance],
-                            ["源泉所得税", selectedPayroll.incomeTax],
-                            ["市県民税", selectedPayroll.residentTax],
-                            ["欠勤控除", selectedPayroll.absenceDeduction],
-                            ...((() => {
-                              const misc = selectedPayroll.totalDeductions - (selectedPayroll.socialInsurance ?? 0) - (selectedPayroll.employmentInsurance ?? 0) - (selectedPayroll.incomeTax ?? 0) - (selectedPayroll.residentTax ?? 0) - (selectedPayroll.absenceDeduction ?? 0);
-                              return misc > 0 ? [["積立金・その他", misc]] : [];
-                            })()),
-                          ].map(([label, val]) => (
-                            <tr key={String(label)} className="border-b border-dotted border-gray-300">
-                              <td className="py-1.5 text-gray-700">{label}</td>
-                              <td className="py-1.5 text-right">{formatCurrency(Number(val))}</td>
-                            </tr>
-                          ))}
-                          <tr className="border-t-2 border-black font-bold bg-gray-50">
-                            <td className="py-1.5 pl-1">控除合計 (B)</td>
-                            <td className="py-1.5 text-right">{formatCurrency(selectedPayroll.totalDeductions)}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <div className="mt-4 border-2 border-black p-3 bg-gray-50 flex justify-between items-center rounded">
-                        <span className="font-bold text-sm">差引支給額 (A - B)</span>
-                        <span className="text-lg font-bold">{formatCurrency(selectedPayroll.netSalary)}</span>
-                      </div>
-
-                      {selectedPayroll.status !== "confirmed" && (
-                        <div className="mt-4 text-xs text-amber-700 bg-amber-50 p-3 rounded border border-amber-200 print:hidden">
-                          <strong>注意:</strong> 仮計算の状態です。確認後「明細を確定」ボタンを押してください。
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </TabsContent>
-
-              {/* ── 手当入力タブ ── */}
-              <TabsContent value="allowance" className="mt-2">
-                {employees?.find(e => e.id === selectedPayroll.employeeId) ? (
-                  <AllowanceInputPanel
-                    employee={employees.find(e => e.id === selectedPayroll.employeeId)!}
-                    monthlyData={(() => {
-                      const rec = monthlyRecords?.find(r => r.employeeId === selectedPayroll.employeeId);
-                      return {
-                        workDays: rec?.workDays ?? selectedPayroll.workDays ?? 0,
-                        saturdayWorkDays: (rec as { saturdayWorkDays?: number } | undefined)?.saturdayWorkDays ?? 0,
-                        sundayWorkHours: (rec as { sundayWorkHours?: number } | undefined)?.sundayWorkHours ?? 0,
-                      };
-                    })()}
-                  />
-                ) : (
-                  <div className="py-12 text-center text-muted-foreground">社員データが見つかりません</div>
-                )}
-              </TabsContent>
-            </Tabs>
+        <SheetContent key={selectedPayrollId} className="w-full sm:max-w-2xl overflow-y-auto print:fixed print:inset-0 print:max-w-none">
+          {selectedPayrollId && (
+            <PayrollDetailContent 
+              id={selectedPayrollId} 
+              activeTab={activeTab} 
+              setActiveTab={setActiveTab}
+              year={year}
+              month={month}
+              employees={employees || []}
+              onClose={() => setSelectedPayrollId(null)}
+            />
           )}
         </SheetContent>
       </Sheet>
     </AppLayout>
+  );
+}
+
+// ── 詳細画面用コンポーネント (独立させることでキャッシュ汚染を防止) ──
+function PayrollDetailContent({ 
+  id, 
+  activeTab, 
+  setActiveTab, 
+  year, 
+  month, 
+  employees,
+  onClose 
+}: { 
+  id: number; 
+  activeTab: string; 
+  setActiveTab: (v: string) => void;
+  year: number;
+  month: number;
+  employees: any[];
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  
+  // isLoading: 初回ロード時のみtrue, isFetching: 再取得中もtrue
+  const { data: payroll, isFetching, isLoading } = useGetPayroll(id, {
+    query: { 
+      queryKey: getGetPayrollQueryKey(id),
+      // キャッシュがあってもIDが違う可能性を考慮し、データの整合性を厳格にチェック
+    }
+  });
+  
+  const { data: monthlyRecords } = useListMonthlyRecords({ year, month });
+  const confirmPayroll = useConfirmPayroll();
+
+  const handleConfirm = async () => {
+    try {
+      await confirmPayroll.mutateAsync({ id });
+      queryClient.invalidateQueries({ queryKey: getGetPayrollQueryKey(id) });
+      queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) });
+      toast({ title: "給与確定", description: "給与明細を確定済みに変更しました。" });
+    } catch {
+      toast({ title: "エラー", description: "確定に失敗しました。", variant: "destructive" });
+    }
+  };
+
+  const handlePrint = () => window.print();
+
+  // 取得中、またはデータが選択したIDと不一致の場合はローディングを表示
+  // これにより「一瞬前の人のデータが見える」ことを100%防ぎます
+  if (isLoading || isFetching || !payroll || payroll.id !== id) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[400px] gap-3 text-muted-foreground bg-white">
+        <Calculator className="h-8 w-8 animate-spin opacity-20" />
+        <p className="text-sm font-medium">データを取得中...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="animate-in fade-in duration-300">
+      <SheetHeader className="print:hidden border-b pb-4">
+        <div className="flex items-center justify-between">
+          <SheetTitle>給与明細詳細</SheetTitle>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={handlePrint}>
+              <FileText className="mr-1.5 h-3.5 w-3.5" />
+              印刷
+            </Button>
+            {payroll.status !== "confirmed" && (
+              <Button
+                size="sm"
+                onClick={handleConfirm}
+                disabled={confirmPayroll.isPending}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
+                明細を確定
+              </Button>
+            )}
+          </div>
+        </div>
+      </SheetHeader>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
+        <TabsList className="w-full print:hidden">
+          <TabsTrigger value="allowance" className="flex-1">明細入力</TabsTrigger>
+          <TabsTrigger value="slip" className="flex-1">給与明細</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="slip">
+          <div className="bg-white text-black rounded-lg border p-6 space-y-6 mt-2" id="payroll-slip">
+            <div className="text-center border-b-2 border-black pb-3">
+              <h2 className="text-xl font-bold tracking-widest">{formatMonth(payroll.year, payroll.month)} 給与明細書</h2>
+            </div>
+
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <p className="text-base font-bold">{payroll.employeeName} 殿</p>
+                <p className="text-xs text-gray-500 mt-0.5">社員番号: {payroll.employeeCode}</p>
+                <div className="mt-1">
+                  {payroll.status === "confirmed" ? (
+                    <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs">確定済</Badge>
+                  ) : (
+                    <Badge variant="secondary" className="bg-amber-50 text-amber-700 border-amber-200 text-xs">計算中（未確定）</Badge>
+                  )}
+                </div>
+              </div>
+              <div className="border-2 border-black p-3 rounded text-right">
+                <p className="text-xs text-gray-500 mb-0.5">差引支給額</p>
+                <p className="text-xl font-bold">{formatCurrency(payroll.netSalary)}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <h3 className="font-bold border-l-4 border-black pl-2 bg-gray-100 py-1 text-sm mb-2">支給項目</h3>
+                <table className="w-full text-sm">
+                  <tbody>
+                    {(payroll as any).useBluewingLogic ? (
+                      <>
+                        {[
+                          ["基本給", payroll.baseSalary],
+                          ["時間外手当（超過分）", payroll.overtimePay],
+                          ["固定残業代（職務手当）", payroll.earlyOvertimeAllowance],
+                          ["休日手当", payroll.holidayPay],
+                        ].map(([label, val]) => Number(val) !== 0 && (
+                          <tr key={String(label)} className="border-b border-dotted border-gray-300">
+                            <td className="py-1.5 text-gray-700">{label}</td>
+                            <td className="py-1.5 text-right">{formatCurrency(Number(val))}</td>
+                          </tr>
+                        ))}
+                        {(payroll.customAllowancesTotal ?? 0) > 0 && (
+                          <tr className="border-b border-dotted border-gray-300">
+                            <td className="py-1.5 text-gray-700">その他手当</td>
+                            <td className="py-1.5 text-right">{formatCurrency(payroll.customAllowancesTotal)}</td>
+                          </tr>
+                        )}
+                        {(payroll as any).bluewingPerformanceAllowance > 0 && (
+                          <tr className="border-b border-dotted border-blue-300 bg-blue-50">
+                            <td className="py-1.5 text-blue-800 font-medium">業績手当（BW）</td>
+                            <td className="py-1.5 text-right font-medium text-blue-800">{formatCurrency((payroll as any).bluewingPerformanceAllowance)}</td>
+                          </tr>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        {[
+                          ["基本給", payroll.baseSalary],
+                          ["時間外手当", payroll.overtimePay],
+                          ["深夜手当", payroll.lateNightPay],
+                          ["休日手当", payroll.holidayPay],
+                          ["歩合給", payroll.commissionPay],
+                        ].map(([label, val]) => (
+                          <tr key={String(label)} className="border-b border-dotted border-gray-300">
+                            <td className="py-1.5 text-gray-700">{label}</td>
+                            <td className="py-1.5 text-right">{formatCurrency(Number(val))}</td>
+                          </tr>
+                        ))}
+                        {(payroll.customAllowancesTotal ?? 0) > 0 && (
+                          <tr className="border-b border-dotted border-gray-300">
+                            <td className="py-1.5 text-gray-700">その他手当</td>
+                            <td className="py-1.5 text-right">{formatCurrency(payroll.customAllowancesTotal)}</td>
+                          </tr>
+                        )}
+                      </>
+                    )}
+                    <tr className="border-t-2 border-black font-bold bg-gray-50">
+                      <td className="py-1.5 pl-1">総支給額 (A)</td>
+                      <td className="py-1.5 text-right">{formatCurrency(payroll.grossSalary)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                {(payroll as any).useBluewingLogic && (
+                  <>
+                    <h3 className="font-bold border-l-4 border-blue-600 pl-2 bg-blue-50 py-1 text-sm mt-4 mb-2 text-blue-900">BW業績手当 計算内訳</h3>
+                    <table className="w-full text-xs text-gray-600 bg-blue-50/40 rounded">
+                      <tbody>
+                        <tr className="border-b border-dotted border-blue-200">
+                          <td className="py-1 pl-2">売上（BW）</td>
+                          <td className="py-1 text-right pr-2">{formatCurrency((payroll as any).bluewingSalesAmount ?? 0)}</td>
+                        </tr>
+                        <tr className="border-b border-dotted border-blue-200">
+                          <td className="py-1 pl-2 text-blue-700 font-medium">業績手当</td>
+                          <td className="py-1 text-right pr-2 text-blue-700 font-medium">{formatCurrency((payroll as any).bluewingPerformanceAllowance ?? 0)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </>
+                )}
+
+                <h3 className="font-bold border-l-4 border-black pl-2 bg-gray-100 py-1 text-sm mt-4 mb-2">勤怠実績</h3>
+                <table className="w-full text-sm">
+                  <tbody>
+                    {[
+                      ["出勤日数", `${payroll.workDays} 日`],
+                      ["時間外労働", `${payroll.overtimeHours} 時間`],
+                      ["深夜労働", `${payroll.lateNightHours} 時間`],
+                      ["休日労働日数", `${payroll.holidayWorkDays} 日`],
+                    ].map(([label, val]) => (
+                      <tr key={String(label)} className="border-b border-dotted border-gray-300">
+                        <td className="py-1.5 text-gray-700">{label}</td>
+                        <td className="py-1.5 text-right">{val}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div>
+                <h3 className="font-bold border-l-4 border-black pl-2 bg-gray-100 py-1 text-sm mb-2">控除項目</h3>
+                <table className="w-full text-sm">
+                  <tbody>
+                    {[
+                      ["健康保険・厚生年金", payroll.socialInsurance],
+                      ["雇用保険料", payroll.employmentInsurance],
+                      ["源泉所得税", payroll.incomeTax],
+                      ["市県民税", payroll.residentTax],
+                      ["欠勤控除", payroll.absenceDeduction],
+                      ...((() => {
+                        const misc = payroll.totalDeductions - (payroll.socialInsurance ?? 0) - (payroll.employmentInsurance ?? 0) - (payroll.incomeTax ?? 0) - (payroll.residentTax ?? 0) - (payroll.absenceDeduction ?? 0);
+                        return misc > 0 ? [["積立金・その他", misc]] : [];
+                      })()),
+                    ].map(([label, val]) => (
+                      <tr key={String(label)} className="border-b border-dotted border-gray-300">
+                        <td className="py-1.5 text-gray-700">{label}</td>
+                        <td className="py-1.5 text-right">{formatCurrency(Number(val))}</td>
+                      </tr>
+                    ))}
+                    <tr className="border-t-2 border-black font-bold bg-gray-50">
+                      <td className="py-1.5 pl-1">控除合計 (B)</td>
+                      <td className="py-1.5 text-right">{formatCurrency(payroll.totalDeductions)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <div className="mt-4 border-2 border-black p-3 bg-gray-50 flex justify-between items-center rounded">
+                  <span className="font-bold text-sm">差引支給額 (A - B)</span>
+                  <span className="text-lg font-bold">{formatCurrency(payroll.netSalary)}</span>
+                </div>
+
+                {payroll.status !== "confirmed" && (
+                  <div className="mt-4 text-xs text-amber-700 bg-amber-50 p-3 rounded border border-amber-200 print:hidden">
+                    <strong>注意:</strong> 仮計算の状態です。確認後「明細を確定」ボタンを押してください。
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="allowance" className="mt-2">
+          {employees.find(e => e.id === payroll.employeeId) ? (
+            <AllowanceInputPanel
+              employee={employees.find(e => e.id === payroll.employeeId)!}
+              monthlyData={(() => {
+                const rec = monthlyRecords?.find(r => r.employeeId === payroll.employeeId);
+                return {
+                  workDays: rec?.workDays ?? payroll.workDays ?? 0,
+                  saturdayWorkDays: (rec as { saturdayWorkDays?: number } | undefined)?.saturdayWorkDays ?? 0,
+                  sundayWorkHours: (rec as { sundayWorkHours?: number } | undefined)?.sundayWorkHours ?? 0,
+                };
+              })()}
+            />
+          ) : (
+            <div className="py-12 text-center text-muted-foreground">社員データが見つかりません</div>
+          )}
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 }

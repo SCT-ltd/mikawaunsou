@@ -275,6 +275,15 @@ export default function AttendancePage() {
   const [absenceMode, setAbsenceMode] = useState(false);
   const [absenceType, setAbsenceType] = useState<AbsenceType>("sick");
   const [absenceNote, setAbsenceNote] = useState("");
+  const [futureConfirm, setFutureConfirm] = useState<{ open: boolean; onConfirm: () => void } | null>(null);
+
+  // 時刻調整用
+  const adjustTime = (current: string, setFn: (v: string) => void, mins: number) => {
+    const [h, m] = current.split(":").map(Number);
+    const date = new Date();
+    date.setHours(h, m + mins);
+    setFn(`${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`);
+  };
 
   const isToday = selectedDate === todayJST();
 
@@ -344,27 +353,31 @@ export default function AttendancePage() {
   const saveEdit = async () => {
     if (!editRecord) return;
     setEditError(null);
-    // JST日付＋入力時刻でタイムスタンプを構築（workDateを基準日として使用）
-    const recordedAt = new Date(`${editRecord.workDate}T${editTime}:00+09:00`).toISOString();
+
+    const proceed = async () => {
+      setSaving(true);
+      try {
+        const recordedAt = new Date(`${editRecord.workDate}T${editTime}:00+09:00`).toISOString();
+        const res = await fetch(`${BASE}/api/attendance/records/${editRecord.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ eventType: editEventType, recordedAt }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          setEditError(body.error ?? "保存に失敗しました");
+          return;
+        }
+        setEditRecord(null);
+        await fetchData(selectedDate);
+      } finally { setSaving(false); }
+    };
+
     if (isFuture(editRecord.workDate, editTime)) {
-      setEditError("未来の時刻は登録できません");
+      setFutureConfirm({ open: true, onConfirm: proceed });
       return;
     }
-    setSaving(true);
-    try {
-      const res = await fetch(`${BASE}/api/attendance/records/${editRecord.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ eventType: editEventType, recordedAt }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setEditError(body.error ?? "保存に失敗しました");
-        return;
-      }
-      setEditRecord(null);
-      await fetchData(selectedDate);
-    } finally { setSaving(false); }
+    await proceed();
   };
   const deleteRec = async () => {
     if (!editRecord) return;
@@ -383,27 +396,31 @@ export default function AttendancePage() {
   const addRecord = async () => {
     if (!selected) return;
     setAddError(null);
+
+    const proceed = async () => {
+      setSaving(true);
+      try {
+        const recordedAt = new Date(`${selectedDate}T${addTime}:00+09:00`).toISOString();
+        const res = await fetch(`${BASE}/api/attendance/record`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ employeeId: selected.employee.id, eventType: addEventType, recordedAt }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          setAddError(body.error ?? "保存に失敗しました");
+          return;
+        }
+        setAddMode(false);
+        await fetchData(selectedDate);
+      } finally { setSaving(false); }
+    };
+
     if (isFuture(selectedDate, addTime)) {
-      setAddError("未来の時刻は登録できません");
+      setFutureConfirm({ open: true, onConfirm: proceed });
       return;
     }
-    setSaving(true);
-    try {
-      // selectedDate（JST日付）＋入力時刻でタイムスタンプを生成（JST固定）
-      const recordedAt = new Date(`${selectedDate}T${addTime}:00+09:00`).toISOString();
-      const res = await fetch(`${BASE}/api/attendance/record`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ employeeId: selected.employee.id, eventType: addEventType, recordedAt }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setAddError(body.error ?? "保存に失敗しました");
-        return;
-      }
-      setAddMode(false);
-      await fetchData(selectedDate);
-    } finally { setSaving(false); }
+    await proceed();
   };
 
   /* ── 欠勤登録 ──────────────────────── */
@@ -530,14 +547,12 @@ export default function AttendancePage() {
                       id="attendance-date-input"
                       type="date"
                       value={selectedDate}
-                      max={todayJST()}
                       onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
                       className="absolute inset-0 opacity-0 cursor-pointer w-full"
                     />
                   </button>
                   <button
                     onClick={() => setSelectedDate(d => addDays(d, 1))}
-                    disabled={isToday}
                     className="p-1.5 hover:bg-muted rounded-r-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                     title="次の日"
                   >
@@ -865,15 +880,56 @@ export default function AttendancePage() {
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">時刻</Label>
-                        <Input
-                          type="time"
-                          value={addTime}
-                          max={isToday ? nowTimeJST() : undefined}
-                          onChange={(e) => { setAddTime(e.target.value); setAddError(null); }}
-                          className="h-8 text-xs"
-                        />
+                      <div className="space-y-1 col-span-2">
+                        <Label className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold">時刻設定</Label>
+                        <div className="bg-white border rounded-lg p-2 space-y-2 shadow-sm">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="relative flex-1 group">
+                              <Input
+                                type="time"
+                                value={addTime}
+                                onChange={(e) => { setAddTime(e.target.value); setAddError(null); }}
+                                className="h-10 text-lg font-bold text-center tabular-nums border-none bg-primary/5 focus-visible:ring-primary/20"
+                              />
+                              <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none opacity-40">
+                                <Clock className="h-4 w-4" />
+                              </div>
+                            </div>
+                            <Button 
+                              variant="secondary" 
+                              size="sm" 
+                              className="h-10 px-3 font-semibold"
+                              onClick={() => { setAddTime(nowTimeJST()); setAddError(null); }}
+                            >
+                              現在時刻
+                            </Button>
+                          </div>
+                          
+                          <div className="grid grid-cols-4 gap-1">
+                            {[
+                              { label: "-30分", val: -30 },
+                              { label: "-10分", val: -10 },
+                              { label: "+10分", val: 10 },
+                              { label: "+30分", val: 30 },
+                            ].map((btn) => (
+                              <button
+                                key={btn.label}
+                                onClick={() => adjustTime(addTime, setAddTime, btn.val)}
+                                className="py-1.5 text-[10px] font-bold rounded bg-muted hover:bg-primary/10 hover:text-primary transition-colors border border-transparent hover:border-primary/20"
+                              >
+                                {btn.label}
+                              </button>
+                            ))}
+                          </div>
+
+                          <div className="flex items-center gap-1.5 px-1 py-1">
+                            <span className="text-[10px] font-bold text-muted-foreground shrink-0">微調整:</span>
+                            <div className="flex gap-1 flex-1">
+                              <button onClick={() => adjustTime(addTime, setAddTime, -1)} className="flex-1 h-6 flex items-center justify-center bg-slate-100 hover:bg-slate-200 rounded text-xs"> -1 </button>
+                              <button onClick={() => adjustTime(addTime, setAddTime, 1)} className="flex-1 h-6 flex items-center justify-center bg-slate-100 hover:bg-slate-200 rounded text-xs"> +1 </button>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                     <div className="flex gap-2">
@@ -1146,12 +1202,45 @@ export default function AttendancePage() {
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">打刻時刻</Label>
-                <Input
-                  type="time"
-                  value={editTime}
-                  max={editRecord.workDate === todayJST() ? nowTimeJST() : undefined}
-                  onChange={(e) => { setEditTime(e.target.value); setEditError(null); }}
-                />
+                <div className="bg-muted/30 border rounded-lg p-3 space-y-3 shadow-inner">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="time"
+                      value={editTime}
+                      onChange={(e) => { setEditTime(e.target.value); setEditError(null); }}
+                      className="h-10 text-xl font-bold text-center tabular-nums bg-white shadow-sm"
+                    />
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="h-10 px-3 text-xs bg-white"
+                      onClick={() => { setEditTime(nowTimeJST()); setEditError(null); }}
+                    >
+                      現在
+                    </Button>
+                  </div>
+                  
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {[
+                      { label: "-30分", val: -30 },
+                      { label: "-10分", val: -10 },
+                      { label: "+10分", val: 10 },
+                      { label: "+30分", val: 30 },
+                    ].map((btn) => (
+                      <button
+                        key={btn.label}
+                        onClick={() => adjustTime(editTime, setEditTime, btn.val)}
+                        className="py-1.5 text-[10px] font-bold rounded bg-white hover:bg-primary/5 hover:text-primary transition-colors border border-slate-200"
+                      >
+                        {btn.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex gap-1">
+                    <button onClick={() => adjustTime(editTime, setEditTime, -1)} className="flex-1 h-7 flex items-center justify-center bg-white hover:bg-slate-50 border border-slate-200 rounded text-xs shadow-sm"> -1分 </button>
+                    <button onClick={() => adjustTime(editTime, setEditTime, 1)} className="flex-1 h-7 flex items-center justify-center bg-white hover:bg-slate-50 border border-slate-200 rounded text-xs shadow-sm"> +1分 </button>
+                  </div>
+                </div>
               </div>
 
               {editError && (
@@ -1207,6 +1296,30 @@ export default function AttendancePage() {
                 </p>
               </>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+      {/* ── 未来日付確認ダイアログ ─────────────────── */}
+      <Dialog open={!!futureConfirm?.open} onOpenChange={(open) => !open && setFutureConfirm(null)}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base text-orange-600">
+              <RefreshCw className="h-4 w-4" />確認
+            </DialogTitle>
+            <DialogDescription className="text-sm pt-2">
+              未来の日付です。続行しますか？
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-2 mt-4">
+            <Button variant="outline" size="sm" className="flex-1" onClick={() => setFutureConfirm(null)}>
+              キャンセル
+            </Button>
+            <Button size="sm" className="flex-1 bg-orange-600 hover:bg-orange-700" onClick={() => {
+              futureConfirm?.onConfirm();
+              setFutureConfirm(null);
+            }}>
+              続行
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

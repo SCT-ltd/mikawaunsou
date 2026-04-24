@@ -41,6 +41,13 @@ export const payrollsTable = pgTable("payrolls", {
   salesAmount: doublePrecision("sales_amount").notNull().default(0),
   commissionRate: doublePrecision("commission_rate").notNull().default(0),
   performanceAllowance: doublePrecision("performance_allowance").notNull().default(0),
+  // 随時改定（月変）判定用スナップショット
+  salaryForStandardRemunerationReview: doublePrecision("salary_for_standard_remuneration_review").notNull().default(0),
+  fixedPayComponentTotal: doublePrecision("fixed_pay_component_total").notNull().default(0),
+  variablePayComponentTotal: doublePrecision("variable_pay_component_total").notNull().default(0),
+  workingDaysForMonthlyChange: doublePrecision("working_days_for_monthly_change").notNull().default(0),
+  monthlyChangeTargetable: boolean("monthly_change_targetable").notNull().default(false),
+  monthlyChangeExcludedReason: text("monthly_change_excluded_reason"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [

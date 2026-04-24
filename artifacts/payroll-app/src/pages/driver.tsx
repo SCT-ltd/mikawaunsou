@@ -510,14 +510,29 @@ export default function DriverPage() {
 
   const sendMessage = async () => {
     if (!msgInput.trim() || msgSending) return;
+    const content = msgInput.trim();
     setMsgSending(true);
+    setError(null);
     try {
-      await fetch(`${BASE}/api/messages`, {
+      const res = await apiFetch("/messages", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ employeeId, sender: "employee", content: msgInput.trim() }),
+        body: JSON.stringify({ employeeId, sender: "employee", content }),
       });
+      
+      // 楽観的更新: SSEを待たずに一覧に追加
+      if (res && res.id) {
+        setMessages(prev => {
+          if (prev.find(m => m.id === res.id)) return prev;
+          return [...prev, res];
+        });
+      }
+      
       setMsgInput("");
+      // 下部へスクロール
+      setTimeout(() => msgBottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+    } catch (e) {
+      console.error("Message send error:", e);
+      setError("メッセージの送信に失敗しました。電波状況を確認してください。");
     } finally {
       setMsgSending(false);
     }

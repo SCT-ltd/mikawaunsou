@@ -1,7 +1,7 @@
 import { Router, type Response } from "express";
 import webpush from "web-push";
 import { db, messagesTable, pushSubscriptionsTable, employeesTable } from "@workspace/db";
-import { eq, and, desc, asc } from "drizzle-orm";
+import { eq, and, desc, asc, isNull, sql } from "drizzle-orm";
 
 const router = Router();
 
@@ -38,7 +38,7 @@ router.get("/messages/vapid-public-key", (_req, res) => {
 });
 
 // ── SSEストリーム ──────────────────────────────────────
-router.get("/messages/stream", (req, res) => {
+router.get("/stream", (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
@@ -56,7 +56,7 @@ router.get("/messages/stream", (req, res) => {
 });
 
 // ── 会話一覧（事務所用） ──────────────────────────────
-router.get("/messages/conversations", async (_req, res) => {
+router.get("/conversations", async (_req, res) => {
   const employees = await db
     .select()
     .from(employeesTable)
@@ -71,27 +71,15 @@ router.get("/messages/conversations", async (_req, res) => {
       .orderBy(desc(messagesTable.createdAt))
       .limit(1);
 
-    const unread = await db
-      .select({ id: messagesTable.id })
-      .from(messagesTable)
-      .where(and(
-        eq(messagesTable.employeeId, emp.id),
-        eq(messagesTable.sender, "employee"),
-      ))
-      .then(rows => rows.filter(r => {
-        // readAt is null = unread
-        return true; // counted below
-      }));
-
     const unreadCount = (await db
       .select({ id: messagesTable.id })
       .from(messagesTable)
       .where(and(
         eq(messagesTable.employeeId, emp.id),
         eq(messagesTable.sender, "employee"),
+        isNull(messagesTable.readAt),
       ))
-    ).length; // simplified: count all employee messages as potentially unread
-    void unread;
+    ).length;
 
     return {
       employee: {
@@ -109,7 +97,7 @@ router.get("/messages/conversations", async (_req, res) => {
 });
 
 // ── メッセージ取得 ─────────────────────────────────────
-router.get("/messages/:employeeId", async (req, res) => {
+router.get("/:employeeId", async (req, res) => {
   const employeeId = parseInt(req.params["employeeId"], 10);
   const messages = await db
     .select()
@@ -119,8 +107,28 @@ router.get("/messages/:employeeId", async (req, res) => {
   return res.json(messages);
 });
 
+// ── 既読にする ─────────────────────────────────────────
+router.post("/:employeeId/read", async (req, res) => {
+  const employeeId = parseInt(req.params["employeeId"], 10);
+  
+  await db.update(messagesTable)
+    .set({ readAt: sql`now()` })
+    .where(and(
+      eq(messagesTable.employeeId, employeeId),
+      eq(messagesTable.sender, "employee"),
+      isNull(messagesTable.readAt),
+    ));
+
+  console.log(`[Messages] Marked messages as read for employee ${employeeId}`);
+
+  // 既読になったことを通知
+  broadcastToEmployee(employeeId, { type: "read", employeeId });
+  
+  return res.json({ ok: true });
+});
+
 // ── メッセージ送信 ─────────────────────────────────────
-router.post("/messages", async (req, res) => {
+router.post("/", async (req, res) => {
   const { employeeId, sender, content } = req.body as {
     employeeId: number;
     sender: "office" | "employee";

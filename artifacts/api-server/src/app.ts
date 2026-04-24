@@ -1,8 +1,11 @@
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
+import session from "express-session";
 import router from "./routes";
 import { logger } from "./lib/logger";
+
+import { authMiddleware } from "./middlewares/auth";
 
 const app: Express = express();
 
@@ -29,6 +32,25 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+app.use(
+  session({
+    // TODO: 本番環境では環境変数 SESSION_SECRET を必ず設定してください
+    secret: process.env.SESSION_SECRET || "mikawa-unsou-secret-key",
+    resave: false,
+    saveUninitialized: false,
+    // MEMO: デフォルトの MemoryStore を使用しています。
+    // 本番環境でマルチインスタンス化やサーバー再起動時のセッション維持が必要な場合は、
+    // connect-redis や connect-pg-simple 等の永続ストアへの移行を推奨します。
+    cookie: {
+      httpOnly: true, // XSS対策: JSからのアクセスを禁止
+      secure: process.env.NODE_ENV === "production", // 本番(HTTPS)ではTrueに設定
+      maxAge: 24 * 60 * 60 * 1000, // 24時間
+      sameSite: "lax", // CSRF対策と利便性のバランス
+    },
+  }),
+);
+
+app.use(authMiddleware);
 app.use("/api", router);
 
 // ── グローバルエラーハンドラー ────────────────────────────────────────────

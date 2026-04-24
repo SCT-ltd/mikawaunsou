@@ -31,6 +31,7 @@ export const employeesTable = pgTable("employees", {
   pensionMonthly: doublePrecision("pension_monthly").notNull().default(0),
   employmentInsuranceApplied: boolean("employment_insurance_applied").notNull().default(true),
   residentTax: doublePrecision("resident_tax").notNull().default(0),
+  pensionApplied: boolean("pension_applied").notNull().default(true),
   incomeTaxMonthly: doublePrecision("income_tax_monthly").notNull().default(0),
   otherDeductionMonthly: doublePrecision("other_deduction_monthly").notNull().default(0),
   dateOfBirth: date("date_of_birth"),
@@ -40,6 +41,26 @@ export const employeesTable = pgTable("employees", {
   scheduledWorkStart: text("scheduled_work_start").default("08:00"),
   scheduledWorkEnd: text("scheduled_work_end").default("17:00"),
   pin: text("pin"),
+  // 随時改定（月変）管理用
+  standardRemunerationAppliedFrom: date("standard_remuneration_applied_from"),
+  fixedPayChangeFlag: boolean("fixed_pay_change_flag").notNull().default(false),
+  fixedPayChangeEffectiveMonth: text("fixed_pay_change_effective_month"),
+  fixedPayChangeReasonCode: text("fixed_pay_change_reason_code"), // base_salary_changed, etc.
+  monthlyChangeReviewStatus: text("monthly_change_review_status").notNull().default("none"), // none, monitoring, eligible, approved, excluded
+  nextStandardRemunerationCandidate: doublePrecision("next_standard_remuneration_candidate"),
+  monthlyChangeNotes: text("monthly_change_notes"),
+  monthlyChangeApprovedAt: timestamp("monthly_change_approved_at"),
+  monthlyChangeApprovedBy: integer("monthly_change_approved_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const employeeResidentTaxesTable = pgTable("employee_resident_taxes", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull().references(() => employeesTable.id),
+  amount: doublePrecision("amount").notNull(),
+  effectiveMonth: text("effective_month").notNull(), // YYYY-MM
+  notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -47,3 +68,7 @@ export const employeesTable = pgTable("employees", {
 export const insertEmployeeSchema = createInsertSchema(employeesTable).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertEmployee = z.infer<typeof insertEmployeeSchema>;
 export type Employee = typeof employeesTable.$inferSelect;
+
+export const insertEmployeeResidentTaxSchema = createInsertSchema(employeeResidentTaxesTable).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEmployeeResidentTax = z.infer<typeof insertEmployeeResidentTaxSchema>;
+export type EmployeeResidentTax = typeof employeeResidentTaxesTable.$inferSelect;

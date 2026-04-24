@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { AppLayout } from "@/components/layout/app-layout";
 import { Send, MessageSquare, Bell, BellOff, Megaphone, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -79,6 +80,29 @@ export default function MessagesPage() {
   const [pushEnabled, setPushEnabled] = useState<boolean | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const { toast } = useToast();
+  const [soundEnabled, setSoundEnabled] = useState(() => {
+    return localStorage.getItem("msg_sound_enabled") !== "false";
+  });
+
+  const playNotificationSound = useCallback(() => {
+    if (!soundEnabled) return;
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // A5
+      gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+      oscillator.start();
+      oscillator.stop(audioCtx.currentTime + 0.5);
+    } catch (e) {
+      console.error("Sound play error:", e);
+    }
+  }, [soundEnabled]);
 
   // 一斉送信
   const [broadcastOpen, setBroadcastOpen] = useState(false);
@@ -102,25 +126,60 @@ export default function MessagesPage() {
     const es = new EventSource(`${BASE}/api/messages/stream?employeeId=0`);
     eventSourceRef.current = es;
     es.onmessage = (e) => {
-      const data = JSON.parse(e.data) as { type: string; message: Message };
-      if (data.type === "message") {
+      const data = JSON.parse(e.data) as { type: string; message?: Message; employeeId?: number };
+      if (data.type === "message" && data.message) {
         setMessages(prev => {
-          if (prev.find(m => m.id === data.message.id)) return prev;
-          return [...prev, data.message];
+          if (prev.find(m => m.id === data.message!.id)) return prev;
+          if (data.message!.sender === "employee") {
+            playNotificationSound();
+          }
+          return [...prev, data.message!];
         });
+        fetchConversations();
+        
+        // もし今開いているチャット相手からのメッセージなら、既読にする
+        if (data.message.sender === "employee" && data.message.employeeId === selectedId) {
+          markAsRead(selectedId);
+        }
+      } else if (data.type === "read") {
+        // 他のクライアントで既読にされた場合も件数を更新
         fetchConversations();
       }
     };
     return () => es.close();
-  }, [fetchConversations]);
+  }, [fetchConversations, playNotificationSound, selectedId]);
+
+  const markAsRead = useCallback(async (empId: number) => {
+    // 楽観的更新
+    setConversations(prev => prev.map(conv => 
+      conv.employee.id === empId ? { ...conv, unreadCount: 0 } : conv
+    ));
+    
+    try {
+      const res = await fetch(`${BASE}/api/messages/${empId}/read`, { method: "POST" });
+      if (!res.ok) {
+        throw new Error(`既読処理に失敗しました: ${res.status}`);
+      }
+    } catch (e) {
+      console.error("Failed to mark as read", e);
+      toast({
+        variant: "destructive",
+        title: "エラー",
+        description: e instanceof Error ? e.message : "既読処理に失敗しました",
+      });
+    }
+  }, [toast]);
 
   // 初期読み込み
   useEffect(() => { fetchConversations(); }, [fetchConversations]);
 
   // 選択変更
   useEffect(() => {
-    if (selectedId != null) fetchMessages(selectedId);
-  }, [selectedId, fetchMessages]);
+    if (selectedId != null) {
+      fetchMessages(selectedId);
+      markAsRead(selectedId);
+    }
+  }, [selectedId, fetchMessages, markAsRead]);
 
   // 自動スクロール
   useEffect(() => {
@@ -134,6 +193,7 @@ export default function MessagesPage() {
     }
   }, []);
 
+
   const handleEnablePush = async () => {
     if (!("Notification" in window)) return;
     const perm = await Notification.requestPermission();
@@ -141,6 +201,14 @@ export default function MessagesPage() {
       await registerPush(null, "office");
       setPushEnabled(true);
     }
+  };
+
+  const toggleSound = () => {
+    setSoundEnabled(prev => {
+      const next = !prev;
+      localStorage.setItem("msg_sound_enabled", String(next));
+      return next;
+    });
   };
 
   const openBroadcast = () => {
@@ -193,16 +261,30 @@ export default function MessagesPage() {
 
   const sendMessage = async () => {
     if (!selectedId || !input.trim() || sending) return;
+    const content = input.trim();
     setSending(true);
     try {
-      await fetch(`${BASE}/api/messages`, {
+      const res = await fetch(`${BASE}/api/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ employeeId: selectedId, sender: "office", content: input.trim() }),
+        body: JSON.stringify({ employeeId: selectedId, sender: "office", content }),
       });
-      setInput("");
-      await fetchMessages(selectedId);
-      await fetchConversations();
+      
+      if (res.ok) {
+        const newMessage = await res.json() as Message;
+        // 楽観的更新: SSEを待たずに一覧に追加
+        setMessages(prev => {
+          if (prev.find(m => m.id === newMessage.id)) return prev;
+          return [...prev, newMessage];
+        });
+        setInput("");
+        // 会話一覧も更新
+        await fetchConversations();
+      } else {
+        console.error("Failed to send message:", await res.text());
+      }
+    } catch (e) {
+      console.error("Message send error:", e);
     } finally {
       setSending(false);
     }
@@ -324,11 +406,11 @@ export default function MessagesPage() {
                 <Megaphone className="h-4 w-4 text-amber-500" />
               </button>
               <button
-                onClick={handleEnablePush}
+                onClick={toggleSound}
                 className="p-1.5 rounded hover:bg-muted transition-colors"
-                title={pushEnabled ? "通知ON" : "通知を有効にする"}
+                title={soundEnabled ? "通知音をミュート" : "通知音を有効にする"}
               >
-                {pushEnabled
+                {soundEnabled
                   ? <Bell className="h-4 w-4 text-primary" />
                   : <BellOff className="h-4 w-4 text-muted-foreground" />}
               </button>
@@ -349,7 +431,12 @@ export default function MessagesPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-1">
                     <span className="font-semibold text-sm truncate">{conv.employee.name}</span>
-                    {conv.latestMessage && (
+                    {conv.unreadCount > 0 && selectedId !== conv.employee.id && (
+                      <span className="bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 shadow-sm shrink-0">
+                        {conv.unreadCount}
+                      </span>
+                    )}
+                    {(conv.unreadCount === 0 || selectedId === conv.employee.id) && conv.latestMessage && (
                       <span className="text-xs text-muted-foreground shrink-0">
                         {formatTime(conv.latestMessage.createdAt)}
                       </span>
