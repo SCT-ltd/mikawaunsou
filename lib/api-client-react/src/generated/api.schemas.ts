@@ -470,6 +470,7 @@ export interface EmployeeAllowance {
 export type UpdateEmployeeAllowancesBodyAllowancesItem = {
   allowanceDefinitionId: number;
   amount: number;
+  sortOrder?: number;
 };
 
 export interface UpdateEmployeeAllowancesBody {
@@ -544,6 +545,7 @@ export interface EmployeeDeduction {
 export type UpdateEmployeeDeductionsBodyDeductionsItem = {
   deductionDefinitionId: number;
   amount: number;
+  sortOrder?: number;
 };
 
 export interface UpdateEmployeeDeductionsBody {

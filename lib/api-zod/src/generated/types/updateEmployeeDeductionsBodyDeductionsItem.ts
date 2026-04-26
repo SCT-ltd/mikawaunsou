@@ -9,4 +9,5 @@
 export type UpdateEmployeeDeductionsBodyDeductionsItem = {
   deductionDefinitionId: number;
   amount: number;
+  sortOrder?: number;
 };

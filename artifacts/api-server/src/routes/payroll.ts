@@ -56,7 +56,7 @@ async function performPayrollCalculation(params: {
     const employmentInsurance = roundJapanese(grossSalary * 0.0055);
     const nonTaxableCustomAllowancesTotal = customAllowances.reduce((s, a) => s + (a.isTaxable === false ? a.amount : 0), 0);
     const afterInsuranceSalary = grossSalary - nonTaxableCustomAllowancesTotal - socialInsurance - employmentInsurance;
-    const dependentEquivCount = (Number(emp.dependentCount) || 0) + (emp.hasSpouse ? 1 : 0);
+    const dependentEquivCount = Number(emp.dependentCount) || 0;
     const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
     const totalDeductions = roundJapanese(socialInsurance + employmentInsurance + incomeTax + residentTax + (Number(emp.otherDeductionMonthly) || 0));
 
@@ -86,7 +86,7 @@ async function performPayrollCalculation(params: {
   } else if (isBW) {
     const dailyWage = company.dailyWageWeekday ?? 9808;
     const dailySaturday = company.dailyWageSaturday ?? 12260;
-    const baseSalaryCalc = Math.floor((Number(record.workDays) || 0) * dailyWage + (Number(record.saturdayWorkDays) || 0) * dailySaturday);
+    const baseSalaryCalc = Math.floor((Number(record.workDays) || 0) * dailyWage);
     const masterFixedAllowances = (Number(emp.earlyOvertimeAllowance) || 0);
     const customAllowancesFixedTotal = customAllowances.reduce((s, a) => s + a.amount, 0);
     const fixedAllowancesTotal = masterFixedAllowances + customAllowancesFixedTotal;
@@ -118,7 +118,7 @@ async function performPayrollCalculation(params: {
     const employmentInsurance = emp.employmentInsuranceApplied ? roundJapanese(grossSalary * 0.0055) : 0;
     const nonTaxableAllowancesTotal = customAllowances.reduce((s, a) => s + (a.isTaxable === false ? a.amount : 0), 0);
     const afterInsuranceSalary = grossSalary - nonTaxableAllowancesTotal - socialInsurance - employmentInsurance;
-    const dependentEquivCount = (Number(emp.dependentCount) || 0) + (emp.hasSpouse ? 1 : 0);
+    const dependentEquivCount = Number(emp.dependentCount) || 0;
     const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
     const totalDeductions = roundJapanese(socialInsurance + employmentInsurance + incomeTax + residentTax + (Number(emp.otherDeductionMonthly) || 0));
 
@@ -280,14 +280,14 @@ router.post("/payroll/calculate", async (req, res) => {
     return { allowanceDefinitionId: def.id, allowanceName: def.name, isTaxable: def.isTaxable, amount: row?.amount ?? 0 };
   }).filter(a => a.amount > 0);
 
-  const result = await performPayrollCalculation({ emp, record, company, customAllowances, year, month });
+  const result = await performPayrollCalculation({ emp, record, company, customAllowances, year: Number(year), month: Number(month) });
 
   // Upsert
   const existing = await db.select().from(payrollsTable)
     .where(and(
-      eq(payrollsTable.employeeId, employeeId),
-      eq(payrollsTable.year, year),
-      eq(payrollsTable.month, month)
+      eq(payrollsTable.employeeId, Number(employeeId)),
+      eq(payrollsTable.year, Number(year)),
+      eq(payrollsTable.month, Number(month))
     )).limit(1);
 
   let payroll;
@@ -300,14 +300,26 @@ router.post("/payroll/calculate", async (req, res) => {
     updatedAt: new Date(),
   };
 
-  if (existing.length > 0 && existing[0].status !== "confirmed") {
-    [payroll] = await db.update(payrollsTable).set({ ...payrollData, status: "draft" }).where(eq(payrollsTable.id, existing[0].id)).returning();
-  } else if (existing.length === 0) {
-    [payroll] = await db.insert(payrollsTable).values({
-      employeeId, year, month, status: "draft", ...payrollData
-    }).returning();
-  } else {
-    payroll = existing[0];
+  // NaN チェック: doublePrecision 列に NaN が渡るとDBエラーになるため 0 に置換
+  const sanitized: Record<string, any> = {};
+  for (const [k, v] of Object.entries(payrollData)) {
+    sanitized[k] = (typeof v === "number" && isNaN(v)) ? 0 : v;
+  }
+
+  try {
+    if (existing.length > 0 && existing[0].status !== "confirmed") {
+      [payroll] = await db.update(payrollsTable).set({ ...sanitized, status: "draft" }).where(eq(payrollsTable.id, existing[0].id)).returning();
+    } else if (existing.length === 0) {
+      [payroll] = await db.insert(payrollsTable).values({
+        employeeId: Number(employeeId), year: Number(year), month: Number(month), status: "draft", ...sanitized
+      }).returning();
+    } else {
+      payroll = existing[0];
+    }
+  } catch (dbErr: any) {
+    const pgMsg = dbErr?.cause?.message ?? dbErr?.message ?? String(dbErr);
+    console.error("[payroll/calculate] DB error:", pgMsg, "\nData:", JSON.stringify(sanitized));
+    return res.status(500).json({ error: `給与計算の保存に失敗しました: ${pgMsg}` });
   }
 
   return res.json(buildPayrollResponse(payroll, emp));

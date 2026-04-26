@@ -450,24 +450,54 @@ router.get("/attendance/monthly-summary", async (req, res) => {
     byEmpDate.get(key)!.push(r);
   }
 
-  // 日ごとの実働分数を計算（break時間を差し引く）
-  function calcWorkMinutes(recs: typeof allRecords): number {
+  // 日ごとの実働分数と深夜時間（JST 22:00〜05:00）を計算（break時間を差し引く）
+  function calcWorkAndLateNight(recs: typeof allRecords): { workMins: number; lateNightMins: number } {
     let clockInTime: Date | null = null;
     let breakStart: Date | null = null;
-    let breakTotal = 0;
-    let totalMs = 0;
+    let breakIntervals: { start: Date; end: Date }[] = [];
+    let workStart: Date | null = null;
+    let workEnd: Date | null = null;
+
     for (const r of recs) {
       const t = new Date(r.recordedAt);
-      if (r.eventType === "clock_in")    clockInTime = t;
-      else if (r.eventType === "break_start") breakStart = t;
-      else if (r.eventType === "break_end" && breakStart) {
-        breakTotal += t.getTime() - breakStart.getTime();
+      if (r.eventType === "clock_in") {
+        clockInTime = t;
+        workStart = t;
+      } else if (r.eventType === "break_start") {
+        breakStart = t;
+      } else if (r.eventType === "break_end" && breakStart) {
+        breakIntervals.push({ start: breakStart, end: t });
         breakStart = null;
       } else if (r.eventType === "clock_out" && clockInTime) {
-        totalMs = t.getTime() - clockInTime.getTime() - breakTotal;
+        workEnd = t;
       }
     }
-    return Math.round(Math.max(0, totalMs) / 60000);
+
+    if (!workStart || !workEnd) return { workMins: 0, lateNightMins: 0 };
+
+    // 実働時間（ミリ秒）= 総時間 - 休憩時間
+    const breakTotalMs = breakIntervals.reduce((sum, b) => sum + b.end.getTime() - b.start.getTime(), 0);
+    const workMins = Math.round(Math.max(0, workEnd.getTime() - workStart.getTime() - breakTotalMs) / 60000);
+
+    // 深夜時間：1分刻みで JST 22:00〜05:00 の実働区間を計算
+    let lateNightMins = 0;
+    const startMs = workStart.getTime();
+    const endMs = workEnd.getTime();
+    const totalMinutes = Math.floor((endMs - startMs) / 60000);
+
+    for (let i = 0; i < totalMinutes; i++) {
+      const minuteMs = startMs + i * 60000;
+
+      // この1分が休憩中かチェック
+      const inBreak = breakIntervals.some(b => minuteMs >= b.start.getTime() && minuteMs < b.end.getTime());
+      if (inBreak) continue;
+
+      // JST時刻（0〜23）を算出
+      const jstHour = new Date(minuteMs + 9 * 60 * 60 * 1000).getUTCHours();
+      if (jstHour >= 22 || jstHour < 5) lateNightMins++;
+    }
+
+    return { workMins, lateNightMins };
   }
 
   // 社員ごとに集計
@@ -476,6 +506,7 @@ router.get("/attendance/monthly-summary", async (req, res) => {
     saturdayWorkDays: number;
     sundayWorkHours: number;
     overtimeHours: number;
+    lateNightHours: number;
   }>();
 
   for (const [key, recs] of byEmpDate.entries()) {
@@ -485,11 +516,14 @@ router.get("/attendance/monthly-summary", async (req, res) => {
     if (!recs.some(r => r.eventType === "clock_in")) continue;
 
     if (!summaryMap.has(empId)) {
-      summaryMap.set(empId, { workDays: 0, saturdayWorkDays: 0, sundayWorkHours: 0, overtimeHours: 0 });
+      summaryMap.set(empId, { workDays: 0, saturdayWorkDays: 0, sundayWorkHours: 0, overtimeHours: 0, lateNightHours: 0 });
     }
     const s = summaryMap.get(empId)!;
     const dow = new Date(dateStr).getDay(); // 0=日, 6=土
-    const workMins = calcWorkMinutes(recs);
+    const { workMins, lateNightMins } = calcWorkAndLateNight(recs);
+
+    // 深夜時間は曜日に関わらず加算
+    s.lateNightHours = Math.round((s.lateNightHours + lateNightMins / 60) * 10) / 10;
 
     if (dow === 0) {
       // 日曜：時間単位で加算（小数1位）
@@ -523,7 +557,7 @@ router.get("/attendance/monthly-summary", async (req, res) => {
   // 欠勤のみの社員も結果に含める
   for (const [empId, days] of absenceSummary.entries()) {
     if (!summaryMap.has(empId)) {
-      summaryMap.set(empId, { workDays: 0, saturdayWorkDays: 0, sundayWorkHours: 0, overtimeHours: 0 });
+      summaryMap.set(empId, { workDays: 0, saturdayWorkDays: 0, sundayWorkHours: 0, overtimeHours: 0, lateNightHours: 0 });
     }
   }
 

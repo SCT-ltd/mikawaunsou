@@ -60,8 +60,9 @@ app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
 
   const message = err instanceof Error ? err.message : String(err);
   const stack   = err instanceof Error ? err.stack   : undefined;
+  const cause   = err instanceof Error && (err as any).cause ? String((err as any).cause) : undefined;
 
-  log.error({ err: { message, stack } }, "Unhandled error");
+  log.error({ err: { message, stack, cause } }, "Unhandled error");
 
   // DB 固有エラーのメッセージを日本語に変換
   let userMessage = "サーバーエラーが発生しました。しばらく経ってからもう一度お試しください。";

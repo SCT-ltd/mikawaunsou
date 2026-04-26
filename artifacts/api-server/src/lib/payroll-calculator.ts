@@ -160,7 +160,7 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
   const nonTaxableAllowancesTotal = customAllowances.reduce((sum, a) => sum + (a.isTaxable === false ? a.amount : 0), 0);
   const afterInsuranceSalary = grossSalary - nonTaxableAllowancesTotal - socialInsurance - employmentInsurance;
 
-  const dependentEquivCount = dependentCount + (hasSpouse ? 1 : 0);
+  const dependentEquivCount = dependentCount;
   const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
 
   const totalDeductions = roundJapanese(

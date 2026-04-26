@@ -1567,6 +1567,8 @@ components:
                 type: integer
               amount:
                 type: number
+              sortOrder:
+                type: integer
             required:
               - allowanceDefinitionId
               - amount
@@ -1672,6 +1674,8 @@ components:
                 type: integer
               amount:
                 type: number
+              sortOrder:
+                type: integer
             required:
               - deductionDefinitionId
               - amount

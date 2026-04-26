@@ -25,7 +25,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 <div className="flex items-center gap-3 border-l pl-4 ml-2">
                   <div className="flex items-center gap-2 text-sm font-medium">
                     <User className="h-4 w-4 text-primary" />
-                    <span>{user.username}</span>
+                    <span>{user.displayName ?? user.username}</span>
                   </div>
                   <Button variant="ghost" size="icon" onClick={logout} title="ログアウト">
                     <LogOut className="h-4 w-4" />
@@ -34,8 +34,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               )}
             </div>
           </header>
-          <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
-            <div className="mx-auto max-w-7xl">
+          <main className="flex-1 overflow-hidden p-4 md:p-6 lg:p-8">
+            <div className="mx-auto max-w-7xl h-full overflow-y-auto">
               {children}
             </div>
           </main>

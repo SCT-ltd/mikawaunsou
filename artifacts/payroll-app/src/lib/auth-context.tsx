@@ -4,6 +4,7 @@ import { useLocation } from "wouter";
 interface User {
   id: number;
   username: string;
+  displayName: string | null;
   role: string;
 }
 

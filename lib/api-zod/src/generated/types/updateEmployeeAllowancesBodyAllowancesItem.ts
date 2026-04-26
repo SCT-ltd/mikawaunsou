@@ -9,4 +9,5 @@
 export type UpdateEmployeeAllowancesBodyAllowancesItem = {
   allowanceDefinitionId: number;
   amount: number;
+  sortOrder?: number;
 };

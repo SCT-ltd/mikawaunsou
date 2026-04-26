@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/layout/app-layout";
 import { useGetCompany, useUpdateCompany, getGetCompanyQueryKey } from "@workspace/api-client-react";
 import { useForm } from "react-hook-form";
@@ -10,7 +10,17 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { Save, Building2, Info } from "lucide-react";
+import { Save, Building2, Info, Trash2, AlertTriangle } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const companySchema = z.object({
   name: z.string().min(1, "会社名を入力してください"),
@@ -26,6 +36,25 @@ type CompanyFormValues = z.infer<typeof companySchema>;
 export default function Settings() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
+
+  const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+  const handleReset = async () => {
+    setResetting(true);
+    try {
+      const res = await fetch(`${BASE}/api/reset/operational-data`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+      queryClient.invalidateQueries();
+      toast({ title: "初期化完了", description: "運用データを全て削除しました。システムは稼働可能な状態です。" });
+    } catch {
+      toast({ title: "エラー", description: "初期化に失敗しました。", variant: "destructive" });
+    } finally {
+      setResetting(false);
+      setResetDialogOpen(false);
+    }
+  };
 
   const { data: company, isLoading } = useGetCompany();
   const updateCompany = useUpdateCompany();
@@ -215,7 +244,7 @@ export default function Settings() {
               </div>
             </div>
 
-            <div className="flex justify-end gap-4 pb-12">
+            <div className="flex justify-end gap-4 pb-4">
               <Button type="submit" disabled={form.formState.isSubmitting}>
                 <Save className="mr-2 h-4 w-4" />
                 設定を保存する
@@ -223,6 +252,62 @@ export default function Settings() {
             </div>
           </form>
         </Form>
+
+        <Card className="border-destructive/40">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" />
+              完全初期化
+            </CardTitle>
+            <CardDescription>
+              運用データ（打刻・給与明細・月次実績など）を全て削除し、稼働直前の状態に戻します。
+              従業員情報・会社設定・手当設定は保持されます。
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 mb-4">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-amber-600" />
+              <div>
+                <p className="font-medium mb-1">削除されるデータ</p>
+                <p className="text-amber-700">打刻記録・欠勤記録・月次実績・給与明細・仕訳データ・メッセージ・リアルタイム位置情報・プッシュ通知登録</p>
+              </div>
+            </div>
+            <Button
+              variant="destructive"
+              onClick={() => setResetDialogOpen(true)}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              運用データを完全初期化する
+            </Button>
+          </CardContent>
+        </Card>
+
+        <AlertDialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+                <AlertTriangle className="h-5 w-5" />
+                本当に初期化しますか？
+              </AlertDialogTitle>
+              <AlertDialogDescription className="space-y-2">
+                <span className="block">以下のデータが<strong>完全に削除</strong>されます。この操作は元に戻せません。</span>
+                <span className="block text-sm">打刻記録・欠勤記録・月次実績・給与明細・仕訳データ・メッセージ・リアルタイム位置情報・プッシュ通知登録</span>
+                <span className="block mt-2">従業員情報・会社設定・手当設定は保持されます。</span>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={resetting}>キャンセル</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleReset}
+                disabled={resetting}
+                className="bg-destructive hover:bg-destructive/90"
+              >
+                {resetting ? "削除中..." : "初期化する"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
       </div>
     </AppLayout>
   );

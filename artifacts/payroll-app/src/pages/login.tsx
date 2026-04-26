@@ -37,7 +37,7 @@ export default function LoginPage() {
       }
 
       login(data);
-      toast({ title: "ログイン成功", description: `ようこそ、${data.username}さん` });
+      toast({ title: "ログイン成功", description: `ようこそ、${data.displayName ?? data.username}さん` });
       setLocation("/");
     } catch (err: any) {
       toast({

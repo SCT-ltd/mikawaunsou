@@ -12,6 +12,7 @@ import absencesRouter from "./absences";
 import messagesRouter from "./messages";
 import authRouter from "./auth";
 import usersRouter from "./users";
+import resetRouter from "./reset";
 
 const router: IRouter = Router();
 
@@ -28,5 +29,6 @@ router.use(attendanceRouter);
 router.use(absencesRouter);
 router.use("/messages", messagesRouter);
 router.use(usersRouter);
+router.use(resetRouter);
 
 export default router;

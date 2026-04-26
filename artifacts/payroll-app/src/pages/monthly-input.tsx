@@ -28,7 +28,8 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { Save, Plus, X, CalendarDays as CalIcon, RefreshCw } from "lucide-react";
+import { Save, Plus, X, CalendarDays as CalIcon, RefreshCw, HelpCircle } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AttendanceCalendarDialog } from "@/components/attendance-calendar-dialog";
 import { Reorder, useDragControls } from "framer-motion";
 import { GripVertical } from "lucide-react";
@@ -774,7 +775,7 @@ export default function MonthlyInput() {
     try {
       const res = await fetch(`${BASE}/api/attendance/monthly-summary?year=${year}&month=${month}`);
       if (!res.ok) throw new Error("取得失敗");
-      const summary: { employeeId: number; workDays: number; saturdayWorkDays: number; sundayWorkHours: number; overtimeHours: number; absenceDays: number }[] = await res.json();
+      const summary: { employeeId: number; workDays: number; saturdayWorkDays: number; sundayWorkHours: number; overtimeHours: number; lateNightHours: number; absenceDays: number }[] = await res.json();
 
       if (summary.length === 0) {
         toast({ title: "取り込み対象なし", description: `${year}年${month}月の打刻データが見つかりませんでした。` });
@@ -790,6 +791,7 @@ export default function MonthlyInput() {
             saturdayWorkDays: s.saturdayWorkDays,
             sundayWorkHours: s.sundayWorkHours,
             overtimeHours: s.overtimeHours,
+            lateNightHours: s.lateNightHours ?? 0,
             absenceDays: s.absenceDays ?? 0,
           };
         }
@@ -798,7 +800,7 @@ export default function MonthlyInput() {
 
       toast({
         title: "勤怠データを取り込みました",
-        description: `${summary.length}名分の出勤日数・残業時間を反映しました。内容を確認して一括保存してください。`,
+        description: `${summary.length}名分の出勤日数・残業時間・深夜時間を反映しました。内容を確認して一括保存してください。`,
       });
     } catch {
       toast({ title: "エラー", description: "勤怠データの取り込みに失敗しました。", variant: "destructive" });
@@ -829,18 +831,13 @@ export default function MonthlyInput() {
         }
       });
       setEdits(initialEdits);
-    }
-  }, [employees, monthlyRecords, year, month]);
 
-  // 初期計算のトリガー
-  useEffect(() => {
-    if (employees && edits) {
-      Object.keys(edits).forEach(empIdStr => {
-        const empId = Number(empIdStr);
-        triggerPreview(empId, edits[empId]);
+      // データ取得完了時に全社員の概算を即時計算
+      Object.entries(initialEdits).forEach(([empIdStr, record]) => {
+        triggerPreview(Number(empIdStr), record);
       });
     }
-  }, [employees, monthlyRecords]); // データ取得完了時に一度走らせる
+  }, [employees, monthlyRecords, year, month]);
 
   const handleSaveAll = async () => {
     if (!employees) return;
@@ -924,7 +921,7 @@ export default function MonthlyInput() {
 
   return (
     <AppLayout>
-      <div className="space-y-6">
+      <div className="flex flex-col gap-6 h-full overflow-hidden">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h2 className="text-2xl font-bold tracking-tight">月次実績入力</h2>
@@ -1009,46 +1006,83 @@ export default function MonthlyInput() {
         </div>
 
         {/* 実績入力テーブル */}
-        <div className="rounded-xl border bg-card shadow-lg overflow-hidden monthly-input-table">
-          <div className="overflow-x-auto">
-            <Table className="border-collapse">
-              <TableHeader>
+        <div className="rounded-xl border bg-card shadow-lg monthly-input-table flex-1 min-h-0 overflow-y-auto">
+          <div className="overflow-x-auto min-h-full">
+            <Table className="border-separate border-spacing-0">
+              <TableHeader className="sticky top-0 z-40">
                 {/* グルーピングヘッダー */}
-                <TableRow className="bg-muted/80 divide-x divide-border/40 hover:bg-muted/80">
+                <TableRow className="bg-muted divide-x divide-border/40 hover:bg-muted">
                   <TableHead className="min-w-[200px] sticky left-0 bg-muted/95 z-30 shadow-[4px_0_10px_-4px_rgba(0,0,0,0.1)]">
                     社員名・所属
                   </TableHead>
-                  <TableHead colSpan={7} className="text-center bg-emerald-100/30 text-emerald-900 border-b-2 border-b-emerald-400/50 font-bold py-1">
+                  <TableHead colSpan={7} className="text-center bg-emerald-100 text-emerald-900 border-b-2 border-b-emerald-400/50 font-bold py-1">
                     勤怠・時間管理
                   </TableHead>
-                  <TableHead colSpan={2} className="text-center bg-blue-100/30 text-blue-900 border-b-2 border-b-blue-400/50 font-bold py-1">
+                  <TableHead colSpan={2} className="text-center bg-blue-100 text-blue-900 border-b-2 border-b-blue-400/50 font-bold py-1">
                     運行実績
                   </TableHead>
-                  <TableHead colSpan={3} className="text-center bg-orange-100/30 text-orange-900 border-b-2 border-b-orange-400/50 font-bold py-1">
+                  <TableHead colSpan={3} className="text-center bg-orange-100 text-orange-900 border-b-2 border-b-orange-400/50 font-bold py-1">
                     給与計算基礎
                   </TableHead>
                   <TableHead className="min-w-[120px] sticky right-0 bg-muted/95 z-30 shadow-[-4px_0_10px_-4px_rgba(0,0,0,0.1)] border-l-2 border-l-primary/30 text-center font-bold">
-                    概算
+                    <div className="flex items-center justify-center gap-1">
+                      概算
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <button className="inline-flex items-center justify-center rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors w-4 h-4" aria-label="概算列の説明">
+                            <HelpCircle className="w-3.5 h-3.5" />
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent side="left" align="start" className="w-72 text-sm">
+                          <h4 className="font-bold text-base mb-2">概算列について</h4>
+                          <p className="text-muted-foreground text-xs mb-3">
+                            入力中の月次実績をもとに、保存前の給与をリアルタイムで試算します。確定処理には影響しません。
+                          </p>
+                          <div className="space-y-1.5 text-xs">
+                            <div className="flex justify-between border-b pb-1">
+                              <span className="text-muted-foreground">総支給</span>
+                              <span>基本給＋各種手当の合計</span>
+                            </div>
+                            <div className="flex justify-between border-b pb-1">
+                              <span className="text-muted-foreground">控除</span>
+                              <span>社保＋源泉所得税＋住民税</span>
+                            </div>
+                            <div className="flex justify-between font-bold">
+                              <span>差引支給額</span>
+                              <span>手取り金額</span>
+                            </div>
+                            <div className="flex justify-between text-muted-foreground">
+                              <span>前月比</span>
+                              <span>先月確定給与との差額</span>
+                            </div>
+                          </div>
+                          <div className="mt-3 pt-2 border-t text-[11px] text-muted-foreground space-y-1">
+                            <div className="flex items-center gap-1"><span className="font-medium text-orange-500">要修正</span>：入力値にエラーあり</div>
+                            <div className="flex items-center gap-1"><span className="font-medium text-muted-foreground/60 italic">要入力</span>：データ未入力</div>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    </div>
                   </TableHead>
                   <TableHead className="min-w-[150px] text-center">備考</TableHead>
                 </TableRow>
                 {/* 項目詳細ヘッダー */}
-                <TableRow className="bg-muted/40 divide-x divide-border/20 text-[10px] uppercase tracking-tighter hover:bg-muted/40 h-8">
-                  <TableHead className="sticky left-0 bg-muted/40 z-30"></TableHead>
-                  <TableHead className="w-[64px] text-center px-1">平日</TableHead>
-                  <TableHead className="w-[64px] text-center px-1">土曜</TableHead>
-                  <TableHead className="w-[64px] text-center px-1">日曜(h)</TableHead>
-                  <TableHead className="w-[64px] text-center px-1 text-red-600">欠勤</TableHead>
-                  <TableHead className="w-[64px] text-center px-1">残業</TableHead>
-                  <TableHead className="w-[64px] text-center px-1">深夜</TableHead>
-                  <TableHead className="w-[64px] text-center px-1">休日</TableHead>
-                  <TableHead className="w-[84px] text-center px-1">距離(km)</TableHead>
-                  <TableHead className="w-[74px] text-center px-1">件数</TableHead>
-                  <TableHead className="w-[110px] text-center px-1 font-bold text-orange-700">売上(円)</TableHead>
-                  <TableHead className="w-[64px] text-center px-1">歩合%</TableHead>
-                  <TableHead className="w-[120px] bg-blue-100/40 text-blue-900 text-center px-1 font-bold">BW売上</TableHead>
-                  <TableHead className="sticky right-0 bg-muted/40 z-30 border-l-2 border-l-primary/10"></TableHead>
-                  <TableHead className="px-2 text-left">メモ</TableHead>
+                <TableRow className="bg-muted divide-x divide-border/20 text-[10px] uppercase tracking-tighter hover:bg-muted h-8">
+                  <TableHead className="sticky left-0 bg-muted z-30"></TableHead>
+                  <TableHead className="w-[64px] text-center px-1 bg-muted">平日</TableHead>
+                  <TableHead className="w-[64px] text-center px-1 bg-muted">土曜</TableHead>
+                  <TableHead className="w-[64px] text-center px-1 bg-muted">日曜(h)</TableHead>
+                  <TableHead className="w-[64px] text-center px-1 text-red-600 bg-muted">欠勤</TableHead>
+                  <TableHead className="w-[64px] text-center px-1 bg-muted">残業</TableHead>
+                  <TableHead className="w-[64px] text-center px-1 bg-muted">深夜</TableHead>
+                  <TableHead className="w-[64px] text-center px-1 bg-muted">休日</TableHead>
+                  <TableHead className="w-[84px] text-center px-1 bg-muted">距離(km)</TableHead>
+                  <TableHead className="w-[74px] text-center px-1 bg-muted">件数</TableHead>
+                  <TableHead className="w-[110px] text-center px-1 font-bold text-orange-700 bg-muted">売上(円)</TableHead>
+                  <TableHead className="w-[64px] text-center px-1 bg-muted">歩合%</TableHead>
+                  <TableHead className="w-[120px] bg-blue-100 text-blue-900 text-center px-1 font-bold">BW売上</TableHead>
+                  <TableHead className="sticky right-0 bg-muted z-30 border-l-2 border-l-primary/10"></TableHead>
+                  <TableHead className="px-2 text-left bg-muted">メモ</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1074,7 +1108,7 @@ export default function MonthlyInput() {
                     const isMikawa = !!(emp as any).mikawaCommissionRate && !isBW;
 
                     return (
-                      <TableRow key={emp.id} className="hover:bg-muted/10 divide-x divide-border/10 group h-auto min-h-[40px]">
+                      <TableRow key={emp.id} className="hover:bg-muted/10 divide-x divide-border/10 group h-[88px]">
                         {/* 社員名セル */}
                         <TableCell className="p-0 sticky left-0 z-20 bg-card shadow-[4px_0_10px_-4px_rgba(0,0,0,0.1)] group-hover:bg-muted/5">
                           <button
@@ -1092,8 +1126,28 @@ export default function MonthlyInput() {
                                 )}
                               </div>
                               <div className="text-[10px] text-muted-foreground truncate opacity-70">{emp.department}</div>
-                              {validationErrors[emp.id] && (
-                                <div className="text-[9px] text-red-500 font-bold mt-1 animate-pulse">要確認!</div>
+                              {validationErrors[emp.id] && Object.keys(validationErrors[emp.id]).length > 0 && (
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <button
+                                      className="text-[9px] text-red-500 font-bold mt-1 animate-pulse hover:underline focus:outline-none"
+                                      onClick={e => e.stopPropagation()}
+                                    >
+                                      要確認!
+                                    </button>
+                                  </PopoverTrigger>
+                                  <PopoverContent side="right" className="w-64 p-3 text-sm" onClick={e => e.stopPropagation()}>
+                                    <p className="font-bold text-destructive mb-2">入力内容を確認してください</p>
+                                    <ul className="space-y-1">
+                                      {Object.values(validationErrors[emp.id]).map((msg, i) => (
+                                        <li key={i} className="flex items-start gap-1.5 text-xs text-destructive">
+                                          <span className="mt-0.5 shrink-0">•</span>
+                                          <span>{msg}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </PopoverContent>
+                                </Popover>
                               )}
                             </div>
                             <CalIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/30 mt-0.5" />
@@ -1212,7 +1266,7 @@ export default function MonthlyInput() {
 
                         {/* シミュレーション領域 */}
                         <TableCell className="sticky right-0 z-20 bg-card border-l-2 border-l-primary/30 shadow-[-4px_0_10px_-4px_rgba(0,0,0,0.1)] p-0 group-hover:bg-muted/5 min-w-[140px]">
-                          <div className="flex flex-col justify-center px-3 py-1.5 min-h-[60px]">
+                          <div className="flex flex-col justify-center px-3 py-1.5 h-[88px]">
                             {previews[emp.id]?.status === 'loading' ? (
                               <div className="flex items-center justify-end gap-2 text-muted-foreground/40 italic text-[10px]">
                                 <RefreshCw className="h-3 w-3 animate-spin" />

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, allowanceDefinitionsTable, employeeAllowancesTable, deductionDefinitionsTable, employeeDeductionsTable } from "@workspace/db";
-import { eq, and, ne } from "drizzle-orm";
+import { eq, and, ne, asc } from "drizzle-orm";
 
 const router = Router();
 
@@ -76,59 +76,66 @@ router.get("/employees/:id/allowances", async (req, res) => {
   const employeeId = parseInt(req.params.id, 10);
 
   const definitions = await db.select().from(allowanceDefinitionsTable)
-    .where(eq(allowanceDefinitionsTable.isActive, true))
-    .orderBy(allowanceDefinitionsTable.sortOrder);
+    .where(eq(allowanceDefinitionsTable.isActive, true));
 
   const empAllowances = await db.select().from(employeeAllowancesTable)
     .where(eq(employeeAllowancesTable.employeeId, employeeId));
 
-  const result = definitions.map(def => {
-    const existing = empAllowances.find(a => a.allowanceDefinitionId === def.id);
-    return {
-      id: existing?.id ?? 0,
-      employeeId,
-      allowanceDefinitionId: def.id,
-      allowanceName: def.name,
-      isTaxable: def.isTaxable,
-      amount: existing?.amount ?? 0,
-      sortOrder: def.sortOrder,
-    };
-  });
+  // 全定義を返す。社員固有のsortOrderがあればそれを使い、なければ定義のsortOrderを大きなオフセット付きで末尾扱い
+  const result = definitions
+    .map(def => {
+      const ea = empAllowances.find(a => a.allowanceDefinitionId === def.id);
+      return {
+        id: ea?.id ?? 0,
+        employeeId,
+        allowanceDefinitionId: def.id,
+        allowanceName: def.name,
+        isTaxable: def.isTaxable,
+        amount: ea?.amount ?? 0,
+        sortOrder: ea != null ? ea.sortOrder : 1_000_000 + def.sortOrder,
+      };
+    })
+    .sort((a, b) => a.sortOrder - b.sortOrder);
 
   return res.json(result);
 });
 
 router.put("/employees/:id/allowances", async (req, res) => {
   const employeeId = parseInt(req.params.id, 10);
-  const { allowances } = req.body as { allowances: Array<{ allowanceDefinitionId: number; amount: number }> };
+  const { allowances } = req.body as { allowances: Array<{ allowanceDefinitionId: number; amount: number; sortOrder?: number }> };
 
   await db.delete(employeeAllowancesTable).where(eq(employeeAllowancesTable.employeeId, employeeId));
   if (allowances.length > 0) {
     await db.insert(employeeAllowancesTable).values(
-      allowances.map(item => ({ employeeId, allowanceDefinitionId: item.allowanceDefinitionId, amount: item.amount }))
+      allowances.map((item, idx) => ({
+        employeeId,
+        allowanceDefinitionId: item.allowanceDefinitionId,
+        amount: item.amount,
+        sortOrder: item.sortOrder ?? idx,
+      }))
     );
   }
-
-  // Return updated list
-  const definitions = await db.select().from(allowanceDefinitionsTable)
-    .where(eq(allowanceDefinitionsTable.isActive, true))
-    .orderBy(allowanceDefinitionsTable.sortOrder);
 
   const empAllowances = await db.select().from(employeeAllowancesTable)
     .where(eq(employeeAllowancesTable.employeeId, employeeId));
 
-  const result = definitions.map(def => {
-    const existing = empAllowances.find(a => a.allowanceDefinitionId === def.id);
-    return {
-      id: existing?.id ?? 0,
-      employeeId,
-      allowanceDefinitionId: def.id,
-      allowanceName: def.name,
-      isTaxable: def.isTaxable,
-      amount: existing?.amount ?? 0,
-      sortOrder: def.sortOrder,
-    };
-  });
+  const definitions = await db.select().from(allowanceDefinitionsTable)
+    .where(eq(allowanceDefinitionsTable.isActive, true));
+
+  const result = definitions
+    .map(def => {
+      const ea = empAllowances.find(a => a.allowanceDefinitionId === def.id);
+      return {
+        id: ea?.id ?? 0,
+        employeeId,
+        allowanceDefinitionId: def.id,
+        allowanceName: def.name,
+        isTaxable: def.isTaxable,
+        amount: ea?.amount ?? 0,
+        sortOrder: ea != null ? ea.sortOrder : 1_000_000 + def.sortOrder,
+      };
+    })
+    .sort((a, b) => a.sortOrder - b.sortOrder);
 
   return res.json(result);
 });
@@ -205,56 +212,63 @@ router.get("/employees/:id/deductions", async (req, res) => {
   const employeeId = parseInt(req.params.id, 10);
 
   const definitions = await db.select().from(deductionDefinitionsTable)
-    .where(eq(deductionDefinitionsTable.isActive, true))
-    .orderBy(deductionDefinitionsTable.sortOrder);
+    .where(eq(deductionDefinitionsTable.isActive, true));
 
   const empDeductions = await db.select().from(employeeDeductionsTable)
     .where(eq(employeeDeductionsTable.employeeId, employeeId));
 
-  const result = definitions.map(def => {
-    const existing = empDeductions.find(d => d.deductionDefinitionId === def.id);
-    return {
-      id: existing?.id ?? 0,
-      employeeId,
-      deductionDefinitionId: def.id,
-      deductionName: def.name,
-      amount: existing?.amount ?? 0,
-      sortOrder: def.sortOrder,
-    };
-  });
+  const result = definitions
+    .map(def => {
+      const ed = empDeductions.find(d => d.deductionDefinitionId === def.id);
+      return {
+        id: ed?.id ?? 0,
+        employeeId,
+        deductionDefinitionId: def.id,
+        deductionName: def.name,
+        amount: ed?.amount ?? 0,
+        sortOrder: ed != null ? ed.sortOrder : 1_000_000 + def.sortOrder,
+      };
+    })
+    .sort((a, b) => a.sortOrder - b.sortOrder);
 
   return res.json(result);
 });
 
 router.put("/employees/:id/deductions", async (req, res) => {
   const employeeId = parseInt(req.params.id, 10);
-  const { deductions } = req.body as { deductions: Array<{ deductionDefinitionId: number; amount: number }> };
+  const { deductions } = req.body as { deductions: Array<{ deductionDefinitionId: number; amount: number; sortOrder?: number }> };
 
   await db.delete(employeeDeductionsTable).where(eq(employeeDeductionsTable.employeeId, employeeId));
   if (deductions.length > 0) {
     await db.insert(employeeDeductionsTable).values(
-      deductions.map(item => ({ employeeId, deductionDefinitionId: item.deductionDefinitionId, amount: item.amount }))
+      deductions.map((item, idx) => ({
+        employeeId,
+        deductionDefinitionId: item.deductionDefinitionId,
+        amount: item.amount,
+        sortOrder: item.sortOrder ?? idx,
+      }))
     );
   }
-
-  const definitions = await db.select().from(deductionDefinitionsTable)
-    .where(eq(deductionDefinitionsTable.isActive, true))
-    .orderBy(deductionDefinitionsTable.sortOrder);
 
   const empDeductions = await db.select().from(employeeDeductionsTable)
     .where(eq(employeeDeductionsTable.employeeId, employeeId));
 
-  const result = definitions.map(def => {
-    const existing = empDeductions.find(d => d.deductionDefinitionId === def.id);
-    return {
-      id: existing?.id ?? 0,
-      employeeId,
-      deductionDefinitionId: def.id,
-      deductionName: def.name,
-      amount: existing?.amount ?? 0,
-      sortOrder: def.sortOrder,
-    };
-  });
+  const definitions = await db.select().from(deductionDefinitionsTable)
+    .where(eq(deductionDefinitionsTable.isActive, true));
+
+  const result = definitions
+    .map(def => {
+      const ed = empDeductions.find(d => d.deductionDefinitionId === def.id);
+      return {
+        id: ed?.id ?? 0,
+        employeeId,
+        deductionDefinitionId: def.id,
+        deductionName: def.name,
+        amount: ed?.amount ?? 0,
+        sortOrder: ed != null ? ed.sortOrder : 1_000_000 + def.sortOrder,
+      };
+    })
+    .sort((a, b) => a.sortOrder - b.sortOrder);
 
   return res.json(result);
 });

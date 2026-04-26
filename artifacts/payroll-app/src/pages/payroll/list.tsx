@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link } from "wouter";
+import { useState, useEffect, useCallback } from "react";
+import { Link, useLocation } from "wouter";
 import { AppLayout } from "@/components/layout/app-layout";
 import { 
   useListPayrolls, 
@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { AllowanceInputPanel } from "@/components/allowance-input-panel";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
@@ -45,6 +46,25 @@ export default function PayrollList() {
   const [calcErrors, setCalcErrors] = useState<CalcError[]>([]);
   const [selectedPayrollId, setSelectedPayrollId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState("allowance");
+  const [isDirty, setIsDirty] = useState(false);
+  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
+
+  // ブラウザのリロード・タブ閉じ時の警告
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
+
+  // 未保存チェック付きアクション実行
+  const guardedAction = useCallback((action: () => void) => {
+    if (isDirty) {
+      setPendingAction(() => action);
+    } else {
+      action();
+    }
+  }, [isDirty]);
 
   const handleCalculateAll = async () => {
     if (!employees) return;
@@ -225,7 +245,7 @@ export default function PayrollList() {
                   <TableRow
                     key={payroll.id}
                     className={`cursor-pointer transition-colors ${selectedPayrollId === payroll.id ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-muted/50"}`}
-                    onClick={() => { setSelectedPayrollId(payroll.id); setActiveTab("allowance"); }}
+                    onClick={() => guardedAction(() => { setSelectedPayrollId(payroll.id); setActiveTab("allowance"); setIsDirty(false); })}
                   >
                     <TableCell className="font-medium">{payroll.employeeCode}</TableCell>
                     <TableCell>{payroll.employeeName}</TableCell>
@@ -276,42 +296,70 @@ export default function PayrollList() {
       </div>
 
       {/* 給与明細詳細シート */}
-      <Sheet open={!!selectedPayrollId} onOpenChange={(open) => { if (!open) setSelectedPayrollId(null); }}>
+      <Sheet open={!!selectedPayrollId} onOpenChange={(open) => {
+        if (!open) guardedAction(() => { setSelectedPayrollId(null); setIsDirty(false); });
+      }}>
         <SheetContent key={selectedPayrollId} className="w-full sm:max-w-2xl overflow-y-auto print:fixed print:inset-0 print:max-w-none">
           {selectedPayrollId && (
-            <PayrollDetailContent 
-              id={selectedPayrollId} 
-              activeTab={activeTab} 
+            <PayrollDetailContent
+              id={selectedPayrollId}
+              activeTab={activeTab}
               setActiveTab={setActiveTab}
               year={year}
               month={month}
               employees={employees || []}
-              onClose={() => setSelectedPayrollId(null)}
+              onClose={() => guardedAction(() => { setSelectedPayrollId(null); setIsDirty(false); })}
+              onDirtyChange={setIsDirty}
             />
           )}
         </SheetContent>
       </Sheet>
+
+      {/* 未保存変更確認ダイアログ */}
+      <AlertDialog open={!!pendingAction} onOpenChange={(open) => { if (!open) setPendingAction(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>変更された箇所があります</AlertDialogTitle>
+            <AlertDialogDescription>
+              保存されていない変更があります。保存しますか？
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingAction(null)}>キャンセル</AlertDialogCancel>
+            <Button variant="outline" onClick={() => {
+              setPendingAction(null);
+              setIsDirty(false);
+              pendingAction?.();
+            }}>保存せずに移動</Button>
+            <AlertDialogAction onClick={() => setPendingAction(null)}>
+              戻って保存する
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }
 
 // ── 詳細画面用コンポーネント (独立させることでキャッシュ汚染を防止) ──
-function PayrollDetailContent({ 
-  id, 
-  activeTab, 
-  setActiveTab, 
-  year, 
-  month, 
+function PayrollDetailContent({
+  id,
+  activeTab,
+  setActiveTab,
+  year,
+  month,
   employees,
-  onClose 
-}: { 
-  id: number; 
-  activeTab: string; 
+  onClose,
+  onDirtyChange,
+}: {
+  id: number;
+  activeTab: string;
   setActiveTab: (v: string) => void;
   year: number;
   month: number;
   employees: any[];
   onClose: () => void;
+  onDirtyChange?: (isDirty: boolean) => void;
 }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -548,6 +596,7 @@ function PayrollDetailContent({
           {employees.find(e => e.id === payroll.employeeId) ? (
             <AllowanceInputPanel
               employee={employees.find(e => e.id === payroll.employeeId)!}
+              onDirtyChange={onDirtyChange}
               monthlyData={(() => {
                 const rec = monthlyRecords?.find(r => r.employeeId === payroll.employeeId);
                 return {

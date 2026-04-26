@@ -21,10 +21,12 @@ router.post("/auth/login", async (req, res) => {
   req.session.userId = user.id;
   req.session.userRole = user.role;
   req.session.username = user.username;
+  req.session.displayName = user.displayName ?? null;
 
   return res.json({
     id: user.id,
     username: user.username,
+    displayName: user.displayName ?? null,
     role: user.role,
   });
 });
@@ -39,15 +41,27 @@ router.post("/auth/logout", (req, res) => {
   });
 });
 
-router.get("/auth/me", (req, res) => {
+router.get("/auth/me", async (req, res) => {
   if (!req.session.userId) {
     return res.status(401).json({ error: "認証されていません。" });
   }
 
+  const [user] = await db.select({
+    id: usersTable.id,
+    username: usersTable.username,
+    displayName: usersTable.displayName,
+    role: usersTable.role,
+  }).from(usersTable).where(eq(usersTable.id, req.session.userId));
+
+  if (!user) {
+    return res.status(401).json({ error: "認証されていません。" });
+  }
+
   return res.json({
-    id: req.session.userId,
-    username: req.session.username,
-    role: req.session.userRole,
+    id: user.id,
+    username: user.username,
+    displayName: user.displayName ?? null,
+    role: user.role,
   });
 });
 
