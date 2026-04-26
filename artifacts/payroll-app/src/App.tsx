@@ -7,7 +7,6 @@ import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
 import MonthlyInput from "@/pages/monthly-input";
 import PayrollList from "@/pages/payroll/list";
-import PayrollDetail from "@/pages/payroll/detail";
 import JournalEntries from "@/pages/journal";
 import Settings from "@/pages/settings";
 import AllowanceSettings from "@/pages/allowances";
@@ -43,9 +42,6 @@ function Router() {
       </Route>
       <Route path="/payroll">
         {(params) => <ProtectedRoute component={PayrollList} path="/payroll" />}
-      </Route>
-      <Route path="/payroll/:id">
-        {(params) => <ProtectedRoute component={PayrollDetail} path="/payroll/:id" />}
       </Route>
       <Route path="/journal">
         {(params) => <ProtectedRoute component={JournalEntries} path="/journal" />}

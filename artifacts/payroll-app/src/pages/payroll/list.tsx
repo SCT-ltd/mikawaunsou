@@ -10,25 +10,104 @@ import {
   getGetPayrollQueryKey,
   useConfirmPayroll,
   useListMonthlyRecords,
+  useListAllowanceDefinitions,
+  useGetEmployeeAllowances,
+  useListDeductionDefinitions,
+  useGetEmployeeDeductions,
+  useGetEmployee,
 } from "@workspace/api-client-react";
+import { calculateSocialInsurance } from "@/lib/tax-tables-reiwa8";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PayrollPrintSlip, type PayrollViewModel } from "@/components/payroll-print-slip";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { AllowanceInputPanel } from "@/components/allowance-input-panel";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency } from "@/lib/format";
-import { Calculator, Download, AlertCircle, X, CheckCircle2, FileText, ChevronRight } from "lucide-react";
+import { Calculator, Download, AlertCircle, X, CheckCircle2, FileText, ChevronRight, Printer } from "lucide-react";
 import { formatMonth } from "@/lib/format";
+import "@/payroll-print.css";
 
-interface CalcError {
+// ── 共通ViewModelインターフェース ──
+export interface PayrollDisplayViewModel {
+  payrollId: number;
   employeeCode: string;
-  name: string;
-  message: string;
+  employeeName: string;
+  targetYearMonth: string;
+  payDate: string;
+  earningItems: { label: string; amount: number; isTaxable?: boolean }[];
+  deductionItems: { label: string; amount: number }[];
+  totalEarnings: number;
+  totalDeductions: number;
+  netPayment: number;
+  attendance: {
+    workDays: number;
+    overtimeHours: number;
+    lateNightHours: number;
+    holidayWorkDays: number;
+  };
+  notes: string;
+}
+
+// ── 共通ViewModel生成関数 (唯一の正) ──
+export function buildPayrollDisplayViewModel(
+  payroll: any, 
+  employee: any, 
+  allowances: any[] = [], 
+  deductions: any[] = []
+): PayrollDisplayViewModel {
+  const earningItems = [
+    { label: "基本給", amount: payroll.baseSalary, isTaxable: true },
+    { label: "早出残業手当", amount: payroll.earlyOvertimeAllowance, isTaxable: true },
+    { label: "残業手当", amount: payroll.overtimePay, isTaxable: true },
+    { label: "深夜手当", amount: payroll.lateNightPay, isTaxable: true },
+    { label: "休日手当", amount: payroll.holidayPay, isTaxable: true },
+    { label: "歩合給", amount: payroll.commissionPay, isTaxable: true },
+    ...allowances.map(a => ({ label: a.name || a.label || "手当", amount: a.amount, isTaxable: a.isTaxable !== false }))
+  ].filter(i => i.amount > 0);
+
+  const gradeBase = (payroll.baseSalary ?? 0) + (payroll.customAllowancesTotal ?? 0);
+  const socIns = calculateSocialInsurance(gradeBase, { careInsuranceApplied: employee?.careInsuranceApplied ?? false });
+
+  const deductionItems = [
+    { label: "健康保険料", amount: socIns.healthInsurance },
+    { label: "厚生年金保険料", amount: socIns.pension },
+    { label: "雇用保険料", amount: payroll.employmentInsurance },
+    { label: "子ども・子育て支援金", amount: payroll.childcareSupportContribution },
+    { label: "所得税", amount: payroll.incomeTax },
+    { label: "市町村民税", amount: payroll.residentTax },
+    { label: "欠勤控除", amount: payroll.absenceDeduction },
+    ...deductions.map(d => ({ label: d.name || d.label || "控除", amount: d.amount }))
+  ].filter(i => i.amount > 0);
+
+  const totalEarnings = earningItems.reduce((sum, i) => sum + Math.round(Number(i.amount || 0)), 0);
+  const totalDeductions = deductionItems.reduce((sum, i) => sum + Math.round(Number(i.amount || 0)), 0);
+  const netPayment = totalEarnings - totalDeductions;
+
+  return {
+    payrollId: payroll.id,
+    employeeCode: employee?.employeeCode || payroll.employeeCode || "",
+    employeeName: employee?.name || payroll.employeeName || "",
+    targetYearMonth: `${payroll.year}年${payroll.month}月`,
+    payDate: payroll.payDate || "",
+    earningItems,
+    deductionItems,
+    totalEarnings,
+    totalDeductions,
+    netPayment,
+    attendance: {
+      workDays: payroll.workDays || 0,
+      overtimeHours: payroll.overtimeHours || 0,
+      lateNightHours: payroll.lateNightHours || 0,
+      holidayWorkDays: payroll.holidayWorkDays || 0,
+    },
+    notes: payroll.notes || payroll.remarks || "",
+  };
 }
 
 export default function PayrollList() {
@@ -43,21 +122,51 @@ export default function PayrollList() {
   const calculatePayroll = useCalculatePayroll();
 
   const [calculating, setCalculating] = useState(false);
-  const [calcErrors, setCalcErrors] = useState<CalcError[]>([]);
   const [selectedPayrollId, setSelectedPayrollId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState("allowance");
   const [isDirty, setIsDirty] = useState(false);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
 
-  // ブラウザのリロード・タブ閉じ時の警告
-  useEffect(() => {
-    if (!isDirty) return;
-    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [isDirty]);
+  const [printMode, setPrintMode] = useState<null | "single" | "bulk">(null);
+  const [currentPrintViewModel, setCurrentPrintViewModel] = useState<PayrollViewModel | null>(null);
+  const [bulkPrintViewModels, setBulkPrintViewModels] = useState<PayrollViewModel[]>([]);
 
-  // 未保存チェック付きアクション実行
+  useEffect(() => {
+    if (!printMode) return;
+    
+    if (printMode === "single") {
+      if (!currentPrintViewModel) return;
+      
+      const timer = setTimeout(() => {
+        window.print();
+        window.onafterprint = () => {
+          setPrintMode(null);
+          setCurrentPrintViewModel(null);
+          window.onafterprint = null;
+        };
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+    
+    if (printMode === "bulk") {
+      if (bulkPrintViewModels.length === 0) return;
+      const timer = setTimeout(() => {
+        window.print();
+        window.onafterprint = () => {
+          setPrintMode(null);
+          setBulkPrintViewModels([]);
+          window.onafterprint = null;
+        };
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [printMode, currentPrintViewModel, bulkPrintViewModels]);
+
+  useEffect(() => {
+    setCurrentPrintViewModel(null);
+    setPrintMode(null);
+  }, [selectedPayrollId]);
+
   const guardedAction = useCallback((action: () => void) => {
     if (isDirty) {
       setPendingAction(() => action);
@@ -66,53 +175,21 @@ export default function PayrollList() {
     }
   }, [isDirty]);
 
-  const handleCalculateAll = async () => {
+  const handleBulkCalculate = async () => {
     if (!employees) return;
     setCalculating(true);
-    setCalcErrors([]);
     let success = 0;
-    const errorList: CalcError[] = [];
-
     try {
       for (const emp of employees) {
         const existing = payrolls?.find(p => p.employeeId === emp.id);
         if (existing?.status === "confirmed") continue;
-
         try {
-          await calculatePayroll.mutateAsync({
-            data: { employeeId: emp.id, year, month }
-          });
+          await calculatePayroll.mutateAsync({ data: { employeeId: emp.id, year, month } });
           success++;
-        } catch (err: unknown) {
-          let msg = "不明なエラー";
-          if (err && typeof err === "object") {
-            const e = err as { data?: { error?: string }; message?: string };
-            const apiMsg = (e.data as { error?: string } | null)?.error ?? e.message ?? "";
-            if (apiMsg.toLowerCase().includes("monthly record not found")) {
-              msg = `${formatMonth(year, month)}の月次実績が未入力です`;
-            } else if (apiMsg) {
-              msg = apiMsg;
-            }
-          }
-          errorList.push({ employeeCode: emp.employeeCode, name: emp.name, message: msg });
-        }
+        } catch (err) {}
       }
-      
       queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) });
-      
-      if (errorList.length > 0) {
-        setCalcErrors(errorList);
-        toast({
-          title: success > 0 ? `${success}件の計算が完了しました` : "計算エラー",
-          description: `${errorList.length}件はエラーのため未計算です。下の詳細を確認してください。`,
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "計算完了",
-          description: `${success}件の給与計算が完了しました。`,
-        });
-      }
+      if (success > 0) toast({ title: "計算完了", description: `${success}件の給与計算が完了しました。` });
     } finally {
       setCalculating(false);
     }
@@ -123,255 +200,189 @@ export default function PayrollList() {
     const a = document.createElement("a");
     a.href = url;
     a.download = `給与明細データ_${year}${month}.csv`;
-    document.body.appendChild(a);
     a.click();
-    document.body.removeChild(a);
-    
-    toast({
-      title: "CSVエクスポート",
-      description: "ダウンロードを開始しました。",
+    toast({ title: "CSVエクスポート", description: "ダウンロードを開始しました。" });
+  };
+
+  const handleBulkPrint = async () => {
+    if (!payrolls || !employees || payrolls.length === 0) return;
+    const viewModels = payrolls.map(p => {
+      const emp = employees.find(e => e.id === p.employeeId);
+      return buildPayrollDisplayViewModel(p, emp, [], []);
     });
+    setPrintMode("bulk");
+    setBulkPrintViewModels(viewModels);
   };
 
   const years = Array.from({ length: 3 }, (_, i) => currentDate.getFullYear() - 1 + i);
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
 
   return (
-    <AppLayout>
-      <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <h2 className="text-2xl font-bold tracking-tight">給与明細一覧</h2>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex gap-2">
-              <Select value={year.toString()} onValueChange={(v) => setYear(parseInt(v))}>
-                <SelectTrigger className="w-[100px] bg-card">
-                  <SelectValue placeholder="年" />
-                </SelectTrigger>
-                <SelectContent>
-                  {years.map(y => (
-                    <SelectItem key={y} value={y.toString()}>{y}年</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={month.toString()} onValueChange={(v) => setMonth(parseInt(v))}>
-                <SelectTrigger className="w-[80px] bg-card">
-                  <SelectValue placeholder="月" />
-                </SelectTrigger>
-                <SelectContent>
-                  {months.map(m => (
-                    <SelectItem key={m} value={m.toString()}>{m}月</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button variant="secondary" onClick={handleCalculateAll} disabled={calculating || !employees?.length}>
-              <Calculator className="mr-2 h-4 w-4" />
-              {calculating ? "計算中..." : "月次実績から一括計算"}
-            </Button>
-            <Button variant="outline" onClick={handleExportCsv} disabled={!payrolls || payrolls.length === 0}>
-              <Download className="mr-2 h-4 w-4" />
-              CSV出力
-            </Button>
-          </div>
-        </div>
-
-        {calcErrors.length > 0 && (
-          <div className="rounded-md border border-red-200 bg-red-50 p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-start gap-2 min-w-0">
-                <AlertCircle className="h-5 w-5 text-red-500 mt-0.5 shrink-0" />
-                <div className="min-w-0">
-                  <p className="font-semibold text-red-700 text-sm mb-2">
-                    以下の社員の給与計算でエラーが発生しました
-                  </p>
-                  <ul className="space-y-1.5">
-                    {calcErrors.map((e) => (
-                      <li key={e.employeeCode} className="text-sm text-red-700">
-                        <span className="font-semibold">{e.employeeCode} {e.name}</span>
-                        <span className="text-red-500 mx-1">—</span>
-                        <span>{e.message}</span>
-                        {e.message.includes("月次実績") && (
-                          <Link
-                            href={`/monthly-input`}
-                            className="ml-2 inline-flex items-center text-xs font-semibold text-red-600 underline underline-offset-2 hover:text-red-800"
-                          >
-                            月次実績入力へ →
-                          </Link>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
+    <>
+      <div className="screen-only">
+        <AppLayout title="給与明細一覧">
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <h2 className="text-2xl font-bold tracking-tight">給与明細一覧</h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex gap-2">
+                  <Select value={year.toString()} onValueChange={(v) => setYear(parseInt(v))}>
+                    <SelectTrigger className="w-[100px] bg-card">
+                      <SelectValue placeholder="年" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {years.map((y) => (
+                        <SelectItem key={y} value={y.toString()}>{y}年</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={month.toString()} onValueChange={(v) => setMonth(parseInt(v))}>
+                    <SelectTrigger className="w-[80px] bg-card">
+                      <SelectValue placeholder="月" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {months.map((m) => (
+                        <SelectItem key={m} value={m.toString()}>{m}月</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex gap-2 ml-auto">
+                  <Button variant="outline" onClick={handleBulkCalculate} disabled={calculating}>
+                    <Calculator className="mr-2 h-4 w-4" />
+                    月次実績から一括計算
+                  </Button>
+                  <Button variant="outline" onClick={handleExportCsv} disabled={!payrolls || payrolls.length === 0}>
+                    <Download className="mr-2 h-4 w-4" />
+                    CSV出力
+                  </Button>
+                  <Button variant="outline" className="bg-primary/5 border-primary/20 hover:bg-primary/10 text-primary" onClick={handleBulkPrint} disabled={!payrolls || payrolls.length === 0}>
+                    <Printer className="mr-2 h-4 w-4" />
+                    給与明細一括印刷
+                  </Button>
                 </div>
               </div>
-              <button
-                onClick={() => setCalcErrors([])}
-                className="shrink-0 text-red-400 hover:text-red-600 transition-colors"
-                aria-label="閉じる"
-              >
-                <X className="h-4 w-4" />
-              </button>
             </div>
+
+            <div className="border rounded-lg bg-card overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/50">
+                    <TableHead className="w-[100px]">社員番号</TableHead>
+                    <TableHead>氏名</TableHead>
+                    <TableHead className="text-right">総支給額</TableHead>
+                    <TableHead className="text-right">控除合計</TableHead>
+                    <TableHead className="text-right">差引支給額</TableHead>
+                    <TableHead className="text-center">ステータス</TableHead>
+                    <TableHead className="text-right">操作</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {payrollsLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">読み込み中...</TableCell>
+                    </TableRow>
+                  ) : !payrolls || payrolls.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                        {formatMonth(year, month)}の給与データはありません。
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    [...payrolls].sort((a, b) => a.employeeCode.localeCompare(b.employeeCode)).map((payroll) => (
+                      <TableRow
+                        key={payroll.id}
+                        className={`cursor-pointer transition-colors ${selectedPayrollId === payroll.id ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-muted/50"}`}
+                        onClick={() => guardedAction(() => { setSelectedPayrollId(payroll.id); setActiveTab("allowance"); setIsDirty(false); })}
+                      >
+                        <TableCell className="font-medium">{payroll.employeeCode}</TableCell>
+                        <TableCell>{payroll.employeeName}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(payroll.grossSalary)}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(payroll.totalDeductions)}</TableCell>
+                        <TableCell className="text-right font-bold">{formatCurrency(payroll.netSalary)}</TableCell>
+                        <TableCell className="text-center">
+                          {payroll.status === "confirmed" ? (
+                            <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">確定済</Badge>
+                          ) : (
+                            <Badge variant="secondary" className="bg-amber-50 text-amber-700 border-amber-200">計算中</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <span className="inline-flex items-center text-sm text-muted-foreground gap-0.5">詳細 <ChevronRight className="h-3.5 w-3.5" /></span>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+
+          <Sheet open={!!selectedPayrollId} onOpenChange={(open) => { if (!open) guardedAction(() => setSelectedPayrollId(null)); }}>
+            <SheetContent className="w-full sm:max-w-[800px] p-0 overflow-y-auto" side="right" hideClose={true}>
+              {selectedPayrollId && (
+                <PayrollDetailContent 
+                  id={selectedPayrollId}
+                  activeTab={activeTab}
+                  setActiveTab={setActiveTab}
+                  year={year}
+                  month={month}
+                  employees={employees || []}
+                  onClose={() => guardedAction(() => setSelectedPayrollId(null))}
+                  onDirtyChange={setIsDirty}
+                  setCurrentPrintViewModel={setCurrentPrintViewModel}
+                  setPrintMode={setPrintMode}
+                  setBulkPrintViewModels={setBulkPrintViewModels}
+                />
+              )}
+            </SheetContent>
+          </Sheet>
+        </AppLayout>
+
+        <AlertDialog open={!!pendingAction} onOpenChange={(open) => { if (!open) setPendingAction(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader><AlertDialogTitle>変更された箇所があります</AlertDialogTitle></AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => setPendingAction(null)}>キャンセル</AlertDialogCancel>
+              <Button variant="outline" onClick={() => { setPendingAction(null); setIsDirty(false); pendingAction?.(); }}>保存せずに移動</Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+
+      {/* 印刷用DOM：通常画面の外側に配置 */}
+      <div className="print-only-container">
+        {printMode === "single" && currentPrintViewModel && (
+          <div id="single-print-root">
+            <PayrollPrintSlip viewModel={currentPrintViewModel} />
           </div>
         )}
 
-        <div className="rounded-md border bg-card">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[100px]">社員番号</TableHead>
-                <TableHead>氏名</TableHead>
-                <TableHead className="text-right">総支給額</TableHead>
-                <TableHead className="text-right">控除合計</TableHead>
-                <TableHead className="text-right">差引支給額</TableHead>
-                <TableHead className="text-center">ステータス</TableHead>
-                <TableHead className="w-[200px]"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {payrollsLoading ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                    読み込み中...
-                  </TableCell>
-                </TableRow>
-              ) : !payrolls || payrolls.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                    {formatMonth(year, month)}の給与データはありません。「一括計算」を実行するか、実績データを入力してください。
-                  </TableCell>
-                </TableRow>
-              ) : (
-                [...payrolls].sort((a, b) => a.employeeCode.localeCompare(b.employeeCode)).map((payroll) => (
-                  <TableRow
-                    key={payroll.id}
-                    className={`cursor-pointer transition-colors ${selectedPayrollId === payroll.id ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-muted/50"}`}
-                    onClick={() => guardedAction(() => { setSelectedPayrollId(payroll.id); setActiveTab("allowance"); setIsDirty(false); })}
-                  >
-                    <TableCell className="font-medium">{payroll.employeeCode}</TableCell>
-                    <TableCell>{payroll.employeeName}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(payroll.grossSalary)}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(payroll.totalDeductions)}</TableCell>
-                    <TableCell className="text-right font-bold">{formatCurrency(payroll.netSalary)}</TableCell>
-                    <TableCell className="text-center">
-                      {payroll.status === "confirmed" ? (
-                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">確定済</Badge>
-                      ) : (
-                        <Badge variant="secondary" className="bg-amber-50 text-amber-700 border-amber-200">計算中（未確定）</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 px-2 text-xs text-primary hover:text-primary/80"
-                          disabled={calculating || payroll.status === "confirmed"}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            (async () => {
-                              try {
-                                await calculatePayroll.mutateAsync({ data: { employeeId: payroll.employeeId, year, month } });
-                                queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) });
-                                toast({ title: "計算完了", description: `${payroll.employeeName}の給与計算が完了しました。` });
-                              } catch {
-                                toast({ title: "エラー", description: "計算に失敗しました。月次実績を確認してください。", variant: "destructive" });
-                              }
-                            })();
-                          }}
-                        >
-                          <Calculator className="h-3 w-3 mr-1" />
-                          月次実績から計算
-                        </Button>
-                        <span className="inline-flex items-center text-sm text-muted-foreground gap-0.5">
-                          詳細 <ChevronRight className="h-3.5 w-3.5" />
-                        </span>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
+        {printMode === "bulk" && bulkPrintViewModels.length > 0 && (
+          <div className="bulk-print-only">
+            {bulkPrintViewModels.map((vm) => (
+              <PayrollPrintSlip key={`bulk-${vm.payrollId}`} viewModel={vm} />
+            ))}
+          </div>
+        )}
       </div>
-
-      {/* 給与明細詳細シート */}
-      <Sheet open={!!selectedPayrollId} onOpenChange={(open) => {
-        if (!open) guardedAction(() => { setSelectedPayrollId(null); setIsDirty(false); });
-      }}>
-        <SheetContent key={selectedPayrollId} className="w-full sm:max-w-2xl overflow-y-auto print:fixed print:inset-0 print:max-w-none">
-          {selectedPayrollId && (
-            <PayrollDetailContent
-              id={selectedPayrollId}
-              activeTab={activeTab}
-              setActiveTab={setActiveTab}
-              year={year}
-              month={month}
-              employees={employees || []}
-              onClose={() => guardedAction(() => { setSelectedPayrollId(null); setIsDirty(false); })}
-              onDirtyChange={setIsDirty}
-            />
-          )}
-        </SheetContent>
-      </Sheet>
-
-      {/* 未保存変更確認ダイアログ */}
-      <AlertDialog open={!!pendingAction} onOpenChange={(open) => { if (!open) setPendingAction(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>変更された箇所があります</AlertDialogTitle>
-            <AlertDialogDescription>
-              保存されていない変更があります。保存しますか？
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setPendingAction(null)}>キャンセル</AlertDialogCancel>
-            <Button variant="outline" onClick={() => {
-              setPendingAction(null);
-              setIsDirty(false);
-              pendingAction?.();
-            }}>保存せずに移動</Button>
-            <AlertDialogAction onClick={() => setPendingAction(null)}>
-              戻って保存する
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </AppLayout>
+    </>
   );
 }
 
-// ── 詳細画面用コンポーネント (独立させることでキャッシュ汚染を防止) ──
 function PayrollDetailContent({
-  id,
-  activeTab,
-  setActiveTab,
-  year,
-  month,
-  employees,
-  onClose,
-  onDirtyChange,
+  id, activeTab, setActiveTab, year, month, employees, onClose, onDirtyChange, setCurrentPrintViewModel, setPrintMode, setBulkPrintViewModels
 }: {
-  id: number;
-  activeTab: string;
-  setActiveTab: (v: string) => void;
-  year: number;
-  month: number;
-  employees: any[];
-  onClose: () => void;
-  onDirtyChange?: (isDirty: boolean) => void;
+  id: number; activeTab: string; setActiveTab: (v: string) => void; year: number; month: number; employees: any[]; onClose: () => void; onDirtyChange?: (isDirty: boolean) => void; setCurrentPrintViewModel: (vm: PayrollDisplayViewModel | null) => void; setPrintMode: (mode: "single" | "bulk" | null) => void; setBulkPrintViewModels: (vms: PayrollDisplayViewModel[]) => void;
 }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  
-  // isLoading: 初回ロード時のみtrue, isFetching: 再取得中もtrue
-  const { data: payroll, isFetching, isLoading } = useGetPayroll(id, {
-    query: { 
-      queryKey: getGetPayrollQueryKey(id),
-      // キャッシュがあってもIDが違う可能性を考慮し、データの整合性を厳格にチェック
-    }
-  });
-  
+  const { data: payroll, isLoading: payrollLoading } = useGetPayroll(id, { query: { queryKey: getGetPayrollQueryKey(id) } });
+  const { data: allowanceDefs } = useListAllowanceDefinitions({ activeOnly: true });
+  const { data: employeeAllowances } = useGetEmployeeAllowances(id ? (payroll?.employeeId ?? 0) : 0, { query: { enabled: !!payroll?.employeeId } });
+  const { data: deductionDefs } = useListDeductionDefinitions({ activeOnly: true });
+  const { data: employeeDeductions } = useGetEmployeeDeductions(id ? (payroll?.employeeId ?? 0) : 0, { query: { enabled: !!payroll?.employeeId } });
+  const { data: employee } = useGetEmployee(id ? (payroll?.employeeId ?? 0) : 0, { query: { enabled: !!payroll?.employeeId } });
   const { data: monthlyRecords } = useListMonthlyRecords({ year, month });
   const confirmPayroll = useConfirmPayroll();
 
@@ -379,238 +390,144 @@ function PayrollDetailContent({
     try {
       await confirmPayroll.mutateAsync({ id });
       queryClient.invalidateQueries({ queryKey: getGetPayrollQueryKey(id) });
-      queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) });
-      toast({ title: "給与確定", description: "給与明細を確定済みに変更しました。" });
+      toast({ title: "確定完了" });
     } catch {
-      toast({ title: "エラー", description: "確定に失敗しました。", variant: "destructive" });
+      toast({ title: "エラー", variant: "destructive" });
     }
   };
 
-  const handlePrint = () => window.print();
+  const handlePrint = async () => {
+    if (!payroll || !employee) return;
+    setPrintMode(null);
+    setCurrentPrintViewModel(null);
+    setBulkPrintViewModels([]); 
+    await new Promise(resolve => setTimeout(resolve, 100));
 
-  // 取得中、またはデータが選択したIDと不一致の場合はローディングを表示
-  // これにより「一瞬前の人のデータが見える」ことを100%防ぎます
-  if (isLoading || isFetching || !payroll || payroll.id !== id) {
-    return (
-      <div className="flex flex-col items-center justify-center h-[400px] gap-3 text-muted-foreground bg-white">
-        <Calculator className="h-8 w-8 animate-spin opacity-20" />
-        <p className="text-sm font-medium">データを取得中...</p>
-      </div>
+    // 正式なViewModelを構築してセット
+    const data = buildPayrollDisplayViewModel(
+      payroll, employee, 
+      employeeAllowances?.map(ea => ({ name: allowanceDefs?.find(ad => ad.id === ea.allowanceDefinitionId)?.name, amount: ea.amount, isTaxable: allowanceDefs?.find(ad => ad.id === ea.allowanceDefinitionId)?.isTaxable })),
+      employeeDeductions?.map(ed => ({ name: deductionDefs?.find(dd => dd.id === ed.deductionDefinitionId)?.name, amount: ed.amount }))
     );
-  }
+
+    setPrintMode("single");
+    setCurrentPrintViewModel(data);
+  };
+
+  if (payrollLoading || !payroll || !employee) return <div className="p-8 text-center">読み込み中...</div>;
+
+  const viewModel = buildPayrollDisplayViewModel(
+    payroll, employee, 
+    employeeAllowances?.map(ea => ({ name: allowanceDefs?.find(ad => ad.id === ea.allowanceDefinitionId)?.name, amount: ea.amount, isTaxable: allowanceDefs?.find(ad => ad.id === ea.allowanceDefinitionId)?.isTaxable })),
+    employeeDeductions?.map(ed => ({ name: deductionDefs?.find(dd => dd.id === ed.deductionDefinitionId)?.name, amount: ed.amount }))
+  );
 
   return (
     <div className="animate-in fade-in duration-300">
-      <SheetHeader className="print:hidden border-b pb-4">
+      <SheetHeader className="border-b pb-4 px-6 pt-6">
         <div className="flex items-center justify-between">
-          <SheetTitle>給与明細詳細</SheetTitle>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={handlePrint}>
-              <FileText className="mr-1.5 h-3.5 w-3.5" />
-              印刷
-            </Button>
-            {payroll.status !== "confirmed" && (
-              <Button
-                size="sm"
-                onClick={handleConfirm}
-                disabled={confirmPayroll.isPending}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white"
-              >
-                <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
-                明細を確定
-              </Button>
-            )}
+          <div>
+            <SheetTitle className="text-xl font-bold flex items-center gap-2">
+              <FileText className="h-5 w-5 text-primary" />
+              給与明細詳細
+            </SheetTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              {payroll.employeeCode} {payroll.employeeName} | {payroll.year}年{payroll.month}月
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={handlePrint}><Printer className="h-4 w-4 mr-1.5" />印刷</Button>
+            {payroll.status !== "confirmed" && <Button size="sm" onClick={handleConfirm}><CheckCircle2 className="h-4 w-4 mr-1.5" />明細を確定</Button>}
+            <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full h-8 w-8"><X className="h-4 w-4" /></Button>
           </div>
         </div>
       </SheetHeader>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
-        <TabsList className="w-full print:hidden">
-          <TabsTrigger value="allowance" className="flex-1">明細入力</TabsTrigger>
-          <TabsTrigger value="slip" className="flex-1">給与明細</TabsTrigger>
-        </TabsList>
+      <div className="p-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full grid-cols-2 mb-6 bg-muted/50 p-1">
+            <TabsTrigger value="allowance">手当入力</TabsTrigger>
+            <TabsTrigger value="preview">明細プレビュー</TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="slip">
-          <div className="bg-white text-black rounded-lg border p-6 space-y-6 mt-2" id="payroll-slip">
-            <div className="text-center border-b-2 border-black pb-3">
-              <h2 className="text-xl font-bold tracking-widest">{formatMonth(payroll.year, payroll.month)} 給与明細書</h2>
-            </div>
-
-            <div className="flex items-start justify-between gap-4 flex-wrap">
-              <div>
-                <p className="text-base font-bold">{payroll.employeeName} 殿</p>
-                <p className="text-xs text-gray-500 mt-0.5">社員番号: {payroll.employeeCode}</p>
-                <div className="mt-1">
-                  {payroll.status === "confirmed" ? (
-                    <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs">確定済</Badge>
-                  ) : (
-                    <Badge variant="secondary" className="bg-amber-50 text-amber-700 border-amber-200 text-xs">計算中（未確定）</Badge>
-                  )}
+          <TabsContent value="preview" className="mt-0">
+            <div className="bg-white border rounded-lg shadow-sm overflow-hidden p-6 space-y-6">
+              <div className="flex justify-between items-start gap-4">
+                <div className="space-y-1">
+                  <h3 className="text-lg font-bold tracking-tight">給与明細書</h3>
+                  <p className="text-sm text-gray-500 font-medium">{payroll.year}年 {payroll.month}月度</p>
+                </div>
+                <div className="border-2 border-black p-3 rounded text-right">
+                  <p className="text-xs text-gray-500 mb-0.5">差引支給額</p>
+                  <div className="text-xl font-bold">{formatCurrency(viewModel.netPayment)}</div>
                 </div>
               </div>
-              <div className="border-2 border-black p-3 rounded text-right">
-                <p className="text-xs text-gray-500 mb-0.5">差引支給額</p>
-                <p className="text-xl font-bold">{formatCurrency(payroll.netSalary)}</p>
-              </div>
-            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <h3 className="font-bold border-l-4 border-black pl-2 bg-gray-100 py-1 text-sm mb-2">支給項目</h3>
-                <table className="w-full text-sm">
-                  <tbody>
-                    {(payroll as any).useBluewingLogic ? (
-                      <>
-                        {[
-                          ["基本給", payroll.baseSalary],
-                          ["時間外手当（超過分）", payroll.overtimePay],
-                          ["固定残業代（職務手当）", payroll.earlyOvertimeAllowance],
-                          ["休日手当", payroll.holidayPay],
-                        ].map(([label, val]) => Number(val) !== 0 && (
-                          <tr key={String(label)} className="border-b border-dotted border-gray-300">
-                            <td className="py-1.5 text-gray-700">{label}</td>
-                            <td className="py-1.5 text-right">{formatCurrency(Number(val))}</td>
-                          </tr>
-                        ))}
-                        {(payroll.customAllowancesTotal ?? 0) > 0 && (
-                          <tr className="border-b border-dotted border-gray-300">
-                            <td className="py-1.5 text-gray-700">その他手当</td>
-                            <td className="py-1.5 text-right">{formatCurrency(payroll.customAllowancesTotal)}</td>
-                          </tr>
-                        )}
-                        {(payroll as any).bluewingPerformanceAllowance > 0 && (
-                          <tr className="border-b border-dotted border-blue-300 bg-blue-50">
-                            <td className="py-1.5 text-blue-800 font-medium">業績手当（BW）</td>
-                            <td className="py-1.5 text-right font-medium text-blue-800">{formatCurrency((payroll as any).bluewingPerformanceAllowance)}</td>
-                          </tr>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        {[
-                          ["基本給", payroll.baseSalary],
-                          ["時間外手当", payroll.overtimePay],
-                          ["深夜手当", payroll.lateNightPay],
-                          ["休日手当", payroll.holidayPay],
-                          ["歩合給", payroll.commissionPay],
-                        ].map(([label, val]) => (
-                          <tr key={String(label)} className="border-b border-dotted border-gray-300">
-                            <td className="py-1.5 text-gray-700">{label}</td>
-                            <td className="py-1.5 text-right">{formatCurrency(Number(val))}</td>
-                          </tr>
-                        ))}
-                        {(payroll.customAllowancesTotal ?? 0) > 0 && (
-                          <tr className="border-b border-dotted border-gray-300">
-                            <td className="py-1.5 text-gray-700">その他手当</td>
-                            <td className="py-1.5 text-right">{formatCurrency(payroll.customAllowancesTotal)}</td>
-                          </tr>
-                        )}
-                      </>
-                    )}
-                    <tr className="border-t-2 border-black font-bold bg-gray-50">
-                      <td className="py-1.5 pl-1">総支給額 (A)</td>
-                      <td className="py-1.5 text-right">{formatCurrency(payroll.grossSalary)}</td>
-                    </tr>
-                  </tbody>
-                </table>
-
-                {(payroll as any).useBluewingLogic && (
-                  <>
-                    <h3 className="font-bold border-l-4 border-blue-600 pl-2 bg-blue-50 py-1 text-sm mt-4 mb-2 text-blue-900">BW業績手当 計算内訳</h3>
-                    <table className="w-full text-xs text-gray-600 bg-blue-50/40 rounded">
-                      <tbody>
-                        <tr className="border-b border-dotted border-blue-200">
-                          <td className="py-1 pl-2">売上（BW）</td>
-                          <td className="py-1 text-right pr-2">{formatCurrency((payroll as any).bluewingSalesAmount ?? 0)}</td>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div>
+                  <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <div className="w-1 h-3 bg-black"></div>支給項目
+                  </h4>
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {viewModel.earningItems.map((item, i) => (
+                        <tr key={i} className="border-b border-dotted border-gray-300">
+                          <td className="py-1.5 text-gray-700">{item.label}{!item.isTaxable && <span className="text-[10px] ml-1.5 text-gray-400">(非)</span>}</td>
+                          <td className="py-1.5 text-right font-medium">{formatCurrency(item.amount)}</td>
                         </tr>
-                        <tr className="border-b border-dotted border-blue-200">
-                          <td className="py-1 pl-2 text-blue-700 font-medium">業績手当</td>
-                          <td className="py-1 text-right pr-2 text-blue-700 font-medium">{formatCurrency((payroll as any).bluewingPerformanceAllowance ?? 0)}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </>
-                )}
-
-                <h3 className="font-bold border-l-4 border-black pl-2 bg-gray-100 py-1 text-sm mt-4 mb-2">勤怠実績</h3>
-                <table className="w-full text-sm">
-                  <tbody>
-                    {[
-                      ["出勤日数", `${payroll.workDays} 日`],
-                      ["時間外労働", `${payroll.overtimeHours} 時間`],
-                      ["深夜労働", `${payroll.lateNightHours} 時間`],
-                      ["休日労働日数", `${payroll.holidayWorkDays} 日`],
-                    ].map(([label, val]) => (
-                      <tr key={String(label)} className="border-b border-dotted border-gray-300">
-                        <td className="py-1.5 text-gray-700">{label}</td>
-                        <td className="py-1.5 text-right">{val}</td>
+                      ))}
+                      <tr className="border-t-2 border-black font-bold bg-gray-50">
+                        <td className="py-2 pl-1">総支給額 (A)</td>
+                        <td className="py-2 text-right pr-2">{formatCurrency(viewModel.totalEarnings)}</td>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div>
-                <h3 className="font-bold border-l-4 border-black pl-2 bg-gray-100 py-1 text-sm mb-2">控除項目</h3>
-                <table className="w-full text-sm">
-                  <tbody>
-                    {[
-                      ["健康保険・厚生年金", payroll.socialInsurance],
-                      ["雇用保険料", payroll.employmentInsurance],
-                      ["源泉所得税", payroll.incomeTax],
-                      ["市県民税", payroll.residentTax],
-                      ["欠勤控除", payroll.absenceDeduction],
-                      ...((() => {
-                        const misc = payroll.totalDeductions - (payroll.socialInsurance ?? 0) - (payroll.employmentInsurance ?? 0) - (payroll.incomeTax ?? 0) - (payroll.residentTax ?? 0) - (payroll.absenceDeduction ?? 0);
-                        return misc > 0 ? [["積立金・その他", misc]] : [];
-                      })()),
-                    ].map(([label, val]) => (
-                      <tr key={String(label)} className="border-b border-dotted border-gray-300">
-                        <td className="py-1.5 text-gray-700">{label}</td>
-                        <td className="py-1.5 text-right">{formatCurrency(Number(val))}</td>
-                      </tr>
-                    ))}
-                    <tr className="border-t-2 border-black font-bold bg-gray-50">
-                      <td className="py-1.5 pl-1">控除合計 (B)</td>
-                      <td className="py-1.5 text-right">{formatCurrency(payroll.totalDeductions)}</td>
-                    </tr>
-                  </tbody>
-                </table>
-
-                <div className="mt-4 border-2 border-black p-3 bg-gray-50 flex justify-between items-center rounded">
-                  <span className="font-bold text-sm">差引支給額 (A - B)</span>
-                  <span className="text-lg font-bold">{formatCurrency(payroll.netSalary)}</span>
+                    </tbody>
+                  </table>
                 </div>
-
-                {payroll.status !== "confirmed" && (
-                  <div className="mt-4 text-xs text-amber-700 bg-amber-50 p-3 rounded border border-amber-200 print:hidden">
-                    <strong>注意:</strong> 仮計算の状態です。確認後「明細を確定」ボタンを押してください。
+                <div>
+                  <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <div className="w-1 h-3 bg-black"></div>控除項目
+                  </h4>
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {viewModel.deductionItems.map((item, i) => (
+                        <tr key={i} className="border-b border-dotted border-gray-300">
+                          <td className="py-1.5 text-gray-700">{item.label}</td>
+                          <td className="py-1.5 text-right font-medium">{formatCurrency(item.amount)}</td>
+                        </tr>
+                      ))}
+                      <tr className="border-t-2 border-black font-bold bg-gray-50">
+                        <td className="py-2 pl-1">控除合計 (B)</td>
+                        <td className="py-2 text-right pr-2">{formatCurrency(viewModel.totalDeductions)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <div className="mt-4 border-2 border-black p-3 bg-gray-50 flex justify-between items-center rounded">
+                    <span className="font-bold text-sm">差引支給額 (A - B)</span>
+                    <span className="text-xl font-bold">{formatCurrency(viewModel.netPayment)}</span>
                   </div>
-                )}
+                </div>
               </div>
             </div>
-          </div>
-        </TabsContent>
+          </TabsContent>
 
-        <TabsContent value="allowance" className="mt-2">
-          {employees.find(e => e.id === payroll.employeeId) ? (
-            <AllowanceInputPanel
-              employee={employees.find(e => e.id === payroll.employeeId)!}
-              onDirtyChange={onDirtyChange}
-              monthlyData={(() => {
-                const rec = monthlyRecords?.find(r => r.employeeId === payroll.employeeId);
-                return {
-                  workDays: rec?.workDays ?? payroll.workDays ?? 0,
-                  saturdayWorkDays: (rec as { saturdayWorkDays?: number } | undefined)?.saturdayWorkDays ?? 0,
-                  sundayWorkHours: (rec as { sundayWorkHours?: number } | undefined)?.sundayWorkHours ?? 0,
-                };
-              })()}
-            />
-          ) : (
-            <div className="py-12 text-center text-muted-foreground">社員データが見つかりません</div>
-          )}
-        </TabsContent>
-      </Tabs>
+          <TabsContent value="allowance" className="mt-0">
+            {employees.find(e => e.id === payroll.employeeId) && (
+              <AllowanceInputPanel
+                employee={employees.find(e => e.id === payroll.employeeId)!}
+                onDirtyChange={onDirtyChange}
+                monthlyData={(() => {
+                  const rec = monthlyRecords?.find(r => r.employeeId === payroll.employeeId);
+                  return {
+                    workDays: rec?.workDays ?? payroll.workDays ?? 0,
+                    saturdayWorkDays: (rec as any)?.saturdayWorkDays ?? 0,
+                    sundayWorkHours: (rec as any)?.sundayWorkHours ?? 0,
+                  };
+                })()}
+              />
+            )}
+          </TabsContent>
+        </Tabs>
+      </div>
     </div>
   );
 }

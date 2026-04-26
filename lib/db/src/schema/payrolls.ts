@@ -24,6 +24,7 @@ export const payrollsTable = pgTable("payrolls", {
   grossSalary: doublePrecision("gross_salary").notNull().default(0),
   socialInsurance: doublePrecision("social_insurance").notNull().default(0),
   employmentInsurance: doublePrecision("employment_insurance").notNull().default(0),
+  childcareSupportContribution: doublePrecision("childcare_support_contribution").notNull().default(0),
   incomeTax: doublePrecision("income_tax").notNull().default(0),
   residentTax: doublePrecision("resident_tax").notNull().default(0),
   totalDeductions: doublePrecision("total_deductions").notNull().default(0),

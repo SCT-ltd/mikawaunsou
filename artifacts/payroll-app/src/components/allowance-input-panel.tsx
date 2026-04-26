@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { Plus, X, GripVertical } from "lucide-react";
-import { calculateIncomeTaxReiwa8, round50sen, calculateSocialInsurance } from "@/lib/tax-tables-reiwa8";
+import { calculateIncomeTax, round50sen, calculateSocialInsurance } from "@/lib/tax-tables-reiwa8";
 import { Reorder } from "framer-motion";
 
 function roundJapanese(amount: number): number {
@@ -168,12 +168,13 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange }: Pr
   const socIns = calculateSocialInsurance(gradeBase, { careInsuranceApplied: employee.careInsuranceApplied ?? false });
   const healthInsurance = socIns.healthInsurance;
   const pensionInsurance = socIns.pension;
+  const childcareSupportContribution = socIns.childcareSupportContribution;
 
   const employmentInsurance = (employee.employmentInsuranceApplied !== false)
     ? round50sen(grandTotal * 0.0055)
     : 0;
 
-  const totalInsurance = healthInsurance + pensionInsurance + employmentInsurance;
+  const totalInsurance = healthInsurance + pensionInsurance + employmentInsurance + childcareSupportContribution;
 
   const nonTaxableAllowancesTotal = rows.reduce((s, r) => {
     const def = allowanceDefinitions?.find(d => d.id === r.defId);
@@ -181,8 +182,8 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange }: Pr
   }, 0);
 
   const afterInsuranceSalary = Math.max(0, grandTotal - nonTaxableAllowancesTotal - totalInsurance);
-  const dependentEquivCount = employee.dependentCount ?? 0;
-  const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
+  const dependentEquivCount = (Number(employee.dependentCount) || 0) + (employee.hasSpouse ? 1 : 0);
+  const incomeTax = calculateIncomeTax(afterInsuranceSalary, dependentEquivCount, (monthlyData as any)?.year ? (monthlyData as any).year - 2018 : 7);
 
   const residentTax = employee.residentTax ?? 0;
   const customDeductionsTotal = deductionRows.reduce((s, r) => s + (r.amount || 0), 0);
@@ -327,6 +328,9 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange }: Pr
           <div className="col-start-2 col-span-2 border-b border-r px-2 py-1.5 text-muted-foreground bg-background">雇用保険料</div>
           <div className="col-start-4 border-b border-r bg-background"></div>
           <div className="border-b px-2 py-1.5 text-right tabular-nums bg-background">{fmt(employmentInsurance)}</div>
+          <div className="col-start-2 col-span-2 border-b border-r px-2 py-1.5 text-muted-foreground bg-muted/5">子ども・子育て支援金</div>
+          <div className="col-start-4 border-b border-r bg-muted/5"></div>
+          <div className="border-b px-2 py-1.5 text-right tabular-nums bg-muted/5">{fmt(childcareSupportContribution)}</div>
           <div className="col-start-2 col-span-3 border-b border-r px-2 py-1.5 text-muted-foreground font-medium bg-muted/5 text-center">社会保険料控除後の金額</div>
           <div className="border-b px-2 py-1.5 text-right tabular-nums font-medium bg-muted/5">{fmt(afterInsuranceSalary)}</div>
           <div className="col-start-2 col-span-3 border-b border-r px-2 py-2 text-center text-muted-foreground font-semibold bg-orange-50/50 text-sm">社会保険料合計</div>

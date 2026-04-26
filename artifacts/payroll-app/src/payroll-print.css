@@ -1,0 +1,111 @@
+/* 画面表示時の設定 */
+@media screen {
+  #single-print-root,
+  .bulk-print-only {
+    display: none !important;
+  }
+}
+
+/* 印刷時の設定 */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
+  html,
+  body,
+  #root {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+
+  /* 通常画面を物理的に消去してスペースを解放する */
+  .screen-only,
+  .no-print,
+  header,
+  nav,
+  aside,
+  button,
+  [data-radix-portal] {
+    display: none !important;
+  }
+
+  /* visibility: hidden は一切使わない */
+  body * {
+    visibility: visible !important;
+  }
+
+  /* 印刷対象をトップに配置 */
+  #single-print-root {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    overflow: visible !important;
+  }
+
+  #single-print-root .payroll-print-page {
+    display: block !important;
+    position: static !important;
+    width: 190mm !important;
+    height: auto !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+    background: #fff !important;
+
+    page-break-before: auto !important;
+    page-break-after: auto !important;
+    page-break-inside: avoid !important;
+    break-before: auto !important;
+    break-after: auto !important;
+    break-inside: avoid !important;
+  }
+
+  /* 一括印刷DOMも非表示 */
+  .bulk-print-only {
+    display: none !important;
+  }
+}
+
+/* 共通デザイン */
+.payroll-print-page {
+  font-family: "MS Mincho", "Hiragino Mincho ProN", serif;
+  color: black;
+  line-height: 1.3;
+  font-size: 10.5px;
+}
+
+.center { text-align: center; }
+.right { text-align: right; }
+.bold { font-weight: bold; }
+.amount { text-align: right; font-family: "Courier New", Courier, monospace; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1.5px solid #000;
+}
+
+th, td {
+  border: 1px solid #000;
+  padding: 2px 6px;
+}
+
+th {
+  background-color: #f2f2f2;
+  font-weight: bold;
+}
+
+.summary-row {
+  background-color: #f2f2f2;
+}

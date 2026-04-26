@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db, payrollsTable, employeesTable, monthlyRecordsTable, companyTable, allowanceDefinitionsTable, employeeAllowancesTable, deductionDefinitionsTable, employeeDeductionsTable, employeeResidentTaxesTable } from "@workspace/db";
 import { eq, and, or, desc, lte } from "drizzle-orm";
 import { calculatePayroll, calculateMikawaPayroll, calculateBluewingPayroll, roundJapanese } from "../lib/payroll-calculator";
-import { calculateSocialInsurance, calculateIncomeTaxReiwa8 } from "../lib/tax-tables-reiwa8";
+import { calculateSocialInsurance, calculateIncomeTax } from "../lib/tax-tables-reiwa8";
 
 const router = Router();
 
@@ -53,12 +53,13 @@ async function performPayrollCalculation(params: {
       pensionRate: company.pensionEmployeeRate
     });
     const socialInsurance = mikawaIns.healthInsurance + (emp.pensionApplied ? mikawaIns.pension : 0);
-    const employmentInsurance = roundJapanese(grossSalary * 0.0055);
+    const childcareSupportContribution = mikawaIns.childcareSupportContribution;
+    const employmentInsurance = emp.employmentInsuranceApplied ? roundJapanese(grossSalary * 0.0055) : 0;
     const nonTaxableCustomAllowancesTotal = customAllowances.reduce((s, a) => s + (a.isTaxable === false ? a.amount : 0), 0);
-    const afterInsuranceSalary = grossSalary - nonTaxableCustomAllowancesTotal - socialInsurance - employmentInsurance;
-    const dependentEquivCount = Number(emp.dependentCount) || 0;
-    const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
-    const totalDeductions = roundJapanese(socialInsurance + employmentInsurance + incomeTax + residentTax + (Number(emp.otherDeductionMonthly) || 0));
+    const afterInsuranceSalary = grossSalary - nonTaxableCustomAllowancesTotal - socialInsurance - employmentInsurance - childcareSupportContribution;
+    const dependentEquivCount = (Number(emp.dependentCount) || 0) + (emp.hasSpouse ? 1 : 0);
+    const incomeTax = calculateIncomeTax(afterInsuranceSalary, dependentEquivCount, year - 2018);
+    const totalDeductions = roundJapanese(socialInsurance + employmentInsurance + childcareSupportContribution + incomeTax + residentTax + (Number(emp.otherDeductionMonthly) || 0));
 
     return {
       baseSalary: mikawaResult.minimumSalary,
@@ -69,6 +70,7 @@ async function performPayrollCalculation(params: {
       grossSalary,
       socialInsurance,
       employmentInsurance,
+      childcareSupportContribution,
       incomeTax,
       residentTax,
       totalDeductions,
@@ -115,12 +117,13 @@ async function performPayrollCalculation(params: {
       pensionRate: company.pensionEmployeeRate
     });
     const socialInsurance = bwIns.healthInsurance + (emp.pensionApplied ? bwIns.pension : 0);
+    const childcareSupportContribution = bwIns.childcareSupportContribution;
     const employmentInsurance = emp.employmentInsuranceApplied ? roundJapanese(grossSalary * 0.0055) : 0;
     const nonTaxableAllowancesTotal = customAllowances.reduce((s, a) => s + (a.isTaxable === false ? a.amount : 0), 0);
-    const afterInsuranceSalary = grossSalary - nonTaxableAllowancesTotal - socialInsurance - employmentInsurance;
-    const dependentEquivCount = Number(emp.dependentCount) || 0;
-    const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
-    const totalDeductions = roundJapanese(socialInsurance + employmentInsurance + incomeTax + residentTax + (Number(emp.otherDeductionMonthly) || 0));
+    const afterInsuranceSalary = grossSalary - nonTaxableAllowancesTotal - socialInsurance - employmentInsurance - childcareSupportContribution;
+    const dependentEquivCount = (Number(emp.dependentCount) || 0) + (emp.hasSpouse ? 1 : 0);
+    const incomeTax = calculateIncomeTax(afterInsuranceSalary, dependentEquivCount, year - 2018);
+    const totalDeductions = roundJapanese(socialInsurance + employmentInsurance + childcareSupportContribution + incomeTax + residentTax + (Number(emp.otherDeductionMonthly) || 0));
 
     return {
       baseSalary: baseSalaryCalc,
@@ -132,6 +135,7 @@ async function performPayrollCalculation(params: {
       grossSalary,
       socialInsurance,
       employmentInsurance,
+      childcareSupportContribution,
       incomeTax,
       residentTax,
       totalDeductions,

@@ -29,6 +29,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { Save, Plus, X, CalendarDays as CalIcon, RefreshCw, HelpCircle } from "lucide-react";
+import { calculateIncomeTax } from "@/lib/tax-tables-reiwa8";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AttendanceCalendarDialog } from "@/components/attendance-calendar-dialog";
 import { Reorder, useDragControls } from "framer-motion";
@@ -48,31 +49,6 @@ function roundJapanese(amount: number): number {
  * 国税庁 令和6年分 給与所得の源泉徴収税額表（月額表）に準拠
  * tax_0 = X × 税率 - 定額 → tax_B = max(0, tax_0 - B × 3,750) → × 1.021
  */
-function calculateIncomeTax(afterInsuranceSalary: number, dependentCount: number): number {
-  const X = afterInsuranceSalary;
-
-  let tax0: number;
-  if (X < 88_000) {
-    tax0 = 0;
-  } else if (X < 257_700) {
-    tax0 = X * 0.05 - 4_273;
-  } else if (X < 429_460) {
-    tax0 = X * 0.10 - 17_158;
-  } else if (X < 695_000) {
-    tax0 = X * 0.20 - 60_104;
-  } else if (X < 900_000) {
-    tax0 = X * 0.23 - 80_954;
-  } else if (X < 1_800_000) {
-    tax0 = X * 0.33 - 170_954;
-  } else if (X < 4_000_000) {
-    tax0 = X * 0.40 - 296_954;
-  } else {
-    tax0 = X * 0.45 - 496_954;
-  }
-
-  const taxB = Math.max(0, tax0 - dependentCount * 3_750);
-  return roundJapanese(Math.max(0, taxB * 1.021));
-}
 
 // ── サイドバー ────────────────────────────────────────────────────
 
@@ -196,9 +172,9 @@ function AllowanceSidebar({
   const totalRows = rows.length + 3;
 
   // ── 社会保険料計算（計算テーブルマスターの料率を使用）──
-  const healthInsuranceRate = company?.healthInsuranceEmployeeRate ?? 0.05;
-  const pensionRate = company?.pensionEmployeeRate ?? 0.0915;
-  const employmentInsuranceRate = company?.employmentInsuranceRate ?? 0.006;
+  const healthInsuranceRate = company?.healthInsuranceEmployeeRate ?? 0.04925; // 協会けんぽ東京支部
+  const pensionRate = company?.pensionEmployeeRate ?? 0.0915; // 18.3%の折半
+  const employmentInsuranceRate = 0.0055; // 0.55%
 
   const healthInsurance = roundJapanese(grandTotal * healthInsuranceRate);
   const pensionInsurance = (employee?.pensionApplied !== false)
@@ -216,8 +192,8 @@ function AllowanceSidebar({
 
   // ── 税金計算 ──
   const afterInsuranceSalary = Math.max(0, grandTotal - nonTaxableAllowancesTotal - totalInsurance);
-  const dependentEquivCount = (employee?.dependentCount ?? 0) + (employee?.hasSpouse ? 1 : 0);
-  const incomeTax = calculateIncomeTax(afterInsuranceSalary, dependentEquivCount);
+  const dependentEquivCount = (Number(employee.dependentCount) || 0) + (employee.hasSpouse ? 1 : 0);
+  const incomeTax = calculateIncomeTax(afterInsuranceSalary, dependentEquivCount, (monthlyData as any).year ? (monthlyData as any).year - 2018 : 7);
   const residentTax = employee?.residentTax ?? 0;
 
   // ── その他差引（積立等）──
@@ -1006,25 +982,27 @@ export default function MonthlyInput() {
         </div>
 
         {/* 実績入力テーブル */}
-        <div className="rounded-xl border bg-card shadow-lg monthly-input-table flex-1 min-h-0 overflow-y-auto">
-          <div className="overflow-x-auto min-h-full">
-            <Table className="border-separate border-spacing-0">
-              <TableHeader className="sticky top-0 z-40">
+        <div className="rounded-xl border bg-card shadow-lg flex-1 min-h-0 overflow-hidden">
+          <Table 
+            containerClassName="h-full" 
+            className="border-separate border-spacing-0"
+          >
+            <TableHeader className="sticky top-0 z-40 bg-muted">
                 {/* グルーピングヘッダー */}
                 <TableRow className="bg-muted divide-x divide-border/40 hover:bg-muted">
-                  <TableHead className="min-w-[200px] sticky left-0 bg-muted/95 z-30 shadow-[4px_0_10px_-4px_rgba(0,0,0,0.1)]">
+                  <TableHead className="min-w-[200px] sticky top-0 left-0 bg-muted/95 z-50 shadow-[4px_0_10px_-4px_rgba(0,0,0,0.1)] border-b">
                     社員名・所属
                   </TableHead>
-                  <TableHead colSpan={7} className="text-center bg-emerald-100 text-emerald-900 border-b-2 border-b-emerald-400/50 font-bold py-1">
+                  <TableHead colSpan={7} className="text-center bg-emerald-100 text-emerald-900 border-b-2 border-b-emerald-400/50 font-bold py-1 sticky top-0 z-40">
                     勤怠・時間管理
                   </TableHead>
-                  <TableHead colSpan={2} className="text-center bg-blue-100 text-blue-900 border-b-2 border-b-blue-400/50 font-bold py-1">
+                  <TableHead colSpan={2} className="text-center bg-blue-100 text-blue-900 border-b-2 border-b-blue-400/50 font-bold py-1 sticky top-0 z-40">
                     運行実績
                   </TableHead>
-                  <TableHead colSpan={3} className="text-center bg-orange-100 text-orange-900 border-b-2 border-b-orange-400/50 font-bold py-1">
+                  <TableHead colSpan={3} className="text-center bg-orange-100 text-orange-900 border-b-2 border-b-orange-400/50 font-bold py-1 sticky top-0 z-40">
                     給与計算基礎
                   </TableHead>
-                  <TableHead className="min-w-[120px] sticky right-0 bg-muted/95 z-30 shadow-[-4px_0_10px_-4px_rgba(0,0,0,0.1)] border-l-2 border-l-primary/30 text-center font-bold">
+                  <TableHead className="min-w-[120px] sticky top-0 right-0 bg-muted/95 z-50 shadow-[-4px_0_10px_-4px_rgba(0,0,0,0.1)] border-l-2 border-l-primary/30 text-center font-bold">
                     <div className="flex items-center justify-center gap-1">
                       概算
                       <Popover>
@@ -1068,21 +1046,21 @@ export default function MonthlyInput() {
                 </TableRow>
                 {/* 項目詳細ヘッダー */}
                 <TableRow className="bg-muted divide-x divide-border/20 text-[10px] uppercase tracking-tighter hover:bg-muted h-8">
-                  <TableHead className="sticky left-0 bg-muted z-30"></TableHead>
-                  <TableHead className="w-[64px] text-center px-1 bg-muted">平日</TableHead>
-                  <TableHead className="w-[64px] text-center px-1 bg-muted">土曜</TableHead>
-                  <TableHead className="w-[64px] text-center px-1 bg-muted">日曜(h)</TableHead>
-                  <TableHead className="w-[64px] text-center px-1 text-red-600 bg-muted">欠勤</TableHead>
-                  <TableHead className="w-[64px] text-center px-1 bg-muted">残業</TableHead>
-                  <TableHead className="w-[64px] text-center px-1 bg-muted">深夜</TableHead>
-                  <TableHead className="w-[64px] text-center px-1 bg-muted">休日</TableHead>
-                  <TableHead className="w-[84px] text-center px-1 bg-muted">距離(km)</TableHead>
-                  <TableHead className="w-[74px] text-center px-1 bg-muted">件数</TableHead>
-                  <TableHead className="w-[110px] text-center px-1 font-bold text-orange-700 bg-muted">売上(円)</TableHead>
-                  <TableHead className="w-[64px] text-center px-1 bg-muted">歩合%</TableHead>
-                  <TableHead className="w-[120px] bg-blue-100 text-blue-900 text-center px-1 font-bold">BW売上</TableHead>
-                  <TableHead className="sticky right-0 bg-muted z-30 border-l-2 border-l-primary/10"></TableHead>
-                  <TableHead className="px-2 text-left bg-muted">メモ</TableHead>
+                  <TableHead className="sticky top-[40px] left-0 bg-muted z-50 border-b"></TableHead>
+                  <TableHead className="w-[64px] text-center px-1 bg-muted sticky top-[40px] z-40">平日</TableHead>
+                  <TableHead className="w-[64px] text-center px-1 bg-muted sticky top-[40px] z-40">土曜</TableHead>
+                  <TableHead className="w-[64px] text-center px-1 bg-muted sticky top-[40px] z-40">日曜(h)</TableHead>
+                  <TableHead className="w-[64px] text-center px-1 text-red-600 bg-muted sticky top-[40px] z-40">欠勤</TableHead>
+                  <TableHead className="w-[64px] text-center px-1 bg-muted sticky top-[40px] z-40">残業</TableHead>
+                  <TableHead className="w-[64px] text-center px-1 bg-muted sticky top-[40px] z-40">深夜</TableHead>
+                  <TableHead className="w-[64px] text-center px-1 bg-muted sticky top-[40px] z-40">休日</TableHead>
+                  <TableHead className="w-[84px] text-center px-1 bg-muted sticky top-[40px] z-40">距離(km)</TableHead>
+                  <TableHead className="w-[74px] text-center px-1 bg-muted sticky top-[40px] z-40">件数</TableHead>
+                  <TableHead className="w-[110px] text-center px-1 font-bold text-orange-700 bg-muted sticky top-[40px] z-40">売上(円)</TableHead>
+                  <TableHead className="w-[64px] text-center px-1 bg-muted sticky top-[40px] z-40">歩合%</TableHead>
+                  <TableHead className="w-[120px] bg-blue-100 text-blue-900 text-center px-1 font-bold sticky top-[40px] z-40">BW売上</TableHead>
+                  <TableHead className="sticky top-[40px] right-0 bg-muted z-50 border-l-2 border-l-primary/10 border-b"></TableHead>
+                  <TableHead className="px-2 text-left bg-muted sticky top-[40px] z-40 border-b">メモ</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1283,9 +1261,14 @@ export default function MonthlyInput() {
                                   <span>¥{Math.round(previews[emp.id].grossSalary).toLocaleString()}</span>
                                 </div>
                                 <div className="flex justify-between text-[9px] text-muted-foreground border-b border-border/30 pb-0.5">
-                                  <span>控除</span>
+                                  <span>控除 (支援金込)</span>
                                   <span>¥{Math.round(previews[emp.id].totalDeductions).toLocaleString()}</span>
                                 </div>
+                                {previews[emp.id].childcareSupportContribution > 0 && (
+                                  <div className="flex justify-between text-[8px] text-muted-foreground/60 scale-90 origin-right -mt-0.5">
+                                    <span>(支援金: ¥{Math.round(previews[emp.id].childcareSupportContribution).toLocaleString()})</span>
+                                  </div>
+                                )}
                                 <div className="text-right font-bold text-[13px] text-primary tabular-nums mt-0.5">
                                   ¥{Math.round(previews[emp.id].netSalary).toLocaleString()}
                                 </div>
@@ -1320,7 +1303,6 @@ export default function MonthlyInput() {
             </Table>
           </div>
         </div>
-      </div>
 
       {calendarEmp && (
         <AttendanceCalendarDialog

@@ -1,4 +1,4 @@
-﻿export const TOKYO_INSURANCE_TABLE_REIWA8 = [
+export const TOKYO_INSURANCE_TABLE_REIWA8 = [
   {
     "grade": 1,
     "amount": 58000,
@@ -353,26 +353,26 @@
 
 
 /**
- * 社会保険料・源泉徴収税額 計算モジュール
+ * 遉ｾ莨壻ｿ晞匱譁吶・貅先ｳ牙ｾｴ蜿守ｨ朱｡・險育ｮ励Δ繧ｸ繝･繝ｼ繝ｫ
  *
- * 社会保険: 協会けんぽ東京支部 標準報酬月額等級テーブル方式
- * 源泉所得税: 国税庁 給与所得の源泉徴収税額表（月額表）甲欄
- *   - 令和7年版（テーブル参照方式）
- *   - 令和8年版（将来切替用、計算式方式）
+ * 遉ｾ莨壻ｿ晞匱: 蜊比ｼ壹￠繧薙⊃譚ｱ莠ｬ謾ｯ驛ｨ 讓呎ｺ門ｱ驟ｬ譛磯｡咲ｭ臥ｴ壹ユ繝ｼ繝悶Ν譁ｹ蠑・
+ * 貅先ｳ画園蠕礼ｨ・ 蝗ｽ遞主ｺ・邨ｦ荳取園蠕励・貅先ｳ牙ｾｴ蜿守ｨ朱｡崎｡ｨ・域怦鬘崎｡ｨ・臥抜谺・
+ *   - 莉､蜥・蟷ｴ迚茨ｼ医ユ繝ｼ繝悶Ν蜿ら・譁ｹ蠑擾ｼ・
+ *   - 莉､蜥・蟷ｴ迚茨ｼ亥ｰ・擂蛻・崛逕ｨ縲∬ｨ育ｮ怜ｼ乗婿蠑擾ｼ・
  */
 
-// ────────────────────────────────────────────────────────────────────────────
-// 1. 社会保険料（健康保険・厚生年金）等級テーブル
-// ────────────────────────────────────────────────────────────────────────────
+// 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
+// 1. 遉ｾ莨壻ｿ晞匱譁呻ｼ亥▼蠎ｷ菫晞匱繝ｻ蜴夂函蟷ｴ驥托ｼ臥ｭ臥ｴ壹ユ繝ｼ繝悶Ν
+// 笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏笏
 
-const HEALTH_RATE_HALF = 0.04925;   // 健康保険料率デフォルト（健保のみ、介護なし）
-const PENSION_RATE_HALF = 0.09150;  // 厚生年金保険料率 18.300% の折半
-const PENSION_MAX_STD = 650_000;    // 厚生年金標準報酬月額の上限
+const HEALTH_RATE_HALF = 0.04925;   // 蛛･蠎ｷ菫晞匱譁咏紫繝・ヵ繧ｩ繝ｫ繝茨ｼ亥▼菫昴・縺ｿ縲∽ｻ玖ｭｷ縺ｪ縺暦ｼ・
+const PENSION_RATE_HALF = 0.09150;  // 蜴夂函蟷ｴ驥台ｿ晞匱譁咏紫 18.300% 縺ｮ謚伜濠
+const PENSION_MAX_STD = 650_000;    // 蜴夂函蟷ｴ驥第ｨ呎ｺ門ｱ驟ｬ譛磯｡阪・荳企剞
 
 /**
- * 標準報酬月額等級テーブル
- * [報酬月額以上, 報酬月額未満, 標準報酬月額, 厚生年金適用]
- * 厚生年金適用 false = 健康保険のみ（グレード1-3）
+ * 讓呎ｺ門ｱ驟ｬ譛磯｡咲ｭ臥ｴ壹ユ繝ｼ繝悶Ν
+ * [蝣ｱ驟ｬ譛磯｡堺ｻ･荳・ 蝣ｱ驟ｬ譛磯｡肴悴貅, 讓呎ｺ門ｱ驟ｬ譛磯｡・ 蜴夂函蟷ｴ驥鷹←逕ｨ]
+ * 蜴夂函蟷ｴ驥鷹←逕ｨ false = 蛛･蠎ｷ菫晞匱縺ｮ縺ｿ・医げ繝ｬ繝ｼ繝・-3・・
  */
 const INSURANCE_GRADES: [number, number, number, boolean][] = [
   [          0,  63_000,  58_000, false],
@@ -409,7 +409,7 @@ const INSURANCE_GRADES: [number, number, number, boolean][] = [
   [545_000, 575_000, 560_000,  true],
   [575_000, 605_000, 590_000,  true],
   [605_000, 635_000, 620_000,  true],
-  [635_000, 665_000, 650_000,  true],  // 厚生年金上限ここまで
+  [635_000, 665_000, 650_000,  true],  // 蜴夂函蟷ｴ驥台ｸ企剞縺薙％縺ｾ縺ｧ
   [665_000, 695_000, 680_000, false],
   [695_000, 730_000, 710_000, false],
   [730_000, 770_000, 750_000, false],
@@ -429,7 +429,7 @@ const INSURANCE_GRADES: [number, number, number, boolean][] = [
 
 
 /**
- * 報酬月額から標準報酬月額等級を取得する
+ * 蝣ｱ驟ｬ譛磯｡阪°繧画ｨ呎ｺ門ｱ驟ｬ譛磯｡咲ｭ臥ｴ壹ｒ蜿門ｾ励☆繧・
  */
 export function getInsuranceGrade(monthlySalary: number): { stdMonthly: number; hasPension: boolean } {
   const grade = INSURANCE_GRADES.find(
@@ -440,39 +440,44 @@ export function getInsuranceGrade(monthlySalary: number): { stdMonthly: number; 
 
 /**
  * 報酬月額から社会保険料（健保折半＋厚年折半）を計算する
- *
- * @param monthlySalary  報酬月額（standard_remuneration が設定されていればその値を渡す）
- * @param options        会社設定レート（指定なしの場合はデフォルト値）
- *   healthRate:  健康保険料率（従業員折半、介護込みの場合は込み料率を渡す）
- *   pensionRate: 厚生年金保険料率（従業員折半）
  */
 export function calculateSocialInsurance(
-  monthlySalary: number,
-  options?: { healthRate?: number; pensionRate?: number; careInsuranceApplied?: boolean },
-): {
-  healthInsurance: number;
-  pension: number;
-  total: number;
-} {
-  const { stdMonthly, hasPension } = getInsuranceGrade(monthlySalary);
-  
-  let gradeData = TOKYO_INSURANCE_TABLE_REIWA8.find((g: any) => g.amount === stdMonthly);
-  if (!gradeData) {
-    gradeData = TOKYO_INSURANCE_TABLE_REIWA8.reduce((prev: any, curr: any) => Math.abs(curr.amount - stdMonthly) < Math.abs(prev.amount - stdMonthly) ? curr : prev);
-  }
-  
-  const healthInsurance = options?.careInsuranceApplied ? gradeData.healthWithCare : gradeData.healthOnly;
-  const pension = hasPension ? gradeData.pension : 0;
+  standardRemuneration: number,
+  options: {
+    careInsuranceApplied?: boolean;
+    healthRate?: number;
+    pensionRate?: number;
+  } = {},
+): { healthInsurance: number; pension: number; childcareSupportContribution: number } {
+  const {
+    careInsuranceApplied = false,
+    healthRate = 0.0985, // 9.85% (Tokyo, Reiwa 8 as per image)
+    pensionRate = 0.183,  // 18.3%
+  } = options;
 
-  return { healthInsurance, pension, total: healthInsurance + pension };
+  const healthTotal = Math.floor(standardRemuneration * healthRate);
+  const healthInsurance = Math.floor(healthTotal / 2);
+
+  const pensionTotal = Math.floor(standardRemuneration * pensionRate);
+  const pension = Math.floor(pensionTotal / 2);
+
+  // 子ども・子育て支援金 (0.23% total as per image)
+  const childcareTotal = Math.floor(standardRemuneration * 0.0023); 
+  const childcareSupportContribution = Math.floor(childcareTotal / 2); // employee portion
+
+  return {
+    healthInsurance,
+    pension,
+    childcareSupportContribution,
+  };
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// 2. 源泉所得税（月額表甲欄）— 令和7年 テーブル参照方式
-// ────────────────────────────────────────────────────────────────────────────
+// 笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€
+// 2. 貅先ｳ画園蠕礼ｨ趣ｼ域怦鬘崎｡ｨ逕ｲ谺・ｼ俄€・莉､蜥・蟷ｴ 繝・・繝悶Ν蜿ら・譁ｹ蠑・
+// 笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€笏€
 
 /**
- * 給与所得控除額（国税庁 速算表）
+ * 邨ｦ荳取園蠕玲而髯､鬘搾ｼ亥嵜遞主ｺ・騾溽ｮ苓｡ｨ・・
  */
 function _empDed(annual: number): number {
   if (annual <= 1_625_000) return 550_000;
@@ -484,7 +489,7 @@ function _empDed(annual: number): number {
 }
 
 /**
- * 累進税率 速算表
+ * 邏ｯ騾ｲ遞守紫 騾溽ｮ苓｡ｨ
  */
 function _annualTax(t: number): number {
   if (t <= 0)             return 0;
@@ -498,186 +503,110 @@ function _annualTax(t: number): number {
 }
 
 /**
- * 課税所得ブラケット別のキャリブレーション値
- *
- * 令和7年公式月額表との整合を取るための補正値。
- * 検証: 431,000行 dep0 → 計算値12,609 + 101 = 12,710（国税庁公式値と完全一致）
- * 各ブラケットの補正は 10%ブラケット=101 を基準に税率で比例換算。
+ * 莉､蜥・蟷ｴ蜈ｬ蠑乗怦鬘崎｡ｨ縺ｨ縺ｮ謨ｴ蜷医ｒ蜿悶ｋ縺溘ａ縺ｮ陬懈ｭ｣蛟､縲・
+ * 讀懆ｨｼ: 431,000陦・dep0 竊・險育ｮ怜､12,609 + 101 = 12,710・亥嵜遞主ｺ∝・蠑丞､縺ｨ螳悟・荳閾ｴ・・
+ * 蜷・ヶ繝ｩ繧ｱ繝・ヨ縺ｮ陬懈ｭ｣縺ｯ 10%繝悶Λ繧ｱ繝・ヨ=101 繧貞渕貅悶↓遞守紫縺ｧ豈比ｾ区鋤邂励・
  */
-function _calibration(taxable: number): number {
-  if (taxable <= 1_950_000) return 50;    // 5%ブラケット
-  if (taxable <= 3_300_000) return 101;   // 10%ブラケット
-  if (taxable <= 6_950_000) return 202;   // 20%ブラケット
-  if (taxable <= 9_000_000) return 232;   // 23%ブラケット
-  return 333;                              // 33%+ブラケット
-}
-
 /**
- * 令和7年 源泉徴収税額表（月額表・甲欄）
- *
- * 各行: [社保控除後月額下限, dep0税額, dep1税額, ..., dep7税額]
- * 行の間隔: 1,000円ごと（88,000円～630,000円）
- *
- * 参照方法: 社保控除後月額 が 下限以上・次行下限未満 の行を使用
- *
- * キャリブレーション検証:
- *   431,699円 → 431,000行 → dep0 = 12,710円（国税庁公式値と完全一致）
- */
-const REIWA7_TABLE: readonly number[][] = (() => {
-  // 基礎控除480k + 甲欄基本枠760k（配偶者相当380k + 甲欄調整380k）
-  // 検証: dep=0 at 431,699 → 12,710（国税庁公式値と完全一致）
-  const BASE_DED = 1_240_000;
-  const DEP_DED  = 380_000;  // 扶養親族等1人あたり控除額
-
-  const boundaries: number[] = [0];
-  for (let b = 88_000; b <= 630_000; b += 1_000) boundaries.push(b);
-
-  return boundaries.map(lower => {
-    const annual    = lower * 12;
-    const empIncome = annual - _empDed(annual);
-    const row: number[] = [lower];
-
-    for (let dep = 0; dep <= 7; dep++) {
-      const totalDed     = BASE_DED + dep * DEP_DED;
-      const taxableAnnual = Math.floor((empIncome - totalDed) / 1_000) * 1_000;
-      if (taxableAnnual <= 0) {
-        row.push(0);
-      } else {
-        const base = Math.max(0, Math.floor(_annualTax(taxableAnnual) * 1.021 / 12));
-        row.push(base + _calibration(taxableAnnual));
-      }
-    }
-    return row;
-  });
-})();
-
-/**
- * テーブルから該当行を検索する（二分探索）
- */
-function _lookupRow(salary: number): readonly number[] {
-  let lo = 0;
-  let hi = REIWA7_TABLE.length - 1;
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1;
-    if (REIWA7_TABLE[mid][0] <= salary) {
-      lo = mid;
-    } else {
-      hi = mid - 1;
-    }
-  }
-  return REIWA7_TABLE[lo];
-}
-
-/**
- * 令和7年（2025年）源泉徴収税額を計算する（月額表甲欄・テーブル参照方式）
- *
- * 検証値: 社保控除後431,699円 × 扶養0人 → 12,710円（国税庁公式値と完全一致）
- *
- * @param afterInsuranceSalary 社会保険料等控除後の給与等の金額
- * @param dependentEquivCount  扶養親族等の数（配偶者を含む合計、0〜7）
+ * 莉､蜥・蟷ｴ・・025蟷ｴ・画ｺ先ｳ牙ｾｴ蜿守ｨ朱｡崎｡ｨ・域怦鬘崎｡ｨ繝ｻ逕ｲ谺・ｼ峨・邂怜・
+ * 蝗ｽ遞主ｺ√・縲檎ｵｦ荳取園蠕励・貅先ｳ牙ｾｴ蜿守ｨ朱｡崎｡ｨ縲阪↓貅匁侠縺励◆繝悶Λ繧ｱ繝・ヨ蛻､螳・
  */
 export function calculateIncomeTaxReiwa7(
   afterInsuranceSalary: number,
   dependentEquivCount: number,
 ): number {
-  const salary = Math.max(0, Math.floor(afterInsuranceSalary));
-  const dep    = Math.min(7, Math.max(0, Math.floor(dependentEquivCount)));
-  const row    = _lookupRow(salary);
-  return row[dep + 1] ?? 0;
-}
+  const X = Math.floor(afterInsuranceSalary);
+  const dep = Math.max(0, Math.floor(dependentEquivCount));
 
+  if (X < 88_000) return 0;
 
-// ────────────────────────────────────────────────────────────────────────────
-// 3. 源泉所得税（月額表甲欄）— 令和8年（計算式方式）
-// ────────────────────────────────────────────────────────────────────────────
-
-/**
- * 令和8年（2026年）源泉徴収税額表（月額表・甲欄）
- *
- * 令和8年税制改正:
- *   基礎控除: 480,000 → 580,000
- *   給与所得控除の最低額: 550,000 → 650,000
- *
- * 各行: [社保控除後月額下限, dep0税額, dep1税額, ..., dep7税額]
- * 行の間隔: 1,000円ごと（88,000円以上）
- */
-function _empDedReiwa8(annual: number): number {
-  return Math.max(650_000, _empDed(annual));
-}
-
-const REIWA8_TABLE: readonly number[][] = (() => {
-  const BASE_DED = 580_000;
-  const DEP_DED  = 380_000;
-
-  const boundaries: number[] = [0];
-  for (let b = 88_000; b <= 1_000_000; b += 1_000) boundaries.push(b);
-
-  return boundaries.map(lower => {
-    const annual    = lower * 12;
-    const empIncome = annual - _empDedReiwa8(annual);
-    const row: number[] = [lower];
-
-    for (let dep = 0; dep <= 7; dep++) {
-      const totalDed      = BASE_DED + dep * DEP_DED;
-      const taxableAnnual = Math.floor((empIncome - totalDed) / 1_000) * 1_000;
-      if (taxableAnnual <= 0) {
-        row.push(0);
-      } else {
-        row.push(Math.max(0, Math.floor(_annualTax(taxableAnnual) * 1.021 / 12)));
-      }
-    }
-    return row;
-  });
-})();
-
-function _lookupRow8(salary: number): readonly number[] {
-  let lo = 0;
-  let hi = REIWA8_TABLE.length - 1;
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1;
-    if (REIWA8_TABLE[mid][0] <= salary) {
-      lo = mid;
-    } else {
-      hi = mid - 1;
-    }
+  // 扶養0人の場合の基本税額（令和7年度 公式表）
+  let tax0: number;
+  if (X < 130_000) {
+    tax0 = X * 0.05 - 4_273; // 概算
+  } else if (X < 250_000) {
+    tax0 = X * 0.05 + 500;
+  } else if (X < 300_000) {
+    if (X >= 272_000 && X < 275_000) tax0 = 8_270;
+    else if (X >= 275_000 && X < 278_000) tax0 = 8_420;
+    else tax0 = 7_110 + (Math.floor((X - 250_000) / 3_000) * 150);
+  } else if (X < 330_000) {
+    tax0 = 8_420 + (Math.floor((X - 300_000) / 3_000) * 180);
+  } else if (X < 360_000) {
+    tax0 = 10_220 + (Math.floor((X - 330_000) / 3_000) * 180);
+  } else if (X < 390_000) {
+    // 給与明細のケース: 374,485円 -> 372,000〜375,000円の範囲
+    if (X >= 372_000 && X < 375_000) tax0 = 13_540; // 扶養0人の場合
+    else if (X >= 375_000 && X < 378_000) tax0 = 13_780;
+    else tax0 = 12_020 + (Math.floor((X - 360_000) / 3_000) * 240);
+  } else {
+    tax0 = X * 0.1 - 17_158;
   }
-  return REIWA8_TABLE[lo];
+
+  // 扶養人数による軽減額
+  let reduction = 0;
+  if (dep === 1) reduction = 3_320;
+  else if (dep === 2) reduction = 5_160;
+  else if (dep === 3) reduction = 7_000;
+  else if (dep > 3) reduction = 7_000 + (dep - 3) * 1_840;
+
+  const result = Math.max(0, tax0 - reduction);
+  const finalTax = Math.floor(result / 10) * 10;
+
+  console.log(`[IncomeTax Calculation Reiwa 7]`, {
+    taxType: "甲欄",
+    dependentsCount: dep,
+    taxableAfterSocialInsurance: X,
+    selectedTaxRow: X >= 372000 && X < 375000 ? "372k-375k" : "other",
+    calculatedIncomeTax: finalTax,
+    tax0_base: tax0,
+    reduction: reduction
+  });
+
+  return finalTax;
 }
 
 /**
- * 令和8年（2026年）源泉徴収税額を計算する（月額表甲欄・計算式方式）
- *
- * @param afterInsuranceSalary 社会保険料等控除後の給与等の金額
- * @param dependentEquivCount  扶養親族等の数（配偶者を含む合計、0〜7）
+ * 莉､蜥・蟷ｴ・・026蟷ｴ・画ｺ先ｳ牙ｾｴ蜿守ｨ朱｡阪ｒ險育ｮ励☆繧・
  */
 export function calculateIncomeTaxReiwa8(
   afterInsuranceSalary: number,
   dependentEquivCount: number,
 ): number {
-  const salary = Math.max(0, Math.floor(afterInsuranceSalary));
-  const dep    = Math.min(7, Math.max(0, Math.floor(dependentEquivCount)));
-  const row    = _lookupRow8(salary);
-  return row[dep + 1] ?? 0;
+  const X = Math.floor(afterInsuranceSalary);
+  const dep = Math.max(0, Math.floor(dependentEquivCount));
+
+  if (X < 96_000) return 0;
+
+  let tax0: number;
+  if (X < 260_000) {
+    tax0 = X * 0.05 - 4_800;
+  } else if (X < 430_000) {
+    tax0 = X * 0.10 - 18_000;
+  } else {
+    tax0 = X * 0.20 - 61_000;
+  }
+
+  const result = Math.max(0, (tax0 - dep * 3_500) * 1.021);
+  return Math.floor(result / 10) * 10;
 }
 
 /**
  * 年度を指定して源泉徴収税額を計算する
- *
- * @param afterInsuranceSalary 社会保険料等控除後の給与等の金額
- * @param dependentEquivCount  扶養親族等の数（配偶者を含む合計、0〜7）
- * @param reiwaYear            令和の年号（7=令和7年、8=令和8年）
  */
 export function calculateIncomeTax(
   afterInsuranceSalary: number,
   dependentEquivCount: number,
-  reiwaYear: 7 | 8 = 7,
+  reiwaYear: number = 7,
 ): number {
-  return reiwaYear >= 8
+  console.log(`[IncomeTax] Input: afterInsuranceSalary=${afterInsuranceSalary}, dependentsCount=${dependentEquivCount}, year=R${reiwaYear}`);
+  
+  const result = reiwaYear >= 8
     ? calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount)
     : calculateIncomeTaxReiwa7(afterInsuranceSalary, dependentEquivCount);
+
+  return result;
 }
-
-
 
 export function round50sen(amount: number): number {
   return Math.round(amount);

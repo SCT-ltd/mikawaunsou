@@ -9,7 +9,7 @@
  *  - 源泉所得税: 国税庁 令和8年分 給与所得の源泉徴収税額表（月額表）甲欄
  */
 
-import { calculateSocialInsurance, calculateIncomeTaxReiwa8 } from "./tax-tables-reiwa8";
+import { calculateSocialInsurance, calculateIncomeTax } from "./tax-tables-reiwa8";
 
 /**
  * 端数処理：50銭以下切り捨て、50銭超え切り上げ
@@ -69,6 +69,7 @@ export interface PayrollCalculationResult {
   grossSalary: number;
   socialInsurance: number;
   employmentInsurance: number;
+  childcareSupportContribution: number;
   incomeTax: number;
   residentTax: number;
   totalDeductions: number;
@@ -155,16 +156,17 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     pensionRate: pensionInsuranceRate,
   });
   const socialInsurance = ins.healthInsurance + (pensionApplied ? ins.pension : 0);
+  const childcareSupportContribution = ins.childcareSupportContribution;
 
   const employmentInsurance = roundJapanese(grossSalary * 0.0055);
   const nonTaxableAllowancesTotal = customAllowances.reduce((sum, a) => sum + (a.isTaxable === false ? a.amount : 0), 0);
   const afterInsuranceSalary = grossSalary - nonTaxableAllowancesTotal - socialInsurance - employmentInsurance;
 
-  const dependentEquivCount = dependentCount;
-  const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
+  const dependentEquivCount = dependentCount + (hasSpouse ? 1 : 0);
+  const incomeTax = calculateIncomeTax(afterInsuranceSalary, dependentEquivCount, (input as any).year ? (input as any).year - 2018 : 7);
 
   const totalDeductions = roundJapanese(
-    socialInsurance + employmentInsurance + incomeTax + residentTax + otherDeductionMonthly + customDeductionsTotal
+    socialInsurance + employmentInsurance + childcareSupportContribution + incomeTax + residentTax + otherDeductionMonthly + customDeductionsTotal
   );
 
   const netSalary = roundJapanese(grossSalary - totalDeductions);
@@ -181,6 +183,7 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     grossSalary,
     socialInsurance,
     employmentInsurance,
+    childcareSupportContribution,
     incomeTax,
     residentTax,
     totalDeductions,
