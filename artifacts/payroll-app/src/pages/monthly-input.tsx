@@ -836,7 +836,7 @@ export default function MonthlyInput() {
         {/* ── テーブル ── */}
         <div className="rounded-lg border bg-card overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
-            <table className="w-full text-xs border-collapse">
+            <table className="monthly-input-table w-full text-xs border-collapse">
               <thead>
                 {/* グループ行 */}
                 <tr className="border-b border-border">
