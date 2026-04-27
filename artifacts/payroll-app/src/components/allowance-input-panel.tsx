@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   useGetEmployeeAllowances,
   getGetEmployeeAllowancesQueryKey,
@@ -18,16 +18,201 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, X, ChevronUp, ChevronDown } from "lucide-react";
+import { Plus, X, GripVertical } from "lucide-react";
+import { Reorder, useDragControls } from "framer-motion";
 import { calculateIncomeTaxReiwa8, getInsuranceGrade, round50sen } from "@/lib/tax-tables-reiwa8";
 
 function roundJapanese(amount: number): number {
   return Math.floor(amount);
 }
 
+let uidCounter = 0;
+function newUid() {
+  return `row-${Date.now()}-${++uidCounter}`;
+}
+
 interface Props {
   employee: Employee;
   monthlyData?: { workDays: number; saturdayWorkDays: number; sundayWorkHours: number };
+}
+
+type AllowanceRow = { uid: string; defId: number | null; amount: number };
+type DeductionRow = { uid: string; defId: number | null; amount: number };
+
+/* ── ドラッグハンドル付き手当行 ── */
+function AllowanceReorderItem({
+  row,
+  allowanceDefinitions,
+  onChange,
+  onDelete,
+}: {
+  row: AllowanceRow;
+  allowanceDefinitions: { id: number; name: string; isTaxable: boolean }[] | undefined;
+  onChange: (uid: string, patch: Partial<AllowanceRow>) => void;
+  onDelete: (uid: string) => void;
+}) {
+  const controls = useDragControls();
+  const def = allowanceDefinitions?.find(d => d.id === row.defId);
+
+  return (
+    <Reorder.Item
+      key={row.uid}
+      value={row}
+      dragListener={false}
+      dragControls={controls}
+      className="list-none"
+      whileDrag={{ scale: 1.025, boxShadow: "0 10px 30px rgba(0,0,0,0.18)", zIndex: 50, borderRadius: "8px", backgroundColor: "hsl(var(--background))" }}
+      transition={{ duration: 0.15 }}
+    >
+      <div className="flex items-center gap-1.5 px-2 py-1.5 bg-background hover:bg-primary/5 transition-colors border-b border-border/50 group">
+        {/* ドラッグハンドル */}
+        <div
+          onPointerDown={(e) => controls.start(e)}
+          className="cursor-grab active:cursor-grabbing touch-none text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors shrink-0"
+          title="ドラッグして並び替え"
+        >
+          <GripVertical className="h-4 w-4" />
+        </div>
+
+        {/* 名称 */}
+        <div className="flex-1 min-w-0">
+          <Select
+            value={row.defId?.toString() ?? ""}
+            onValueChange={(v) => onChange(row.uid, { defId: parseInt(v, 10) })}
+          >
+            <SelectTrigger className="h-7 text-xs border border-border/60 bg-transparent focus:ring-1 focus:ring-primary px-2 w-full rounded">
+              <SelectValue placeholder="手当を選択…" />
+            </SelectTrigger>
+            <SelectContent>
+              {allowanceDefinitions?.map(d => (
+                <SelectItem key={d.id} value={d.id.toString()}>{d.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* 課税バッジ */}
+        <div className="w-[44px] text-center shrink-0">
+          {def && (
+            <span
+              className={`px-1 py-0.5 rounded border font-medium ${def.isTaxable ? "bg-red-50 text-red-700 border-red-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}
+              style={{ fontSize: "9px" }}
+            >
+              {def.isTaxable ? "課税" : "非課税"}
+            </span>
+          )}
+        </div>
+
+        {/* 金額 */}
+        <div className="w-24 shrink-0">
+          <Input
+            type="text"
+            inputMode="numeric"
+            className="h-7 w-full text-right border border-border/60 bg-transparent focus-visible:ring-1 focus-visible:ring-primary px-2 text-xs rounded"
+            value={row.amount || ""}
+            onChange={(e) => {
+              const raw = e.target.value.replace(/[^0-9]/g, "");
+              onChange(row.uid, { amount: raw === "" ? 0 : parseInt(raw, 10) });
+            }}
+            placeholder="0"
+          />
+        </div>
+
+        {/* 削除 */}
+        <button
+          type="button"
+          onClick={() => onDelete(row.uid)}
+          className="text-muted-foreground/40 hover:text-destructive transition-colors p-0.5 shrink-0"
+          title="削除"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </Reorder.Item>
+  );
+}
+
+/* ── ドラッグハンドル付き差引行 ── */
+function DeductionReorderItem({
+  row,
+  deductionDefinitions,
+  onChange,
+  onDelete,
+}: {
+  row: DeductionRow;
+  deductionDefinitions: { id: number; name: string }[] | undefined;
+  onChange: (uid: string, patch: Partial<DeductionRow>) => void;
+  onDelete: (uid: string) => void;
+}) {
+  const controls = useDragControls();
+
+  return (
+    <Reorder.Item
+      key={row.uid}
+      value={row}
+      dragListener={false}
+      dragControls={controls}
+      className="list-none"
+      whileDrag={{ scale: 1.025, boxShadow: "0 10px 30px rgba(0,0,0,0.18)", zIndex: 50, borderRadius: "8px", backgroundColor: "hsl(var(--background))" }}
+      transition={{ duration: 0.15 }}
+    >
+      <div className="flex items-center gap-1.5 px-2 py-1.5 bg-background hover:bg-primary/5 transition-colors border-b border-border/50 group">
+        {/* ドラッグハンドル */}
+        <div
+          onPointerDown={(e) => controls.start(e)}
+          className="cursor-grab active:cursor-grabbing touch-none text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors shrink-0"
+          title="ドラッグして並び替え"
+        >
+          <GripVertical className="h-4 w-4" />
+        </div>
+
+        {/* 名称 */}
+        <div className="flex-1 min-w-0">
+          <Select
+            value={row.defId?.toString() ?? ""}
+            onValueChange={(v) => onChange(row.uid, { defId: parseInt(v, 10) })}
+          >
+            <SelectTrigger className="h-7 text-xs border border-border/60 bg-transparent focus:ring-1 focus:ring-primary px-2 w-full rounded">
+              <SelectValue placeholder="差引を選択…" />
+            </SelectTrigger>
+            <SelectContent>
+              {deductionDefinitions?.map(d => (
+                <SelectItem key={d.id} value={d.id.toString()}>{d.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* 空 (課税列の幅合わせ) */}
+        <div className="w-[44px] shrink-0" />
+
+        {/* 金額 */}
+        <div className="w-24 shrink-0">
+          <Input
+            type="text"
+            inputMode="numeric"
+            className="h-7 w-full text-right border border-border/60 bg-transparent focus-visible:ring-1 focus-visible:ring-primary px-2 text-xs rounded"
+            value={row.amount || ""}
+            onChange={(e) => {
+              const raw = e.target.value.replace(/[^0-9]/g, "");
+              onChange(row.uid, { amount: raw === "" ? 0 : parseInt(raw, 10) });
+            }}
+            placeholder="0"
+          />
+        </div>
+
+        {/* 削除 */}
+        <button
+          type="button"
+          onClick={() => onDelete(row.uid)}
+          className="text-muted-foreground/40 hover:text-destructive transition-colors p-0.5 shrink-0"
+          title="削除"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </Reorder.Item>
+  );
 }
 
 export function AllowanceInputPanel({ employee, monthlyData }: Props) {
@@ -54,56 +239,25 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
   const updateDeductions = useUpdateEmployeeDeductions();
   const updateEmployee = useUpdateEmployee();
 
-  type AllowanceRow = { defId: number | null; amount: number };
-  const [rows, setRows] = useState<AllowanceRow[]>([{ defId: null, amount: 0 }]);
+  const [rows, setRows] = useState<AllowanceRow[]>([{ uid: newUid(), defId: null, amount: 0 }]);
   const [baseSalaryInput, setBaseSalaryInput] = useState<number>(0);
   const baseSalaryRef = useRef<HTMLInputElement>(null);
-  const rowAmountRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  type DeductionRow = { defId: number | null; amount: number };
-  const [deductionRows, setDeductionRows] = useState<DeductionRow[]>([{ defId: null, amount: 0 }]);
-  const deductionRowAmountRefs = useRef<(HTMLInputElement | null)[]>([]);
-
-  const moveRow = (idx: number, dir: -1 | 1) => {
-    setRows(prev => {
-      const next = [...prev];
-      const target = idx + dir;
-      if (target < 0 || target >= next.length) return prev;
-      [next[idx], next[target]] = [next[target], next[idx]];
-      return next;
-    });
-  };
-
-  const moveDeductionRow = (idx: number, dir: -1 | 1) => {
-    setDeductionRows(prev => {
-      const next = [...prev];
-      const target = idx + dir;
-      if (target < 0 || target >= next.length) return prev;
-      [next[idx], next[target]] = [next[target], next[idx]];
-      return next;
-    });
-  };
-
-  const focusRowAmount = (idx: number) => {
-    setTimeout(() => {
-      const el = rowAmountRefs.current[idx];
-      if (el) { el.focus(); el.select(); }
-    }, 30);
-  };
+  const [deductionRows, setDeductionRows] = useState<DeductionRow[]>([{ uid: newUid(), defId: null, amount: 0 }]);
 
   useEffect(() => {
     if (employeeAllowances && employeeAllowances.length > 0) {
-      setRows(employeeAllowances.map(a => ({ defId: a.allowanceDefinitionId, amount: a.amount })));
+      setRows(employeeAllowances.map(a => ({ uid: newUid(), defId: a.allowanceDefinitionId, amount: a.amount })));
     } else {
-      setRows([{ defId: null, amount: 0 }]);
+      setRows([{ uid: newUid(), defId: null, amount: 0 }]);
     }
   }, [employeeAllowances, employeeId]);
 
   useEffect(() => {
     if (employeeDeductions && employeeDeductions.length > 0) {
-      setDeductionRows(employeeDeductions.map(d => ({ defId: d.deductionDefinitionId, amount: d.amount })));
+      setDeductionRows(employeeDeductions.map(d => ({ uid: newUid(), defId: d.deductionDefinitionId, amount: d.amount })));
     } else {
-      setDeductionRows([{ defId: null, amount: 0 }]);
+      setDeductionRows([{ uid: newUid(), defId: null, amount: 0 }]);
     }
   }, [employeeDeductions, employeeId]);
 
@@ -118,10 +272,8 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
 
   useEffect(() => {
     if (isDaily && computedDailyBaseSalary !== null && (employee.baseSalary ?? 0) === 0) {
-      // 日給制かつ baseSalary 未設定の場合のみ自動計算値を使用
       setBaseSalaryInput(computedDailyBaseSalary);
     } else {
-      // 手動設定値（または固定給）を優先
       setBaseSalaryInput(employee.baseSalary ?? 0);
     }
   }, [employee.baseSalary, employeeId, isDaily, computedDailyBaseSalary]);
@@ -148,63 +300,55 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
     }
   };
 
+  const handleAllowanceChange = useCallback((uid: string, patch: Partial<AllowanceRow>) => {
+    setRows(prev => prev.map(r => r.uid === uid ? { ...r, ...patch } : r));
+  }, []);
+
+  const handleAllowanceDelete = useCallback((uid: string) => {
+    setRows(prev => prev.filter(r => r.uid !== uid));
+  }, []);
+
+  const handleDeductionChange = useCallback((uid: string, patch: Partial<DeductionRow>) => {
+    setDeductionRows(prev => prev.map(r => r.uid === uid ? { ...r, ...patch } : r));
+  }, []);
+
+  const handleDeductionDelete = useCallback((uid: string) => {
+    setDeductionRows(prev => prev.filter(r => r.uid !== uid));
+  }, []);
+
   const allowancesTotal = rows.reduce((s, r) => s + (r.amount || 0), 0);
   const grandTotal = baseSalaryInput + allowancesTotal;
-  const totalRows = rows.length + 3;
 
   const healthInsuranceRate = company?.healthInsuranceEmployeeRate ?? 0.0575;
   const careInsuranceRate = company?.careInsuranceRate ?? 0.0091;
   const pensionRate = company?.pensionEmployeeRate ?? 0.0915;
 
-  // ────────────────────────────────────────────────────────────────
-  // 標準報酬月額の決定
-  // standard_remuneration > 0: 設定値の等級テーブル検索
-  // standard_remuneration = 0: grandTotal の等級テーブル検索（自動判定）
-  // ★ grandTotal への直接フォールバックを廃止
-  // ────────────────────────────────────────────────────────────────
   const empSR = (employee as unknown as { standardRemuneration?: number }).standardRemuneration ?? 0;
   const gradeBase = empSR > 0 ? empSR : grandTotal;
   const { stdMonthly } = getInsuranceGrade(gradeBase);
 
-  // 健康保険：標準報酬月額等級 × 会社料率（手動設定廃止）
   const healthInsurance = round50sen(stdMonthly * healthInsuranceRate);
-
-  // 介護保険：40〜64歳対象者のみ追加（health_insurance_employee_rate が介護込みの場合は 0）
-  // health_insurance_employee_rate が 0.0575（5.75%）= 健保4.84%+介護0.91% の場合は既に含む
-  // care_insurance_applied フラグで判断し、料率が既に介護込みのときは重複加算しない
   const careInsurance = (employee.careInsuranceApplied === true && healthInsuranceRate < 0.055)
     ? round50sen(stdMonthly * careInsuranceRate)
     : 0;
-
-  // 厚生年金：標準報酬月額等級 × 会社料率、上限650万（手動設定廃止）
   const pensionInsurance = round50sen(Math.min(stdMonthly, 650_000) * pensionRate);
-
-  // 雇用保険：grossSalary × 0.55%（全社員統一・BW特別扱い廃止）
   const employmentInsurance = (employee.employmentInsuranceApplied !== false)
     ? round50sen(grandTotal * 0.0055)
     : 0;
 
   const totalInsurance = healthInsurance + careInsurance + pensionInsurance + employmentInsurance;
 
-  // ────────────────────────────────────────────────────────────────
-  // 源泉所得税（令和8年月額表甲欄）
-  // 社保控除後の金額 = grandTotal − totalInsurance
-  // 手動固定値優先ロジック廃止 → 常に動的計算
-  // ────────────────────────────────────────────────────────────────
   const afterInsuranceSalary = Math.max(0, grandTotal - totalInsurance);
   const dependentEquivCount = (employee.dependentCount ?? 0) + ((employee.hasSpouse ?? false) ? 1 : 0);
   const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
 
   const residentTax = employee.residentTax ?? 0;
-
   const customDeductionsTotal = deductionRows.reduce((s, r) => s + (r.amount || 0), 0);
   const otherDeductionFixed = (employee as unknown as { otherDeductionMonthly?: number }).otherDeductionMonthly ?? 0;
 
-  // 控除合計・差引: パネル入力値からリアルタイム計算（令和8年ベース）
   const totalDeductions = roundJapanese(totalInsurance + incomeTax + residentTax + customDeductionsTotal + otherDeductionFixed);
   const netSalary = roundJapanese(grandTotal - totalDeductions);
 
-  // BW社員フラグ（UI表示用のみ）
   const isBwEmployee = !!(employee as unknown as { useBluewingLogic?: boolean }).useBluewingLogic;
 
   const fmt = (v: number) => v > 0 ? v.toLocaleString("ja-JP") : v === 0 ? "0" : "—";
@@ -227,14 +371,14 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
             <tr className="bg-muted/60">
               <th className="border border-border py-1.5 text-center font-medium text-muted-foreground" style={{ width: "22px" }}></th>
               <th className="border border-border px-2 py-1.5 text-left font-medium text-muted-foreground">名称</th>
-              <th className="border border-border px-1 py-1.5 text-center font-medium text-muted-foreground" style={{ width: "42px" }}>課税</th>
+              <th className="border border-border px-1 py-1.5 text-center font-medium text-muted-foreground" style={{ width: "44px" }}>課税</th>
               <th className="border border-border px-2 py-1.5 text-right font-medium text-muted-foreground" style={{ width: "100px" }}>金額（円）</th>
             </tr>
           </thead>
           <tbody>
-            {/* 支給セクション */}
+            {/* ── 支給セクション ── */}
             <tr className="bg-background">
-              {sectionLabel("支　給", totalRows)}
+              {sectionLabel("支　給", 3)}
               <td className="border border-border px-2 py-1">
                 <div className="font-medium">基本給</div>
                 {isDaily && (
@@ -256,110 +400,41 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
                     setBaseSalaryInput(isNaN(v) ? 0 : v);
                   }}
                   onFocus={(e) => e.target.select()}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") { e.preventDefault(); focusRowAmount(0); }
-                  }}
                   placeholder="0"
                 />
               </td>
             </tr>
 
-            {rows.map((row, idx) => {
-              const def = allowanceDefinitions?.find(d => d.id === row.defId);
-              return (
-                <tr key={idx} className={idx % 2 === 0 ? "bg-background" : "bg-muted/20"}>
-                  <td className="border border-border px-1 py-0.5">
-                    <Select
-                      value={row.defId?.toString() ?? ""}
-                      onValueChange={(v) => setRows(prev => prev.map((r, i) => i === idx ? { ...r, defId: parseInt(v, 10) } : r))}
-                    >
-                      <SelectTrigger className="h-6 text-xs border-0 shadow-none bg-transparent focus:ring-1 focus:ring-primary px-1 w-full">
-                        <SelectValue placeholder="手当を選択…" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {allowanceDefinitions?.map(d => (
-                          <SelectItem key={d.id} value={d.id.toString()}>{d.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </td>
-                  <td className="border border-border px-1 py-1 text-center">
-                    {def ? (
-                      <span className={`px-1 py-0.5 rounded border ${def.isTaxable ? "bg-red-50 text-red-700 border-red-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`} style={{ fontSize: "10px" }}>
-                        {def.isTaxable ? "課税" : "非課税"}
-                      </span>
-                    ) : null}
-                  </td>
-                  <td className="border border-border px-1 py-0.5">
-                    <div className="flex items-center gap-0.5">
-                      <Input
-                        ref={(el) => { rowAmountRefs.current[idx] = el; }}
-                        type="text"
-                        inputMode="numeric"
-                        className="h-6 flex-1 text-right border-0 shadow-none bg-transparent focus-visible:ring-1 focus-visible:ring-primary px-1 text-xs"
-                        value={row.amount || ""}
-                        onChange={(e) => {
-                          const raw = e.target.value.replace(/[^0-9]/g, "");
-                          const v = raw === "" ? 0 : parseInt(raw, 10);
-                          setRows(prev => prev.map((r, i) => i === idx ? { ...r, amount: isNaN(v) ? 0 : v } : r));
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            if (idx + 1 < rows.length) {
-                              focusRowAmount(idx + 1);
-                            } else {
-                              setRows(prev => [...prev, { defId: null, amount: 0 }]);
-                              focusRowAmount(idx + 1);
-                            }
-                          }
-                        }}
-                        placeholder="0"
-                      />
-                      <div className="flex flex-col shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => moveRow(idx, -1)}
-                          disabled={idx === 0}
-                          className="text-muted-foreground hover:text-primary disabled:opacity-20 p-0"
-                          title="上へ移動"
-                        >
-                          <ChevronUp className="h-3 w-3" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => moveRow(idx, 1)}
-                          disabled={idx === rows.length - 1}
-                          className="text-muted-foreground hover:text-primary disabled:opacity-20 p-0"
-                          title="下へ移動"
-                        >
-                          <ChevronDown className="h-3 w-3" />
-                        </button>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setRows(prev => prev.filter((_, i) => i !== idx))}
-                        className="text-muted-foreground hover:text-destructive p-0.5 shrink-0"
-                        title="この行を削除"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-
-            <tr className="bg-muted/10">
-              <td colSpan={3} className="border border-border px-2 py-1">
-                <button
-                  type="button"
-                  onClick={() => setRows(prev => [...prev, { defId: null, amount: 0 }])}
-                  className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors"
+            {/* ── 手当ドラッグ列 (1行にまとめてReorderを内包) ── */}
+            <tr>
+              <td colSpan={3} className="border border-border p-0">
+                <Reorder.Group
+                  axis="y"
+                  values={rows}
+                  onReorder={setRows}
+                  className="divide-y divide-border/40"
+                  style={{ listStyle: "none", margin: 0, padding: 0 }}
                 >
-                  <Plus className="h-3 w-3" />
-                  行を追加
-                </button>
+                  {rows.map((row) => (
+                    <AllowanceReorderItem
+                      key={row.uid}
+                      row={row}
+                      allowanceDefinitions={allowanceDefinitions as { id: number; name: string; isTaxable: boolean }[] | undefined}
+                      onChange={handleAllowanceChange}
+                      onDelete={handleAllowanceDelete}
+                    />
+                  ))}
+                </Reorder.Group>
+                <div className="px-2 py-1.5 bg-muted/10">
+                  <button
+                    type="button"
+                    onClick={() => setRows(prev => [...prev, { uid: newUid(), defId: null, amount: 0 }])}
+                    className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors"
+                  >
+                    <Plus className="h-3 w-3" />
+                    行を追加
+                  </button>
+                </div>
               </td>
             </tr>
 
@@ -376,7 +451,7 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
               </td>
             </tr>
 
-            {/* 控除（社会保険料）セクション */}
+            {/* ── 控除（社会保険料）セクション ── */}
             <tr className="bg-background">
               {sectionLabel("控　除", 5)}
               <td className="border border-border px-2 py-1 text-muted-foreground">健康保険料</td>
@@ -404,9 +479,9 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
               <td className="border border-border px-2 py-1.5 text-right tabular-nums text-orange-800 font-bold">{fmt(totalInsurance)}</td>
             </tr>
 
-            {/* 差引金額セクション */}
+            {/* ── 差引セクション ── */}
             <tr className="bg-background">
-              {sectionLabel("差引金額", 2 + deductionRows.length + 1 + 2)}
+              {sectionLabel("差引金額", 5)}
               <td className="border border-border px-2 py-1 text-muted-foreground">所得税</td>
               <td className="border border-border" />
               <td className="border border-border px-2 py-1.5 text-right tabular-nums">{fmt(incomeTax)}</td>
@@ -417,99 +492,36 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
               <td className="border border-border px-2 py-1.5 text-right tabular-nums">{fmt(residentTax)}</td>
             </tr>
 
-            {deductionRows.map((row, idx) => (
-              <tr key={idx} className={idx % 2 === 0 ? "bg-background" : "bg-muted/10"}>
-                <td className="border border-border px-1 py-0.5">
-                  <Select
-                    value={row.defId?.toString() ?? ""}
-                    onValueChange={(v) => setDeductionRows(prev => prev.map((r, i) => i === idx ? { ...r, defId: parseInt(v, 10) } : r))}
-                  >
-                    <SelectTrigger className="h-6 text-xs border-0 shadow-none bg-transparent focus:ring-1 focus:ring-primary px-1 w-full">
-                      <SelectValue placeholder="差引を選択…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {deductionDefinitions?.map(d => (
-                        <SelectItem key={d.id} value={d.id.toString()}>{d.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </td>
-                <td className="border border-border" />
-                <td className="border border-border px-1 py-0.5">
-                  <div className="flex items-center gap-0.5">
-                    <Input
-                      ref={(el) => { deductionRowAmountRefs.current[idx] = el; }}
-                      type="text"
-                      inputMode="numeric"
-                      className="h-6 flex-1 text-right border-0 shadow-none bg-transparent focus-visible:ring-1 focus-visible:ring-primary px-1 text-xs"
-                      value={row.amount || ""}
-                      onChange={(e) => {
-                        const raw = e.target.value.replace(/[^0-9]/g, "");
-                        const v = raw === "" ? 0 : parseInt(raw, 10);
-                        setDeductionRows(prev => prev.map((r, i) => i === idx ? { ...r, amount: isNaN(v) ? 0 : v } : r));
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          const focusDeduction = (i: number) => {
-                            setTimeout(() => {
-                              const el = deductionRowAmountRefs.current[i];
-                              if (el) { el.focus(); el.select(); }
-                            }, 30);
-                          };
-                          if (idx + 1 < deductionRows.length) {
-                            focusDeduction(idx + 1);
-                          } else {
-                            setDeductionRows(prev => [...prev, { defId: null, amount: 0 }]);
-                            focusDeduction(idx + 1);
-                          }
-                        }
-                      }}
-                      placeholder="0"
-                    />
-                    <div className="flex flex-col shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => moveDeductionRow(idx, -1)}
-                        disabled={idx === 0}
-                        className="text-muted-foreground hover:text-primary disabled:opacity-20 p-0"
-                        title="上へ移動"
-                      >
-                        <ChevronUp className="h-3 w-3" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => moveDeductionRow(idx, 1)}
-                        disabled={idx === deductionRows.length - 1}
-                        className="text-muted-foreground hover:text-primary disabled:opacity-20 p-0"
-                        title="下へ移動"
-                      >
-                        <ChevronDown className="h-3 w-3" />
-                      </button>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setDeductionRows(prev => prev.filter((_, i) => i !== idx))}
-                      className="text-muted-foreground hover:text-destructive p-0.5 shrink-0"
-                      title="この行を削除"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-
-            <tr className="bg-muted/10">
-              <td colSpan={3} className="border border-border px-2 py-1">
-                <button
-                  type="button"
-                  onClick={() => setDeductionRows(prev => [...prev, { defId: null, amount: 0 }])}
-                  className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors"
+            {/* ── 差引ドラッグ列 ── */}
+            <tr>
+              <td colSpan={3} className="border border-border p-0">
+                <Reorder.Group
+                  axis="y"
+                  values={deductionRows}
+                  onReorder={setDeductionRows}
+                  className="divide-y divide-border/40"
+                  style={{ listStyle: "none", margin: 0, padding: 0 }}
                 >
-                  <Plus className="h-3 w-3" />
-                  行を追加
-                </button>
+                  {deductionRows.map((row) => (
+                    <DeductionReorderItem
+                      key={row.uid}
+                      row={row}
+                      deductionDefinitions={deductionDefinitions as { id: number; name: string }[] | undefined}
+                      onChange={handleDeductionChange}
+                      onDelete={handleDeductionDelete}
+                    />
+                  ))}
+                </Reorder.Group>
+                <div className="px-2 py-1.5 bg-muted/10">
+                  <button
+                    type="button"
+                    onClick={() => setDeductionRows(prev => [...prev, { uid: newUid(), defId: null, amount: 0 }])}
+                    className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors"
+                  >
+                    <Plus className="h-3 w-3" />
+                    行を追加
+                  </button>
+                </div>
               </td>
             </tr>
 
