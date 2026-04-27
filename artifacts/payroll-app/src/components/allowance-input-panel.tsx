@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, X } from "lucide-react";
+import { Plus, X, ChevronUp, ChevronDown } from "lucide-react";
 import { calculateIncomeTaxReiwa8, getInsuranceGrade, round50sen } from "@/lib/tax-tables-reiwa8";
 
 function roundJapanese(amount: number): number {
@@ -63,6 +63,26 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
   type DeductionRow = { defId: number | null; amount: number };
   const [deductionRows, setDeductionRows] = useState<DeductionRow[]>([{ defId: null, amount: 0 }]);
   const deductionRowAmountRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  const moveRow = (idx: number, dir: -1 | 1) => {
+    setRows(prev => {
+      const next = [...prev];
+      const target = idx + dir;
+      if (target < 0 || target >= next.length) return prev;
+      [next[idx], next[target]] = [next[target], next[idx]];
+      return next;
+    });
+  };
+
+  const moveDeductionRow = (idx: number, dir: -1 | 1) => {
+    setDeductionRows(prev => {
+      const next = [...prev];
+      const target = idx + dir;
+      if (target < 0 || target >= next.length) return prev;
+      [next[idx], next[target]] = [next[target], next[idx]];
+      return next;
+    });
+  };
 
   const focusRowAmount = (idx: number) => {
     setTimeout(() => {
@@ -296,6 +316,26 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
                         }}
                         placeholder="0"
                       />
+                      <div className="flex flex-col shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => moveRow(idx, -1)}
+                          disabled={idx === 0}
+                          className="text-muted-foreground hover:text-primary disabled:opacity-20 p-0"
+                          title="上へ移動"
+                        >
+                          <ChevronUp className="h-3 w-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveRow(idx, 1)}
+                          disabled={idx === rows.length - 1}
+                          className="text-muted-foreground hover:text-primary disabled:opacity-20 p-0"
+                          title="下へ移動"
+                        >
+                          <ChevronDown className="h-3 w-3" />
+                        </button>
+                      </div>
                       <button
                         type="button"
                         onClick={() => setRows(prev => prev.filter((_, i) => i !== idx))}
@@ -427,6 +467,26 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
                       }}
                       placeholder="0"
                     />
+                    <div className="flex flex-col shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => moveDeductionRow(idx, -1)}
+                        disabled={idx === 0}
+                        className="text-muted-foreground hover:text-primary disabled:opacity-20 p-0"
+                        title="上へ移動"
+                      >
+                        <ChevronUp className="h-3 w-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveDeductionRow(idx, 1)}
+                        disabled={idx === deductionRows.length - 1}
+                        className="text-muted-foreground hover:text-primary disabled:opacity-20 p-0"
+                        title="下へ移動"
+                      >
+                        <ChevronDown className="h-3 w-3" />
+                      </button>
+                    </div>
                     <button
                       type="button"
                       onClick={() => setDeductionRows(prev => prev.filter((_, i) => i !== idx))}
