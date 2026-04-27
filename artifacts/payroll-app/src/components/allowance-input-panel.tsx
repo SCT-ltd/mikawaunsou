@@ -245,16 +245,36 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
 
   const [deductionRows, setDeductionRows] = useState<DeductionRow[]>([{ uid: newUid(), defId: null, amount: 0 }]);
 
+  // 「このemployeeIdで手当を一度でも初期化したか」を追うフラグ
+  const allowancesInitializedRef = useRef<number | null>(null);
+  const deductionsInitializedRef = useRef<number | null>(null);
+
+  // employeeId が変わったらフラグをリセット（次に data が来たとき再初期化する）
   useEffect(() => {
-    if (employeeAllowances && employeeAllowances.length > 0) {
+    allowancesInitializedRef.current = null;
+    deductionsInitializedRef.current = null;
+    setRows([{ uid: newUid(), defId: null, amount: 0 }]);
+    setDeductionRows([{ uid: newUid(), defId: null, amount: 0 }]);
+  }, [employeeId]);
+
+  // 手当データ初回ロード時のみ rows を上書き（refetchOnWindowFocus 等の再取得では上書きしない）
+  useEffect(() => {
+    if (employeeAllowances === undefined) return;
+    if (allowancesInitializedRef.current === employeeId) return;
+    allowancesInitializedRef.current = employeeId;
+    if (employeeAllowances.length > 0) {
       setRows(employeeAllowances.map(a => ({ uid: newUid(), defId: a.allowanceDefinitionId, amount: a.amount })));
     } else {
       setRows([{ uid: newUid(), defId: null, amount: 0 }]);
     }
   }, [employeeAllowances, employeeId]);
 
+  // 差引データ初回ロード時のみ deductionRows を上書き
   useEffect(() => {
-    if (employeeDeductions && employeeDeductions.length > 0) {
+    if (employeeDeductions === undefined) return;
+    if (deductionsInitializedRef.current === employeeId) return;
+    deductionsInitializedRef.current = employeeId;
+    if (employeeDeductions.length > 0) {
       setDeductionRows(employeeDeductions.map(d => ({ uid: newUid(), defId: d.deductionDefinitionId, amount: d.amount })));
     } else {
       setDeductionRows([{ uid: newUid(), defId: null, amount: 0 }]);
@@ -293,27 +313,8 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
         updateEmployee.mutateAsync({ id: employeeId, data: { baseSalary: baseSalaryInput } }),
       ]);
 
-      // キャッシュを保存済みデータで直接更新（invalidate による即時 refetch を避ける）
-      queryClient.setQueryData(
-        getGetEmployeeAllowancesQueryKey(employeeId),
-        allowancePayload.map((item, idx) => ({
-          id: idx,
-          employeeId,
-          allowanceDefinitionId: item.allowanceDefinitionId,
-          amount: item.amount,
-          sortOrder: idx,
-        }))
-      );
-      queryClient.setQueryData(
-        getGetEmployeeDeductionsQueryKey(employeeId),
-        deductionPayload.map((item, idx) => ({
-          id: idx,
-          employeeId,
-          deductionDefinitionId: item.deductionDefinitionId,
-          amount: item.amount,
-          sortOrder: idx,
-        }))
-      );
+      // employees リストのキャッシュのみ無効化（基本給変更を反映するため）
+      // 手当・差引は次回マウント時に自動でリフレッシュされる
       queryClient.invalidateQueries({ queryKey: getListEmployeesQueryKey({ active: true }) });
 
       toast({ title: "保存しました", description: `${employee.name}の基本給・手当・差引を更新しました。` });
