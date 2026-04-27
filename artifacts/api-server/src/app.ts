@@ -1,8 +1,19 @@
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
+import session from "express-session";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
+
+// セッションデータの型拡張
+declare module "express-session" {
+  interface SessionData {
+    userId?: number;
+    username?: string;
+    displayName?: string;
+    role?: string;
+  }
+}
 
 const app: Express = express();
 
@@ -25,14 +36,29 @@ app.use(
     },
   }),
 );
-app.use(cors());
+
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// セッションミドルウェア
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET ?? "mikawa-dev-secret-change-in-prod",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      secure: false,
+      maxAge: 8 * 60 * 60 * 1000, // 8時間
+      sameSite: "lax",
+    },
+  }),
+);
 
 app.use("/api", router);
 
 // ── グローバルエラーハンドラー ────────────────────────────────────────────
-// Express v5 は async ルートの未捕捉エラーを自動的にここへ渡す
 app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
   const log = (req as unknown as { log?: { error: (obj: object, msg: string) => void } }).log ?? logger;
 
@@ -41,7 +67,6 @@ app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
 
   log.error({ err: { message, stack } }, "Unhandled error");
 
-  // DB 固有エラーのメッセージを日本語に変換
   let userMessage = "サーバーエラーが発生しました。しばらく経ってからもう一度お試しください。";
   if (message.includes("unique") || message.includes("duplicate")) {
     userMessage = "すでに同じデータが登録されています。";

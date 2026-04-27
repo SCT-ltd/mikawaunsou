@@ -63,6 +63,17 @@
 
 Supports: 弥生会計, freee, マネーフォワード, generic
 
+## Authentication
+
+- セッションベース認証（express-session）
+- パスワードハッシュ: `sha256(password + "mikawa_salt")`
+- セッション有効期間: 8時間
+- `system_users` テーブルでアカウント管理（ユーザー管理画面から追加・変更可能）
+- ユーザーが0件の場合、認証なしで全ルートにアクセス可能（初回セットアップ用バイパス）
+- フロントエンド: `AuthProvider` → `useAuth()` hook → ProtectedRoutes ラッパー
+- バックエンド: `artifacts/api-server/src/routes/auth.ts`（login/logout/me）
+- パスワードリセット: ユーザー管理画面（/users）から「編集」で変更可能
+
 ## Key Architecture Notes
 
 - OpenAPI spec: `lib/api-spec/openapi.yaml`
