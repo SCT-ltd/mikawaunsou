@@ -1,0 +1,127 @@
+給与明細詳細画面の「手当を選択...」で選択した手当項目が、保存後に再編集すると消えてしまう問題を修正してください。
+
+今回直したい現象：
+- 給与明細詳細画面で、支給欄の手当行を追加する
+- 「手当を選択...」から手当項目を選択する
+- 金額を入力して保存する
+- 再度その給与明細を編集すると、金額は残っていても、選択した手当名／手当IDが復元されず、プルダウンが「手当を選択...」に戻ってしまう
+
+重要：
+前回の修正では、useEffect が background refetch で rows を上書きしないようにしたと思います。
+しかし今回の問題は「保存済みデータを再編集時に rows へ復元する際、allowance_id / allowance_type_id / name などの選択値が正しく保持・再マッピングされていない」可能性が高いです。
+そのため、単に useEffect を止めるだけではなく、保存API・取得API・フロントの row state・Select の value を一気通貫で確認してください。
+
+修正方針：
+
+1. 手当行の state に、選択した手当のIDを必ず保持してください。
+例：
+{
+  id,
+  allowanceId または allowance_id,
+  name,
+  amount,
+  taxable,
+  sort_order
+}
+
+2. Selectコンポーネントの value は表示名ではなく、必ず手当マスターのIDにしてください。
+例：
+<Select value={row.allowanceId ?? ""} ...>
+
+3. Selectで手当を選択した時は、row に以下を保存してください。
+- allowanceId / allowance_id
+- name または allowance_name
+- taxable
+- 必要なら allowance_type / category
+- amount は既存値を維持
+
+例：
+onValueChange={(value) => {
+  const selected = allowanceMaster.find(a => String(a.id) === String(value));
+  updateRow(rowId, {
+    allowanceId: selected.id,
+    allowance_id: selected.id,
+    name: selected.name,
+    taxable: selected.taxable,
+  });
+}}
+
+4. 保存APIに送るpayloadにも、必ず手当IDを含めてください。
+金額や名称だけではなく、以下を含めること：
+- payroll_id
+- employee_id
+- allowance_id または allowance_type_id
+- name / allowance_name
+- amount
+- taxable
+- sort_order
+
+5. DBに保存するテーブルでも、手当IDのカラムが保存対象になっているか確認してください。
+もし現在 name と amount しか保存していない場合は、allowance_id または allowance_type_id を保存するようにしてください。
+既存スキーマに allowance_id があるならそれを使ってください。
+なければ既存構造に合わせて、手当マスターと紐づけられるIDカラムを追加・利用してください。
+
+6. 再編集時のGET APIで、保存済みの手当行に手当IDが返ってくるようにしてください。
+返却データには最低限以下が必要です。
+{
+  id,
+  allowance_id,
+  allowance_name または name,
+  amount,
+  taxable,
+  sort_order
+}
+
+7. フロントで取得した employeeAllowances / payrollAllowances を rows に初期化する時、以下のようにIDを正しく復元してください。
+- row.allowanceId = item.allowance_id または item.allowance_type_id
+- row.name = item.allowance_name または item.name
+- row.amount = item.amount
+- row.taxable = item.taxable
+- row.sort_order = item.sort_order
+
+8. allowanceMaster の取得タイミングによって、保存済みrowの allowanceId があるのに Select の選択肢がまだ読み込まれておらず表示が空になる可能性があります。
+そのため、Select の value は row.allowanceId を保持し続け、options の読み込み後に自動的に該当項目が表示されるようにしてください。
+options未読込だからといって row.allowanceId を空文字にリセットしないでください。
+
+9. useEffect の初期化条件は以下にしてください。
+- employeeId / payrollId が変わった時だけ初期化状態をリセット
+- 保存済み手当データが初回到着した時だけ rows を初期化
+- background refetch や refetchOnWindowFocus では、編集中の rows を上書きしない
+- ただし、再編集として画面を開き直した時は、サーバーから取得した保存済みデータを正しく rows に復元する
+
+10. 保存直後に invalidateQueries / refetch を使う場合でも、取得結果に allowance_id が含まれていれば選択状態が消えないようにしてください。
+もし保存直後に query cache を更新するなら、setQueryData にも allowance_id を含めてください。
+
+11. 類似の問題が控除欄にもある可能性があるので、控除の「控除を選択...」も同じ構造で確認してください。
+ただし今回の主目的は支給欄の手当リストが再編集時に消えないことです。
+
+確認してほしいファイル候補：
+- 給与明細詳細画面のコンポーネント
+- allowance input panel / deduction input panel
+- payroll detail edit form
+- payroll API route
+- employee allowances API
+- generated API client
+- DB insert/update処理
+- GET時のselect/join処理
+
+完了条件：
+1. 手当を選択して保存する
+2. 画面を閉じる、または別の従業員に切り替える
+3. 再度同じ給与明細を編集する
+4. 「手当を選択...」に戻らず、保存した手当名が選択済みで表示される
+5. 金額・課税区分・並び順も保持される
+6. background refetch や画面フォーカス復帰でも編集中の手当行が消えない
+7. 控除欄も同様に選択値が保持される
+
+特に確認してほしいこと：
+保存時のpayload、DB保存内容、GET APIのレスポンス、フロントのrows初期化、Selectのvalueの5箇所で、手当IDが途切れていないかをログ出力して確認してください。
+
+ログ例：
+console.log("SAVE allowance payload", payload);
+console.log("GET saved allowances", employeeAllowances);
+console.log("INIT allowance rows", initializedRows);
+console.log("SELECT row value", row.allowanceId);
+
+この問題は「表示上のSelectだけの問題」ではなく、保存済みデータから選択状態を復元するためのIDがどこかで欠落している可能性が高いです。
+手当名だけに依存せず、必ず手当マスターIDで保存・取得・復元するように修正してください。

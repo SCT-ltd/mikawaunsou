@@ -313,8 +313,37 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
         updateEmployee.mutateAsync({ id: employeeId, data: { baseSalary: baseSalaryInput } }),
       ]);
 
-      // employees リストのキャッシュのみ無効化（基本給変更を反映するため）
-      // 手当・差引は次回マウント時に自動でリフレッシュされる
+      // キャッシュを保存済みデータで直接更新（次回マウント時の初期化で正しく復元するため）
+      // allowanceDefinitionId を含む完全なデータでキャッシュを更新する
+      const savedAllowances = allowancePayload.map((item, idx) => {
+        const def = (allowanceDefinitions as { id: number; name: string; isTaxable: boolean }[] | undefined)
+          ?.find(d => d.id === item.allowanceDefinitionId);
+        return {
+          id: idx + 1,
+          employeeId,
+          allowanceDefinitionId: item.allowanceDefinitionId,
+          allowanceName: def?.name ?? "",
+          isTaxable: def?.isTaxable ?? true,
+          amount: item.amount,
+          sortOrder: idx,
+        };
+      });
+      queryClient.setQueryData(getGetEmployeeAllowancesQueryKey(employeeId), savedAllowances);
+
+      const savedDeductions = deductionPayload.map((item, idx) => {
+        const def = (deductionDefinitions as { id: number; name: string }[] | undefined)
+          ?.find(d => d.id === item.deductionDefinitionId);
+        return {
+          id: idx + 1,
+          employeeId,
+          deductionDefinitionId: item.deductionDefinitionId,
+          deductionName: def?.name ?? "",
+          amount: item.amount,
+          sortOrder: idx,
+        };
+      });
+      queryClient.setQueryData(getGetEmployeeDeductionsQueryKey(employeeId), savedDeductions);
+
       queryClient.invalidateQueries({ queryKey: getListEmployeesQueryKey({ active: true }) });
 
       toast({ title: "保存しました", description: `${employee.name}の基本給・手当・差引を更新しました。` });
