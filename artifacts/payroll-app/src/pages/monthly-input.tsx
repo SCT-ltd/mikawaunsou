@@ -744,8 +744,9 @@ export default function MonthlyInput() {
           await updateRecord.mutateAsync({ id: existingRecord.id, data: payload });
         } else {
           const hasData =
-            payload.workDays > 0 || payload.drivingDistanceKm > 0 ||
-            payload.deliveryCases > 0 || payload.bluewingSalesAmount > 0;
+            payload.workDays > 0 || payload.saturdayWorkDays > 0 ||
+            payload.drivingDistanceKm > 0 || payload.deliveryCases > 0 ||
+            payload.salesAmount > 0 || payload.bluewingSalesAmount > 0;
           if (hasData) {
             await createRecord.mutateAsync({ data: { employeeId: emp.id, year, month, ...payload } });
           }
