@@ -106,17 +106,19 @@ router.put("/employees/:id/allowances", async (req, res) => {
   const employeeId = parseInt(req.params.id, 10);
   const { allowances } = req.body as { allowances: Array<{ allowanceDefinitionId: number; amount: number }> };
 
-  await db.delete(employeeAllowancesTable).where(eq(employeeAllowancesTable.employeeId, employeeId));
-  if (allowances.length > 0) {
-    await db.insert(employeeAllowancesTable).values(
-      allowances.map((item, idx) => ({
-        employeeId,
-        allowanceDefinitionId: item.allowanceDefinitionId,
-        amount: item.amount,
-        sortOrder: idx,
-      }))
-    );
-  }
+  await db.transaction(async (tx) => {
+    await tx.delete(employeeAllowancesTable).where(eq(employeeAllowancesTable.employeeId, employeeId));
+    if (allowances.length > 0) {
+      await tx.insert(employeeAllowancesTable).values(
+        allowances.map((item, idx) => ({
+          employeeId,
+          allowanceDefinitionId: item.allowanceDefinitionId,
+          amount: item.amount,
+          sortOrder: idx,
+        }))
+      );
+    }
+  });
 
   const empAllowances = await db.select().from(employeeAllowancesTable)
     .where(eq(employeeAllowancesTable.employeeId, employeeId))
@@ -242,17 +244,19 @@ router.put("/employees/:id/deductions", async (req, res) => {
   const employeeId = parseInt(req.params.id, 10);
   const { deductions } = req.body as { deductions: Array<{ deductionDefinitionId: number; amount: number }> };
 
-  await db.delete(employeeDeductionsTable).where(eq(employeeDeductionsTable.employeeId, employeeId));
-  if (deductions.length > 0) {
-    await db.insert(employeeDeductionsTable).values(
-      deductions.map((item, idx) => ({
-        employeeId,
-        deductionDefinitionId: item.deductionDefinitionId,
-        amount: item.amount,
-        sortOrder: idx,
-      }))
-    );
-  }
+  await db.transaction(async (tx) => {
+    await tx.delete(employeeDeductionsTable).where(eq(employeeDeductionsTable.employeeId, employeeId));
+    if (deductions.length > 0) {
+      await tx.insert(employeeDeductionsTable).values(
+        deductions.map((item, idx) => ({
+          employeeId,
+          deductionDefinitionId: item.deductionDefinitionId,
+          amount: item.amount,
+          sortOrder: idx,
+        }))
+      );
+    }
+  });
 
   const empDeductions = await db.select().from(employeeDeductionsTable)
     .where(eq(employeeDeductionsTable.employeeId, employeeId))

@@ -245,17 +245,7 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
 
   const [deductionRows, setDeductionRows] = useState<DeductionRow[]>([{ uid: newUid(), defId: null, amount: 0 }]);
 
-  const skipAllowanceReset = useRef(false);
-  const skipDeductionReset = useRef(false);
-  const prevEmployeeIdRef = useRef<number | null>(null);
-
   useEffect(() => {
-    const employeeChanged = prevEmployeeIdRef.current !== employeeId;
-    prevEmployeeIdRef.current = employeeId;
-    if (!employeeChanged && skipAllowanceReset.current) {
-      skipAllowanceReset.current = false;
-      return;
-    }
     if (employeeAllowances && employeeAllowances.length > 0) {
       setRows(employeeAllowances.map(a => ({ uid: newUid(), defId: a.allowanceDefinitionId, amount: a.amount })));
     } else {
@@ -264,14 +254,11 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
   }, [employeeAllowances, employeeId]);
 
   useEffect(() => {
-    if (!skipDeductionReset.current) {
-      if (employeeDeductions && employeeDeductions.length > 0) {
-        setDeductionRows(employeeDeductions.map(d => ({ uid: newUid(), defId: d.deductionDefinitionId, amount: d.amount })));
-      } else {
-        setDeductionRows([{ uid: newUid(), defId: null, amount: 0 }]);
-      }
+    if (employeeDeductions && employeeDeductions.length > 0) {
+      setDeductionRows(employeeDeductions.map(d => ({ uid: newUid(), defId: d.deductionDefinitionId, amount: d.amount })));
+    } else {
+      setDeductionRows([{ uid: newUid(), defId: null, amount: 0 }]);
     }
-    skipDeductionReset.current = false;
   }, [employeeDeductions, employeeId]);
 
   const isDaily = employee.salaryType === "daily";
@@ -299,20 +286,38 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
       const deductionPayload = deductionRows
         .filter(r => r.defId !== null)
         .map(r => ({ deductionDefinitionId: r.defId!, amount: r.amount || 0 }));
-      skipAllowanceReset.current = true;
-      skipDeductionReset.current = true;
+
       await Promise.all([
         updateAllowances.mutateAsync({ id: employeeId, data: { allowances: allowancePayload } }),
         updateDeductions.mutateAsync({ id: employeeId, data: { deductions: deductionPayload } }),
         updateEmployee.mutateAsync({ id: employeeId, data: { baseSalary: baseSalaryInput } }),
       ]);
-      queryClient.invalidateQueries({ queryKey: getGetEmployeeAllowancesQueryKey(employeeId) });
-      queryClient.invalidateQueries({ queryKey: getGetEmployeeDeductionsQueryKey(employeeId) });
+
+      // キャッシュを保存済みデータで直接更新（invalidate による即時 refetch を避ける）
+      queryClient.setQueryData(
+        getGetEmployeeAllowancesQueryKey(employeeId),
+        allowancePayload.map((item, idx) => ({
+          id: idx,
+          employeeId,
+          allowanceDefinitionId: item.allowanceDefinitionId,
+          amount: item.amount,
+          sortOrder: idx,
+        }))
+      );
+      queryClient.setQueryData(
+        getGetEmployeeDeductionsQueryKey(employeeId),
+        deductionPayload.map((item, idx) => ({
+          id: idx,
+          employeeId,
+          deductionDefinitionId: item.deductionDefinitionId,
+          amount: item.amount,
+          sortOrder: idx,
+        }))
+      );
       queryClient.invalidateQueries({ queryKey: getListEmployeesQueryKey({ active: true }) });
+
       toast({ title: "保存しました", description: `${employee.name}の基本給・手当・差引を更新しました。` });
     } catch {
-      skipAllowanceReset.current = false;
-      skipDeductionReset.current = false;
       toast({ title: "エラー", description: "保存に失敗しました。", variant: "destructive" });
     }
   };
