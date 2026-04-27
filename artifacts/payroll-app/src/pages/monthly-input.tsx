@@ -978,7 +978,7 @@ export default function MonthlyInput() {
                     };
 
                     return (
-                      <tr key={emp.id} className={`border-b border-border/40 hover:bg-sky-50/20 transition-colors ${rowBg}`}>
+                      <tr key={emp.id} className={`border-b border-border/40 hover:bg-sky-50/20 transition-colors h-[56px] ${rowBg}`}>
                         {/* 社員名（sticky） */}
                         <td className="sticky left-0 z-10 border-r border-border/60 px-3 py-1.5 bg-inherit shadow-[1px_0_0_0_hsl(var(--border))]">
                           <button
@@ -1033,20 +1033,16 @@ export default function MonthlyInput() {
                         </td>
 
                         {/* 概算 */}
-                        <td className="px-2 py-1 border-x border-border/40 text-right">
+                        <td className="px-2 py-1 border-x border-border/40 text-right align-middle">
                           {gross > 0 ? (
-                            <div className="space-y-0.5">
-                              <div className="text-[10px] text-muted-foreground">総支給</div>
-                              <div className="font-semibold text-foreground tabular-nums">
-                                ¥{gross.toLocaleString("ja-JP")}
-                              </div>
-                              <div className="text-[10px] text-muted-foreground">手取概算</div>
-                              <div className={`font-bold tabular-nums text-[11px] ${net >= 0 ? "text-green-700" : "text-red-600"}`}>
-                                ¥{net.toLocaleString("ja-JP")}
-                              </div>
+                            <div className="leading-tight">
+                              <div className="text-[9px] text-muted-foreground">総支給</div>
+                              <div className="font-semibold text-foreground tabular-nums text-[11px]">¥{gross.toLocaleString("ja-JP")}</div>
+                              <div className="text-[9px] text-muted-foreground mt-0.5">手取概算</div>
+                              <div className={`font-bold tabular-nums text-[11px] ${net >= 0 ? "text-green-700" : "text-red-600"}`}>¥{net.toLocaleString("ja-JP")}</div>
                             </div>
                           ) : (
-                            <div className="text-center text-muted-foreground/40 text-[10px]">未入力</div>
+                            <div className="text-center text-muted-foreground/40 text-[10px]">—</div>
                           )}
                         </td>
 
