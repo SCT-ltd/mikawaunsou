@@ -64,7 +64,7 @@ function AllowanceReorderItem({
       whileDrag={{ scale: 1.025, boxShadow: "0 10px 30px rgba(0,0,0,0.18)", zIndex: 50, borderRadius: "8px", backgroundColor: "hsl(var(--background))" }}
       transition={{ duration: 0.15 }}
     >
-      <div className="flex items-center gap-1.5 px-2 py-1.5 bg-background hover:bg-primary/5 transition-colors border-b border-border/50 group">
+      <div className="flex items-center gap-1.5 px-2 py-1.5 bg-background hover:bg-primary/5 transition-colors border-b border-border/50 group select-none">
         {/* ドラッグハンドル */}
         <div
           onPointerDown={(e) => controls.start(e)}
@@ -156,7 +156,7 @@ function DeductionReorderItem({
       whileDrag={{ scale: 1.025, boxShadow: "0 10px 30px rgba(0,0,0,0.18)", zIndex: 50, borderRadius: "8px", backgroundColor: "hsl(var(--background))" }}
       transition={{ duration: 0.15 }}
     >
-      <div className="flex items-center gap-1.5 px-2 py-1.5 bg-background hover:bg-primary/5 transition-colors border-b border-border/50 group">
+      <div className="flex items-center gap-1.5 px-2 py-1.5 bg-background hover:bg-primary/5 transition-colors border-b border-border/50 group select-none">
         {/* ドラッグハンドル */}
         <div
           onPointerDown={(e) => controls.start(e)}
