@@ -891,13 +891,6 @@ export default function MonthlyInput() {
                   >
                     備考
                   </th>
-                  {/* 操作（2行分） */}
-                  <th
-                    rowSpan={2}
-                    className="bg-muted/40 border-l border-border px-2 py-1.5 text-center font-semibold text-muted-foreground align-bottom w-[60px]"
-                  >
-                    設定
-                  </th>
                 </tr>
 
                 {/* 個別カラム行 */}
@@ -943,7 +936,7 @@ export default function MonthlyInput() {
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={16} className="text-center py-10 text-muted-foreground">
+                    <td colSpan={15} className="text-center py-10 text-muted-foreground">
                       <div className="flex items-center justify-center gap-2">
                         <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                         読み込み中...
@@ -952,7 +945,7 @@ export default function MonthlyInput() {
                   </tr>
                 ) : !employees || employees.length === 0 ? (
                   <tr>
-                    <td colSpan={16} className="text-center py-10 text-muted-foreground">
+                    <td colSpan={15} className="text-center py-10 text-muted-foreground">
                       有効な社員が見つかりません
                     </td>
                   </tr>
@@ -1067,18 +1060,6 @@ export default function MonthlyInput() {
                           />
                         </td>
 
-                        {/* 操作（手当設定ボタン） */}
-                        <td className="p-1 border-l border-border/40 text-center">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 hover:bg-primary/10 hover:text-primary"
-                            title="手当・控除設定"
-                            onClick={() => setSidebarEmp(emp)}
-                          >
-                            <SlidersHorizontal className="h-3.5 w-3.5" />
-                          </Button>
-                        </td>
                       </tr>
                     );
                   })
