@@ -224,15 +224,15 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
     { activeOnly: true },
     { query: { staleTime: 0, refetchOnMount: true } }
   );
-  const { data: employeeAllowances } = useGetEmployeeAllowances(employeeId, {
-    query: { enabled: !!employeeId, queryKey: getGetEmployeeAllowancesQueryKey(employeeId), staleTime: 0, refetchOnMount: true }
+  const { data: employeeAllowances, isFetching: isAllowancesFetching, dataUpdatedAt: allowancesUpdatedAt } = useGetEmployeeAllowances(employeeId, {
+    query: { enabled: !!employeeId, queryKey: getGetEmployeeAllowancesQueryKey(employeeId), staleTime: 60_000, refetchOnMount: true }
   });
   const { data: deductionDefinitions } = useListDeductionDefinitions(
     { activeOnly: true },
-    { query: { staleTime: 0, refetchOnMount: true } }
+    { query: { staleTime: 60_000, refetchOnMount: true } }
   );
-  const { data: employeeDeductions } = useGetEmployeeDeductions(employeeId, {
-    query: { enabled: !!employeeId, queryKey: getGetEmployeeDeductionsQueryKey(employeeId), staleTime: 0, refetchOnMount: true }
+  const { data: employeeDeductions, isFetching: isDeductionsFetching, dataUpdatedAt: deductionsUpdatedAt } = useGetEmployeeDeductions(employeeId, {
+    query: { enabled: !!employeeId, queryKey: getGetEmployeeDeductionsQueryKey(employeeId), staleTime: 60_000, refetchOnMount: true }
   });
   const { data: company } = useGetCompany();
   const updateAllowances = useUpdateEmployeeAllowances();
@@ -258,28 +258,30 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
   }, [employeeId]);
 
   // 手当データ初回ロード時のみ rows を上書き（refetchOnWindowFocus 等の再取得では上書きしない）
+  // ただし「空配列 + fetching中」は stale な空キャッシュの可能性があるのでスキップ
   useEffect(() => {
     if (employeeAllowances === undefined) return;
     if (allowancesInitializedRef.current === employeeId) return;
+    if (employeeAllowances.length === 0 && isAllowancesFetching) return;
     allowancesInitializedRef.current = employeeId;
-    if (employeeAllowances.length > 0) {
-      setRows(employeeAllowances.map(a => ({ uid: newUid(), defId: a.allowanceDefinitionId, amount: a.amount })));
-    } else {
-      setRows([{ uid: newUid(), defId: null, amount: 0 }]);
-    }
-  }, [employeeAllowances, employeeId]);
+    const initialRows = employeeAllowances.length > 0
+      ? employeeAllowances.map(a => ({ uid: newUid(), defId: a.allowanceDefinitionId, amount: a.amount }))
+      : [{ uid: newUid(), defId: null, amount: 0 }];
+    setRows(initialRows);
+  }, [employeeAllowances, employeeId, isAllowancesFetching, allowancesUpdatedAt]);
 
   // 差引データ初回ロード時のみ deductionRows を上書き
   useEffect(() => {
     if (employeeDeductions === undefined) return;
     if (deductionsInitializedRef.current === employeeId) return;
+    if (employeeDeductions.length === 0 && isDeductionsFetching) return;
     deductionsInitializedRef.current = employeeId;
     if (employeeDeductions.length > 0) {
       setDeductionRows(employeeDeductions.map(d => ({ uid: newUid(), defId: d.deductionDefinitionId, amount: d.amount })));
     } else {
       setDeductionRows([{ uid: newUid(), defId: null, amount: 0 }]);
     }
-  }, [employeeDeductions, employeeId]);
+  }, [employeeDeductions, employeeId, isDeductionsFetching, deductionsUpdatedAt]);
 
   const isDaily = employee.salaryType === "daily";
   const computedDailyBaseSalary = isDaily && company
