@@ -16,6 +16,7 @@ import AttendancePage from "@/pages/attendance";
 import DriverPage from "@/pages/driver";
 import RealtimeMapPage from "@/pages/realtime-map";
 import MessagesPage from "@/pages/messages";
+import UserManagement from "@/pages/users";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -41,6 +42,7 @@ function Router() {
       <Route path="/realtime-map" component={RealtimeMapPage} />
       <Route path="/messages" component={MessagesPage} />
       <Route path="/driver/:id" component={DriverPage} />
+      <Route path="/users" component={UserManagement} />
       <Route component={NotFound} />
     </Switch>
   );

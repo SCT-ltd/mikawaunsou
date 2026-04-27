@@ -6,3 +6,4 @@ export * from "./journal_entries";
 export * from "./allowances";
 export * from "./attendance";
 export * from "./messages";
+export * from "./users";

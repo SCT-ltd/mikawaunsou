@@ -11,6 +11,7 @@ import {
   ClipboardCheck,
   MapPin,
   MessageSquare,
+  Users,
 } from "lucide-react";
 
 const navigation = [
@@ -22,6 +23,7 @@ const navigation = [
   { name: "給与明細", href: "/payroll", icon: FileText },
   { name: "カレンダー", href: "/calendar", icon: CalendarRange },
   { name: "マスター管理", href: "/allowances", icon: Tag },
+  { name: "ユーザー管理", href: "/users", icon: Users },
   { name: "会社設定", href: "/settings", icon: Settings },
 ];
 

@@ -10,6 +10,7 @@ import allowancesRouter from "./allowances";
 import attendanceRouter from "./attendance";
 import absencesRouter from "./absences";
 import messagesRouter from "./messages";
+import usersRouter from "./users";
 
 const router: IRouter = Router();
 
@@ -24,5 +25,6 @@ router.use(allowancesRouter);
 router.use(attendanceRouter);
 router.use(absencesRouter);
 router.use(messagesRouter);
+router.use(usersRouter);
 
 export default router;
