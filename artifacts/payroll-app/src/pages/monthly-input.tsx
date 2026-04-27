@@ -972,6 +972,7 @@ export default function MonthlyInput() {
                           className={`h-7 w-full text-right text-xs px-1 ${invalid ? "border-red-400 bg-red-50" : ""}`}
                           value={Number(val) || ""}
                           onChange={(e) => handleEditChange(emp.id, field, e.target.value)}
+                          onWheel={(e) => e.currentTarget.blur()}
                           placeholder="0"
                         />
                       );
@@ -1021,6 +1022,7 @@ export default function MonthlyInput() {
                               const pct = parseFloat(e.target.value) || 0;
                               handleEditChange(emp.id, "commissionRate", String(pct / 100));
                             }}
+                            onWheel={(e) => e.currentTarget.blur()}
                             placeholder="0"
                           />
                         </td>
