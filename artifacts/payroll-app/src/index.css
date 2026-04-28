@@ -137,6 +137,46 @@
   }
 }
 
+/* ── 印刷メディア設定 ───────────────────────────────────────────────────── */
+@media print {
+  /* A4縦・余白設定 */
+  @page {
+    size: A4 portrait;
+    margin: 14mm 12mm 12mm 12mm;
+  }
+
+  /* アプリ本体（Reactルート）を非表示 */
+  #root {
+    display: none !important;
+  }
+
+  /* 印刷専用ポータルのみ表示 */
+  #payroll-print-root {
+    display: block !important;
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    background: #fff !important;
+    z-index: 99999 !important;
+    overflow: visible !important;
+  }
+
+  /* ページ分割・改ページ禁止 */
+  #payroll-slip-print-content {
+    page-break-after: avoid;
+    page-break-before: avoid;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* スクロールバー・アウトライン除去 */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
 /* テーブル内数値入力のスピンボタンを非表示にしてスペースを確保 */
 .monthly-input-table input[type="number"]::-webkit-inner-spin-button,
 .monthly-input-table input[type="number"]::-webkit-outer-spin-button {

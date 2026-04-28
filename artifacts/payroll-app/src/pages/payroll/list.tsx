@@ -10,7 +10,9 @@ import {
   getGetPayrollQueryKey,
   useConfirmPayroll,
   useListMonthlyRecords,
+  useGetCompany,
 } from "@workspace/api-client-react";
+import { PayrollSlipPrint } from "@/components/payroll-slip-print";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -40,9 +42,11 @@ export default function PayrollList() {
 
   const { data: payrolls, isLoading: payrollsLoading } = useListPayrolls({ year, month });
   const { data: employees } = useListEmployees({ active: true });
+  const { data: company } = useGetCompany();
   const calculatePayroll = useCalculatePayroll();
 
   const [calculating, setCalculating] = useState(false);
+  const [printPayroll, setPrintPayroll] = useState<NonNullable<ReturnType<typeof useGetPayroll>["data"]> | null>(null);
   const [calcErrors, setCalcErrors] = useState<CalcError[]>([]);
   const [selectedPayrollId, setSelectedPayrollId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState("allowance");
@@ -108,7 +112,34 @@ export default function PayrollList() {
     }
   };
 
-  const handlePrint = () => window.print();
+  useEffect(() => {
+    const cleanup = () => {
+      console.log("[handlePrint] afterprint: cleaning up print portal.");
+      setPrintPayroll(null);
+    };
+    window.addEventListener("afterprint", cleanup);
+    return () => window.removeEventListener("afterprint", cleanup);
+  }, []);
+
+  const handlePrint = useCallback(() => {
+    if (!selectedPayroll) {
+      console.warn("[handlePrint] No payroll selected.");
+      return;
+    }
+    const existingPortals = document.querySelectorAll("#payroll-print-root");
+    console.log("[handlePrint] Existing print portals before set:", existingPortals.length);
+    setPrintPayroll(selectedPayroll);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const portals = document.querySelectorAll("#payroll-print-root");
+        console.log("[handlePrint] Print portals at print time:", portals.length);
+        if (portals.length !== 1) {
+          console.error("[handlePrint] Expected exactly 1 print portal, found:", portals.length);
+        }
+        window.print();
+      });
+    });
+  }, [selectedPayroll]);
 
   const handleCalculateAll = async () => {
     if (!employees) return;
@@ -611,6 +642,14 @@ export default function PayrollList() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ── 印刷専用ポータル（@media print で表示、通常時は非表示） ── */}
+      {printPayroll && (
+        <PayrollSlipPrint
+          payroll={printPayroll as Parameters<typeof PayrollSlipPrint>[0]["payroll"]}
+          companyName={company?.name ?? "三川運送株式会社"}
+        />
+      )}
     </AppLayout>
   );
 }
