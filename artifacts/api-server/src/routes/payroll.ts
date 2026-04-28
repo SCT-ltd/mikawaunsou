@@ -231,10 +231,16 @@ router.post("/payroll/calculate", async (req, res) => {
     const bwInsBase = (emp.standardRemuneration ?? 0) > 0 ? emp.standardRemuneration : grossSalary;
 
     const isBwTamagawa = emp.name?.includes("玉川");
+    // 非課税手当合計: 通勤手当 + isTaxable=false のカスタム手当（例: 交通費）
+    const bwNonTaxableCustom = customAllowances
+      .filter(a => !a.isTaxable)
+      .reduce((sum, a) => sum + a.amount, 0);
+    const bwNonTaxableAllowances = (emp.transportationAllowance ?? 0) + bwNonTaxableCustom;
+
     const bwIns = calculateInsuranceAndTax({
       standardRemuneration: bwInsBase,
       grossSalary,
-      nonTaxableAllowances: emp.transportationAllowance ?? 0,
+      nonTaxableAllowances: bwNonTaxableAllowances,
       dependentCount: emp.dependentCount ?? 0,
       hasSpouse: emp.hasSpouse ?? false,
       careInsuranceApplied: emp.careInsuranceApplied ?? false,
@@ -273,7 +279,8 @@ router.post("/payroll/calculate", async (req, res) => {
         })),
       ].filter(i => i.amount !== 0);
 
-      const nonTaxAllowancesTotal = emp.transportationAllowance ?? 0; // 現在BW路では transportationAllowance のみ非課税
+      // nonTaxAllowancesTotal: 通勤手当 + isTaxable=false カスタム手当（交通費等）
+      const nonTaxAllowancesTotal = bwNonTaxableAllowances;
       const taxableAllowancesTotal = fixedAllowancesTotal + bwResult.performanceAllowance - nonTaxAllowancesTotal;
 
       console.log("[TAMAGAWA_PAY_ITEMS_DETAIL]", {
@@ -305,9 +312,9 @@ router.post("/payroll/calculate", async (req, res) => {
         employeeEmploymentInsuranceApplied: emp.employmentInsuranceApplied,
       });
 
-      // 所得税差異分析
+      // 所得税差異分析（非課税手当を正しく反映）
       const taxableSalaryExcludingChildcareSupport = grossSalary
-        - (emp.transportationAllowance ?? 0)
+        - bwNonTaxableAllowances
         - bwIns.healthInsurance
         - bwIns.pension
         - bwIns.employmentInsurance;
@@ -323,7 +330,12 @@ router.post("/payroll/calculate", async (req, res) => {
 
       console.log("[TAMAGAWA_INCOME_TAX_DIFF_ANALYSIS]", {
         grossSalary,
-        nonTaxableAllowances: emp.transportationAllowance ?? 0,
+        nonTaxableAllowances: bwNonTaxableAllowances,
+        nonTaxableBreakdown: {
+          transportationAllowance: emp.transportationAllowance ?? 0,
+          nonTaxableCustomAllowances: bwNonTaxableCustom,
+          customNonTaxableItems: customAllowances.filter(a => !a.isTaxable).map(a => ({ name: a.allowanceName, amount: a.amount })),
+        },
         healthInsurance: bwIns.healthInsurance,
         pension: bwIns.pension,
         employmentInsurance: bwIns.employmentInsurance,
@@ -333,13 +345,13 @@ router.post("/payroll/calculate", async (req, res) => {
         dependentCount: emp.dependentCount ?? 0,
         hasSpouse: emp.hasSpouse ?? false,
         dependentEquivalentCount: depEquivCount,
-        incomeTaxTableYear: "R8（現在の設定）",
+        incomeTaxTableYear: "R8（令和8年分公式月額表・甲欄）",
         incomeTaxTableType: "甲欄",
-        matchedIncomeTaxBracket: bwIns.afterInsuranceSalary >= 88000
-          ? Math.floor(bwIns.afterInsuranceSalary / 1000) * 1000
-          : 0,
+        incomeTaxAfterInsuranceSalary: bwIns.afterInsuranceSalary,
+        matchedIncomeTaxBracket: bwIns.afterInsuranceSalary,
         calculatedIncomeTax: bwIns.incomeTax,
         expectedIncomeTax: 10220,
+        isMatch: bwIns.incomeTax === 10220,
       });
 
       console.log("[TAMAGAWA_INCOME_TAX_TABLE_COMPARISON]", {
