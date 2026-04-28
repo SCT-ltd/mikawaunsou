@@ -34,6 +34,7 @@ function newUid() {
 interface Props {
   employee: Employee;
   monthlyData?: { workDays: number; saturdayWorkDays: number; sundayWorkHours: number };
+  onDirtyChange?: (isDirty: boolean) => void;
 }
 
 type AllowanceRow = { uid: string; defId: number | null; amount: number };
@@ -215,7 +216,7 @@ function DeductionReorderItem({
   );
 }
 
-export function AllowanceInputPanel({ employee, monthlyData }: Props) {
+export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange }: Props) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const employeeId = employee.id;
@@ -249,13 +250,29 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
   const allowancesInitializedRef = useRef<number | null>(null);
   const deductionsInitializedRef = useRef<number | null>(null);
 
+  // 未保存変更追跡
+  const [isDirty, setIsDirty] = useState(false);
+  const onDirtyChangeRef = useRef(onDirtyChange);
+  useEffect(() => { onDirtyChangeRef.current = onDirtyChange; });
+
+  const markDirty = useCallback(() => {
+    setIsDirty(true);
+    onDirtyChangeRef.current?.(true);
+  }, []);
+
+  const markClean = useCallback(() => {
+    setIsDirty(false);
+    onDirtyChangeRef.current?.(false);
+  }, []);
+
   // employeeId が変わったらフラグをリセット（次に data が来たとき再初期化する）
   useEffect(() => {
     allowancesInitializedRef.current = null;
     deductionsInitializedRef.current = null;
     setRows([{ uid: newUid(), defId: null, amount: 0 }]);
     setDeductionRows([{ uid: newUid(), defId: null, amount: 0 }]);
-  }, [employeeId]);
+    markClean();
+  }, [employeeId, markClean]);
 
   // 手当データ初回ロード時のみ rows を上書き（refetchOnWindowFocus 等の再取得では上書きしない）
   // ただし「空配列 + fetching中」は stale な空キャッシュの可能性があるのでスキップ
@@ -268,7 +285,8 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
       ? employeeAllowances.map(a => ({ uid: newUid(), defId: a.allowanceDefinitionId, amount: a.amount }))
       : [{ uid: newUid(), defId: null, amount: 0 }];
     setRows(initialRows);
-  }, [employeeAllowances, employeeId, isAllowancesFetching, allowancesUpdatedAt]);
+    markClean();
+  }, [employeeAllowances, employeeId, isAllowancesFetching, allowancesUpdatedAt, markClean]);
 
   // 差引データ初回ロード時のみ deductionRows を上書き
   useEffect(() => {
@@ -281,7 +299,8 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
     } else {
       setDeductionRows([{ uid: newUid(), defId: null, amount: 0 }]);
     }
-  }, [employeeDeductions, employeeId, isDeductionsFetching, deductionsUpdatedAt]);
+    markClean();
+  }, [employeeDeductions, employeeId, isDeductionsFetching, deductionsUpdatedAt, markClean]);
 
   const isDaily = employee.salaryType === "daily";
   const computedDailyBaseSalary = isDaily && company
@@ -309,11 +328,6 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
       const deductionPayload = deductionRows
         .filter(r => r.defId !== null)
         .map(r => ({ deductionDefinitionId: r.defId!, amount: r.amount || 0 }));
-
-      console.log("[FRONT_SAVE] rows (before filter):", JSON.stringify(rows));
-      console.log("[FRONT_SAVE_ALLOWANCES_PAYLOAD]:", JSON.stringify(allowancePayload));
-      console.log("[FRONT_SAVE_DEDUCTIONS_PAYLOAD]:", JSON.stringify(deductionPayload));
-      console.log("[FRONT_SAVE] employeeId:", employeeId);
 
       await Promise.all([
         updateAllowances.mutateAsync({ id: employeeId, data: { allowances: allowancePayload } }),
@@ -355,6 +369,7 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
       queryClient.invalidateQueries({ queryKey: getListEmployeesQueryKey({ active: true }) });
 
       toast({ title: "保存しました", description: `${employee.name}の基本給・手当・差引を更新しました。` });
+      markClean();
     } catch {
       toast({ title: "エラー", description: "保存に失敗しました。", variant: "destructive" });
     }
@@ -362,19 +377,23 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
 
   const handleAllowanceChange = useCallback((uid: string, patch: Partial<AllowanceRow>) => {
     setRows(prev => prev.map(r => r.uid === uid ? { ...r, ...patch } : r));
-  }, []);
+    markDirty();
+  }, [markDirty]);
 
   const handleAllowanceDelete = useCallback((uid: string) => {
     setRows(prev => prev.filter(r => r.uid !== uid));
-  }, []);
+    markDirty();
+  }, [markDirty]);
 
   const handleDeductionChange = useCallback((uid: string, patch: Partial<DeductionRow>) => {
     setDeductionRows(prev => prev.map(r => r.uid === uid ? { ...r, ...patch } : r));
-  }, []);
+    markDirty();
+  }, [markDirty]);
 
   const handleDeductionDelete = useCallback((uid: string) => {
     setDeductionRows(prev => prev.filter(r => r.uid !== uid));
-  }, []);
+    markDirty();
+  }, [markDirty]);
 
   const allowancesTotal = rows.reduce((s, r) => s + (r.amount || 0), 0);
   const grandTotal = baseSalaryInput + allowancesTotal;
@@ -458,6 +477,7 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
                   onChange={(e) => {
                     const v = e.target.value === "" ? 0 : parseInt(e.target.value, 10);
                     setBaseSalaryInput(isNaN(v) ? 0 : v);
+                    markDirty();
                   }}
                   onFocus={(e) => e.target.select()}
                   placeholder="0"
@@ -471,7 +491,7 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
                 <Reorder.Group
                   axis="y"
                   values={rows}
-                  onReorder={setRows}
+                  onReorder={(newRows) => { setRows(newRows); markDirty(); }}
                   className="divide-y divide-border/40"
                   style={{ listStyle: "none", margin: 0, padding: 0 }}
                 >
@@ -488,7 +508,7 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
                 <div className="px-2 py-1.5 bg-muted/10">
                   <button
                     type="button"
-                    onClick={() => setRows(prev => [...prev, { uid: newUid(), defId: null, amount: 0 }])}
+                    onClick={() => { setRows(prev => [...prev, { uid: newUid(), defId: null, amount: 0 }]); markDirty(); }}
                     className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors"
                   >
                     <Plus className="h-3 w-3" />
@@ -558,7 +578,7 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
                 <Reorder.Group
                   axis="y"
                   values={deductionRows}
-                  onReorder={setDeductionRows}
+                  onReorder={(newRows) => { setDeductionRows(newRows); markDirty(); }}
                   className="divide-y divide-border/40"
                   style={{ listStyle: "none", margin: 0, padding: 0 }}
                 >
@@ -575,7 +595,7 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
                 <div className="px-2 py-1.5 bg-muted/10">
                   <button
                     type="button"
-                    onClick={() => setDeductionRows(prev => [...prev, { uid: newUid(), defId: null, amount: 0 }])}
+                    onClick={() => { setDeductionRows(prev => [...prev, { uid: newUid(), defId: null, amount: 0 }]); markDirty(); }}
                     className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors"
                   >
                     <Plus className="h-3 w-3" />

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Link } from "wouter";
 import { AppLayout } from "@/components/layout/app-layout";
 import { 
@@ -16,6 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AllowanceInputPanel } from "@/components/allowance-input-panel";
 import { useToast } from "@/hooks/use-toast";
@@ -45,6 +46,47 @@ export default function PayrollList() {
   const [calcErrors, setCalcErrors] = useState<CalcError[]>([]);
   const [selectedPayrollId, setSelectedPayrollId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState("allowance");
+
+  // 未保存変更ガード
+  const [isDirty, setIsDirty] = useState(false);
+  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
+  const pendingActionRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
+
+  const requestAction = useCallback((action: () => void) => {
+    if (isDirty) {
+      pendingActionRef.current = action;
+      setShowUnsavedDialog(true);
+    } else {
+      action();
+    }
+  }, [isDirty]);
+
+  const tryCloseSheet = useCallback(() => {
+    requestAction(() => {
+      setSelectedPayrollId(null);
+      setIsDirty(false);
+    });
+  }, [requestAction]);
+
+  const trySelectPayroll = useCallback((id: number) => {
+    if (selectedPayrollId === id) return;
+    requestAction(() => {
+      setSelectedPayrollId(id);
+      setActiveTab("allowance");
+      setIsDirty(false);
+    });
+  }, [requestAction, selectedPayrollId]);
 
   const { data: monthlyRecords } = useListMonthlyRecords({ year, month });
 
@@ -248,7 +290,7 @@ export default function PayrollList() {
                   <TableRow
                     key={payroll.id}
                     className={`cursor-pointer transition-colors ${selectedPayrollId === payroll.id ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-muted/50"}`}
-                    onClick={() => { setSelectedPayrollId(payroll.id); setActiveTab("allowance"); }}
+                    onClick={() => trySelectPayroll(payroll.id)}
                   >
                     <TableCell className="font-medium">{payroll.employeeCode}</TableCell>
                     <TableCell>{payroll.employeeName}</TableCell>
@@ -299,7 +341,7 @@ export default function PayrollList() {
       </div>
 
       {/* 給与明細詳細シート */}
-      <Sheet open={!!selectedPayrollId} onOpenChange={(open) => { if (!open) setSelectedPayrollId(null); }}>
+      <Sheet open={!!selectedPayrollId} onOpenChange={(open) => { if (!open) tryCloseSheet(); }}>
         <SheetContent className="w-full sm:max-w-2xl overflow-y-auto print:fixed print:inset-0 print:max-w-none">
           <SheetHeader className="print:hidden">
             <div className="flex items-center justify-between">
@@ -532,6 +574,7 @@ export default function PayrollList() {
                         sundayWorkHours: (rec as { sundayWorkHours?: number } | undefined)?.sundayWorkHours ?? 0,
                       };
                     })()}
+                    onDirtyChange={setIsDirty}
                   />
                 ) : (
                   <div className="py-12 text-center text-muted-foreground">社員データが見つかりません</div>
@@ -541,6 +584,32 @@ export default function PayrollList() {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* 未保存変更確認ダイアログ */}
+      <AlertDialog open={showUnsavedDialog} onOpenChange={setShowUnsavedDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>保存していません</AlertDialogTitle>
+            <AlertDialogDescription>
+              変更が保存されていません。このまま移動すると変更内容が失われます。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>キャンセル</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90"
+              onClick={() => {
+                const action = pendingActionRef.current;
+                pendingActionRef.current = null;
+                setShowUnsavedDialog(false);
+                action?.();
+              }}
+            >
+              保存せずに移動
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }
