@@ -208,11 +208,11 @@ const EVENT_COLORS: Record<EventType, string> = {
   break_start: "bg-amber-50 border-amber-200 text-amber-800",
   break_end: "bg-sky-50 border-sky-200 text-sky-800",
 };
-const STATUS_STYLE: Record<Status, { badge: string; dot: string; rowBg: string }> = {
-  "未出勤": { badge: "bg-slate-100 text-slate-500 border-slate-200", dot: "bg-slate-300", rowBg: "" },
-  "出勤中": { badge: "bg-green-100 text-green-700 border-green-200", dot: "bg-green-500", rowBg: "" },
-  "休憩中": { badge: "bg-amber-100 text-amber-700 border-amber-200", dot: "bg-amber-400", rowBg: "bg-amber-50/50" },
-  "退勤済": { badge: "bg-blue-50 text-blue-600 border-blue-100", dot: "bg-blue-400", rowBg: "bg-slate-50/70" },
+const STATUS_STYLE: Record<Status, { badge: string; dot: string; rowBg: string; glow: string }> = {
+  "未出勤": { badge: "bg-slate-100 text-slate-500 border-slate-200", dot: "bg-slate-300", rowBg: "", glow: "" },
+  "出勤中": { badge: "bg-emerald-100 text-emerald-700 border-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.25)]", dot: "bg-emerald-500", rowBg: "", glow: "shadow-emerald-100" },
+  "休憩中": { badge: "bg-amber-100 text-amber-700 border-amber-300", dot: "bg-amber-400", rowBg: "bg-amber-50/40", glow: "" },
+  "退勤済": { badge: "bg-sky-50 text-sky-600 border-sky-200", dot: "bg-sky-400", rowBg: "bg-slate-50/50", glow: "" },
 };
 
 /* ── サブコンポーネント ──────────────────── */
@@ -221,15 +221,25 @@ function StatusDot({ status }: { status: Status }) {
   return (
     <span className="inline-flex items-center gap-1.5">
       <span className={`w-2 h-2 rounded-full ${s.dot} ${status === "出勤中" ? "animate-pulse" : ""}`} />
-      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${s.badge}`}>{status}</span>
+      <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border tracking-wide ${s.badge}`}>{status}</span>
     </span>
   );
 }
 
+const AVATAR_GRADIENTS = [
+  "from-violet-500 to-purple-700",
+  "from-blue-500 to-indigo-700",
+  "from-emerald-500 to-teal-700",
+  "from-rose-500 to-pink-700",
+  "from-orange-500 to-amber-700",
+  "from-cyan-500 to-blue-700",
+];
+
 function Avatar({ name, size = "md" }: { name: string; size?: "sm" | "md" | "lg" }) {
-  const sz = { sm: "w-7 h-7 text-sm", md: "w-9 h-9 text-sm", lg: "w-12 h-12 text-base" }[size];
+  const sz = { sm: "w-7 h-7 text-xs", md: "w-10 h-10 text-sm", lg: "w-13 h-13 text-base" }[size];
+  const grad = AVATAR_GRADIENTS[(name.charCodeAt(0) ?? 0) % AVATAR_GRADIENTS.length];
   return (
-    <div className={`${sz} rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center shrink-0`}>
+    <div className={`${sz} rounded-full bg-gradient-to-br ${grad} text-white font-bold flex items-center justify-center shrink-0 shadow-md`}>
       {name[0]}
     </div>
   );
@@ -499,31 +509,41 @@ export default function AttendancePage() {
 
         {/* ── メインエリア ─────────────────────────────── */}
         <div className={`flex-1 p-4 md:p-6 lg:p-8 min-w-0 transition-all duration-300 ${panelOpen ? "lg:mr-[420px]" : ""}`}>
-          <div className="space-y-5 max-w-5xl">
+          <div className="space-y-6 max-w-5xl">
 
             {/* ヘッダー */}
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-2xl font-bold tracking-tight">勤怠ダッシュボード</h2>
-                <p className="text-xs text-muted-foreground mt-0.5">
+                <div className="flex items-center gap-2.5 mb-1">
+                  <div className="w-1 h-7 rounded-full bg-gradient-to-b from-indigo-500 to-violet-600" />
+                  <h2 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
+                    勤怠ダッシュボード
+                  </h2>
+                  {isToday && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200 tracking-wider uppercase">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />LIVE
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground pl-3.5">
                   {isToday
-                    ? `最終更新: ${lastUpdated.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}　社員をクリックすると詳細を表示`
-                    : "過去の記録（読み取り専用）　社員をクリックすると詳細を表示"}
+                    ? `最終更新: ${lastUpdated.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} ・ 社員行をクリックで詳細表示`
+                    : "過去の記録（読み取り専用）・ 社員行をクリックで詳細表示"}
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 {/* 日付ナビゲーション */}
-                <div className="flex items-center gap-1 rounded-lg border bg-background shadow-sm">
+                <div className="flex items-center rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                   <button
                     onClick={() => setSelectedDate(d => addDays(d, -1))}
-                    className="p-1.5 hover:bg-muted rounded-l-lg transition-colors"
+                    className="px-2.5 py-2 hover:bg-slate-50 text-slate-500 hover:text-slate-800 transition-colors border-r border-slate-100"
                     title="前の日"
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </button>
                   <button
                     type="button"
-                    className="px-3 py-1.5 text-sm font-semibold hover:bg-muted transition-colors min-w-[180px] text-center relative"
+                    className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors min-w-[180px] text-center relative"
                   >
                     {formatDateJP(selectedDate)}
                     <input
@@ -538,98 +558,140 @@ export default function AttendancePage() {
                   <button
                     onClick={() => setSelectedDate(d => addDays(d, 1))}
                     disabled={isToday}
-                    className="p-1.5 hover:bg-muted rounded-r-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="px-2.5 py-2 hover:bg-slate-50 text-slate-500 hover:text-slate-800 transition-colors border-l border-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
                     title="次の日"
                   >
                     <ChevronRight className="h-4 w-4" />
                   </button>
                 </div>
                 {!isToday && (
-                  <Button variant="outline" size="sm" onClick={() => setSelectedDate(todayJST())} className="text-xs">
+                  <Button variant="outline" size="sm" onClick={() => setSelectedDate(todayJST())} className="text-xs rounded-lg">
                     今日
                   </Button>
                 )}
-                <Button variant="outline" size="sm" onClick={() => fetchData(selectedDate)} className="gap-1.5">
+                <Button variant="outline" size="sm" onClick={() => fetchData(selectedDate)} className="gap-1.5 rounded-lg border-slate-200">
                   <RefreshCw className="h-3.5 w-3.5" />更新
                 </Button>
               </div>
             </div>
 
             {/* サマリーカード */}
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-4 gap-4">
               {[
-                { label: "出勤中", value: counts.working, cls: "border-green-200 bg-green-50 text-green-700" },
-                { label: "休憩中", value: counts.breaking, cls: "border-amber-200 bg-amber-50 text-amber-700" },
-                { label: "未出勤", value: counts.absent, cls: "border-slate-200 bg-slate-50 text-slate-600" },
-                { label: "退勤済", value: counts.left, cls: "border-blue-100 bg-blue-50 text-blue-600" },
+                {
+                  label: "出勤中", value: counts.working,
+                  gradient: "from-emerald-500 to-teal-600",
+                  bg: "bg-gradient-to-br from-emerald-50 to-teal-50/50",
+                  border: "border-emerald-200/80",
+                  text: "text-emerald-700",
+                  num: "text-emerald-800",
+                  glow: "shadow-emerald-100",
+                },
+                {
+                  label: "休憩中", value: counts.breaking,
+                  gradient: "from-amber-400 to-orange-500",
+                  bg: "bg-gradient-to-br from-amber-50 to-orange-50/50",
+                  border: "border-amber-200/80",
+                  text: "text-amber-700",
+                  num: "text-amber-800",
+                  glow: "shadow-amber-100",
+                },
+                {
+                  label: "未出勤", value: counts.absent,
+                  gradient: "from-slate-400 to-slate-500",
+                  bg: "bg-gradient-to-br from-slate-50 to-slate-100/50",
+                  border: "border-slate-200",
+                  text: "text-slate-500",
+                  num: "text-slate-700",
+                  glow: "",
+                },
+                {
+                  label: "退勤済", value: counts.left,
+                  gradient: "from-sky-400 to-blue-600",
+                  bg: "bg-gradient-to-br from-sky-50 to-blue-50/50",
+                  border: "border-sky-200/80",
+                  text: "text-sky-600",
+                  num: "text-sky-800",
+                  glow: "shadow-sky-100",
+                },
               ].map(c => (
-                <div key={c.label} className={`rounded-xl border p-3 text-center ${c.cls}`}>
-                  <p className="text-2xl font-bold tabular-nums">{c.value}</p>
-                  <p className="text-xs font-medium mt-0.5">{c.label}</p>
+                <div key={c.label} className={`rounded-2xl border ${c.border} ${c.bg} p-4 shadow-sm ${c.glow} relative overflow-hidden`}>
+                  <div className={`absolute -top-4 -right-4 w-16 h-16 rounded-full bg-gradient-to-br ${c.gradient} opacity-10`} />
+                  <p className={`text-3xl font-black tabular-nums ${c.num} leading-none mb-1`}>{c.value}</p>
+                  <p className={`text-xs font-semibold tracking-wide ${c.text}`}>{c.label}</p>
                 </div>
               ))}
             </div>
 
             {/* 社員一覧 */}
             {loading ? (
-              <div className="py-16 text-center">
-                <div className="w-9 h-9 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+              <div className="py-20 text-center">
+                <div className="w-10 h-10 border-[3px] border-indigo-200 border-t-indigo-500 rounded-full animate-spin mx-auto mb-4" />
                 <p className="text-sm text-muted-foreground">読み込み中...</p>
               </div>
             ) : (
-              <div className="rounded-xl border overflow-hidden shadow-sm">
+              <div className="rounded-2xl border border-slate-200 overflow-hidden shadow-sm bg-white">
                 <table className="w-full text-sm">
-                  <thead className="bg-muted/40 border-b text-xs">
-                    <tr>
-                      <th className="px-4 py-3 text-left font-medium text-muted-foreground">社員</th>
-                      <th className="px-4 py-3 text-left font-medium text-muted-foreground hidden md:table-cell">部署</th>
-                      <th className="px-4 py-3 text-center font-medium text-muted-foreground">状況</th>
-                      <th className="px-4 py-3 text-center font-medium text-muted-foreground hidden sm:table-cell">出勤</th>
-                      <th className="px-4 py-3 text-center font-medium text-muted-foreground">
+                  <thead>
+                    <tr className="bg-gradient-to-r from-slate-50 to-slate-100/80 border-b border-slate-200">
+                      <th className="px-5 py-3.5 text-left text-[11px] font-semibold text-slate-500 tracking-widest uppercase">社員</th>
+                      <th className="px-5 py-3.5 text-left text-[11px] font-semibold text-slate-500 tracking-widest uppercase hidden md:table-cell">部署</th>
+                      <th className="px-5 py-3.5 text-center text-[11px] font-semibold text-slate-500 tracking-widest uppercase">状況</th>
+                      <th className="px-5 py-3.5 text-center text-[11px] font-semibold text-slate-500 tracking-widest uppercase hidden sm:table-cell">出勤</th>
+                      <th className="px-5 py-3.5 text-center text-[11px] font-semibold text-slate-500 tracking-widest uppercase">
                         <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" />経過</span>
                       </th>
-                      <th className="px-4 py-3 text-center font-medium text-muted-foreground">打刻数</th>
-                      <th className="px-4 py-3 text-center font-medium text-muted-foreground">QR</th>
+                      <th className="px-5 py-3.5 text-center text-[11px] font-semibold text-slate-500 tracking-widest uppercase">打刻</th>
+                      <th className="px-5 py-3.5 text-center text-[11px] font-semibold text-slate-500 tracking-widest uppercase">QR</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y">
+                  <tbody className="divide-y divide-slate-100">
                     {data.map(d => {
                       const ms = elapsedMs(d.clockInTime, now);
                       const isActive = d.status === "出勤中" || d.status === "休憩中";
                       const isSelected = selected?.employee.id === d.employee.id;
                       const rowBg = STATUS_STYLE[d.status].rowBg;
-                      const longHour = ms >= 10 * 3600000 ? "bg-red-50" : ms >= 8 * 3600000 ? "bg-orange-50" : "";
+                      const longHour = ms >= 10 * 3600000 ? "bg-red-50/60" : ms >= 8 * 3600000 ? "bg-orange-50/60" : "";
                       const empAbsences = absences.filter(a => a.employeeId === d.employee.id);
 
                       return (
                         <tr
                           key={d.employee.id}
                           onClick={() => setSelected(isSelected ? null : d)}
-                          className={`cursor-pointer transition-all hover:bg-primary/5
-                            ${isSelected ? "bg-primary/8 ring-1 ring-inset ring-primary/20" : rowBg || longHour}`}
+                          className={`cursor-pointer transition-all duration-150 group
+                            ${isSelected
+                              ? "bg-indigo-50/80 ring-1 ring-inset ring-indigo-200"
+                              : `hover:bg-slate-50/80 ${rowBg || longHour}`}`}
                         >
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2.5">
-                              <Avatar name={d.employee.name} />
+                          <td className="px-5 py-3.5">
+                            <div className="flex items-center gap-3">
+                              <div className="relative">
+                                <Avatar name={d.employee.name} />
+                                {d.status === "出勤中" && (
+                                  <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white" />
+                                )}
+                                {d.status === "休憩中" && (
+                                  <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-amber-400 border-2 border-white" />
+                                )}
+                              </div>
                               <div>
-                                <p className="font-semibold leading-tight">{d.employee.name}</p>
-                                <p className="text-xs text-muted-foreground">{d.employee.employeeCode}</p>
+                                <p className="font-semibold text-slate-800 leading-tight group-hover:text-indigo-700 transition-colors">{d.employee.name}</p>
+                                <p className="text-[11px] text-slate-400 font-mono">{d.employee.employeeCode}</p>
                                 {empAbsences.map(a => (
-                                  <span key={a.id} className={`inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded border mt-0.5 mr-1 ${ABSENCE_COLORS[a.absenceType]}`}>
+                                  <span key={a.id} className={`inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-full border mt-0.5 mr-1 ${ABSENCE_COLORS[a.absenceType]}`}>
                                     {ABSENCE_LABELS[a.absenceType]}
                                   </span>
                                 ))}
                                 {(() => {
                                   const latest = [...d.records].reverse().find(r => r.note);
                                   if (latest?.note) {
-                                    return <p className="text-xs text-primary/80 mt-0.5 font-medium">📍 {latest.note}</p>;
+                                    return <p className="text-[11px] text-indigo-600/80 mt-0.5 font-medium">📍 {latest.note}</p>;
                                   }
-                                  // 打刻前はdraftの発着地を表示
                                   const dep = d.draft?.departure;
                                   const arr = d.draft?.arrival;
                                   if (!dep && !arr) return null;
                                   return (
-                                    <p className="text-xs text-primary/60 mt-0.5">
+                                    <p className="text-[11px] text-indigo-500/60 mt-0.5">
                                       📍 {[dep, arr].filter(Boolean).join(" → ")}
                                     </p>
                                   );
@@ -642,7 +704,7 @@ export default function AttendancePage() {
                                     ?? d.draft?.endOdometer ?? null;
                                   const isDraft = d.records.find(r => r.startOdometer != null) == null;
                                   return (
-                                    <p className={`text-xs font-medium mt-0.5 ${isDraft ? "text-blue-400" : "text-blue-600"}`}>
+                                    <p className={`text-[11px] font-medium mt-0.5 ${isDraft ? "text-sky-400" : "text-sky-600"}`}>
                                       🚛 {startVal.toLocaleString()} km{endVal != null ? ` → ${endVal.toLocaleString()} km` : ""}
                                     </p>
                                   );
@@ -654,7 +716,7 @@ export default function AttendancePage() {
                                   try { parsed = JSON.parse(clockInRec.checklistNgItems); } catch { return null; }
                                   if (!parsed) return null;
                                   return parsed.ng.length === 0 ? (
-                                    <span className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-full border mt-0.5 bg-green-50 text-green-700 border-green-200">
+                                    <span className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-full border mt-0.5 bg-emerald-50 text-emerald-700 border-emerald-200">
                                       ✅ 点検OK {parsed.checked}/{parsed.total}
                                     </span>
                                   ) : (
@@ -666,32 +728,34 @@ export default function AttendancePage() {
                               </div>
                             </div>
                           </td>
-                          <td className="px-4 py-3 text-muted-foreground text-xs hidden md:table-cell">
-                            {d.employee.department}
+                          <td className="px-5 py-3.5 text-slate-500 text-xs hidden md:table-cell">
+                            <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[11px] font-medium">
+                              {d.employee.department}
+                            </span>
                           </td>
-                          <td className="px-4 py-3 text-center">
+                          <td className="px-5 py-3.5 text-center">
                             <StatusDot status={d.status} />
                           </td>
-                          <td className="px-4 py-3 text-center tabular-nums text-sm hidden sm:table-cell">
+                          <td className="px-5 py-3.5 text-center tabular-nums text-sm font-semibold text-slate-700 hidden sm:table-cell">
                             {fmt(d.clockInTime)}
                           </td>
-                          <td className={`px-4 py-3 text-center tabular-nums text-xs font-mono
-                            ${ms >= 10 * 3600000 ? "text-red-600 font-bold" : ms >= 8 * 3600000 ? "text-orange-600 font-semibold" : "text-muted-foreground"}`}>
-                            {isActive ? elapsedStr(d.clockInTime, now) : "-"}
+                          <td className={`px-5 py-3.5 text-center tabular-nums text-xs font-mono font-semibold
+                            ${ms >= 10 * 3600000 ? "text-red-600" : ms >= 8 * 3600000 ? "text-orange-500" : "text-slate-400"}`}>
+                            {isActive ? elapsedStr(d.clockInTime, now) : "—"}
                           </td>
-                          <td className="px-4 py-3 text-center">
+                          <td className="px-5 py-3.5 text-center">
                             {d.records.length > 0 ? (
-                              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-primary text-xs font-bold">
+                              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold shadow-sm">
                                 {d.records.length}
                               </span>
                             ) : (
-                              <span className="text-xs text-muted-foreground">-</span>
+                              <span className="text-slate-300 text-sm">—</span>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                          <td className="px-5 py-3.5 text-center" onClick={(e) => e.stopPropagation()}>
                             <button
                               onClick={() => setQrEmployee(d.employee)}
-                              className="inline-flex items-center justify-center w-7 h-7 rounded hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
+                              className="inline-flex items-center justify-center w-8 h-8 rounded-lg hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 transition-all"
                               title={`${d.employee.name} のQRコード`}
                             >
                               <QrCode className="h-4 w-4" />
@@ -708,54 +772,63 @@ export default function AttendancePage() {
         </div>
 
         {/* ── 右サイドパネル ───────────────────────────── */}
-        <div className={`fixed top-[56px] right-0 bottom-0 w-[420px] bg-background border-l shadow-xl
+        <div className={`fixed top-[56px] right-0 bottom-0 w-[420px] bg-white border-l border-slate-200 shadow-2xl
           flex flex-col transition-transform duration-300 ease-in-out z-30
           ${panelOpen ? "translate-x-0" : "translate-x-full"}`}>
 
           {selected && (
             <>
               {/* パネルヘッダー */}
-              <div className="flex items-start justify-between px-5 py-4 border-b bg-muted/20">
-                <div className="flex items-center gap-3">
-                  <Avatar name={selected.employee.name} size="lg" />
+              <div className="flex items-start justify-between px-5 py-5 border-b border-slate-100 bg-gradient-to-br from-slate-50 to-white">
+                <div className="flex items-center gap-3.5">
+                  <div className="relative">
+                    <Avatar name={selected.employee.name} size="lg" />
+                    {selected.status === "出勤中" && (
+                      <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-white animate-pulse" />
+                    )}
+                  </div>
                   <div>
-                    <p className="font-bold text-base">{selected.employee.name}</p>
-                    <p className="text-xs text-muted-foreground">{selected.employee.department} · {selected.employee.employeeCode}</p>
-                    <div className="mt-1.5">
+                    <p className="font-bold text-slate-800 text-base leading-tight">{selected.employee.name}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      <span className="font-mono">{selected.employee.employeeCode}</span>
+                      <span className="mx-1.5 text-slate-300">·</span>
+                      {selected.employee.department}
+                    </p>
+                    <div className="mt-2">
                       <StatusDot status={selected.status} />
                     </div>
                   </div>
                 </div>
                 <button
                   onClick={() => setSelected(null)}
-                  className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground"
+                  className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors text-slate-400 hover:text-slate-600"
                 >
                   <X className="h-4 w-4" />
                 </button>
               </div>
 
               {/* 出勤情報カード */}
-              <div className="px-5 py-4 border-b">
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="rounded-lg bg-muted/30 px-3 py-2.5">
-                    <p className="text-xs text-muted-foreground mb-0.5">出勤時刻</p>
-                    <p className="text-base font-bold tabular-nums">{fmt(selected.clockInTime)}</p>
+              <div className="px-5 py-4 border-b border-slate-100">
+                <div className="grid grid-cols-3 gap-2.5">
+                  <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-3">
+                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">出勤時刻</p>
+                    <p className="text-lg font-black tabular-nums text-slate-800">{fmt(selected.clockInTime)}</p>
                   </div>
-                  <div className="rounded-lg bg-muted/30 px-3 py-2.5">
-                    <p className="text-xs text-muted-foreground mb-0.5">経過時間</p>
-                    <p className={`text-base font-bold tabular-nums
+                  <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-3">
+                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">経過時間</p>
+                    <p className={`text-lg font-black tabular-nums
                       ${elapsedMs(selected.clockInTime, now) >= 10 * 3600000 ? "text-red-600" :
-                        elapsedMs(selected.clockInTime, now) >= 8 * 3600000 ? "text-orange-600" : ""}`}>
+                        elapsedMs(selected.clockInTime, now) >= 8 * 3600000 ? "text-orange-500" : "text-slate-800"}`}>
                       {selected.status !== "未出勤" && selected.status !== "退勤済"
-                        ? elapsedStr(selected.clockInTime, now) : "-"}
+                        ? elapsedStr(selected.clockInTime, now) : "—"}
                     </p>
                   </div>
-                  <div className="rounded-lg bg-amber-50 border border-amber-100 px-3 py-2.5">
-                    <p className="text-xs text-amber-700 mb-0.5">休憩合計</p>
-                    <p className="text-base font-bold tabular-nums text-amber-800">
+                  <div className="rounded-xl bg-amber-50 border border-amber-100 px-3 py-3">
+                    <p className="text-[10px] font-semibold text-amber-500 uppercase tracking-wider mb-1">休憩合計</p>
+                    <p className="text-lg font-black tabular-nums text-amber-700">
                       {(() => {
                         const ms = breakTotalMs(selected.records, now);
-                        return ms > 0 ? msToStr(ms) : "-";
+                        return ms > 0 ? msToStr(ms) : "—";
                       })()}
                     </p>
                   </div>
@@ -763,11 +836,11 @@ export default function AttendancePage() {
                 {(() => {
                   const latest = [...selected.records].reverse().find(r => r.note);
                   return latest?.note ? (
-                    <div className="mt-3 rounded-lg bg-primary/5 border border-primary/15 px-3 py-2.5 flex items-center gap-2">
-                      <span className="text-base">📍</span>
+                    <div className="mt-3 rounded-xl bg-indigo-50/80 border border-indigo-100 px-3.5 py-3 flex items-center gap-2.5">
+                      <span className="text-lg">📍</span>
                       <div className="min-w-0">
-                        <p className="text-xs text-muted-foreground leading-none mb-0.5">最新の発着地</p>
-                        <p className="text-sm font-semibold text-primary truncate">{latest.note}</p>
+                        <p className="text-[10px] font-semibold text-indigo-400 uppercase tracking-wider leading-none mb-1">最新の発着地</p>
+                        <p className="text-sm font-bold text-indigo-700 truncate">{latest.note}</p>
                       </div>
                     </div>
                   ) : null;
@@ -779,20 +852,20 @@ export default function AttendancePage() {
                   const endVal = [...allOdo].reverse().find(r => r.endOdometer != null)?.endOdometer;
                   const distance = startVal != null && endVal != null ? Math.round((endVal - startVal) * 10) / 10 : null;
                   return (
-                    <div className="mt-2 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2.5 flex items-center gap-2">
-                      <span className="text-base">🚛</span>
+                    <div className="mt-2 rounded-xl bg-sky-50/80 border border-sky-100 px-3.5 py-3 flex items-center gap-2.5">
+                      <span className="text-lg">🚛</span>
                       <div className="flex-1 min-w-0">
-                        <p className="text-xs text-blue-600 leading-none mb-0.5">走行メーター</p>
+                        <p className="text-[10px] font-semibold text-sky-400 uppercase tracking-wider leading-none mb-1">走行メーター</p>
                         <div className="flex items-center gap-2 flex-wrap">
                           {startVal != null && (
-                            <span className="text-sm font-semibold text-blue-800">出発 {startVal.toLocaleString()} km</span>
+                            <span className="text-sm font-bold text-sky-800">出発 {startVal.toLocaleString()} km</span>
                           )}
-                          {startVal != null && endVal != null && <span className="text-blue-400 text-xs">→</span>}
+                          {startVal != null && endVal != null && <span className="text-sky-300 text-xs font-bold">→</span>}
                           {endVal != null && (
-                            <span className="text-sm font-semibold text-blue-800">帰着 {endVal.toLocaleString()} km</span>
+                            <span className="text-sm font-bold text-sky-800">帰着 {endVal.toLocaleString()} km</span>
                           )}
                           {distance != null && (
-                            <span className="text-xs font-bold text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded-full">
+                            <span className="text-xs font-bold text-sky-700 bg-sky-100 px-2 py-0.5 rounded-full border border-sky-200">
                               走行 {distance} km
                             </span>
                           )}
@@ -809,19 +882,19 @@ export default function AttendancePage() {
                   if (!parsed) return null;
                   const allOk = parsed.ng.length === 0;
                   return (
-                    <div className={`mt-2 rounded-lg border px-3 py-2.5 flex items-start gap-2 ${allOk ? "bg-green-50 border-green-100" : "bg-red-50 border-red-200"}`}>
-                      <span className="text-base shrink-0">{allOk ? "✅" : "⚠️"}</span>
+                    <div className={`mt-2 rounded-xl border px-3.5 py-3 flex items-start gap-2.5 ${allOk ? "bg-emerald-50/80 border-emerald-100" : "bg-red-50/80 border-red-200"}`}>
+                      <span className="text-lg shrink-0">{allOk ? "✅" : "⚠️"}</span>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 mb-0.5">
-                          <p className={`text-xs font-bold leading-none ${allOk ? "text-green-700" : "text-red-700"}`}>
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <p className={`text-[10px] font-bold uppercase tracking-wider leading-none ${allOk ? "text-emerald-600" : "text-red-600"}`}>
                             日常点検 {allOk ? "異常なし" : `異常${parsed.ng.length}件`}
                           </p>
-                          <span className="text-xs text-muted-foreground">（{parsed.checked}/{parsed.total}項目確認）</span>
+                          <span className="text-[10px] text-slate-400">（{parsed.checked}/{parsed.total}項目）</span>
                         </div>
                         {parsed.ng.length > 0 && (
                           <div className="flex flex-wrap gap-1 mt-1">
                             {parsed.ng.map(item => (
-                              <span key={item} className="text-xs bg-red-100 text-red-700 border border-red-200 px-1.5 py-0.5 rounded-full">{item}</span>
+                              <span key={item} className="text-xs bg-red-100 text-red-700 border border-red-200 px-1.5 py-0.5 rounded-full font-medium">{item}</span>
                             ))}
                           </div>
                         )}
@@ -833,11 +906,11 @@ export default function AttendancePage() {
 
               {/* 打刻履歴 */}
               <div className="flex-1 overflow-y-auto px-5 py-4">
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">打刻・休暇履歴</p>
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">打刻・休暇履歴</p>
                   <button
                     onClick={() => { setAddMode(true); setAddTime(nowTimeJST()); setAddEventType("clock_in"); setAddError(null); }}
-                    className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition-colors bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg"
                   >
                     <Plus className="h-3 w-3" />打刻を追加
                   </button>
@@ -1095,11 +1168,11 @@ export default function AttendancePage() {
               )}
 
               {/* パネルフッター */}
-              <div className="px-5 py-3 border-t flex items-center gap-2 bg-muted/10">
+              <div className="px-5 py-3.5 border-t border-slate-100 flex items-center gap-2 bg-gradient-to-r from-slate-50 to-white">
                 <Button
                   variant="outline"
                   size="sm"
-                  className="gap-1.5 text-xs"
+                  className="gap-1.5 text-xs rounded-lg border-slate-200 text-slate-600 hover:text-indigo-700 hover:border-indigo-200 hover:bg-indigo-50 transition-all"
                   onClick={() => setQrEmployee(selected.employee)}
                 >
                   <QrCode className="h-3.5 w-3.5" />QRコード
@@ -1108,7 +1181,7 @@ export default function AttendancePage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="gap-1.5 text-xs"
+                    className="gap-1.5 text-xs rounded-lg border-slate-200 text-slate-600 hover:text-amber-700 hover:border-amber-200 hover:bg-amber-50 transition-all"
                     onClick={() => { setAbsenceMode(true); setAbsenceType("sick"); setAbsenceNote(""); }}
                   >
                     <CalendarOff className="h-3.5 w-3.5" />欠勤・休暇登録
