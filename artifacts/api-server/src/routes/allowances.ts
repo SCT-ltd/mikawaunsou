@@ -74,12 +74,16 @@ router.delete("/allowance-definitions/:id", async (req, res) => {
 
 router.get("/employees/:id/allowances", async (req, res) => {
   const employeeId = parseInt(req.params.id, 10);
+  console.log("[DB_GET_ALLOWANCES_QUERY_PARAMS] employeeId:", employeeId);
 
   const empAllowances = await db.select().from(employeeAllowancesTable)
     .where(eq(employeeAllowancesTable.employeeId, employeeId))
     .orderBy(employeeAllowancesTable.sortOrder);
 
+  console.log("[DB_GET_ALLOWANCES_RAW] employeeId:", employeeId, "raw rows:", JSON.stringify(empAllowances));
+
   if (empAllowances.length === 0) {
+    console.log("[DB_GET_ALLOWANCES_RESULT] empty – returning []");
     return res.json([]);
   }
 
@@ -99,6 +103,7 @@ router.get("/employees/:id/allowances", async (req, res) => {
     };
   });
 
+  console.log("[DB_GET_ALLOWANCES_RESULT]", JSON.stringify(result));
   return res.json(result);
 });
 
@@ -106,23 +111,34 @@ router.put("/employees/:id/allowances", async (req, res) => {
   const employeeId = parseInt(req.params.id, 10);
   const { allowances } = req.body as { allowances: Array<{ allowanceDefinitionId: number; amount: number }> };
 
+  console.log("[API_SAVE_ALLOWANCES_BODY] employeeId:", employeeId, "req.body:", JSON.stringify(req.body));
+  console.log("[API_SAVE_ALLOWANCES_BODY] allowances array:", JSON.stringify(allowances), "length:", allowances?.length);
+
+  const insertData = allowances?.length > 0
+    ? allowances.map((item, idx) => ({
+        employeeId,
+        allowanceDefinitionId: item.allowanceDefinitionId,
+        amount: item.amount,
+        sortOrder: idx,
+      }))
+    : [];
+  console.log("[DB_SAVE_ALLOWANCES_INPUT]", JSON.stringify(insertData));
+
   await db.transaction(async (tx) => {
     await tx.delete(employeeAllowancesTable).where(eq(employeeAllowancesTable.employeeId, employeeId));
-    if (allowances.length > 0) {
-      await tx.insert(employeeAllowancesTable).values(
-        allowances.map((item, idx) => ({
-          employeeId,
-          allowanceDefinitionId: item.allowanceDefinitionId,
-          amount: item.amount,
-          sortOrder: idx,
-        }))
-      );
+    if (insertData.length > 0) {
+      const inserted = await tx.insert(employeeAllowancesTable).values(insertData).returning();
+      console.log("[DB_SAVE_ALLOWANCES_RESULT] inserted:", JSON.stringify(inserted));
+    } else {
+      console.log("[DB_SAVE_ALLOWANCES_RESULT] nothing to insert (empty payload)");
     }
   });
 
   const empAllowances = await db.select().from(employeeAllowancesTable)
     .where(eq(employeeAllowancesTable.employeeId, employeeId))
     .orderBy(employeeAllowancesTable.sortOrder);
+
+  console.log("[DB_AFTER_SAVE_ALLOWANCES_SELECT] employeeId:", employeeId, "rows:", JSON.stringify(empAllowances));
 
   const definitions = await db.select().from(allowanceDefinitionsTable)
     .where(eq(allowanceDefinitionsTable.isActive, true));
@@ -140,6 +156,7 @@ router.put("/employees/:id/allowances", async (req, res) => {
     };
   });
 
+  console.log("[API_PUT_ALLOWANCES_RESPONSE]", JSON.stringify(result));
   return res.json(result);
 });
 

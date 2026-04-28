@@ -302,12 +302,18 @@ export function AllowanceInputPanel({ employee, monthlyData }: Props) {
 
   const handleSave = async () => {
     try {
+      // defId が選択済みの行はすべて保存（金額0でも手当定義IDを保持するため amount > 0 条件を除去）
       const allowancePayload = rows
-        .filter(r => r.defId !== null && r.amount > 0)
+        .filter(r => r.defId !== null)
         .map(r => ({ allowanceDefinitionId: r.defId!, amount: r.amount }));
       const deductionPayload = deductionRows
         .filter(r => r.defId !== null)
         .map(r => ({ deductionDefinitionId: r.defId!, amount: r.amount || 0 }));
+
+      console.log("[FRONT_SAVE] rows (before filter):", JSON.stringify(rows));
+      console.log("[FRONT_SAVE_ALLOWANCES_PAYLOAD]:", JSON.stringify(allowancePayload));
+      console.log("[FRONT_SAVE_DEDUCTIONS_PAYLOAD]:", JSON.stringify(deductionPayload));
+      console.log("[FRONT_SAVE] employeeId:", employeeId);
 
       await Promise.all([
         updateAllowances.mutateAsync({ id: employeeId, data: { allowances: allowancePayload } }),
