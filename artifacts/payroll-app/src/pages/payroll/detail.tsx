@@ -195,9 +195,15 @@ export default function PayrollDetail() {
               <table className="w-full text-sm">
                 <tbody>
                   <tr className="border-b border-dotted border-gray-300">
-                    <td className="py-2">健康保険料・厚生年金</td>
+                    <td className="py-2">社会保険料（健保・子育て支援金・厚年）</td>
                     <td className="py-2 text-right">{formatCurrency(payroll.socialInsurance)}</td>
                   </tr>
+                  {(payroll.childcareSupportContribution ?? 0) > 0 && (
+                    <tr className="border-b border-dotted border-gray-200 text-gray-500 text-xs">
+                      <td className="py-1 pl-4">うち 子ども・子育て支援金</td>
+                      <td className="py-1 text-right">{formatCurrency(payroll.childcareSupportContribution ?? 0)}</td>
+                    </tr>
+                  )}
                   <tr className="border-b border-dotted border-gray-300">
                     <td className="py-2">雇用保険料</td>
                     <td className="py-2 text-right">{formatCurrency(payroll.employmentInsurance)}</td>

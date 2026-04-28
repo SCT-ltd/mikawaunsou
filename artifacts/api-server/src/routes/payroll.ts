@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db, payrollsTable, employeesTable, monthlyRecordsTable, companyTable, allowanceDefinitionsTable, employeeAllowancesTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { calculatePayroll, calculateMikawaPayroll, calculateBluewingPayroll, roundJapanese } from "../lib/payroll-calculator";
-import { calculateSocialInsurance, calculateIncomeTaxReiwa8 } from "../lib/tax-tables-reiwa8";
+import { calculateInsuranceAndTax, calculateIncomeTaxReiwa8, EMP_INS_RATE_R8 } from "../lib/tax-tables-reiwa8";
 
 const router = Router();
 
@@ -38,9 +38,7 @@ router.post("/payroll/calculate", async (req, res) => {
     employeeId,
     year,
     month,
-    // 三川ロジックフラグ（省略時 false = 既存ロジック）
     useMikawaLogic = false,
-    // ブルーウィングロジックフラグ
     useBluewingLogic = false,
   } = req.body;
 
@@ -58,8 +56,13 @@ router.post("/payroll/calculate", async (req, res) => {
   const companyRows = await db.select().from(companyTable).limit(1);
   const company = companyRows[0] ?? {
     monthlyAverageWorkHours: 160,
-    employmentInsuranceRate: 0.006,
+    employmentInsuranceRate: EMP_INS_RATE_R8,
   };
+
+  // 雇用保険率：会社設定優先、なければ令和8年度デフォルト 0.5%
+  const empInsRate = (company.employmentInsuranceRate ?? 0) > 0
+    ? company.employmentInsuranceRate
+    : EMP_INS_RATE_R8;
 
   // カスタム手当を取得
   const customAllowanceDefs = await db.select().from(allowanceDefinitionsTable)
@@ -78,8 +81,6 @@ router.post("/payroll/calculate", async (req, res) => {
 
   // ────────────────────────────────────────────────────────────────
   // 三川ロジック分岐
-  // useMikawaLogic=true: monthly_records の売上・歩合率を使い計算後 DB 保存
-  // useMikawaLogic=false: 既存の calculatePayroll フロー
   // ────────────────────────────────────────────────────────────────
   if (useMikawaLogic) {
     if (record.salesAmount <= 0 || record.commissionRate <= 0) {
@@ -97,65 +98,61 @@ router.post("/payroll/calculate", async (req, res) => {
       overtimeUnitPrice: record.overtimeUnitPrice,
     });
 
-    // 支給合計 = 最終給与（最低保証 or 売上給与の大きい方）
     const grossSalary = mikawaResult.finalSalary;
+    const insBase = (emp.standardRemuneration ?? 0) > 0 ? emp.standardRemuneration : grossSalary;
 
-    // 社会保険料：standard_remuneration > 0 ならその等級で計算、0 なら grossSalary で自動判定
-    // 健保料率は会社設定値（介護保険込み）を使用
-    const mikawaInsBase = (emp.standardRemuneration ?? 0) > 0 ? emp.standardRemuneration : grossSalary;
-    const mikawaIns = calculateSocialInsurance(mikawaInsBase, {
-      healthRate: company.healthInsuranceEmployeeRate ?? 0.04925,
-      pensionRate: company.pensionEmployeeRate ?? 0.0915,
+    const ins = calculateInsuranceAndTax({
+      standardRemuneration: insBase,
+      grossSalary,
+      nonTaxableAllowances: emp.transportationAllowance ?? 0,
+      dependentCount: emp.dependentCount ?? 0,
+      hasSpouse: emp.hasSpouse ?? false,
+      careInsuranceApplied: emp.careInsuranceApplied ?? false,
+      pensionApplied: true,
+      employmentInsuranceApplied: emp.employmentInsuranceApplied ?? true,
+      residentTax: emp.residentTax ?? 0,
+      customDeductionsTotal: emp.otherDeductionMonthly ?? 0,
+      employmentInsuranceRate: empInsRate,
     });
-    const socialInsurance = mikawaIns.healthInsurance + mikawaIns.pension;
 
-    // 雇用保険料：grossSalary × 0.55%（全社員統一）
-    const employmentInsurance = roundJapanese(grossSalary * 0.0055);
-
-    // 源泉所得税：常に動的計算（令和8年月額表甲欄）
-    const afterInsuranceSalary = grossSalary - socialInsurance - employmentInsurance;
-    const dependentEquivCount = emp.dependentCount + (emp.hasSpouse ? 1 : 0);
-    const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
-
-    const totalDeductions = roundJapanese(socialInsurance + employmentInsurance + incomeTax + emp.residentTax + (emp.otherDeductionMonthly ?? 0));
+    const socialInsurance = ins.healthInsurance + ins.childcareSupportContribution + ins.pension;
+    const totalDeductions = roundJapanese(
+      socialInsurance + ins.employmentInsurance + ins.incomeTax + (emp.residentTax ?? 0) + (emp.otherDeductionMonthly ?? 0)
+    );
     const netSalary = roundJapanese(grossSalary - totalDeductions);
 
     const mikawaPayrollData = {
-      // 支給内訳
       baseSalary: mikawaResult.minimumSalary,
       commissionPay: mikawaResult.salesSalary,
       overtimePay: mikawaResult.overtimePay,
       lateNightPay: 0,
       holidayPay: 0,
-      transportationAllowance: emp.transportationAllowance,
-      safetyDrivingAllowance: emp.safetyDrivingAllowance,
-      longDistanceAllowance: emp.longDistanceAllowance,
-      positionAllowance: emp.positionAllowance,
-      familyAllowance: emp.familyAllowance,
-      earlyOvertimeAllowance: emp.earlyOvertimeAllowance,
+      transportationAllowance: emp.transportationAllowance ?? 0,
+      safetyDrivingAllowance: emp.safetyDrivingAllowance ?? 0,
+      longDistanceAllowance: emp.longDistanceAllowance ?? 0,
+      positionAllowance: emp.positionAllowance ?? 0,
+      familyAllowance: emp.familyAllowance ?? 0,
+      earlyOvertimeAllowance: emp.earlyOvertimeAllowance ?? 0,
       customAllowancesTotal: 0,
       absenceDeduction: 0,
       grossSalary,
-      // 控除
       socialInsurance,
-      employmentInsurance,
-      incomeTax,
-      residentTax: emp.residentTax,
+      childcareSupportContribution: ins.childcareSupportContribution,
+      employmentInsurance: ins.employmentInsurance,
+      incomeTax: ins.incomeTax,
+      residentTax: emp.residentTax ?? 0,
       totalDeductions,
       netSalary,
-      // 勤怠実績
       workDays: record.workDays,
       overtimeHours: record.overtimeHours,
       lateNightHours: 0,
       holidayWorkDays: 0,
-      // 三川専用
       useMikawaLogic: true,
       salesAmount: record.salesAmount,
       commissionRate: record.commissionRate,
       performanceAllowance: mikawaResult.performanceAllowance,
     };
 
-    // DB 保存（upsert）
     const existingMikawa = await db.select().from(payrollsTable)
       .where(and(
         eq(payrollsTable.employeeId, employeeId),
@@ -195,15 +192,13 @@ router.post("/payroll/calculate", async (req, res) => {
       });
     }
 
-    // 日給計算（日給制前提）
-    const dailyWage = company.dailyWageWeekday ?? 9808;
+    const dailyWage    = company.dailyWageWeekday ?? 9808;
     const dailySaturday = company.dailyWageSaturday ?? 12260;
     const baseSalaryCalc = Math.floor(
       (record.workDays ?? 0) * dailyWage +
       (record.saturdayWorkDays ?? 0) * dailySaturday
     );
 
-    // 固定手当合計（カスタム手当 + マスタ固定手当）
     const masterFixedAllowances =
       (emp.transportationAllowance ?? 0) +
       (emp.safetyDrivingAllowance ?? 0) +
@@ -214,10 +209,8 @@ router.post("/payroll/calculate", async (req, res) => {
     const customAllowancesFixedTotal = customAllowances.reduce((s, a) => s + a.amount, 0);
     const fixedAllowancesTotal = masterFixedAllowances + customAllowancesFixedTotal;
 
-    // 休日出勤代（日給制: 休日単価 × 休日出勤日数）
     const holidayPay = Math.floor((company.dailyWageSaturday ?? 12260) * (record.holidayWorkDays ?? 0));
 
-    // 深夜手当（BW）: 時給 × 0.25 × 深夜時間
     const hourlyRate = dailyWage / 8;
     const bwLateNightPay = roundJapanese(hourlyRate * 0.25 * (record.lateNightHours ?? 0));
 
@@ -235,27 +228,26 @@ router.post("/payroll/calculate", async (req, res) => {
     });
 
     const grossSalary = bwResult.grossSalary;
-
-    // 社会保険料：standard_remuneration > 0 ならその等級で計算、0 なら grossSalary で自動判定
-    // 健保料率は会社設定値（介護保険込み）を使用
     const bwInsBase = (emp.standardRemuneration ?? 0) > 0 ? emp.standardRemuneration : grossSalary;
-    const bwIns = calculateSocialInsurance(bwInsBase, {
-      healthRate: company.healthInsuranceEmployeeRate ?? 0.04925,
-      pensionRate: company.pensionEmployeeRate ?? 0.0915,
+
+    const bwIns = calculateInsuranceAndTax({
+      standardRemuneration: bwInsBase,
+      grossSalary,
+      nonTaxableAllowances: emp.transportationAllowance ?? 0,
+      dependentCount: emp.dependentCount ?? 0,
+      hasSpouse: emp.hasSpouse ?? false,
+      careInsuranceApplied: emp.careInsuranceApplied ?? false,
+      pensionApplied: true,
+      employmentInsuranceApplied: emp.employmentInsuranceApplied ?? true,
+      residentTax: emp.residentTax ?? 0,
+      customDeductionsTotal: emp.otherDeductionMonthly ?? 0,
+      employmentInsuranceRate: empInsRate,
     });
-    const socialInsurance = bwIns.healthInsurance + bwIns.pension;
 
-    // 雇用保険料：grossSalary × 0.55%（全社員統一）
-    const employmentInsurance = emp.employmentInsuranceApplied
-      ? roundJapanese(grossSalary * 0.0055)
-      : 0;
-
-    // 源泉所得税：常に動的計算（令和8年月額表甲欄）
-    const afterInsuranceSalary = grossSalary - socialInsurance - employmentInsurance;
-    const dependentEquivCount = (emp.dependentCount ?? 0) + (emp.hasSpouse ? 1 : 0);
-    const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
-
-    const totalDeductions = roundJapanese(socialInsurance + employmentInsurance + incomeTax + (emp.residentTax ?? 0) + (emp.otherDeductionMonthly ?? 0));
+    const socialInsurance = bwIns.healthInsurance + bwIns.childcareSupportContribution + bwIns.pension;
+    const totalDeductions = roundJapanese(
+      socialInsurance + bwIns.employmentInsurance + bwIns.incomeTax + (emp.residentTax ?? 0) + (emp.otherDeductionMonthly ?? 0)
+    );
     const netSalary = roundJapanese(grossSalary - totalDeductions);
 
     const bwPayrollData = {
@@ -274,8 +266,9 @@ router.post("/payroll/calculate", async (req, res) => {
       absenceDeduction: 0,
       grossSalary,
       socialInsurance,
-      employmentInsurance,
-      incomeTax,
+      childcareSupportContribution: bwIns.childcareSupportContribution,
+      employmentInsurance: bwIns.employmentInsurance,
+      incomeTax: bwIns.incomeTax,
       residentTax: emp.residentTax ?? 0,
       totalDeductions,
       netSalary,
@@ -318,6 +311,9 @@ router.post("/payroll/calculate", async (req, res) => {
     return res.json(buildPayrollResponse(bwPayroll!, emp));
   }
 
+  // ────────────────────────────────────────────────────────────────
+  // 標準ロジック
+  // ────────────────────────────────────────────────────────────────
   const result = calculatePayroll({
     baseSalary: emp.baseSalary,
     salaryType: emp.salaryType,
@@ -335,8 +331,10 @@ router.post("/payroll/calculate", async (req, res) => {
     dependentCount: emp.dependentCount,
     hasSpouse: emp.hasSpouse,
     standardRemuneration: emp.standardRemuneration ?? 0,
-    healthInsuranceRate: company.healthInsuranceEmployeeRate ?? 0.04925,
-    pensionInsuranceRate: company.pensionEmployeeRate ?? 0.0915,
+    careInsuranceApplied: emp.careInsuranceApplied ?? false,
+    employmentInsuranceApplied: emp.employmentInsuranceApplied ?? true,
+    pensionApplied: true,
+    employmentInsuranceRate: empInsRate,
     residentTax: emp.residentTax,
     monthlyAverageWorkHours: company.monthlyAverageWorkHours,
     workDays: record.workDays,
@@ -362,7 +360,27 @@ router.post("/payroll/calculate", async (req, res) => {
   let payroll;
   if (existing.length > 0 && existing[0].status !== "confirmed") {
     [payroll] = await db.update(payrollsTable).set({
-      ...result,
+      baseSalary: result.baseSalary,
+      overtimePay: result.overtimePay,
+      lateNightPay: result.lateNightPay,
+      holidayPay: result.holidayPay,
+      commissionPay: result.commissionPay,
+      transportationAllowance: result.transportationAllowance,
+      safetyDrivingAllowance: result.safetyDrivingAllowance,
+      longDistanceAllowance: result.longDistanceAllowance,
+      positionAllowance: result.positionAllowance,
+      familyAllowance: result.familyAllowance,
+      earlyOvertimeAllowance: result.earlyOvertimeAllowance,
+      customAllowancesTotal: result.customAllowancesTotal,
+      absenceDeduction: result.absenceDeduction,
+      grossSalary: result.grossSalary,
+      socialInsurance: result.socialInsurance,
+      childcareSupportContribution: result.childcareSupportContribution,
+      employmentInsurance: result.employmentInsurance,
+      incomeTax: result.incomeTax,
+      residentTax: result.residentTax,
+      totalDeductions: result.totalDeductions,
+      netSalary: result.netSalary,
       overtimeHours: record.overtimeHours,
       lateNightHours: record.lateNightHours,
       holidayWorkDays: record.holidayWorkDays,
@@ -376,7 +394,27 @@ router.post("/payroll/calculate", async (req, res) => {
       year,
       month,
       status: "draft",
-      ...result,
+      baseSalary: result.baseSalary,
+      overtimePay: result.overtimePay,
+      lateNightPay: result.lateNightPay,
+      holidayPay: result.holidayPay,
+      commissionPay: result.commissionPay,
+      transportationAllowance: result.transportationAllowance,
+      safetyDrivingAllowance: result.safetyDrivingAllowance,
+      longDistanceAllowance: result.longDistanceAllowance,
+      positionAllowance: result.positionAllowance,
+      familyAllowance: result.familyAllowance,
+      earlyOvertimeAllowance: result.earlyOvertimeAllowance,
+      customAllowancesTotal: result.customAllowancesTotal,
+      absenceDeduction: result.absenceDeduction,
+      grossSalary: result.grossSalary,
+      socialInsurance: result.socialInsurance,
+      childcareSupportContribution: result.childcareSupportContribution,
+      employmentInsurance: result.employmentInsurance,
+      incomeTax: result.incomeTax,
+      residentTax: result.residentTax,
+      totalDeductions: result.totalDeductions,
+      netSalary: result.netSalary,
       overtimeHours: record.overtimeHours,
       lateNightHours: record.lateNightHours,
       holidayWorkDays: record.holidayWorkDays,
@@ -463,7 +501,8 @@ router.get("/payroll/:id/csv", async (req, res) => {
     ["支給合計", p.grossSalary].join(","),
     [""],
     ["【控除】", ""].join(","),
-    ["社会保険料", p.socialInsurance].join(","),
+    ["健康保険料（子育て支援金含む）", p.socialInsurance].join(","),
+    ["  うち子ども・子育て支援金", p.childcareSupportContribution ?? 0].join(","),
     ["雇用保険料", p.employmentInsurance].join(","),
     ["源泉所得税", p.incomeTax].join(","),
     ["住民税", p.residentTax].join(","),

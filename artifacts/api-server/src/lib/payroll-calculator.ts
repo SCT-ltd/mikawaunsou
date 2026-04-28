@@ -1,18 +1,19 @@
 /**
  * 給与計算エンジン（運送業特化）
- * Transportation industry payroll calculation engine
  *
  * 令和8年（2026年）対応:
- *  - 社会保険料: 協会けんぽ東京支部 標準報酬月額等級テーブル方式
- *    ※ standard_remuneration が設定されている場合はその等級を使用
- *    ※ standard_remuneration = 0 の場合は grossSalary でフォールバック
- *  - 雇用保険料: grossSalary × 0.55%（全社員統一）
- *  - 源泉所得税: 国税庁 令和8年分 給与所得の源泉徴収税額表（月額表）甲欄
- *    ※ 基礎控除額が令和7年の480,000円から令和8年の580,000円に改正
- *    ※ 手動固定値優先ロジック廃止 → 常に動的計算
+ *  - 健康保険料: 協会けんぽ東京支部 9.85%（介護ありは +1.62% = 11.47%）÷ 2
+ *  - 子ども・子育て支援金: 0.23% ÷ 2（健保とは別控除）
+ *  - 厚生年金: 18.3% ÷ 2（上限 650,000円）
+ *  - 雇用保険: 総支給額 × 0.5%（令和8年度一般事業）
+ *  - 源泉所得税: 令和8年分 月額表甲欄テーブル参照方式
  */
 
-import { calculateSocialInsurance, calculateIncomeTaxReiwa8 } from "./tax-tables-reiwa8";
+import {
+  calculateInsuranceAndTax,
+  calculateIncomeTaxReiwa8,
+  EMP_INS_RATE_R8,
+} from "./tax-tables-reiwa8";
 
 /**
  * 端数処理：50銭以下切り捨て、50銭超え切り上げ
@@ -52,14 +53,18 @@ export interface PayrollCalculationInput {
   hasSpouse: boolean;
   /**
    * 標準報酬月額（健保・厚年の計算基礎）
-   * > 0 の場合はその値で等級テーブルを検索
-   * = 0 の場合は grossSalary で等級を自動判定
+   * > 0 の場合はその値を直接使用
+   * = 0 の場合は grossSalary で計算
    */
   standardRemuneration: number;
-  /** 健康保険料率（従業員折半、介護保険込みの場合は合算値） */
-  healthInsuranceRate?: number;
-  /** 厚生年金保険料率（従業員折半） */
-  pensionInsuranceRate?: number;
+  /** 介護保険適用（40〜64歳）*/
+  careInsuranceApplied?: boolean;
+  /** 雇用保険適用（false の場合は0円）*/
+  employmentInsuranceApplied?: boolean;
+  /** 厚生年金適用（false の場合は0円）*/
+  pensionApplied?: boolean;
+  /** 雇用保険料率（省略時は EMP_INS_RATE_R8 = 0.005）*/
+  employmentInsuranceRate?: number;
   residentTax: number;
   monthlyAverageWorkHours: number;
   // Monthly record
@@ -91,6 +96,13 @@ export interface PayrollCalculationResult {
   customAllowancesTotal: number;
   absenceDeduction: number;
   grossSalary: number;
+  /** 健康保険料（介護保険込みまたはなし）*/
+  healthInsurance: number;
+  /** 子ども・子育て支援金 */
+  childcareSupportContribution: number;
+  /** 厚生年金保険料 */
+  pension: number;
+  /** 健保＋子育て支援金＋厚年の合計（社会保険料合計として DB に保存する値）*/
   socialInsurance: number;
   employmentInsurance: number;
   incomeTax: number;
@@ -116,8 +128,10 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     dependentCount,
     hasSpouse,
     standardRemuneration,
-    healthInsuranceRate,
-    pensionInsuranceRate,
+    careInsuranceApplied = false,
+    employmentInsuranceApplied = true,
+    pensionApplied = true,
+    employmentInsuranceRate = EMP_INS_RATE_R8,
     residentTax,
     monthlyAverageWorkHours,
     workDays,
@@ -139,35 +153,28 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
   let hourlyRate: number;
 
   if (salaryType === "daily") {
-    // 日給制: 出勤日数 × 日給で基本給を算出
     baseSalary = roundJapanese(
       workDays * dailyRateWeekday +
       saturdayWorkDays * dailyRateSaturday +
       sundayWorkHours * hourlyRateSunday
     );
-    // 時間外計算用時給: 平日日給 ÷ 8時間
     hourlyRate = dailyRateWeekday / 8;
   } else {
-    // 固定給: 月額固定
     baseSalary = input.baseSalary;
     hourlyRate = baseSalary / monthlyAverageWorkHours;
   }
 
-  // 時間外手当：時給 × 1.25 × 残業時間
-  const overtimePay = roundJapanese(hourlyRate * 1.25 * overtimeHours);
+  // 時間外手当・深夜手当・休日手当
+  const overtimePay   = roundJapanese(hourlyRate * 1.25 * overtimeHours);
+  const lateNightPay  = roundJapanese(hourlyRate * 0.25 * lateNightHours);
+  const holidayPay    = roundJapanese(hourlyRate * 1.35 * holidayWorkDays * 8);
 
-  // 深夜手当：時給 × 0.25 × 深夜時間
-  const lateNightPay = roundJapanese(hourlyRate * 0.25 * lateNightHours);
-
-  // 休日手当：時給 × 1.35 × (休日出勤数 × 8時間)
-  const holidayPay = roundJapanese(hourlyRate * 1.35 * holidayWorkDays * 8);
-
-  // 歩合給：走行距離 × km単価 + 件数 × 件単価
+  // 歩合給
   const commissionPay = roundJapanese(
     drivingDistanceKm * commissionRatePerKm + deliveryCases * commissionRatePerCase
   );
 
-  // 欠勤控除（日給制は1日分そのまま、固定給は ÷22日）
+  // 欠勤控除
   let absenceDeduction: number;
   if (salaryType === "daily") {
     absenceDeduction = roundJapanese(dailyRateWeekday * absenceDays);
@@ -175,8 +182,10 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     absenceDeduction = roundJapanese((baseSalary / 22) * absenceDays);
   }
 
-  // カスタム手当合計
-  const customAllowancesTotal = customAllowances.reduce((sum, a) => sum + a.amount, 0);
+  // カスタム手当合計（課税・非課税別に集計）
+  const taxableCustomTotal    = customAllowances.filter(a =>  a.isTaxable).reduce((s, a) => s + a.amount, 0);
+  const nonTaxableCustomTotal = customAllowances.filter(a => !a.isTaxable).reduce((s, a) => s + a.amount, 0);
+  const customAllowancesTotal = taxableCustomTotal + nonTaxableCustomTotal;
 
   // 支給合計
   const grossSalary = roundJapanese(
@@ -196,34 +205,38 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
   );
 
   // ────────────────────────────────────────────────────────────────
-  // 社会保険料（健康保険・厚生年金）
-  // standard_remuneration > 0: その値で等級を検索（標準報酬月額ベース）
-  // standard_remuneration = 0: grossSalary で等級を自動判定
+  // 社会保険料・雇用保険・源泉所得税
+  // standard_remuneration > 0 → その値を直接使用
+  // standard_remuneration = 0 → grossSalary を計算基礎とする
   // ────────────────────────────────────────────────────────────────
   const insBase = (standardRemuneration ?? 0) > 0 ? standardRemuneration : grossSalary;
-  const ins = calculateSocialInsurance(insBase, {
-    healthRate: healthInsuranceRate,
-    pensionRate: pensionInsuranceRate,
+
+  // 非課税手当（通勤手当＋非課税カスタム手当）
+  // transportationAllowance は非課税扱い（月15万以内の通勤手当）
+  const nonTaxableAllowances = transportationAllowance + nonTaxableCustomTotal;
+
+  const ins = calculateInsuranceAndTax({
+    standardRemuneration: insBase,
+    grossSalary,
+    nonTaxableAllowances,
+    dependentCount,
+    hasSpouse,
+    careInsuranceApplied,
+    pensionApplied,
+    employmentInsuranceApplied,
+    residentTax,
+    customDeductionsTotal: 0,
+    employmentInsuranceRate,
   });
-  const healthInsurance = ins.healthInsurance;
-  const pension = ins.pension;
-  const socialInsurance = healthInsurance + pension;
 
-  // 雇用保険料：grossSalary × 0.55%（全社員統一）
-  const employmentInsurance = roundJapanese(grossSalary * 0.0055);
+  const healthInsurance             = ins.healthInsurance;
+  const childcareSupportContribution = ins.childcareSupportContribution;
+  const pension                     = ins.pension;
+  const socialInsurance             = healthInsurance + childcareSupportContribution + pension;
+  const employmentInsurance         = ins.employmentInsurance;
+  const incomeTax                   = ins.incomeTax;
 
-  // 社会保険等控除後の給与等の金額（月額表の検索キー）
-  const afterInsuranceSalary = grossSalary - socialInsurance - employmentInsurance;
-
-  // ────────────────────────────────────────────────────────────────
-  // 源泉所得税（令和8年月額表甲欄）
-  // 扶養親族等の数 = 扶養人数 + 配偶者（控除対象の場合）
-  // 手動固定値優先ロジック廃止 → 常に動的計算
-  // ────────────────────────────────────────────────────────────────
-  const dependentEquivCount = dependentCount + (hasSpouse ? 1 : 0);
-  const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
-
-  // 控除合計
+  // 控除合計（社保＋雇保＋源泉＋住民税）
   const totalDeductions = roundJapanese(
     socialInsurance + employmentInsurance + incomeTax + residentTax
   );
@@ -246,6 +259,9 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     customAllowancesTotal,
     absenceDeduction,
     grossSalary,
+    healthInsurance,
+    childcareSupportContribution,
+    pension,
     socialInsurance,
     employmentInsurance,
     incomeTax,
@@ -257,80 +273,73 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
 
 // ────────────────────────────────────────────────────────────────────────────
 // 三川運送専用給与計算ロジック
-// 既存の calculatePayroll は変更しない。フラグ useMikawaLogic で切替。
 // ────────────────────────────────────────────────────────────────────────────
 
 export interface MikawaPayrollInput {
-  /** 売上金額（円） */
   salesAmount: number;
-  /** 歩合率（例: 0.375 = 37.5%） */
   commissionRate: number;
-  /** 実際の出勤日数 */
   workDays: number;
-  /** 実績残業時間 */
   overtimeHours: number;
-  /** 固定残業時間（みなし残業の含み分） */
   fixedOvertimeHours: number;
-  /** 残業単価（円/時） */
   overtimeUnitPrice: number;
 }
 
 export interface MikawaPayrollResult {
-  /** 売上給与（歩合計算ベース） */
   salesSalary: number;
-  /** 最低保証給与 */
   minimumSalary: number;
-  /** 最終給与（max(salesSalary, minimumSalary)） */
   finalSalary: number;
-  /** 実残業代（固定含み時間超過分） */
   overtimePay: number;
-  /** 残業調整後の実効歩合率 */
   adjustedRate: number;
-  /** 業績手当（finalSalary - minimumSalary） */
   performanceAllowance: number;
 }
 
-const MIKAWA_DAILY_BASE = 9808; // 最低保証計算用日給基礎単価（円）
+const MIKAWA_DAILY_BASE = 9808;
+
+export function calculateMikawaPayroll(input: MikawaPayrollInput): MikawaPayrollResult {
+  const {
+    salesAmount,
+    commissionRate,
+    workDays,
+    overtimeHours,
+    fixedOvertimeHours,
+    overtimeUnitPrice,
+  } = input;
+
+  const actualOvertime   = Math.max(0, overtimeHours - fixedOvertimeHours);
+  const overtimePay      = actualOvertime * overtimeUnitPrice;
+  const overtimeRate     = salesAmount > 0 ? overtimePay / salesAmount : 0;
+  const adjustedRate     = commissionRate - overtimeRate;
+  const salesSalary      = Math.floor(salesAmount * adjustedRate);
+  const minimumSalary    = MIKAWA_DAILY_BASE * workDays + overtimePay;
+  const finalSalary      = Math.max(salesSalary, minimumSalary);
+  const performanceAllowance = finalSalary - minimumSalary;
+
+  return { salesSalary, minimumSalary, finalSalary, overtimePay, adjustedRate, performanceAllowance };
+}
 
 // ────────────────────────────────────────────────────────────────────────────
 // ブルーウィング給与計算ロジック
 // ────────────────────────────────────────────────────────────────────────────
 
 export interface BluewingPayrollInput {
-  /** ブルーウィングからの売上金額（円） */
   bluewingSalesAmount: number;
-  /** 歩合率（例: 0.375 = 37.5%） */
   commissionRate: number;
-  /** 固定残業時間（職務手当に含まれるみなし残業時間） */
   fixedOvertimeHours: number;
-  /** 実残業時間（日報ベースの総残業時間） */
   overtimeHours: number;
-  /** 残業単価（円/時） */
   overtimeUnitPrice: number;
-  /** 基本給（日給×出勤日数 等） */
   baseSalary: number;
-  /** 固定手当合計（燃料・駐車等）※残業代・休日除く */
   fixedAllowancesTotal: number;
-  /** 休日出勤代 */
   holidayPay: number;
-  /** 固定残業代（職務手当）として支給する金額 */
   fixedOvertimeAmount: number;
-  /** 深夜手当（計算済み金額） */
   lateNightPay: number;
 }
 
 export interface BluewingPayrollResult {
-  /** 実残業時間（固定みなし超過分） */
   actualOvertimeHours: number;
-  /** 実残業代（超過分のみ） */
   actualOvertimePay: number;
-  /** A = 売上×歩合率 − 実残業代 */
   targetAmount: number;
-  /** B = 基本給 + 固定手当 + 休日出勤 + 深夜手当 */
   baseTotal: number;
-  /** 業績手当 = max(0, A − B)  ※マイナスの場合は0 */
   performanceAllowance: number;
-  /** 最終支給総額 = B + 実残業代 + 固定残業代(職務手当) + 業績手当 */
   grossSalary: number;
 }
 
@@ -348,24 +357,13 @@ export function calculateBluewingPayroll(input: BluewingPayrollInput): BluewingP
     lateNightPay,
   } = input;
 
-  // ① 実残業時間（固定みなしを超えた分）
-  const actualOvertimeHours = Math.max(0, overtimeHours - fixedOvertimeHours);
-
-  // ② 実残業代（超過分 × 単価、四捨五入）
-  const actualOvertimePay = Math.round(actualOvertimeHours * overtimeUnitPrice);
-
-  // ③ A = 売上×歩合率（実残業代を引かない）
-  const targetAmount = Math.floor(bluewingSalesAmount * commissionRate);
-
-  // ④ B = 基本給 + 固定残業代 + 休日出勤（カスタム手当・深夜手当は含めない）
-  const baseTotal = Math.floor(baseSalary + fixedOvertimeAmount + holidayPay);
-
-  // ⑤ 業績手当 = max(0, A - B)を1,000円単位で四捨五入
-  const rawPerformance = Math.max(0, targetAmount - baseTotal);
+  const actualOvertimeHours  = Math.max(0, overtimeHours - fixedOvertimeHours);
+  const actualOvertimePay    = Math.round(actualOvertimeHours * overtimeUnitPrice);
+  const targetAmount         = Math.floor(bluewingSalesAmount * commissionRate);
+  const baseTotal            = Math.floor(baseSalary + fixedOvertimeAmount + holidayPay);
+  const rawPerformance       = Math.max(0, targetAmount - baseTotal);
   const performanceAllowance = Math.round(rawPerformance / 1000) * 1000;
-
-  // ⑥ 最終支給総額 = B + 実残業代 + カスタム手当合計 + 深夜手当 + 業績手当
-  const grossSalary = Math.floor(baseTotal + actualOvertimePay + fixedAllowancesTotal + lateNightPay + performanceAllowance);
+  const grossSalary          = Math.floor(baseTotal + actualOvertimePay + fixedAllowancesTotal + lateNightPay + performanceAllowance);
 
   return {
     actualOvertimeHours,
@@ -374,49 +372,5 @@ export function calculateBluewingPayroll(input: BluewingPayrollInput): BluewingP
     baseTotal,
     performanceAllowance,
     grossSalary,
-  };
-}
-
-export function calculateMikawaPayroll(input: MikawaPayrollInput): MikawaPayrollResult {
-  const {
-    salesAmount,
-    commissionRate,
-    workDays,
-    overtimeHours,
-    fixedOvertimeHours,
-    overtimeUnitPrice,
-  } = input;
-
-  // ① 実残業時間（固定含み時間を超えた分のみ）
-  const actualOvertime = Math.max(0, overtimeHours - fixedOvertimeHours);
-
-  // ② 残業金額
-  const overtimePay = actualOvertime * overtimeUnitPrice;
-
-  // ③ 残業率（売上に対する残業代の割合）
-  const overtimeRate = salesAmount > 0 ? overtimePay / salesAmount : 0;
-
-  // ④ 調整後歩合率
-  const adjustedRate = commissionRate - overtimeRate;
-
-  // ⑤ 売上給与
-  const salesSalary = Math.floor(salesAmount * adjustedRate);
-
-  // ⑥ 最低保証給与
-  const minimumSalary = MIKAWA_DAILY_BASE * workDays + overtimePay;
-
-  // ⑦ 最終給与
-  const finalSalary = Math.max(salesSalary, minimumSalary);
-
-  // ⑧ 業績手当
-  const performanceAllowance = finalSalary - minimumSalary;
-
-  return {
-    salesSalary,
-    minimumSalary,
-    finalSalary,
-    overtimePay,
-    adjustedRate,
-    performanceAllowance,
   };
 }

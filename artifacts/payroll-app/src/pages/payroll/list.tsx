@@ -524,7 +524,8 @@ export default function PayrollList() {
                       <table className="w-full text-sm">
                         <tbody>
                           {[
-                            ["健康保険・厚生年金", selectedPayroll.socialInsurance],
+                            ["社会保険料（健保・子育て支援金・厚年）", selectedPayroll.socialInsurance],
+                            ...(((selectedPayroll.childcareSupportContribution ?? 0) > 0) ? [["　うち 子ども・子育て支援金", selectedPayroll.childcareSupportContribution]] : []),
                             ["雇用保険料", selectedPayroll.employmentInsurance],
                             ["源泉所得税", selectedPayroll.incomeTax],
                             ["市県民税", selectedPayroll.residentTax],

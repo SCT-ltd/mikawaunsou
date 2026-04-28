@@ -1,24 +1,48 @@
 /**
  * 社会保険料・源泉徴収税額 計算モジュール
  *
- * 社会保険: 協会けんぽ東京支部 標準報酬月額等級テーブル方式
+ * 令和8年（2026年）対応
+ * 社会保険: 協会けんぽ東京支部
  * 源泉所得税: 国税庁 給与所得の源泉徴収税額表（月額表）甲欄
  *   - 令和7年版（テーブル参照方式）
- *   - 令和8年版（将来切替用、計算式方式）
+ *   - 令和8年版（テーブル参照方式）
  */
 
 // ────────────────────────────────────────────────────────────────────────────
-// 1. 社会保険料（健康保険・厚生年金）等級テーブル
+// 令和8年度 保険料率定数（協会けんぽ東京支部）
 // ────────────────────────────────────────────────────────────────────────────
 
-const HEALTH_RATE_HALF = 0.04925;   // 健康保険料率デフォルト（健保のみ、介護なし）
-const PENSION_RATE_HALF = 0.09150;  // 厚生年金保険料率 18.300% の折半
-const PENSION_MAX_STD = 650_000;    // 厚生年金標準報酬月額の上限
+/** 健康保険料率（折半前）: 9.85% */
+export const HEALTH_RATE_R8 = 0.0985;
+/** 健康保険料率（従業員折半）: 4.925% */
+export const HEALTH_EMPLOYEE_RATE_R8 = 0.04925;
+/** 介護保険料率（折半前）: 1.62% */
+export const CARE_RATE_R8 = 0.0162;
+/** 健康保険＋介護保険料率（従業員折半）: (9.85+1.62)/2 = 5.735% */
+export const HEALTH_WITH_CARE_EMPLOYEE_RATE_R8 = 0.05735;
+/** 子ども・子育て支援金率（折半前）: 0.23% */
+export const CHILDCARE_SUPPORT_RATE_R8 = 0.0023;
+/** 子ども・子育て支援金率（従業員折半）: 0.115% */
+export const CHILDCARE_SUPPORT_EMPLOYEE_RATE_R8 = 0.00115;
+/** 厚生年金保険料率（従業員折半）: 9.15% */
+export const PENSION_EMPLOYEE_RATE_R8 = 0.0915;
+/** 厚生年金標準報酬月額の上限 */
+export const PENSION_MAX_STD = 650_000;
+/** 雇用保険料率（労働者負担）令和8年度 一般の事業: 0.5% */
+export const EMP_INS_RATE_R8 = 0.005;
+
+// ────────────────────────────────────────────────────────────────────────────
+// 1. 社会保険料（健康保険・厚生年金）等級テーブル
+//    ※ calculateInsuranceAndTax では standardRemuneration を直接使用するため、
+//      このテーブルは getInsuranceGrade / calculateSocialInsurance で引き続き参照
+// ────────────────────────────────────────────────────────────────────────────
+
+const HEALTH_RATE_HALF = 0.04925;
+const PENSION_RATE_HALF = 0.09150;
 
 /**
  * 標準報酬月額等級テーブル
  * [報酬月額以上, 報酬月額未満, 標準報酬月額, 厚生年金適用]
- * 厚生年金適用 false = 健康保険のみ（グレード1-3）
  */
 const INSURANCE_GRADES: [number, number, number, boolean][] = [
   [          0,  63_000,  58_000, false],
@@ -55,7 +79,7 @@ const INSURANCE_GRADES: [number, number, number, boolean][] = [
   [545_000, 575_000, 560_000,  true],
   [575_000, 605_000, 590_000,  true],
   [605_000, 635_000, 620_000,  true],
-  [635_000, 665_000, 650_000,  true],  // 厚生年金上限ここまで
+  [635_000, 665_000, 650_000,  true],
   [665_000, 695_000, 680_000, false],
   [695_000, 730_000, 710_000, false],
   [730_000, 770_000, 750_000, false],
@@ -90,11 +114,8 @@ export function getInsuranceGrade(monthlySalary: number): { stdMonthly: number; 
 
 /**
  * 報酬月額から社会保険料（健保折半＋厚年折半）を計算する
- *
- * @param monthlySalary  報酬月額（standard_remuneration が設定されていればその値を渡す）
- * @param options        会社設定レート（指定なしの場合はデフォルト値）
- *   healthRate:  健康保険料率（従業員折半、介護込みの場合は込み料率を渡す）
- *   pensionRate: 厚生年金保険料率（従業員折半）
+ * ※ calculateInsuranceAndTax を使う場合はこの関数不要。
+ *    既存コードとの後方互換維持のため残置。
  */
 export function calculateSocialInsurance(
   monthlySalary: number,
@@ -116,12 +137,9 @@ export function calculateSocialInsurance(
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// 2. 源泉所得税（月額表甲欄）— 令和7年 テーブル参照方式
+// 2. 給与所得控除・累進税率（内部ユーティリティ）
 // ────────────────────────────────────────────────────────────────────────────
 
-/**
- * 給与所得控除額（国税庁 速算表）
- */
 function _empDed(annual: number): number {
   if (annual <= 1_625_000) return 550_000;
   if (annual <= 1_800_000) return Math.floor(annual * 0.4) - 100_000;
@@ -131,9 +149,6 @@ function _empDed(annual: number): number {
   return 1_950_000;
 }
 
-/**
- * 累進税率 速算表
- */
 function _annualTax(t: number): number {
   if (t <= 0)             return 0;
   if (t <= 1_950_000)     return Math.floor(t * 0.05);
@@ -146,36 +161,30 @@ function _annualTax(t: number): number {
 }
 
 /**
- * 課税所得ブラケット別のキャリブレーション値
- *
- * 令和7年公式月額表との整合を取るための補正値。
- * 検証: 431,000行 dep0 → 計算値12,609 + 101 = 12,710（国税庁公式値と完全一致）
- * 各ブラケットの補正は 10%ブラケット=101 を基準に税率で比例換算。
+ * 課税所得ブラケット別キャリブレーション値
+ * 令和7年公式月額表との整合補正値（令和8年は同一構造のため同値を使用）
  */
 function _calibration(taxable: number): number {
-  if (taxable <= 1_950_000) return 50;    // 5%ブラケット
-  if (taxable <= 3_300_000) return 101;   // 10%ブラケット
-  if (taxable <= 6_950_000) return 202;   // 20%ブラケット
-  if (taxable <= 9_000_000) return 232;   // 23%ブラケット
-  return 333;                              // 33%+ブラケット
+  if (taxable <= 1_950_000) return 50;
+  if (taxable <= 3_300_000) return 101;
+  if (taxable <= 6_950_000) return 202;
+  if (taxable <= 9_000_000) return 232;
+  return 333;
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// 3. 源泉所得税（月額表甲欄）— 令和7年 テーブル参照方式
+// ────────────────────────────────────────────────────────────────────────────
 
 /**
  * 令和7年 源泉徴収税額表（月額表・甲欄）
- *
  * 各行: [社保控除後月額下限, dep0税額, dep1税額, ..., dep7税額]
- * 行の間隔: 1,000円ごと（88,000円～630,000円）
  *
- * 参照方法: 社保控除後月額 が 下限以上・次行下限未満 の行を使用
- *
- * キャリブレーション検証:
- *   431,699円 → 431,000行 → dep0 = 12,710円（国税庁公式値と完全一致）
+ * 検証: 431,699円 → 431,000行 → dep0 = 12,710円（国税庁公式値と完全一致）
  */
 const REIWA7_TABLE: readonly number[][] = (() => {
-  // 基礎控除480k + 甲欄基本枠760k（配偶者相当380k + 甲欄調整380k）
-  // 検証: dep=0 at 431,699 → 12,710（国税庁公式値と完全一致）
-  const BASE_DED = 1_240_000;
-  const DEP_DED  = 380_000;  // 扶養親族等1人あたり控除額
+  const BASE_DED = 1_240_000;  // 基礎控除480k + 甲欄基本枠760k（令和7年）
+  const DEP_DED  = 380_000;
 
   const boundaries: number[] = [0];
   for (let b = 88_000; b <= 630_000; b += 1_000) boundaries.push(b);
@@ -186,7 +195,7 @@ const REIWA7_TABLE: readonly number[][] = (() => {
     const row: number[] = [lower];
 
     for (let dep = 0; dep <= 7; dep++) {
-      const totalDed     = BASE_DED + dep * DEP_DED;
+      const totalDed      = BASE_DED + dep * DEP_DED;
       const taxableAnnual = Math.floor((empIncome - totalDed) / 1_000) * 1_000;
       if (taxableAnnual <= 0) {
         row.push(0);
@@ -199,21 +208,56 @@ const REIWA7_TABLE: readonly number[][] = (() => {
   });
 })();
 
+// ────────────────────────────────────────────────────────────────────────────
+// 4. 源泉所得税（月額表甲欄）— 令和8年 テーブル参照方式
+//    基礎控除額: 480,000 → 580,000（100,000増）
+//    BASE_DED: 1,240,000 → 1,340,000
+// ────────────────────────────────────────────────────────────────────────────
+
 /**
- * テーブルから該当行を検索する（二分探索）
+ * 令和8年 源泉徴収税額表（月額表・甲欄）
+ * 令和7年と同構造、基礎控除額のみ 480k→580k に変更
+ *
+ * 注意: 令和8年公式テーブル公示後、キャリブレーション値の検証・更新を推奨
  */
-function _lookupRow(salary: number): readonly number[] {
+const REIWA8_TABLE: readonly number[][] = (() => {
+  const BASE_DED = 1_340_000;  // 基礎控除580k + 甲欄基本枠760k（令和8年）
+  const DEP_DED  = 380_000;
+
+  const boundaries: number[] = [0];
+  for (let b = 88_000; b <= 630_000; b += 1_000) boundaries.push(b);
+
+  return boundaries.map(lower => {
+    const annual    = lower * 12;
+    const empIncome = annual - _empDed(annual);
+    const row: number[] = [lower];
+
+    for (let dep = 0; dep <= 7; dep++) {
+      const totalDed      = BASE_DED + dep * DEP_DED;
+      const taxableAnnual = Math.floor((empIncome - totalDed) / 1_000) * 1_000;
+      if (taxableAnnual <= 0) {
+        row.push(0);
+      } else {
+        const base = Math.max(0, Math.floor(_annualTax(taxableAnnual) * 1.021 / 12));
+        row.push(base + _calibration(taxableAnnual));
+      }
+    }
+    return row;
+  });
+})();
+
+function _lookupRow(table: readonly number[][], salary: number): readonly number[] {
   let lo = 0;
-  let hi = REIWA7_TABLE.length - 1;
+  let hi = table.length - 1;
   while (lo < hi) {
     const mid = (lo + hi + 1) >> 1;
-    if (REIWA7_TABLE[mid][0] <= salary) {
+    if (table[mid][0] <= salary) {
       lo = mid;
     } else {
       hi = mid - 1;
     }
   }
-  return REIWA7_TABLE[lo];
+  return table[lo];
 }
 
 /**
@@ -230,18 +274,13 @@ export function calculateIncomeTaxReiwa7(
 ): number {
   const salary = Math.max(0, Math.floor(afterInsuranceSalary));
   const dep    = Math.min(7, Math.max(0, Math.floor(dependentEquivCount)));
-  const row    = _lookupRow(salary);
+  const row    = _lookupRow(REIWA7_TABLE, salary);
   return row[dep + 1] ?? 0;
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// 3. 源泉所得税（月額表甲欄）— 令和8年（将来切替用・計算式方式）
-// ────────────────────────────────────────────────────────────────────────────
-
 /**
- * 令和8年（2026年）源泉徴収税額を計算する（月額表甲欄）
+ * 令和8年（2026年）源泉徴収税額を計算する（月額表甲欄・テーブル参照方式）
  * 基礎控除額が480,000→580,000に増加した改正後。
- * 令和8年の公式テーブル公示後にテーブル方式へ移行予定。
  *
  * @param afterInsuranceSalary 社会保険料等控除後の給与等の金額
  * @param dependentEquivCount  扶養親族等の数（配偶者を含む合計、0〜7）
@@ -250,29 +289,163 @@ export function calculateIncomeTaxReiwa8(
   afterInsuranceSalary: number,
   dependentEquivCount: number,
 ): number {
-  const BASE_DED_R8 = 1_340_000; // 基礎控除580k + 甲欄基本枠760k（令和8年）
-  const DEP_DED     = 380_000;
-  const annual      = afterInsuranceSalary * 12;
-  const empIncome   = annual - _empDed(annual);
-  const totalDed    = BASE_DED_R8 + Math.max(0, Math.floor(dependentEquivCount)) * DEP_DED;
-  const taxable     = Math.floor((empIncome - totalDed) / 1_000) * 1_000;
-  if (taxable <= 0) return 0;
-  return Math.max(0, Math.floor(_annualTax(taxable) * 1.021 / 12));
+  const salary = Math.max(0, Math.floor(afterInsuranceSalary));
+  const dep    = Math.min(7, Math.max(0, Math.floor(dependentEquivCount)));
+  const row    = _lookupRow(REIWA8_TABLE, salary);
+  return row[dep + 1] ?? 0;
 }
 
 /**
  * 年度を指定して源泉徴収税額を計算する
- *
- * @param afterInsuranceSalary 社会保険料等控除後の給与等の金額
- * @param dependentEquivCount  扶養親族等の数（配偶者を含む合計、0〜7）
- * @param reiwaYear            令和の年号（7=令和7年、8=令和8年）
  */
 export function calculateIncomeTax(
   afterInsuranceSalary: number,
   dependentEquivCount: number,
-  reiwaYear: 7 | 8 = 7,
+  reiwaYear: 7 | 8 = 8,
 ): number {
   return reiwaYear >= 8
     ? calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount)
     : calculateIncomeTaxReiwa7(afterInsuranceSalary, dependentEquivCount);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 5. 統合計算関数 calculateInsuranceAndTax
+//    健康保険料・子ども子育て支援金・厚生年金・雇用保険・源泉所得税を一括計算
+// ────────────────────────────────────────────────────────────────────────────
+
+export interface InsuranceTaxInput {
+  /** 標準報酬月額（健保・厚年の計算基礎）*/
+  standardRemuneration: number;
+  /** その月の実際の総支給額（雇用保険の計算基礎）*/
+  grossSalary: number;
+  /** 非課税手当合計（通勤手当等、所得税計算から除外する金額）*/
+  nonTaxableAllowances: number;
+  /** 扶養親族数 */
+  dependentCount: number;
+  /** 配偶者控除対象の有無（true で +1人）*/
+  hasSpouse: boolean;
+  /** 介護保険適用（40〜64歳）*/
+  careInsuranceApplied: boolean;
+  /** 厚生年金適用 */
+  pensionApplied: boolean;
+  /** 雇用保険適用 */
+  employmentInsuranceApplied: boolean;
+  /** 住民税（月額）*/
+  residentTax: number;
+  /** その他控除（積立金等）*/
+  customDeductionsTotal?: number;
+  /** 雇用保険料率（省略時は EMP_INS_RATE_R8 = 0.005）*/
+  employmentInsuranceRate?: number;
+}
+
+export interface InsuranceTaxResult {
+  /** 健康保険料（介護保険込みまたはなし）*/
+  healthInsurance: number;
+  /** 子ども・子育て支援金（健保とは別の控除）*/
+  childcareSupportContribution: number;
+  /** 厚生年金保険料 */
+  pension: number;
+  /** 雇用保険料 */
+  employmentInsurance: number;
+  /** 社会保険料等合計（健保＋子育て支援金＋厚年＋雇用保険）*/
+  socialInsuranceTotal: number;
+  /** 社会保険料等控除後の給与等の金額（源泉所得税の計算基礎）*/
+  afterInsuranceSalary: number;
+  /** 源泉所得税 */
+  incomeTax: number;
+  /** 住民税 */
+  residentTax: number;
+  /** 控除合計（全控除項目の合計）*/
+  totalDeductions: number;
+  /** 差引支給額 */
+  netSalary: number;
+}
+
+/**
+ * 令和8年度 社会保険料・源泉所得税を一括計算する
+ *
+ * 計算仕様（令和8年度）:
+ *   健康保険料（介護なし）= 標準報酬月額 × 9.85% ÷ 2
+ *   健康保険料（介護あり）= 標準報酬月額 × (9.85% + 1.62%) ÷ 2 = × 11.47% ÷ 2
+ *   子ども・子育て支援金  = 標準報酬月額 × 0.23% ÷ 2
+ *   厚生年金保険料        = min(標準報酬月額, 650,000) × 18.3% ÷ 2
+ *   雇用保険料            = 総支給額 × 0.5%（令和8年度一般事業）
+ *   源泉所得税            = 月額表甲欄テーブル参照（社保等控除後給与・扶養人数）
+ */
+export function calculateInsuranceAndTax(input: InsuranceTaxInput): InsuranceTaxResult {
+  const {
+    standardRemuneration,
+    grossSalary,
+    nonTaxableAllowances = 0,
+    dependentCount,
+    hasSpouse,
+    careInsuranceApplied,
+    pensionApplied,
+    employmentInsuranceApplied,
+    residentTax = 0,
+    customDeductionsTotal = 0,
+    employmentInsuranceRate = EMP_INS_RATE_R8,
+  } = input;
+
+  // 健康保険料：標準報酬月額 × 料率（介護保険の有無で料率変更）
+  const healthEmployeeRate = careInsuranceApplied
+    ? HEALTH_WITH_CARE_EMPLOYEE_RATE_R8   // 9.85% + 1.62% = 11.47% の折半
+    : HEALTH_EMPLOYEE_RATE_R8;             // 9.85% の折半
+  const healthInsurance = round50sen(standardRemuneration * healthEmployeeRate);
+
+  // 子ども・子育て支援金：標準報酬月額 × 0.23% ÷ 2
+  const childcareSupportContribution = round50sen(standardRemuneration * CHILDCARE_SUPPORT_EMPLOYEE_RATE_R8);
+
+  // 厚生年金保険料：min(標準報酬月額, 650,000) × 9.15%
+  const pensionBase = Math.min(standardRemuneration, PENSION_MAX_STD);
+  const pension = pensionApplied
+    ? round50sen(pensionBase * PENSION_EMPLOYEE_RATE_R8)
+    : 0;
+
+  // 雇用保険料：総支給額 × 雇用保険率（0.5%）
+  const employmentInsurance = employmentInsuranceApplied
+    ? round50sen(grossSalary * employmentInsuranceRate)
+    : 0;
+
+  // 社会保険料等合計
+  const socialInsuranceTotal = healthInsurance + childcareSupportContribution + pension + employmentInsurance;
+
+  // 課税対象額（社保等控除後の給与等の金額）
+  // = 総支給額 − 非課税手当 − 健康保険料 − 子育て支援金 − 厚生年金 − 雇用保険
+  const afterInsuranceSalary = grossSalary
+    - nonTaxableAllowances
+    - healthInsurance
+    - childcareSupportContribution
+    - pension
+    - employmentInsurance;
+
+  // 源泉所得税：令和8年月額表甲欄テーブル参照
+  // 扶養親族等の数 = dependentCount + (hasSpouse ? 1 : 0)
+  const dependentEquivCount = dependentCount + (hasSpouse ? 1 : 0);
+  const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
+
+  // 控除合計
+  const totalDeductions = healthInsurance
+    + childcareSupportContribution
+    + pension
+    + employmentInsurance
+    + incomeTax
+    + residentTax
+    + (customDeductionsTotal ?? 0);
+
+  // 差引支給額
+  const netSalary = grossSalary - totalDeductions;
+
+  return {
+    healthInsurance,
+    childcareSupportContribution,
+    pension,
+    employmentInsurance,
+    socialInsuranceTotal,
+    afterInsuranceSalary,
+    incomeTax,
+    residentTax,
+    totalDeductions,
+    netSalary,
+  };
 }

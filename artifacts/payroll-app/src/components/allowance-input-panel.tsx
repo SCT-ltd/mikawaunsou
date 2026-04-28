@@ -20,7 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { Plus, X, GripVertical } from "lucide-react";
 import { Reorder, useDragControls } from "framer-motion";
-import { calculateIncomeTaxReiwa8, getInsuranceGrade, round50sen } from "@/lib/tax-tables-reiwa8";
+import { calculateIncomeTaxReiwa8, round50sen } from "@/lib/tax-tables-reiwa8";
 
 function roundJapanese(amount: number): number {
   return Math.floor(amount);
@@ -459,26 +459,35 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange }: Pr
   const allowancesTotal = rows.reduce((s, r) => s + (r.amount || 0), 0);
   const grandTotal = baseSalaryInput + allowancesTotal;
 
-  const healthInsuranceRate = company?.healthInsuranceEmployeeRate ?? 0.0575;
-  const careInsuranceRate = company?.careInsuranceRate ?? 0.0091;
   const pensionRate = company?.pensionEmployeeRate ?? 0.0915;
+  const empInsRate = (company?.employmentInsuranceRate ?? 0) > 0
+    ? company!.employmentInsuranceRate
+    : 0.005;
+
+  // 令和8年度レート
+  const HEALTH_RATE_NO_CARE = 0.04925;     // 健保のみ: 9.85%/2
+  const HEALTH_RATE_WITH_CARE = 0.05735;   // 健保+介護: (9.85+1.62)%/2
+  const CHILDCARE_RATE = 0.00115;          // 子育て支援金: 0.23%/2
+
+  const appliedHealthRate = employee.careInsuranceApplied === true
+    ? HEALTH_RATE_WITH_CARE
+    : HEALTH_RATE_NO_CARE;
 
   const empSR = (employee as unknown as { standardRemuneration?: number }).standardRemuneration ?? 0;
-  const gradeBase = empSR > 0 ? empSR : grandTotal;
-  const { stdMonthly } = getInsuranceGrade(gradeBase);
+  const insBase = empSR > 0 ? empSR : grandTotal;
 
-  const healthInsurance = round50sen(stdMonthly * healthInsuranceRate);
-  const careInsurance = (employee.careInsuranceApplied === true && healthInsuranceRate < 0.055)
-    ? round50sen(stdMonthly * careInsuranceRate)
-    : 0;
-  const pensionInsurance = round50sen(Math.min(stdMonthly, 650_000) * pensionRate);
+  const healthInsurance = round50sen(insBase * appliedHealthRate);
+  const childcareSupportContribution = round50sen(insBase * CHILDCARE_RATE);
+  const pensionInsurance = round50sen(Math.min(insBase, 650_000) * pensionRate);
   const employmentInsurance = (employee.employmentInsuranceApplied !== false)
-    ? round50sen(grandTotal * 0.0055)
+    ? round50sen(grandTotal * empInsRate)
     : 0;
 
-  const totalInsurance = healthInsurance + careInsurance + pensionInsurance + employmentInsurance;
+  const totalInsurance = healthInsurance + childcareSupportContribution + pensionInsurance + employmentInsurance;
 
-  const afterInsuranceSalary = Math.max(0, grandTotal - totalInsurance);
+  const afterInsuranceSalary = Math.max(0,
+    grandTotal - healthInsurance - childcareSupportContribution - pensionInsurance - employmentInsurance
+  );
   const dependentEquivCount = (employee.dependentCount ?? 0) + ((employee.hasSpouse ?? false) ? 1 : 0);
   const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
 
@@ -597,11 +606,18 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange }: Pr
             {/* ── 控除（社会保険料）セクション ── */}
             <tr className="bg-background">
               {sectionLabel("控　除", 5)}
-              <td className="border border-border px-2 py-1 text-muted-foreground">健康保険料</td>
+              <td className="border border-border px-2 py-1 text-muted-foreground">
+                健康保険料{employee.careInsuranceApplied === true ? "（介護込）" : ""}
+              </td>
               <td className="border border-border" />
               <td className="border border-border px-2 py-1.5 text-right tabular-nums">{fmt(healthInsurance)}</td>
             </tr>
             <tr className="bg-muted/20">
+              <td className="border border-border px-2 py-1 text-muted-foreground">子ども・子育て支援金</td>
+              <td className="border border-border" />
+              <td className="border border-border px-2 py-1.5 text-right tabular-nums">{fmt(childcareSupportContribution)}</td>
+            </tr>
+            <tr className="bg-background">
               <td className="border border-border px-2 py-1 text-muted-foreground">厚生年金保険料</td>
               <td className="border border-border" />
               <td className="border border-border px-2 py-1.5 text-right tabular-nums">{fmt(pensionInsurance)}</td>
@@ -688,9 +704,11 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange }: Pr
         )}
         {company && (
           <div className="mx-0 mt-2 mb-1 px-3 py-2 bg-muted/40 border rounded text-xs text-muted-foreground">
-            適用料率：健保 {(healthInsuranceRate * 100).toFixed(2)}%・厚年 {(pensionRate * 100).toFixed(2)}%・雇保 0.55%
+            適用料率：健保 {(appliedHealthRate * 100).toFixed(3)}%
+            {employee.careInsuranceApplied && <span className="text-amber-600">（介護込）</span>}
+            ・子育て支援金 0.115%・厚年 {(pensionRate * 100).toFixed(2)}%・雇保 {(empInsRate * 100).toFixed(1)}%
             {empSR > 0 && (
-              <span className="ml-2 text-blue-600">（健保・厚年は標準報酬月額 {empSR.toLocaleString("ja-JP")} 円ベース）</span>
+              <span className="ml-2 text-blue-600">（健保・厚年・支援金は標準報酬月額 {empSR.toLocaleString("ja-JP")} 円ベース）</span>
             )}
           </div>
         )}
