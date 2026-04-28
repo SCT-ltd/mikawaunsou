@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "wouter";
+import { playNotificationSound, unlockAudio } from "@/lib/notification-sound";
 
 type EventType = "clock_in" | "clock_out" | "break_start" | "break_end";
 type Status = "未出勤" | "出勤中" | "休憩中" | "退勤済";
@@ -445,6 +446,17 @@ export default function DriverPage() {
     return () => es.close();
   }, [employeeId]);
 
+  // 音声アンロック（最初のユーザー操作で解除）
+  useEffect(() => {
+    const unlock = () => { unlockAudio(); };
+    document.addEventListener("click", unlock, { once: true });
+    document.addEventListener("keydown", unlock, { once: true });
+    return () => {
+      document.removeEventListener("click", unlock);
+      document.removeEventListener("keydown", unlock);
+    };
+  }, []);
+
   // メッセージSSE（リアルタイム受信）
   useEffect(() => {
     if (!pinVerified) return;
@@ -454,18 +466,28 @@ export default function DriverPage() {
         const data = JSON.parse(e.data) as { type: string; message: { id: number; employeeId: number; sender: "office" | "employee"; content: string; createdAt: string } };
         if (data.type === "message" && data.message.employeeId === employeeId) {
           setMessages(prev => prev.find(m => m.id === data.message.id) ? prev : [...prev, data.message]);
-          if (data.message.sender === "office") setUnreadCount(c => c + 1);
+          if (data.message.sender === "office") {
+            // 通知音（事務所からのメッセージのみ）
+            playNotificationSound(data.message.id, {
+              conversationId: data.message.employeeId,
+            });
+            setUnreadCount(c => c + 1);
+          }
         }
       } catch { /* ignore */ }
     };
     return () => es.close();
   }, [employeeId, pinVerified]);
 
-  // 初回メッセージ取得
+  // 初回メッセージ取得 + 初回未読件数ロード
   useEffect(() => {
     if (!pinVerified) return;
     apiFetch(`/messages/${employeeId}`)
       .then((data: { id: number; sender: "office" | "employee"; content: string; createdAt: string }[]) => setMessages(data ?? []))
+      .catch(() => {});
+    // DBからの未読件数を取得（リロード後も保持される）
+    apiFetch(`/messages/${employeeId}/unread-count`)
+      .then((data: { unreadCount: number }) => setUnreadCount(data?.unreadCount ?? 0))
       .catch(() => {});
   }, [employeeId, pinVerified]);
 
@@ -523,13 +545,19 @@ export default function DriverPage() {
     }
   };
 
-  // メッセージタブ開封時に未読リセット＆自動スクロール
+  // メッセージタブ開封時に既読処理・未読リセット・自動スクロール
   useEffect(() => {
     if (activeTab === "messages") {
-      setUnreadCount(0);
+      // DBで既読更新（リロード後も保持）
+      apiFetch(`/messages/${employeeId}/read`, {
+        method: "POST",
+        body: JSON.stringify({ reader: "employee" }),
+      })
+        .then(() => setUnreadCount(0))
+        .catch(() => setUnreadCount(0));
       setTimeout(() => msgBottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
     }
-  }, [activeTab, messages]);
+  }, [activeTab, employeeId]);
 
   // ライブ位置情報の継続送信（PINログイン後に開始）
   useEffect(() => {

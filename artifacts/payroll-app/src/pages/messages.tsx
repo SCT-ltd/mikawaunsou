@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { AppLayout } from "@/components/layout/app-layout";
+import { useUnread } from "@/context/unread-context";
+import { playNotificationSound, unlockAudio } from "@/lib/notification-sound";
 import { Send, MessageSquare, Bell, BellOff, Megaphone, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -78,7 +80,8 @@ export default function MessagesPage() {
   const [sending, setSending] = useState(false);
   const [pushEnabled, setPushEnabled] = useState<boolean | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const eventSourceRef = useRef<EventSource | null>(null);
+  const selectedIdRef = useRef<number | null>(null);
+  const { refreshUnread } = useUnread();
 
   // 一斉送信
   const [broadcastOpen, setBroadcastOpen] = useState(false);
@@ -86,6 +89,22 @@ export default function MessagesPage() {
   const [broadcasting, setBroadcasting] = useState(false);
   const [broadcastDone, setBroadcastDone] = useState<number | null>(null);
   const [broadcastSelected, setBroadcastSelected] = useState<Set<number>>(new Set());
+
+  // selectedIdRef を selectedId と同期
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
+
+  // ── 音声アンロック（最初のユーザー操作で解除） ──
+  useEffect(() => {
+    const unlock = () => { unlockAudio(); };
+    document.addEventListener("click", unlock, { once: true });
+    document.addEventListener("keydown", unlock, { once: true });
+    return () => {
+      document.removeEventListener("click", unlock);
+      document.removeEventListener("keydown", unlock);
+    };
+  }, []);
 
   const fetchConversations = useCallback(async () => {
     const res = await fetch(`${BASE}/api/messages/conversations`);
@@ -97,30 +116,76 @@ export default function MessagesPage() {
     if (res.ok) setMessages(await res.json());
   }, []);
 
+  // ── 既読処理 ──
+  const markRead = useCallback(async (empId: number) => {
+    try {
+      await fetch(`${BASE}/api/messages/${empId}/read`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reader: "office" }),
+      });
+      // 会話一覧の unreadCount を即時更新
+      setConversations(prev =>
+        prev.map(c => c.employee.id === empId ? { ...c, unreadCount: 0 } : c)
+      );
+      refreshUnread();
+    } catch { /* silent */ }
+  }, [refreshUnread]);
+
   // SSE接続
   useEffect(() => {
     const es = new EventSource(`${BASE}/api/messages/stream?employeeId=0`);
-    eventSourceRef.current = es;
     es.onmessage = (e) => {
-      const data = JSON.parse(e.data) as { type: string; message: Message };
-      if (data.type === "message") {
+      try {
+        const data = JSON.parse(e.data) as { type: string; message: Message };
+        if (data.type !== "message") return;
+        const msg = data.message;
+
+        // 重複排除してメッセージ追加
         setMessages(prev => {
-          if (prev.find(m => m.id === data.message.id)) return prev;
-          return [...prev, data.message];
+          if (prev.find(m => m.id === msg.id)) return prev;
+          return [...prev, msg];
         });
+
+        // ── 通知音（社員からのメッセージのみ） ──
+        if (msg.sender === "employee") {
+          playNotificationSound(msg.id, {
+            conversationId: msg.employeeId,
+          });
+
+          // 該当会話を開いていれば即既読
+          if (selectedIdRef.current === msg.employeeId) {
+            markRead(msg.employeeId);
+          } else {
+            // 未読カウントをインクリメント
+            setConversations(prev =>
+              prev.map(c =>
+                c.employee.id === msg.employeeId
+                  ? { ...c, unreadCount: c.unreadCount + 1, latestMessage: msg }
+                  : c
+              )
+            );
+          }
+          refreshUnread();
+        }
+
+        // 会話一覧の最新メッセージ更新
         fetchConversations();
-      }
+      } catch { /* ignore */ }
     };
     return () => es.close();
-  }, [fetchConversations]);
+  }, [fetchConversations, markRead, refreshUnread]);
 
   // 初期読み込み
   useEffect(() => { fetchConversations(); }, [fetchConversations]);
 
-  // 選択変更
+  // 会話選択時：メッセージ取得 + 既読
   useEffect(() => {
-    if (selectedId != null) fetchMessages(selectedId);
-  }, [selectedId, fetchMessages]);
+    if (selectedId != null) {
+      fetchMessages(selectedId);
+      markRead(selectedId);
+    }
+  }, [selectedId, fetchMessages, markRead]);
 
   // 自動スクロール
   useEffect(() => {
@@ -194,21 +259,41 @@ export default function MessagesPage() {
   const sendMessage = async () => {
     if (!selectedId || !input.trim() || sending) return;
     setSending(true);
+    const content = input.trim();
+    setInput("");
     try {
-      await fetch(`${BASE}/api/messages`, {
+      const res = await fetch(`${BASE}/api/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ employeeId: selectedId, sender: "office", content: input.trim() }),
+        body: JSON.stringify({ employeeId: selectedId, sender: "office", content }),
       });
-      setInput("");
-      await fetchMessages(selectedId);
-      await fetchConversations();
+      if (res.ok) {
+        const msg = await res.json() as Message;
+        // 即時表示（重複防止）
+        setMessages(prev => prev.find(m => m.id === msg.id) ? prev : [...prev, msg]);
+        await fetchConversations();
+      } else {
+        setInput(content);
+        alert("送信に失敗しました。再試行してください。");
+      }
+    } catch {
+      setInput(content);
+      alert("送信に失敗しました。通信エラーが発生しました。");
     } finally {
       setSending(false);
     }
   };
 
   const selected = conversations.find(c => c.employee.id === selectedId);
+
+  // 未読のある会話を上に、なければ最新メッセージ順
+  const sortedConversations = [...conversations].sort((a, b) => {
+    if (a.unreadCount > 0 && b.unreadCount === 0) return -1;
+    if (a.unreadCount === 0 && b.unreadCount > 0) return 1;
+    const aTime = a.latestMessage?.createdAt ?? "";
+    const bTime = b.latestMessage?.createdAt ?? "";
+    return bTime.localeCompare(aTime);
+  });
 
   return (
     <AppLayout>
@@ -238,7 +323,6 @@ export default function MessagesPage() {
                   </div>
                 ) : (
                   <>
-                    {/* 送信先チェックボックス */}
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <p className="text-sm font-medium">送信先を選択</p>
@@ -276,7 +360,6 @@ export default function MessagesPage() {
                       </p>
                     </div>
 
-                    {/* メッセージ入力 */}
                     <textarea
                       value={broadcastText}
                       onChange={e => setBroadcastText(e.target.value)}
@@ -336,33 +419,47 @@ export default function MessagesPage() {
           </div>
 
           <div className="flex-1 overflow-y-auto">
-            {conversations.map(conv => (
-              <button
-                key={conv.employee.id}
-                className={`w-full text-left px-4 py-3 border-b flex items-start gap-3 hover:bg-muted/50 transition-colors
-                  ${selectedId === conv.employee.id ? "bg-primary/8 border-l-2 border-l-primary" : ""}`}
-                onClick={() => setSelectedId(conv.employee.id)}
-              >
-                <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-base shrink-0">
-                  {conv.employee.name[0]}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-1">
-                    <span className="font-semibold text-sm truncate">{conv.employee.name}</span>
-                    {conv.latestMessage && (
-                      <span className="text-xs text-muted-foreground shrink-0">
-                        {formatTime(conv.latestMessage.createdAt)}
+            {sortedConversations.map(conv => {
+              const hasUnread = conv.unreadCount > 0;
+              const isSelected = selectedId === conv.employee.id;
+              return (
+                <button
+                  key={conv.employee.id}
+                  className={`w-full text-left px-4 py-3 border-b flex items-start gap-3 hover:bg-muted/50 transition-colors
+                    ${isSelected ? "bg-primary/8 border-l-2 border-l-primary" : ""}
+                    ${hasUnread && !isSelected ? "bg-blue-50/60" : ""}`}
+                  onClick={() => setSelectedId(conv.employee.id)}
+                >
+                  <div className="relative shrink-0">
+                    <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-base">
+                      {conv.employee.name[0]}
+                    </div>
+                    {hasUnread && (
+                      <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
+                        {conv.unreadCount > 99 ? "99+" : conv.unreadCount}
                       </span>
                     )}
                   </div>
-                  <p className="text-xs text-muted-foreground truncate mt-0.5">
-                    {conv.latestMessage
-                      ? `${conv.latestMessage.sender === "office" ? "事務所: " : ""}${conv.latestMessage.content}`
-                      : "メッセージなし"}
-                  </p>
-                </div>
-              </button>
-            ))}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className={`text-sm truncate ${hasUnread ? "font-bold text-foreground" : "font-semibold"}`}>
+                        {conv.employee.name}
+                      </span>
+                      {conv.latestMessage && (
+                        <span className="text-xs text-muted-foreground shrink-0">
+                          {formatTime(conv.latestMessage.createdAt)}
+                        </span>
+                      )}
+                    </div>
+                    <p className={`text-xs truncate mt-0.5 ${hasUnread ? "font-semibold text-foreground/80" : "text-muted-foreground"}`}>
+                      {conv.latestMessage
+                        ? `${conv.latestMessage.sender === "office" ? "自分: " : ""}${conv.latestMessage.content}`
+                        : "メッセージなし"}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -401,7 +498,7 @@ export default function MessagesPage() {
                           {selected?.employee.name[0]}
                         </div>
                       )}
-                      <div className={`max-w-[70%] group`}>
+                      <div className="max-w-[70%] group">
                         {!isOffice && (
                           <p className="text-xs text-muted-foreground mb-1 ml-1">{selected?.employee.name}</p>
                         )}

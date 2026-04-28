@@ -1,7 +1,7 @@
 import { Router, type Response } from "express";
 import webpush from "web-push";
 import { db, messagesTable, pushSubscriptionsTable, employeesTable } from "@workspace/db";
-import { eq, and, desc, asc } from "drizzle-orm";
+import { eq, and, desc, asc, isNull, sql } from "drizzle-orm";
 
 const router = Router();
 
@@ -55,6 +55,19 @@ router.get("/messages/stream", (req, res) => {
   });
 });
 
+// ── 事務所全体の未読件数 ─────────────────────────────
+// ※ /messages/:employeeId より前に定義（パスマッチ優先のため）
+router.get("/messages/unread-count", async (_req, res) => {
+  const rows = await db
+    .select({ id: messagesTable.id })
+    .from(messagesTable)
+    .where(and(
+      eq(messagesTable.sender, "employee"),
+      isNull(messagesTable.readAt),
+    ));
+  return res.json({ totalUnreadCount: rows.length });
+});
+
 // ── 会話一覧（事務所用） ──────────────────────────────
 router.get("/messages/conversations", async (_req, res) => {
   const employees = await db
@@ -71,27 +84,14 @@ router.get("/messages/conversations", async (_req, res) => {
       .orderBy(desc(messagesTable.createdAt))
       .limit(1);
 
-    const unread = await db
+    const unreadRows = await db
       .select({ id: messagesTable.id })
       .from(messagesTable)
       .where(and(
         eq(messagesTable.employeeId, emp.id),
         eq(messagesTable.sender, "employee"),
-      ))
-      .then(rows => rows.filter(r => {
-        // readAt is null = unread
-        return true; // counted below
-      }));
-
-    const unreadCount = (await db
-      .select({ id: messagesTable.id })
-      .from(messagesTable)
-      .where(and(
-        eq(messagesTable.employeeId, emp.id),
-        eq(messagesTable.sender, "employee"),
-      ))
-    ).length; // simplified: count all employee messages as potentially unread
-    void unread;
+        isNull(messagesTable.readAt),
+      ));
 
     return {
       employee: {
@@ -101,22 +101,72 @@ router.get("/messages/conversations", async (_req, res) => {
         department: emp.department,
       },
       latestMessage: latest ?? null,
-      unreadCount,
+      unreadCount: unreadRows.length,
     };
   }));
 
   return res.json(result);
 });
 
+// ── ドライバーの未読件数（事務所→ドライバー） ─────────
+router.get("/messages/:employeeId/unread-count", async (req, res) => {
+  const employeeId = parseInt(req.params["employeeId"], 10);
+  if (isNaN(employeeId)) return res.status(400).json({ error: "Invalid employeeId" });
+  const rows = await db
+    .select({ id: messagesTable.id })
+    .from(messagesTable)
+    .where(and(
+      eq(messagesTable.employeeId, employeeId),
+      eq(messagesTable.sender, "office"),
+      isNull(messagesTable.readAt),
+    ));
+  return res.json({ unreadCount: rows.length });
+});
+
 // ── メッセージ取得 ─────────────────────────────────────
 router.get("/messages/:employeeId", async (req, res) => {
   const employeeId = parseInt(req.params["employeeId"], 10);
+  if (isNaN(employeeId)) return res.status(400).json({ error: "Invalid employeeId" });
   const messages = await db
     .select()
     .from(messagesTable)
     .where(eq(messagesTable.employeeId, employeeId))
     .orderBy(asc(messagesTable.createdAt));
   return res.json(messages);
+});
+
+// ── 既読処理 ───────────────────────────────────────────
+// reader='office' → employeeからのメッセージを既読
+// reader='employee' → officeからのメッセージを既読
+router.post("/messages/:employeeId/read", async (req, res) => {
+  const employeeId = parseInt(req.params["employeeId"], 10);
+  if (isNaN(employeeId)) return res.status(400).json({ error: "Invalid employeeId" });
+  const { reader } = req.body as { reader: "office" | "employee" };
+
+  if (!reader || (reader !== "office" && reader !== "employee")) {
+    return res.status(400).json({ error: "reader は 'office' または 'employee' を指定してください" });
+  }
+
+  const senderToMark = reader === "office" ? "employee" : "office";
+
+  const updated = await db
+    .update(messagesTable)
+    .set({ readAt: sql`NOW()` })
+    .where(and(
+      eq(messagesTable.employeeId, employeeId),
+      eq(messagesTable.sender, senderToMark),
+      isNull(messagesTable.readAt),
+    ))
+    .returning({ id: messagesTable.id });
+
+  console.log("[MESSAGES_MARK_READ]", {
+    employeeId,
+    reader,
+    senderToMark,
+    markedReadCount: updated.length,
+  });
+
+  return res.json({ markedReadCount: updated.length });
 });
 
 // ── メッセージ送信 ─────────────────────────────────────
@@ -259,7 +309,6 @@ router.post("/push/subscribe", async (req, res) => {
     return res.status(400).json({ error: "購読情報が不足しています" });
   }
 
-  // 既存の同エンドポイントを更新 or 新規挿入
   const existing = await db.select({ id: pushSubscriptionsTable.id })
     .from(pushSubscriptionsTable)
     .where(eq(pushSubscriptionsTable.endpoint, endpoint))
