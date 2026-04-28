@@ -11,6 +11,8 @@ import {
   useConfirmPayroll,
   useListMonthlyRecords,
   useGetCompany,
+  useGetEmployeeAllowances,
+  useGetEmployeeDeductions,
 } from "@workspace/api-client-react";
 import { PayrollSlipPrint } from "@/components/payroll-slip-print";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -99,6 +101,14 @@ export default function PayrollList() {
     { query: { enabled: !!selectedPayrollId, queryKey: getGetPayrollQueryKey(selectedPayrollId ?? 0) } }
   );
   const confirmPayroll = useConfirmPayroll();
+
+  const selectedEmployeeId = selectedPayroll?.employeeId ?? 0;
+  const { data: printEmployeeAllowances } = useGetEmployeeAllowances(selectedEmployeeId, {
+    query: { enabled: !!selectedPayroll?.employeeId },
+  });
+  const { data: printEmployeeDeductions } = useGetEmployeeDeductions(selectedEmployeeId, {
+    query: { enabled: !!selectedPayroll?.employeeId },
+  });
 
   const handleConfirm = async () => {
     if (!selectedPayrollId) return;
@@ -648,6 +658,10 @@ export default function PayrollList() {
         <PayrollSlipPrint
           payroll={printPayroll as Parameters<typeof PayrollSlipPrint>[0]["payroll"]}
           companyName={company?.name ?? "三川運送株式会社"}
+          employeeAllowances={printEmployeeAllowances as Parameters<typeof PayrollSlipPrint>[0]["employeeAllowances"]}
+          employeeDeductions={printEmployeeDeductions as Parameters<typeof PayrollSlipPrint>[0]["employeeDeductions"]}
+          employee={employees?.find(e => e.id === printPayroll.employeeId) as Parameters<typeof PayrollSlipPrint>[0]["employee"]}
+          company={company as Parameters<typeof PayrollSlipPrint>[0]["company"]}
         />
       )}
     </AppLayout>
