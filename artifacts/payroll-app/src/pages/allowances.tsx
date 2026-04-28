@@ -1201,10 +1201,6 @@ function EmployeeMasterTab() {
                     <TableHead>部署</TableHead>
                     <TableHead>役職</TableHead>
                     <TableHead>給与形態</TableHead>
-                    <TableHead>扶養</TableHead>
-                    <TableHead className="text-right">標準報酬</TableHead>
-                    <TableHead>介護保険</TableHead>
-                    <TableHead>雇保</TableHead>
                     <TableHead>在籍</TableHead>
                     <TableHead className="w-20 text-right">操作</TableHead>
                   </TableRow>
@@ -1226,26 +1222,6 @@ function EmployeeMasterTab() {
                           <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-xs">時給制</Badge>
                         ) : (
                           <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200 text-xs">固定給</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-sm">{emp.dependentCount}人</TableCell>
-                      <TableCell className="text-right text-sm tabular-nums">
-                        {(emp.standardRemuneration && emp.standardRemuneration > 0)
-                          ? emp.standardRemuneration.toLocaleString("ja-JP") + "円"
-                          : <span className="text-muted-foreground">未設定</span>}
-                      </TableCell>
-                      <TableCell>
-                        {(emp.careInsuranceApplied ?? false) ? (
-                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-xs">適用</Badge>
-                        ) : (
-                          <span className="text-muted-foreground text-sm">非適用</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {(emp.employmentInsuranceApplied ?? true) ? (
-                          <Badge variant="secondary" className="text-xs">適用</Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-muted-foreground text-xs">非適用</Badge>
                         )}
                       </TableCell>
                       <TableCell>
