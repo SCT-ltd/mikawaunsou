@@ -14,7 +14,7 @@ import {
   useGetEmployeeAllowances,
   useGetEmployeeDeductions,
 } from "@workspace/api-client-react";
-import { PayrollSlipPrint } from "@/components/payroll-slip-print";
+import { PayslipPrintClassic } from "@/components/payslip-print-classic";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -136,15 +136,17 @@ export default function PayrollList() {
       console.warn("[handlePrint] No payroll selected.");
       return;
     }
-    const existingPortals = document.querySelectorAll("#payroll-print-root");
-    console.log("[handlePrint] Existing print portals before set:", existingPortals.length);
+    console.log("[handlePrint] Setting print payroll...");
     setPrintPayroll(selectedPayroll);
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        const portals = document.querySelectorAll("#payroll-print-root");
-        console.log("[handlePrint] Print portals at print time:", portals.length);
-        if (portals.length !== 1) {
-          console.error("[handlePrint] Expected exactly 1 print portal, found:", portals.length);
+        const printTargets = document.querySelectorAll("[data-print-target='payslip-classic']");
+        console.log("[handlePrint] data-print-target='payslip-classic' count:", printTargets.length);
+        if (printTargets.length !== 1) {
+          console.error("印刷対象DOMが1つではありません", printTargets.length);
+          alert("印刷対象の生成に問題があります。ページをリロードして再度お試しください。");
+          setPrintPayroll(null);
+          return;
         }
         window.print();
       });
@@ -655,13 +657,13 @@ export default function PayrollList() {
 
       {/* ── 印刷専用ポータル（@media print で表示、通常時は非表示） ── */}
       {printPayroll && (
-        <PayrollSlipPrint
-          payroll={printPayroll as Parameters<typeof PayrollSlipPrint>[0]["payroll"]}
+        <PayslipPrintClassic
+          payroll={printPayroll as Parameters<typeof PayslipPrintClassic>[0]["payroll"]}
           companyName={company?.name ?? "三川運送株式会社"}
-          employeeAllowances={printEmployeeAllowances as Parameters<typeof PayrollSlipPrint>[0]["employeeAllowances"]}
-          employeeDeductions={printEmployeeDeductions as Parameters<typeof PayrollSlipPrint>[0]["employeeDeductions"]}
-          employee={employees?.find(e => e.id === printPayroll.employeeId) as Parameters<typeof PayrollSlipPrint>[0]["employee"]}
-          company={company as Parameters<typeof PayrollSlipPrint>[0]["company"]}
+          employeeAllowances={printEmployeeAllowances as Parameters<typeof PayslipPrintClassic>[0]["employeeAllowances"]}
+          employeeDeductions={printEmployeeDeductions as Parameters<typeof PayslipPrintClassic>[0]["employeeDeductions"]}
+          employee={employees?.find(e => e.id === printPayroll.employeeId) as Parameters<typeof PayslipPrintClassic>[0]["employee"]}
+          company={company as Parameters<typeof PayslipPrintClassic>[0]["company"]}
         />
       )}
     </AppLayout>

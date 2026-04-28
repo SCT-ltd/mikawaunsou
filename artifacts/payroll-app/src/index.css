@@ -139,10 +139,15 @@
 
 /* ── 印刷メディア設定 ───────────────────────────────────────────────────── */
 @media print {
-  /* A4縦・余白設定 */
+  /* A4横・余白設定 */
   @page {
-    size: A4 portrait;
-    margin: 14mm 12mm 12mm 12mm;
+    size: A4 landscape;
+    margin: 8mm;
+  }
+
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
   }
 
   /* アプリ本体（Reactルート）を非表示 */
@@ -159,15 +164,19 @@
     height: 100% !important;
     background: #fff !important;
     z-index: 99999 !important;
-    overflow: visible !important;
+    overflow: hidden !important;
+    padding: 0 !important;
+    margin: 0 !important;
   }
 
-  /* ページ分割・改ページ禁止 */
-  #payroll-slip-print-content {
+  /* 帳票本体は1ページ内に収める */
+  [data-print-target="payslip-classic"] {
     page-break-after: avoid;
     page-break-before: avoid;
     page-break-inside: avoid;
     break-inside: avoid;
+    width: 100% !important;
+    height: 100% !important;
   }
 
   /* スクロールバー・アウトライン除去 */
