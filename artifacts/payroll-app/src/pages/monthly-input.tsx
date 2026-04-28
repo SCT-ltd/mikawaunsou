@@ -852,21 +852,51 @@ export default function MonthlyInput() {
                     colSpan={7}
                     className="border-x border-sky-200 bg-sky-50 py-1.5 text-center font-semibold text-sky-800 text-[11px] tracking-wide"
                   >
-                    勤怠・時間管理
+                    <div className="flex items-center justify-center gap-1">
+                      勤怠・時間管理
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-3 w-3 text-sky-500/60 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent className="text-xs max-w-[220px]">
+                          平日・土曜・日曜・欠勤・残業・深夜・休日の勤務実績を入力します。給与計算の基礎データになります。
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
                   </th>
                   {/* 運行実績 */}
                   <th
                     colSpan={2}
                     className="border-x border-amber-200 bg-amber-50 py-1.5 text-center font-semibold text-amber-800 text-[11px] tracking-wide"
                   >
-                    運行実績
+                    <div className="flex items-center justify-center gap-1">
+                      運行実績
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-3 w-3 text-amber-500/60 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent className="text-xs max-w-[200px]">
+                          当月の走行距離（km）と配送件数を入力します。
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
                   </th>
                   {/* 給与計算基礎 */}
                   <th
                     colSpan={3}
                     className="border-x border-violet-200 bg-violet-50 py-1.5 text-center font-semibold text-violet-800 text-[11px] tracking-wide"
                   >
-                    給与計算基礎
+                    <div className="flex items-center justify-center gap-1">
+                      給与計算基礎
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-3 w-3 text-violet-500/60 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent className="text-xs max-w-[220px]">
+                          売上・歩合率・BW売上を入力します。歩合給やBluewing計算の基礎データです。
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
                   </th>
                   {/* 概算（2行分） */}
                   <th
@@ -890,7 +920,17 @@ export default function MonthlyInput() {
                     rowSpan={2}
                     className="bg-muted/40 border-l border-border px-2 py-1.5 text-left font-semibold text-muted-foreground align-bottom min-w-[130px]"
                   >
-                    備考
+                    <div className="flex items-center gap-1">
+                      備考
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-3 w-3 text-muted-foreground/50 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent className="text-xs max-w-[200px]">
+                          各社員の摘要・メモを入力します。給与計算には影響しません。
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
                   </th>
                 </tr>
 
@@ -898,38 +938,86 @@ export default function MonthlyInput() {
                 <tr className="border-b border-border">
                   {/* 勤怠7列 */}
                   {[
-                    { label: "平日", sub: "日" },
-                    { label: "土曜", sub: "日" },
-                    { label: "日曜", sub: "h" },
-                    { label: "欠勤", sub: "日" },
-                    { label: "残業", sub: "h" },
-                    { label: "深夜", sub: "h" },
-                    { label: "休日", sub: "日" },
-                  ].map(({ label, sub }) => (
+                    { label: "平日",  sub: "日", tip: "平日の出勤日数。日給制社員の基本給計算に使用します。" },
+                    { label: "土曜",  sub: "日", tip: "土曜日の出勤日数。土曜日給（平日と異なる日給）で計算されます。" },
+                    { label: "日曜",  sub: "h",  tip: "日曜・祝日の勤務時間（時間単位）。日曜時給で計算されます。" },
+                    { label: "欠勤",  sub: "日", tip: "欠勤日数。欠勤控除の計算に使用します。" },
+                    { label: "残業",  sub: "h",  tip: "法定外残業時間（時間単位）。割増賃金（×1.25）で計算されます。" },
+                    { label: "深夜",  sub: "h",  tip: "深夜勤務時間（時間単位）。深夜割増（+0.25）が加算されます。" },
+                    { label: "休日",  sub: "日", tip: "法定休日出勤日数。休日割増賃金（×1.35）で計算されます。" },
+                  ].map(({ label, sub, tip }) => (
                     <th key={label} className="bg-sky-50/60 border-x border-sky-100 px-1 py-1 text-center font-medium text-sky-700 w-[64px]">
-                      <span>{label}</span>
-                      <span className="text-[9px] text-sky-500 ml-0.5">({sub})</span>
+                      <div className="flex items-center justify-center gap-0.5 flex-wrap">
+                        <span>{label}</span>
+                        <span className="text-[9px] text-sky-500">({sub})</span>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Info className="h-2.5 w-2.5 text-sky-400/60 cursor-help flex-shrink-0" />
+                          </TooltipTrigger>
+                          <TooltipContent className="text-xs max-w-[200px]">{tip}</TooltipContent>
+                        </Tooltip>
+                      </div>
                     </th>
                   ))}
                   {/* 運行2列 */}
                   {[
-                    { label: "走行KM", sub: "km" },
-                    { label: "件数", sub: "件" },
-                  ].map(({ label, sub }) => (
+                    { label: "走行KM", sub: "km", tip: "当月の総走行距離（km）。走行距離手当の計算に使用します。" },
+                    { label: "件数",   sub: "件",  tip: "当月の配送件数。件数連動の手当計算に使用します。" },
+                  ].map(({ label, sub, tip }) => (
                     <th key={label} className="bg-amber-50/60 border-x border-amber-100 px-1 py-1 text-center font-medium text-amber-700 w-[72px]">
-                      <span>{label}</span>
-                      <span className="text-[9px] text-amber-500 ml-0.5">({sub})</span>
+                      <div className="flex items-center justify-center gap-0.5 flex-wrap">
+                        <span>{label}</span>
+                        <span className="text-[9px] text-amber-500">({sub})</span>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Info className="h-2.5 w-2.5 text-amber-400/60 cursor-help flex-shrink-0" />
+                          </TooltipTrigger>
+                          <TooltipContent className="text-xs max-w-[200px]">{tip}</TooltipContent>
+                        </Tooltip>
+                      </div>
                     </th>
                   ))}
                   {/* 給与基礎3列 */}
                   <th className="bg-violet-50/60 border-x border-violet-100 px-1 py-1 text-center font-medium text-violet-700 w-[96px]">
-                    売上<span className="text-[9px] text-violet-500 ml-0.5">(円)</span>
+                    <div className="flex items-center justify-center gap-0.5 flex-wrap">
+                      <span>売上</span>
+                      <span className="text-[9px] text-violet-500">(円)</span>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-2.5 w-2.5 text-violet-400/60 cursor-help flex-shrink-0" />
+                        </TooltipTrigger>
+                        <TooltipContent className="text-xs max-w-[200px]">
+                          当月の売上金額。歩合給の計算基礎（売上×歩合率）に使用します。
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
                   </th>
                   <th className="bg-violet-50/60 border-x border-violet-100 px-1 py-1 text-center font-medium text-violet-700 w-[68px]">
-                    歩合%
+                    <div className="flex items-center justify-center gap-0.5">
+                      <span>歩合%</span>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-2.5 w-2.5 text-violet-400/60 cursor-help flex-shrink-0" />
+                        </TooltipTrigger>
+                        <TooltipContent className="text-xs max-w-[200px]">
+                          歩合率（%単位で入力）。例：36.8と入力すると36.8%として計算されます。
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
                   </th>
                   <th className="bg-violet-50/60 border-x border-violet-100 px-1 py-1 text-center font-medium text-violet-700 w-[96px]">
-                    BW売上<span className="text-[9px] text-violet-500 ml-0.5">(円)</span>
+                    <div className="flex items-center justify-center gap-0.5 flex-wrap">
+                      <span>BW売上</span>
+                      <span className="text-[9px] text-violet-500">(円)</span>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-2.5 w-2.5 text-violet-400/60 cursor-help flex-shrink-0" />
+                        </TooltipTrigger>
+                        <TooltipContent className="text-xs max-w-[220px]">
+                          Bluewing（BW）計算用の売上金額。BW計算方式の社員のみ入力します。通常の売上とは別に管理されます。
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
                   </th>
                 </tr>
               </thead>
