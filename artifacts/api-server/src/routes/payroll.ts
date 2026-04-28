@@ -364,6 +364,25 @@ router.post("/payroll/calculate", async (req, res) => {
         "R8_B（子育て支援金あり）": taxR8B,
         clientOfficialTax: 10220,
       });
+
+      const rawEmpInsFinal = grossSalary * empInsRate;
+      console.log("[TAMAGAWA_EMPLOYMENT_INSURANCE_FINAL_CHECK]", {
+        employeeName: emp.name,
+        grossSalary,
+        companySettingsEmploymentInsuranceRate: company.employmentInsuranceRate,
+        employmentInsuranceRateUsed: empInsRate,
+        rawEmploymentInsurance: rawEmpInsFinal,
+        roundedEmploymentInsurance: bwIns.employmentInsurance,
+        expectedEmploymentInsurance: 2414,
+      });
+
+      console.log("[TAMAGAWA_DEPENDENT_FINAL_CHECK]", {
+        employeeName: emp.name,
+        dependentCount: emp.dependentCount ?? 0,
+        hasSpouse: emp.hasSpouse ?? false,
+        dependentEquivalentCount: depEquivCount,
+        expectedDependentEquivalentCount: 1,
+      });
     }
     // ─────────────────────────────────────────────────────────────
 
