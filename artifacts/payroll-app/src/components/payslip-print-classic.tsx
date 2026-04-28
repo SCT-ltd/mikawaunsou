@@ -270,7 +270,7 @@ const styles = {
   },
 };
 
-function ClassicContent({ payroll, companyName, employeeAllowances, employeeDeductions, employee, company }: ClassicPayslipProps) {
+export function ClassicContent({ payroll, companyName, employeeAllowances, employeeDeductions, employee, company }: ClassicPayslipProps) {
   const isBW = !!(payroll.useBluewingLogic as boolean);
   const childcare = payroll.childcareSupportContribution ?? 0;
 

@@ -15,6 +15,7 @@ import {
   useGetEmployeeDeductions,
 } from "@workspace/api-client-react";
 import { PayslipPrintClassic } from "@/components/payslip-print-classic";
+import { PayslipBulkPrint } from "@/components/payslip-bulk-print";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -26,7 +27,7 @@ import { AllowanceInputPanel } from "@/components/allowance-input-panel";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency } from "@/lib/format";
-import { Calculator, Download, AlertCircle, X, CheckCircle2, FileText, ChevronRight } from "lucide-react";
+import { Calculator, Download, AlertCircle, X, CheckCircle2, FileText, ChevronRight, Printer } from "lucide-react";
 import { formatMonth } from "@/lib/format";
 
 interface CalcError {
@@ -49,6 +50,7 @@ export default function PayrollList() {
 
   const [calculating, setCalculating] = useState(false);
   const [printPayroll, setPrintPayroll] = useState<NonNullable<ReturnType<typeof useGetPayroll>["data"]> | null>(null);
+  const [bulkPrintActive, setBulkPrintActive] = useState(false);
   const [calcErrors, setCalcErrors] = useState<CalcError[]>([]);
   const [selectedPayrollId, setSelectedPayrollId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState("allowance");
@@ -259,6 +261,10 @@ export default function PayrollList() {
             <Button variant="outline" onClick={handleExportCsv} disabled={!payrolls || payrolls.length === 0}>
               <Download className="mr-2 h-4 w-4" />
               CSV出力
+            </Button>
+            <Button variant="outline" onClick={() => setBulkPrintActive(true)} disabled={!payrolls || payrolls.length === 0 || bulkPrintActive}>
+              <Printer className="mr-2 h-4 w-4" />
+              {bulkPrintActive ? "印刷準備中..." : "給与明細一括印刷"}
             </Button>
           </div>
         </div>
@@ -654,6 +660,17 @@ export default function PayrollList() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ── 一括印刷ポータル ── */}
+      {bulkPrintActive && payrolls && payrolls.length > 0 && (
+        <PayslipBulkPrint
+          payrolls={[...payrolls].sort((a, b) => a.employeeCode.localeCompare(b.employeeCode)) as Parameters<typeof PayslipBulkPrint>[0]["payrolls"]}
+          companyName={company?.name ?? "三川運送株式会社"}
+          employees={(employees ?? []) as Parameters<typeof PayslipBulkPrint>[0]["employees"]}
+          company={company as Parameters<typeof PayslipBulkPrint>[0]["company"]}
+          onDone={() => setBulkPrintActive(false)}
+        />
+      )}
 
       {/* ── 印刷専用ポータル（@media print で表示、通常時は非表示） ── */}
       {printPayroll && (

@@ -155,7 +155,7 @@
     display: none !important;
   }
 
-  /* 印刷専用ポータルのみ表示 */
+  /* 印刷専用ポータルのみ表示（単票） */
   #payroll-print-root {
     display: block !important;
     position: fixed !important;
@@ -169,7 +169,15 @@
     margin: 0 !important;
   }
 
-  /* 帳票本体は1ページ内に収める */
+  /* 一括印刷ポータル：スタック表示・複数ページ対応 */
+  #payroll-print-root[data-bulk-print="true"] {
+    position: static !important;
+    overflow: visible !important;
+    height: auto !important;
+    inset: auto !important;
+  }
+
+  /* 帳票本体は1ページ内に収める（単票） */
   [data-print-target="payslip-classic"] {
     page-break-after: avoid;
     page-break-before: avoid;
