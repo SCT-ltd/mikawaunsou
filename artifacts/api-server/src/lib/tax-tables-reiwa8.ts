@@ -336,6 +336,10 @@ export interface InsuranceTaxInput {
   customDeductionsTotal?: number;
   /** 雇用保険料率（省略時は EMP_INS_RATE_R8 = 0.005）*/
   employmentInsuranceRate?: number;
+  /** デバッグ用トレースログを出力するか（省略時 false）*/
+  enableTrace?: boolean;
+  /** トレースログ出力時の期待値（照合用）*/
+  traceExpectedIncomeTax?: number;
 }
 
 export interface InsuranceTaxResult {
@@ -385,6 +389,8 @@ export function calculateInsuranceAndTax(input: InsuranceTaxInput): InsuranceTax
     residentTax = 0,
     customDeductionsTotal = 0,
     employmentInsuranceRate = EMP_INS_RATE_R8,
+    enableTrace = false,
+    traceExpectedIncomeTax,
   } = input;
 
   // 健康保険料：標準報酬月額 × 料率（介護保険の有無で料率変更）
@@ -411,18 +417,51 @@ export function calculateInsuranceAndTax(input: InsuranceTaxInput): InsuranceTax
   const socialInsuranceTotal = healthInsurance + childcareSupportContribution + pension + employmentInsurance;
 
   // 課税対象額（社保等控除後の給与等の金額）
-  // = 総支給額 − 非課税手当 − 健康保険料 − 子育て支援金 − 厚生年金 − 雇用保険
-  const afterInsuranceSalary = grossSalary
+  // 子育て支援金を含む場合（現行計算方式）
+  const taxableSalaryForIncomeTaxIncludingChildcareSupport = grossSalary
     - nonTaxableAllowances
     - healthInsurance
     - childcareSupportContribution
     - pension
     - employmentInsurance;
 
+  // 子育て支援金を含まない場合（参考値）
+  const taxableSalaryForIncomeTaxExcludingChildcareSupport = grossSalary
+    - nonTaxableAllowances
+    - healthInsurance
+    - pension
+    - employmentInsurance;
+
+  const afterInsuranceSalary = taxableSalaryForIncomeTaxIncludingChildcareSupport;
+
   // 源泉所得税：令和8年月額表甲欄テーブル参照
   // 扶養親族等の数 = dependentCount + (hasSpouse ? 1 : 0)
-  const dependentEquivCount = dependentCount + (hasSpouse ? 1 : 0);
-  const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
+  const dependentEquivalentCount = dependentCount + (hasSpouse ? 1 : 0);
+  const matchedRow = _lookupRow(REIWA8_TABLE, Math.max(0, Math.floor(afterInsuranceSalary)));
+  const matchedIncomeTaxBracket = matchedRow[0];
+  const incomeTax = matchedRow[Math.min(7, Math.max(0, dependentEquivalentCount)) + 1] ?? 0;
+
+  // トレースログ（enableTrace が true の場合のみ出力）
+  if (enableTrace) {
+    console.log("[TAMAGAWA_INCOME_TAX_TRACE]", {
+      grossSalary,
+      nonTaxableAllowances,
+      healthInsurance,
+      pension,
+      employmentInsurance,
+      childcareSupportContribution,
+      taxableSalaryForIncomeTaxExcludingChildcareSupport,
+      taxableSalaryForIncomeTaxIncludingChildcareSupport,
+      dependentCount,
+      hasSpouse,
+      dependentEquivalentCount,
+      incomeTaxTableYear: "R8",
+      incomeTaxTableType: "甲欄",
+      matchedIncomeTaxBracket,
+      calculatedIncomeTax: incomeTax,
+      expectedFromClient: traceExpectedIncomeTax ?? 10220,
+    });
+  }
 
   // 控除合計
   const totalDeductions = healthInsurance

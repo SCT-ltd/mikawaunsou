@@ -79,6 +79,10 @@ export interface PayrollCalculationInput {
   absenceDays: number;
   // Custom allowances
   customAllowances?: CustomAllowanceItem[];
+  /** デバッグ用トレースログを出力するか（省略時 false）*/
+  enableTrace?: boolean;
+  /** トレースログ出力時の期待値（照合用）*/
+  traceExpectedIncomeTax?: number;
 }
 
 export interface PayrollCalculationResult {
@@ -227,6 +231,8 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     residentTax,
     customDeductionsTotal: 0,
     employmentInsuranceRate,
+    enableTrace: input.enableTrace,
+    traceExpectedIncomeTax: input.traceExpectedIncomeTax,
   });
 
   const healthInsurance             = ins.healthInsurance;

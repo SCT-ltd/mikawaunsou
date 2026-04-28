@@ -230,6 +230,7 @@ router.post("/payroll/calculate", async (req, res) => {
     const grossSalary = bwResult.grossSalary;
     const bwInsBase = (emp.standardRemuneration ?? 0) > 0 ? emp.standardRemuneration : grossSalary;
 
+    const isBwTamagawa = emp.name?.includes("玉川");
     const bwIns = calculateInsuranceAndTax({
       standardRemuneration: bwInsBase,
       grossSalary,
@@ -242,6 +243,8 @@ router.post("/payroll/calculate", async (req, res) => {
       residentTax: emp.residentTax ?? 0,
       customDeductionsTotal: emp.otherDeductionMonthly ?? 0,
       employmentInsuranceRate: empInsRate,
+      enableTrace: isBwTamagawa,
+      traceExpectedIncomeTax: isBwTamagawa ? 10220 : undefined,
     });
 
     const socialInsurance = bwIns.healthInsurance + bwIns.childcareSupportContribution + bwIns.pension;
@@ -314,6 +317,7 @@ router.post("/payroll/calculate", async (req, res) => {
   // ────────────────────────────────────────────────────────────────
   // 標準ロジック
   // ────────────────────────────────────────────────────────────────
+  const isTamagawa = emp.name?.includes("玉川");
   const result = calculatePayroll({
     baseSalary: emp.baseSalary,
     salaryType: emp.salaryType,
@@ -347,6 +351,8 @@ router.post("/payroll/calculate", async (req, res) => {
     deliveryCases: record.deliveryCases,
     absenceDays: record.absenceDays,
     customAllowances,
+    enableTrace: isTamagawa,
+    traceExpectedIncomeTax: isTamagawa ? 10220 : undefined,
   });
 
   // Upsert payroll
