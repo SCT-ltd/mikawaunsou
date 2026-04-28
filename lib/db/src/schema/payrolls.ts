@@ -42,6 +42,8 @@ export const payrollsTable = pgTable("payrolls", {
   salesAmount: doublePrecision("sales_amount").notNull().default(0),
   commissionRate: doublePrecision("commission_rate").notNull().default(0),
   performanceAllowance: doublePrecision("performance_allowance").notNull().default(0),
+  calculationMode: text("calculation_mode").notNull().default("auto"),
+  customDeductionsTotal: doublePrecision("custom_deductions_total").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [

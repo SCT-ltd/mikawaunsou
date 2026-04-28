@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, payrollsTable, employeesTable, monthlyRecordsTable, companyTable, allowanceDefinitionsTable, employeeAllowancesTable } from "@workspace/db";
+import { db, payrollsTable, employeesTable, monthlyRecordsTable, companyTable, allowanceDefinitionsTable, employeeAllowancesTable, employeeDeductionsTable, deductionDefinitionsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { calculatePayroll, calculateMikawaPayroll, calculateBluewingPayroll, roundJapanese } from "../lib/payroll-calculator";
 import { calculateInsuranceAndTax, calculateIncomeTaxReiwa7, calculateIncomeTaxReiwa8, EMP_INS_RATE_R8 } from "../lib/tax-tables-reiwa8";
@@ -40,6 +40,7 @@ router.post("/payroll/calculate", async (req, res) => {
     month,
     useMikawaLogic = false,
     useBluewingLogic = false,
+    calculationMode = "auto",
   } = req.body;
 
   const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, employeeId));
@@ -79,6 +80,116 @@ router.post("/payroll/calculate", async (req, res) => {
     };
   }).filter(a => a.amount > 0);
 
+  // 積立金・カスタム控除を取得
+  const empDeductionRows = await db.select().from(employeeDeductionsTable)
+    .where(eq(employeeDeductionsTable.employeeId, employeeId));
+  const customDeductionsTotal = empDeductionRows.reduce((sum, r) => sum + (r.amount ?? 0), 0);
+
+  // ────────────────────────────────────────────────────────────────
+  // 手入力固定モード（calculationMode = "manual"）
+  // 月次実績・Bluewing自動計算を使わず、マスター基本給＋手当設定をそのまま使用
+  // ────────────────────────────────────────────────────────────────
+  if (calculationMode === "manual") {
+    const manualBaseSalary = emp.baseSalary ?? 0;
+    const manualCustomAllowancesTotal = customAllowances.reduce((s, a) => s + a.amount, 0);
+    const manualNonTaxableTotal = customAllowances.filter(a => !a.isTaxable).reduce((s, a) => s + a.amount, 0);
+    const manualTransportation = emp.transportationAllowance ?? 0;
+    const manualNonTaxableAllowances = manualTransportation + manualNonTaxableTotal;
+
+    const manualGrossSalary = roundJapanese(
+      manualBaseSalary +
+      (emp.transportationAllowance ?? 0) +
+      (emp.safetyDrivingAllowance ?? 0) +
+      (emp.longDistanceAllowance ?? 0) +
+      (emp.positionAllowance ?? 0) +
+      (emp.familyAllowance ?? 0) +
+      (emp.earlyOvertimeAllowance ?? 0) +
+      manualCustomAllowancesTotal
+    );
+
+    const manualInsBase = (emp.standardRemuneration ?? 0) > 0 ? emp.standardRemuneration : manualGrossSalary;
+
+    const manualIns = calculateInsuranceAndTax({
+      standardRemuneration: manualInsBase,
+      grossSalary: manualGrossSalary,
+      nonTaxableAllowances: manualNonTaxableAllowances,
+      dependentCount: emp.dependentCount ?? 0,
+      hasSpouse: emp.hasSpouse ?? false,
+      careInsuranceApplied: emp.careInsuranceApplied ?? false,
+      pensionApplied: true,
+      employmentInsuranceApplied: emp.employmentInsuranceApplied ?? true,
+      residentTax: emp.residentTax ?? 0,
+      customDeductionsTotal,
+      employmentInsuranceRate: empInsRate,
+    });
+
+    const manualSocialInsurance = manualIns.healthInsurance + manualIns.childcareSupportContribution + manualIns.pension;
+    const manualTotalDeductions = roundJapanese(
+      manualSocialInsurance + manualIns.employmentInsurance + manualIns.incomeTax + (emp.residentTax ?? 0) + customDeductionsTotal
+    );
+    const manualNetSalary = roundJapanese(manualGrossSalary - manualTotalDeductions);
+
+    const manualPayrollData = {
+      baseSalary: manualBaseSalary,
+      overtimePay: 0,
+      lateNightPay: 0,
+      holidayPay: 0,
+      commissionPay: 0,
+      transportationAllowance: emp.transportationAllowance ?? 0,
+      safetyDrivingAllowance: emp.safetyDrivingAllowance ?? 0,
+      longDistanceAllowance: emp.longDistanceAllowance ?? 0,
+      positionAllowance: emp.positionAllowance ?? 0,
+      familyAllowance: emp.familyAllowance ?? 0,
+      earlyOvertimeAllowance: emp.earlyOvertimeAllowance ?? 0,
+      customAllowancesTotal: manualCustomAllowancesTotal,
+      absenceDeduction: 0,
+      grossSalary: manualGrossSalary,
+      socialInsurance: manualSocialInsurance,
+      childcareSupportContribution: manualIns.childcareSupportContribution,
+      employmentInsurance: manualIns.employmentInsurance,
+      incomeTax: manualIns.incomeTax,
+      residentTax: emp.residentTax ?? 0,
+      totalDeductions: manualTotalDeductions,
+      netSalary: manualNetSalary,
+      customDeductionsTotal,
+      calculationMode: "manual",
+      workDays: record.workDays ?? 0,
+      overtimeHours: record.overtimeHours ?? 0,
+      lateNightHours: record.lateNightHours ?? 0,
+      holidayWorkDays: record.holidayWorkDays ?? 0,
+      useBluewingLogic: false,
+      useMikawaLogic: false,
+    };
+
+    const existingManual = await db.select().from(payrollsTable)
+      .where(and(
+        eq(payrollsTable.employeeId, employeeId),
+        eq(payrollsTable.year, year),
+        eq(payrollsTable.month, month)
+      )).limit(1);
+
+    let manualPayroll;
+    if (existingManual.length > 0 && existingManual[0].status !== "confirmed") {
+      [manualPayroll] = await db.update(payrollsTable).set({
+        ...manualPayrollData,
+        status: "draft",
+        updatedAt: new Date(),
+      }).where(eq(payrollsTable.id, existingManual[0].id)).returning();
+    } else if (existingManual.length === 0) {
+      [manualPayroll] = await db.insert(payrollsTable).values({
+        employeeId,
+        year,
+        month,
+        status: "draft",
+        ...manualPayrollData,
+      }).returning();
+    } else {
+      manualPayroll = existingManual[0];
+    }
+
+    return res.json(buildPayrollResponse(manualPayroll!, emp));
+  }
+
   // ────────────────────────────────────────────────────────────────
   // 三川ロジック分岐
   // ────────────────────────────────────────────────────────────────
@@ -111,13 +222,13 @@ router.post("/payroll/calculate", async (req, res) => {
       pensionApplied: true,
       employmentInsuranceApplied: emp.employmentInsuranceApplied ?? true,
       residentTax: emp.residentTax ?? 0,
-      customDeductionsTotal: emp.otherDeductionMonthly ?? 0,
+      customDeductionsTotal,
       employmentInsuranceRate: empInsRate,
     });
 
     const socialInsurance = ins.healthInsurance + ins.childcareSupportContribution + ins.pension;
     const totalDeductions = roundJapanese(
-      socialInsurance + ins.employmentInsurance + ins.incomeTax + (emp.residentTax ?? 0) + (emp.otherDeductionMonthly ?? 0)
+      socialInsurance + ins.employmentInsurance + ins.incomeTax + (emp.residentTax ?? 0) + customDeductionsTotal
     );
     const netSalary = roundJapanese(grossSalary - totalDeductions);
 
@@ -151,6 +262,8 @@ router.post("/payroll/calculate", async (req, res) => {
       salesAmount: record.salesAmount,
       commissionRate: record.commissionRate,
       performanceAllowance: mikawaResult.performanceAllowance,
+      customDeductionsTotal,
+      calculationMode: "mikawa_auto",
     };
 
     const existingMikawa = await db.select().from(payrollsTable)
@@ -247,7 +360,7 @@ router.post("/payroll/calculate", async (req, res) => {
       pensionApplied: true,
       employmentInsuranceApplied: emp.employmentInsuranceApplied ?? true,
       residentTax: emp.residentTax ?? 0,
-      customDeductionsTotal: emp.otherDeductionMonthly ?? 0,
+      customDeductionsTotal,
       employmentInsuranceRate: empInsRate,
       enableTrace: isBwTamagawa,
       traceExpectedIncomeTax: isBwTamagawa ? 10220 : undefined,
@@ -255,7 +368,7 @@ router.post("/payroll/calculate", async (req, res) => {
 
     const socialInsurance = bwIns.healthInsurance + bwIns.childcareSupportContribution + bwIns.pension;
     const totalDeductions = roundJapanese(
-      socialInsurance + bwIns.employmentInsurance + bwIns.incomeTax + (emp.residentTax ?? 0) + (emp.otherDeductionMonthly ?? 0)
+      socialInsurance + bwIns.employmentInsurance + bwIns.incomeTax + (emp.residentTax ?? 0) + customDeductionsTotal
     );
     const netSalary = roundJapanese(grossSalary - totalDeductions);
 
@@ -416,6 +529,8 @@ router.post("/payroll/calculate", async (req, res) => {
       bluewingSalesAmount: record.bluewingSalesAmount,
       bluewingPerformanceAllowance: bwResult.performanceAllowance,
       performanceAllowance: bwResult.performanceAllowance,
+      customDeductionsTotal,
+      calculationMode: "bluewing_auto",
     };
 
     const existingBw = await db.select().from(payrollsTable)
@@ -524,6 +639,8 @@ router.post("/payroll/calculate", async (req, res) => {
       lateNightHours: record.lateNightHours,
       holidayWorkDays: record.holidayWorkDays,
       workDays: record.workDays,
+      customDeductionsTotal,
+      calculationMode: "auto",
       status: "draft",
       updatedAt: new Date(),
     }).where(eq(payrollsTable.id, existing[0].id)).returning();
@@ -558,6 +675,8 @@ router.post("/payroll/calculate", async (req, res) => {
       lateNightHours: record.lateNightHours,
       holidayWorkDays: record.holidayWorkDays,
       workDays: record.workDays,
+      customDeductionsTotal,
+      calculationMode: "auto",
     }).returning();
   } else {
     payroll = existing[0];

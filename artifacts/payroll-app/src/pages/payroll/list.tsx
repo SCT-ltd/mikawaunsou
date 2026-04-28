@@ -395,7 +395,27 @@ export default function PayrollList() {
           <SheetHeader className="print:hidden">
             <div className="flex items-center justify-between">
               <SheetTitle>給与明細詳細</SheetTitle>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                {selectedPayroll && selectedPayroll.status !== "confirmed" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-xs border-amber-300 text-amber-800 hover:bg-amber-50"
+                    onClick={async () => {
+                      try {
+                        await calculatePayroll.mutateAsync({ data: { employeeId: selectedPayroll.employeeId, year, month, calculationMode: "manual" } });
+                        queryClient.invalidateQueries({ queryKey: getGetPayrollQueryKey(selectedPayroll.id) });
+                        queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) });
+                        toast({ title: "手入力固定で計算完了", description: "マスター基本給と手当設定で給与を再計算しました。" });
+                      } catch {
+                        toast({ title: "エラー", description: "計算に失敗しました。", variant: "destructive" });
+                      }
+                    }}
+                  >
+                    <Calculator className="h-3 w-3 mr-1" />
+                    手入力固定で計算
+                  </Button>
+                )}
                 <Button variant="outline" size="sm" onClick={handlePrint}>
                   <FileText className="mr-1.5 h-3.5 w-3.5" />
                   印刷
@@ -457,68 +477,94 @@ export default function PayrollList() {
                       <h3 className="font-bold border-l-4 border-black pl-2 bg-gray-100 py-1 text-sm mb-2">支給項目</h3>
                       <table className="w-full text-sm">
                         <tbody>
-                          {/* @ts-expect-error */}
-                          {(selectedPayroll as any).useBluewingLogic ? (
-                            <>
-                              {[
-                                ["基本給", selectedPayroll.baseSalary],
-                                ["時間外手当（超過分）", selectedPayroll.overtimePay],
-                                ["固定残業代（職務手当）", selectedPayroll.earlyOvertimeAllowance],
-                                ["休日手当", selectedPayroll.holidayPay],
-                                ["通勤手当", selectedPayroll.transportationAllowance],
-                                ["無事故手当", selectedPayroll.safetyDrivingAllowance],
-                                ["長距離手当", selectedPayroll.longDistanceAllowance],
-                                ["役職手当", selectedPayroll.positionAllowance],
-                              ].map(([label, val]) => Number(val) !== 0 && (
-                                <tr key={String(label)} className="border-b border-dotted border-gray-300">
-                                  <td className="py-1.5 text-gray-700">{label}</td>
-                                  <td className="py-1.5 text-right">{formatCurrency(Number(val))}</td>
+                          {/* 基本給 */}
+                          {Number(selectedPayroll.baseSalary) !== 0 && (
+                            <tr className="border-b border-dotted border-gray-300">
+                              <td className="py-1.5 text-gray-700">基本給</td>
+                              <td className="py-1.5 text-right">{formatCurrency(Number(selectedPayroll.baseSalary))}</td>
+                            </tr>
+                          )}
+                          {/* 残業・深夜・休日手当 */}
+                          {Number(selectedPayroll.overtimePay) !== 0 && (
+                            <tr className="border-b border-dotted border-gray-300">
+                              <td className="py-1.5 text-gray-700">{(selectedPayroll as any).useBluewingLogic ? "時間外手当（超過分）" : "時間外手当"}</td>
+                              <td className="py-1.5 text-right">{formatCurrency(Number(selectedPayroll.overtimePay))}</td>
+                            </tr>
+                          )}
+                          {Number(selectedPayroll.lateNightPay) !== 0 && (
+                            <tr className="border-b border-dotted border-gray-300">
+                              <td className="py-1.5 text-gray-700">深夜手当</td>
+                              <td className="py-1.5 text-right">{formatCurrency(Number(selectedPayroll.lateNightPay))}</td>
+                            </tr>
+                          )}
+                          {Number(selectedPayroll.holidayPay) !== 0 && (
+                            <tr className="border-b border-dotted border-gray-300">
+                              <td className="py-1.5 text-gray-700">休日手当</td>
+                              <td className="py-1.5 text-right">{formatCurrency(Number(selectedPayroll.holidayPay))}</td>
+                            </tr>
+                          )}
+                          {Number(selectedPayroll.commissionPay) !== 0 && (
+                            <tr className="border-b border-dotted border-gray-300">
+                              <td className="py-1.5 text-gray-700">歩合給</td>
+                              <td className="py-1.5 text-right">{formatCurrency(Number(selectedPayroll.commissionPay))}</td>
+                            </tr>
+                          )}
+                          {/* 固定手当（マスター） */}
+                          {Number(selectedPayroll.earlyOvertimeAllowance) !== 0 && (
+                            <tr className="border-b border-dotted border-gray-300">
+                              <td className="py-1.5 text-gray-700">{(selectedPayroll as any).useBluewingLogic ? "固定残業代（職務手当）" : "早出残業手当"}</td>
+                              <td className="py-1.5 text-right">{formatCurrency(Number(selectedPayroll.earlyOvertimeAllowance))}</td>
+                            </tr>
+                          )}
+                          {/* カスタム手当（個別表示） */}
+                          {printEmployeeAllowances && printEmployeeAllowances.length > 0
+                            ? printEmployeeAllowances.map((a) => (
+                                <tr key={a.id} className="border-b border-dotted border-gray-300">
+                                  <td className="py-1.5 text-gray-700">{a.allowanceName}</td>
+                                  <td className="py-1.5 text-right">{formatCurrency(a.amount)}</td>
                                 </tr>
-                              ))}
-                              {/* @ts-expect-error */}
-                              {(selectedPayroll.customAllowancesTotal ?? 0) > 0 && (
-                                <tr className="border-b border-dotted border-gray-300">
-                                  <td className="py-1.5 text-gray-700">その他手当</td>
-                                  {/* @ts-expect-error */}
-                                  <td className="py-1.5 text-right">{formatCurrency(selectedPayroll.customAllowancesTotal)}</td>
-                                </tr>
-                              )}
-                              {/* @ts-expect-error */}
-                              {(selectedPayroll as any).bluewingPerformanceAllowance > 0 && (
-                                <tr className="border-b border-dotted border-blue-300 bg-blue-50">
-                                  <td className="py-1.5 text-blue-800 font-medium">業績手当（BW）</td>
-                                  {/* @ts-expect-error */}
-                                  <td className="py-1.5 text-right font-medium text-blue-800">{formatCurrency((selectedPayroll as any).bluewingPerformanceAllowance)}</td>
-                                </tr>
-                              )}
-                            </>
-                          ) : (
-                            <>
-                              {[
-                                ["基本給", selectedPayroll.baseSalary],
-                                ["時間外手当", selectedPayroll.overtimePay],
-                                ["深夜手当", selectedPayroll.lateNightPay],
-                                ["休日手当", selectedPayroll.holidayPay],
-                                ["歩合給", selectedPayroll.commissionPay],
-                                ["通勤手当", selectedPayroll.transportationAllowance],
-                                ["無事故手当", selectedPayroll.safetyDrivingAllowance],
-                                ["長距離手当", selectedPayroll.longDistanceAllowance],
-                                ["役職手当", selectedPayroll.positionAllowance],
-                              ].map(([label, val]) => (
-                                <tr key={String(label)} className="border-b border-dotted border-gray-300">
-                                  <td className="py-1.5 text-gray-700">{label}</td>
-                                  <td className="py-1.5 text-right">{formatCurrency(Number(val))}</td>
-                                </tr>
-                              ))}
-                              {/* @ts-expect-error */}
-                              {(selectedPayroll.customAllowancesTotal ?? 0) > 0 && (
-                                <tr className="border-b border-dotted border-gray-300">
-                                  <td className="py-1.5 text-gray-700">その他手当</td>
-                                  {/* @ts-expect-error */}
-                                  <td className="py-1.5 text-right">{formatCurrency(selectedPayroll.customAllowancesTotal)}</td>
-                                </tr>
-                              )}
-                            </>
+                              ))
+                            : (
+                              <>
+                                {Number(selectedPayroll.transportationAllowance) !== 0 && (
+                                  <tr className="border-b border-dotted border-gray-300">
+                                    <td className="py-1.5 text-gray-700">通勤手当</td>
+                                    <td className="py-1.5 text-right">{formatCurrency(Number(selectedPayroll.transportationAllowance))}</td>
+                                  </tr>
+                                )}
+                                {Number(selectedPayroll.safetyDrivingAllowance) !== 0 && (
+                                  <tr className="border-b border-dotted border-gray-300">
+                                    <td className="py-1.5 text-gray-700">無事故手当</td>
+                                    <td className="py-1.5 text-right">{formatCurrency(Number(selectedPayroll.safetyDrivingAllowance))}</td>
+                                  </tr>
+                                )}
+                                {Number(selectedPayroll.longDistanceAllowance) !== 0 && (
+                                  <tr className="border-b border-dotted border-gray-300">
+                                    <td className="py-1.5 text-gray-700">長距離手当</td>
+                                    <td className="py-1.5 text-right">{formatCurrency(Number(selectedPayroll.longDistanceAllowance))}</td>
+                                  </tr>
+                                )}
+                                {Number(selectedPayroll.positionAllowance) !== 0 && (
+                                  <tr className="border-b border-dotted border-gray-300">
+                                    <td className="py-1.5 text-gray-700">役職手当</td>
+                                    <td className="py-1.5 text-right">{formatCurrency(Number(selectedPayroll.positionAllowance))}</td>
+                                  </tr>
+                                )}
+                                {(selectedPayroll.customAllowancesTotal ?? 0) > 0 && (
+                                  <tr className="border-b border-dotted border-gray-300">
+                                    <td className="py-1.5 text-gray-700">その他手当</td>
+                                    <td className="py-1.5 text-right">{formatCurrency(selectedPayroll.customAllowancesTotal ?? 0)}</td>
+                                  </tr>
+                                )}
+                              </>
+                            )
+                          }
+                          {/* BW業績手当（bluewing_autoモードのみ表示） */}
+                          {(selectedPayroll as any).calculationMode === "bluewing_auto" && ((selectedPayroll as any).bluewingPerformanceAllowance ?? 0) > 0 && (
+                            <tr className="border-b border-dotted border-blue-300 bg-blue-50">
+                              <td className="py-1.5 text-blue-800 font-medium">業績手当（BW自動）</td>
+                              <td className="py-1.5 text-right font-medium text-blue-800">{formatCurrency((selectedPayroll as any).bluewingPerformanceAllowance)}</td>
+                            </tr>
                           )}
                           <tr className="border-t-2 border-black font-bold bg-gray-50">
                             <td className="py-1.5 pl-1">総支給額 (A)</td>
@@ -578,17 +624,31 @@ export default function PayrollList() {
                             ["雇用保険料", selectedPayroll.employmentInsurance],
                             ["源泉所得税", selectedPayroll.incomeTax],
                             ["市県民税", selectedPayroll.residentTax],
-                            ["欠勤控除", selectedPayroll.absenceDeduction],
-                            ...((() => {
-                              const misc = selectedPayroll.totalDeductions - (selectedPayroll.socialInsurance ?? 0) - (selectedPayroll.employmentInsurance ?? 0) - (selectedPayroll.incomeTax ?? 0) - (selectedPayroll.residentTax ?? 0) - (selectedPayroll.absenceDeduction ?? 0);
-                              return misc > 0 ? [["積立金・その他", misc]] : [];
-                            })()),
+                            ...(Number(selectedPayroll.absenceDeduction) > 0 ? [["欠勤控除", selectedPayroll.absenceDeduction]] : []),
                           ].map(([label, val]) => (
                             <tr key={String(label)} className="border-b border-dotted border-gray-300">
                               <td className="py-1.5 text-gray-700">{label}</td>
                               <td className="py-1.5 text-right">{formatCurrency(Number(val))}</td>
                             </tr>
                           ))}
+                          {/* 積立金・カスタム控除（個別表示） */}
+                          {printEmployeeDeductions && printEmployeeDeductions.length > 0
+                            ? printEmployeeDeductions.map((d) => (
+                                <tr key={d.id} className="border-b border-dotted border-gray-300">
+                                  <td className="py-1.5 text-gray-700">{d.deductionName}</td>
+                                  <td className="py-1.5 text-right">{formatCurrency(d.amount)}</td>
+                                </tr>
+                              ))
+                            : (() => {
+                                const customDed = (selectedPayroll as any).customDeductionsTotal ?? 0;
+                                return customDed > 0 ? (
+                                  <tr className="border-b border-dotted border-gray-300">
+                                    <td className="py-1.5 text-gray-700">積立金・その他</td>
+                                    <td className="py-1.5 text-right">{formatCurrency(customDed)}</td>
+                                  </tr>
+                                ) : null;
+                              })()
+                          }
                           <tr className="border-t-2 border-black font-bold bg-gray-50">
                             <td className="py-1.5 pl-1">控除合計 (B)</td>
                             <td className="py-1.5 text-right">{formatCurrency(selectedPayroll.totalDeductions)}</td>

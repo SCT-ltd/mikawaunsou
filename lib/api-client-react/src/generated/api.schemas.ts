@@ -320,6 +320,10 @@ export interface Payroll {
   bluewingSalesAmount?: number;
   /** ブルーウィング業績手当 */
   bluewingPerformanceAllowance?: number;
+  /** 計算モード: auto / manual / bluewing_auto / mikawa_auto */
+  calculationMode?: string;
+  /** 積立金・カスタム控除合計 */
+  customDeductionsTotal?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -335,6 +339,7 @@ export interface CalculatePayrollBody {
   employeeId: number;
   year: number;
   month: number;
+  calculationMode?: string;
 }
 
 export interface JournalEntry {
