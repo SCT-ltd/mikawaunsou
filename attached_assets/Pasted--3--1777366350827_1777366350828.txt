@@ -1,0 +1,183 @@
+玉川さん3月分の所得税ログ確認ありがとうございます。
+
+ただし、まだ正式明細と一致していません。
+今回の対応はログ追加までで、根本原因の修正には至っていないため、次に差異の原因を特定してください。
+
+現在ログでは以下になっています。
+
+grossSalary: 530,861
+healthInsurance: 21,670
+pension: 40,260
+employmentInsurance: 2,654
+childcareSupportContribution: 506
+taxableSalaryForIncomeTaxExcludingChildcareSupport: 466,277
+taxableSalaryForIncomeTaxIncludingChildcareSupport: 465,771
+dependentCount: 0
+hasSpouse: true
+dependentEquivalentCount: 1
+calculatedIncomeTax: 11,408
+expectedFromClient: 10,220
+
+正式な手書き明細では、所得税は10,220円です。
+子ども・子育て支援金は今回の照合対象から除外してください。
+
+重要：
+今回の問題は、所得税ログを出すだけではなく、
+「なぜ所得税が10,220円ではなく11,408円になるのか」
+「なぜ総支給額が530,861円になっているのか」
+「手書き明細の総支給額とシステムの総支給額が一致しているのか」
+を根本から確認することです。
+
+まず、玉川さん3月分の支給項目を1件ずつすべてログ出力してください。
+
+console.log("[TAMAGAWA_PAY_ITEMS_DETAIL]", {
+  employeeId,
+  employeeName,
+  payrollId,
+  calculationType,
+  isBluewing,
+  payItems: payItems.map(item => ({
+    name: item.name,
+    amount: item.amount,
+    isTaxable: item.isTaxable,
+    includedInGrossSalary: item.includedInGrossSalary,
+    source: item.source,
+  })),
+  baseSalary,
+  allowancesTotal,
+  taxableAllowancesTotal,
+  nonTaxableAllowancesTotal,
+  grossSalary
+});
+
+確認したいこと：
+1. grossSalary 530,861円の内訳
+2. 手書き明細の支給項目と一致しているか
+3. Bluewingロジックで余計な支給項目が加算されていないか
+4. 同じ手当が二重加算されていないか
+5. 過去データや保存済み手当が重複して入っていないか
+6. 画面表示の支給合計と、計算エンジン内のgrossSalaryが一致しているか
+
+現在のログでは、総支給額が530,861円になっています。
+しかし、手書き明細の支給欄と一致しているか不明です。
+まず、正式明細の支給総額とシステムのgrossSalaryを一致させてください。
+
+次に、雇用保険料を確認してください。
+
+現在ログでは、
+employmentInsurance: 2,654
+です。
+
+これは、
+530,861 × 0.005 = 2,654.305
+なので、現在は雇用保険料率0.005で計算されています。
+
+以下をログ出力してください。
+
+console.log("[TAMAGAWA_EMPLOYMENT_INSURANCE_DETAIL]", {
+  grossSalary,
+  employmentInsuranceRate,
+  employmentInsuranceRaw: grossSalary * employmentInsuranceRate,
+  employmentInsuranceRounded,
+  companySettingsEmploymentInsuranceRate,
+  employeeEmploymentInsuranceApplied
+});
+
+確認したいこと：
+- company_settings.employment_insurance_rate の値
+- 0.005 を使っているのか
+- 0.0055 を使うべきなのか
+- クライアントの正式明細の雇用保険料と一致しているか
+- 雇用保険の計算基礎が、手書き明細の総支給額と一致しているか
+
+次に、所得税10,220円との差異を調査してください。
+
+現在：
+calculatedIncomeTax: 11,408
+expectedFromClient: 10,220
+差額：1,188円
+
+所得税計算について、以下を確認してください。
+
+console.log("[TAMAGAWA_INCOME_TAX_DIFF_ANALYSIS]", {
+  grossSalary,
+  nonTaxableAllowances,
+  healthInsurance,
+  pension,
+  employmentInsurance,
+  childcareSupportContribution,
+  taxableSalaryExcludingChildcareSupport,
+  taxableSalaryIncludingChildcareSupport,
+  dependentCount,
+  hasSpouse,
+  dependentEquivalentCount,
+  incomeTaxTableYear,
+  incomeTaxTableType,
+  matchedIncomeTaxBracket,
+  calculatedIncomeTax,
+  expectedIncomeTax: 10220,
+});
+
+確認したいこと：
+1. 所得税計算に使っている課税対象額が正しいか
+2. 子ども・子育て支援金を引く/引かないで所得税がどう変わるか
+3. 令和8年の源泉所得税月額表・甲欄のどの行を参照しているか
+4. 扶養人数0、配偶者trueで本当に正しいか
+5. 手書き明細作成時の扶養・配偶者設定と一致しているか
+6. 令和7年テーブルと令和8年テーブルのどちらを使うべきデータなのか
+7. 手書き明細が3月分なので、法令年度・税額表年度の適用が正しいか
+
+特に確認してほしいこと：
+3月分給与に対して、現在システムは令和8年テーブルを使っています。
+しかし、手書き明細の所得税10,220円が令和8年テーブルではなく、令和7年または別年度の月額表で計算されている可能性もあります。
+令和7年テーブル、令和8年テーブルの両方で試算し、どちらが10,220円に近いか確認してください。
+
+ログ例：
+
+console.log("[TAMAGAWA_INCOME_TAX_TABLE_COMPARISON]", {
+  taxableSalary,
+  dependentEquivalentCount,
+  taxR7,
+  taxR8,
+  clientOfficialTax: 10220
+});
+
+また、今回の正式明細との照合では、子ども・子育て支援金はスルーしてください。
+そのため、比較用の所得税計算では以下も確認してください。
+
+A:
+課税対象額 = grossSalary - healthInsurance - pension - employmentInsurance
+
+B:
+課税対象額 = grossSalary - healthInsurance - pension - employmentInsurance - childcareSupportContribution
+
+AとBの両方で所得税を計算し、正式値10,220円に近い方を確認してください。
+
+ただし、最終的にどちらを採用するかは、三川運送の正式明細ルールに合わせてください。
+
+修正完了条件：
+
+1. 玉川さん3月分の支給項目内訳が手書き明細と一致している
+2. grossSalaryが手書き明細の総支給額と一致している
+3. 健康保険料は21,670円のまま
+4. 厚生年金保険料は40,260円のまま
+5. 雇用保険料が手書き明細と一致している
+6. 所得税が10,220円になる
+7. 子ども・子育て支援金は今回の比較対象から除外している
+8. Bluewingロジックで余計な二重加算がない
+9. 令和7年/令和8年のどちらの所得税テーブルが正式明細と一致するか確認している
+
+最終報告では、必ず以下を書いてください。
+
+- 玉川さん3月分の支給項目の全内訳
+- grossSalary 530,861円が正しいのか、間違っていたのか
+- 手書き明細の総支給額との差額
+- 雇用保険料率として使った値
+- 雇用保険料の計算式
+- 所得税計算に使った課税対象額
+- 扶養人数 dependentCount
+- 配偶者フラグ hasSpouse
+- 令和7年テーブルでの所得税
+- 令和8年テーブルでの所得税
+- 正式値10,220円にならなかった原因
+- 修正したファイル名

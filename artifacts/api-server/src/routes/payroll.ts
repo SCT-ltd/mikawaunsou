@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db, payrollsTable, employeesTable, monthlyRecordsTable, companyTable, allowanceDefinitionsTable, employeeAllowancesTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { calculatePayroll, calculateMikawaPayroll, calculateBluewingPayroll, roundJapanese } from "../lib/payroll-calculator";
-import { calculateInsuranceAndTax, calculateIncomeTaxReiwa8, EMP_INS_RATE_R8 } from "../lib/tax-tables-reiwa8";
+import { calculateInsuranceAndTax, calculateIncomeTaxReiwa7, calculateIncomeTaxReiwa8, EMP_INS_RATE_R8 } from "../lib/tax-tables-reiwa8";
 
 const router = Router();
 
@@ -252,6 +252,108 @@ router.post("/payroll/calculate", async (req, res) => {
       socialInsurance + bwIns.employmentInsurance + bwIns.incomeTax + (emp.residentTax ?? 0) + (emp.otherDeductionMonthly ?? 0)
     );
     const netSalary = roundJapanese(grossSalary - totalDeductions);
+
+    // ── 玉川さん専用 デバッグログ ─────────────────────────────────
+    if (isBwTamagawa) {
+      // 支給項目一覧
+      const payItems = [
+        { name: "日給（出勤日分）",       amount: baseSalaryCalc,                isTaxable: true,  includedInGross: true,  source: "workDays×dailyWageWeekday" },
+        { name: "土曜出勤（出勤日分）",    amount: Math.floor((record.saturdayWorkDays ?? 0) * dailySaturday), isTaxable: true, includedInGross: true, source: "saturdayWorkDays×dailyWageSaturday" },
+        { name: "BW固定残業手当",         amount: emp.bluewingFixedOvertimeAmount ?? 0, isTaxable: true, includedInGross: true, source: "bluewingFixedOvertimeAmount" },
+        { name: "休日出勤手当（日給計算）", amount: holidayPay,                    isTaxable: true,  includedInGross: true,  source: "holidayWorkDays×dailyWageSaturday" },
+        { name: "時間外手当（実績）",       amount: bwResult.actualOvertimePay,    isTaxable: true,  includedInGross: true,  source: "actualOvertimeHours×overtimeUnitPrice" },
+        { name: "深夜手当",               amount: bwLateNightPay,               isTaxable: true,  includedInGross: true,  source: "lateNightHours×hourlyRate×0.25" },
+        { name: "BW業績手当",             amount: bwResult.performanceAllowance, isTaxable: true,  includedInGross: true,  source: `floor(${record.bluewingSalesAmount}×${emp.bluewingCommissionRate})-baseTotal→round1000` },
+        ...customAllowances.map(a => ({
+          name: a.allowanceName,
+          amount: a.amount,
+          isTaxable: a.isTaxable,
+          includedInGross: true,
+          source: "employeeAllowances（固定設定）",
+        })),
+      ].filter(i => i.amount !== 0);
+
+      const nonTaxAllowancesTotal = emp.transportationAllowance ?? 0; // 現在BW路では transportationAllowance のみ非課税
+      const taxableAllowancesTotal = fixedAllowancesTotal + bwResult.performanceAllowance - nonTaxAllowancesTotal;
+
+      console.log("[TAMAGAWA_PAY_ITEMS_DETAIL]", {
+        employeeId: emp.id,
+        employeeName: emp.name,
+        year,
+        month,
+        calculationType: "Bluewing",
+        isBluewing: true,
+        payItems,
+        baseSalary: baseSalaryCalc,
+        fixedAllowancesTotal,
+        bwPerformanceAllowance: bwResult.performanceAllowance,
+        bwTargetAmount: bwResult.targetAmount,
+        bwBaseTotal: bwResult.baseTotal,
+        nonTaxableAllowancesTotal: nonTaxAllowancesTotal,
+        taxableAllowancesTotal,
+        grossSalary,
+      });
+
+      // 雇用保険詳細
+      const rawEmpIns = grossSalary * empInsRate;
+      console.log("[TAMAGAWA_EMPLOYMENT_INSURANCE_DETAIL]", {
+        grossSalary,
+        employmentInsuranceRate: empInsRate,
+        employmentInsuranceRaw: rawEmpIns,
+        employmentInsuranceRounded: bwIns.employmentInsurance,
+        companySettingsEmploymentInsuranceRate: company.employmentInsuranceRate,
+        employeeEmploymentInsuranceApplied: emp.employmentInsuranceApplied,
+      });
+
+      // 所得税差異分析
+      const taxableSalaryExcludingChildcareSupport = grossSalary
+        - (emp.transportationAllowance ?? 0)
+        - bwIns.healthInsurance
+        - bwIns.pension
+        - bwIns.employmentInsurance;
+      const taxableSalaryIncludingChildcareSupport = taxableSalaryExcludingChildcareSupport
+        - bwIns.childcareSupportContribution;
+      const depEquivCount = (emp.dependentCount ?? 0) + ((emp.hasSpouse ?? false) ? 1 : 0);
+
+      // R7/R8 × A(子育て支援金なし)/B(子育て支援金あり) の4パターン
+      const taxR7A = calculateIncomeTaxReiwa7(taxableSalaryExcludingChildcareSupport, depEquivCount);
+      const taxR7B = calculateIncomeTaxReiwa7(taxableSalaryIncludingChildcareSupport, depEquivCount);
+      const taxR8A = calculateIncomeTaxReiwa8(taxableSalaryExcludingChildcareSupport, depEquivCount);
+      const taxR8B = calculateIncomeTaxReiwa8(taxableSalaryIncludingChildcareSupport, depEquivCount);
+
+      console.log("[TAMAGAWA_INCOME_TAX_DIFF_ANALYSIS]", {
+        grossSalary,
+        nonTaxableAllowances: emp.transportationAllowance ?? 0,
+        healthInsurance: bwIns.healthInsurance,
+        pension: bwIns.pension,
+        employmentInsurance: bwIns.employmentInsurance,
+        childcareSupportContribution: bwIns.childcareSupportContribution,
+        taxableSalaryExcludingChildcareSupport,
+        taxableSalaryIncludingChildcareSupport,
+        dependentCount: emp.dependentCount ?? 0,
+        hasSpouse: emp.hasSpouse ?? false,
+        dependentEquivalentCount: depEquivCount,
+        incomeTaxTableYear: "R8（現在の設定）",
+        incomeTaxTableType: "甲欄",
+        matchedIncomeTaxBracket: bwIns.afterInsuranceSalary >= 88000
+          ? Math.floor(bwIns.afterInsuranceSalary / 1000) * 1000
+          : 0,
+        calculatedIncomeTax: bwIns.incomeTax,
+        expectedIncomeTax: 10220,
+      });
+
+      console.log("[TAMAGAWA_INCOME_TAX_TABLE_COMPARISON]", {
+        "A_taxableSalary（子育て支援金なし）": taxableSalaryExcludingChildcareSupport,
+        "B_taxableSalary（子育て支援金あり）": taxableSalaryIncludingChildcareSupport,
+        dependentEquivalentCount: depEquivCount,
+        "R7_A（子育て支援金なし）": taxR7A,
+        "R7_B（子育て支援金あり）": taxR7B,
+        "R8_A（子育て支援金なし）": taxR8A,
+        "R8_B（子育て支援金あり）": taxR8B,
+        clientOfficialTax: 10220,
+      });
+    }
+    // ─────────────────────────────────────────────────────────────
 
     const bwPayrollData = {
       baseSalary: baseSalaryCalc,
