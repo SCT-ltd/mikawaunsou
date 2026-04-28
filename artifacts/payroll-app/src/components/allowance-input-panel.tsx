@@ -46,11 +46,15 @@ function AllowanceReorderItem({
   allowanceDefinitions,
   onChange,
   onDelete,
+  inputRef,
+  onEnterKey,
 }: {
   row: AllowanceRow;
   allowanceDefinitions: { id: number; name: string; isTaxable: boolean }[] | undefined;
   onChange: (uid: string, patch: Partial<AllowanceRow>) => void;
   onDelete: (uid: string) => void;
+  inputRef?: (el: HTMLInputElement | null) => void;
+  onEnterKey?: () => void;
 }) {
   const controls = useDragControls();
   const def = allowanceDefinitions?.find(d => d.id === row.defId);
@@ -107,6 +111,7 @@ function AllowanceReorderItem({
         {/* 金額 */}
         <div className="w-24 shrink-0">
           <Input
+            ref={inputRef}
             type="text"
             inputMode="numeric"
             className="h-7 w-full text-right border border-border/60 bg-transparent focus-visible:ring-1 focus-visible:ring-primary px-2 text-xs rounded"
@@ -114,6 +119,13 @@ function AllowanceReorderItem({
             onChange={(e) => {
               const raw = e.target.value.replace(/[^0-9]/g, "");
               onChange(row.uid, { amount: raw === "" ? 0 : parseInt(raw, 10) });
+            }}
+            onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 0); }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                onEnterKey?.();
+              }
             }}
             placeholder="0"
           />
@@ -139,11 +151,15 @@ function DeductionReorderItem({
   deductionDefinitions,
   onChange,
   onDelete,
+  inputRef,
+  onEnterKey,
 }: {
   row: DeductionRow;
   deductionDefinitions: { id: number; name: string }[] | undefined;
   onChange: (uid: string, patch: Partial<DeductionRow>) => void;
   onDelete: (uid: string) => void;
+  inputRef?: (el: HTMLInputElement | null) => void;
+  onEnterKey?: () => void;
 }) {
   const controls = useDragControls();
 
@@ -190,6 +206,7 @@ function DeductionReorderItem({
         {/* 金額 */}
         <div className="w-24 shrink-0">
           <Input
+            ref={inputRef}
             type="text"
             inputMode="numeric"
             className="h-7 w-full text-right border border-border/60 bg-transparent focus-visible:ring-1 focus-visible:ring-primary px-2 text-xs rounded"
@@ -197,6 +214,13 @@ function DeductionReorderItem({
             onChange={(e) => {
               const raw = e.target.value.replace(/[^0-9]/g, "");
               onChange(row.uid, { amount: raw === "" ? 0 : parseInt(raw, 10) });
+            }}
+            onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 0); }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                onEnterKey?.();
+              }
             }}
             placeholder="0"
           />
@@ -245,6 +269,43 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange }: Pr
   const baseSalaryRef = useRef<HTMLInputElement>(null);
 
   const [deductionRows, setDeductionRows] = useState<DeductionRow[]>([{ uid: newUid(), defId: null, amount: 0 }]);
+
+  // 金額入力欄の ref マップ（Enter キーでの行間ナビゲーション用）
+  const allowanceInputRefsMap = useRef<Map<string, HTMLInputElement>>(new Map());
+  const deductionInputRefsMap = useRef<Map<string, HTMLInputElement>>(new Map());
+
+  const getAllowanceInputRef = useCallback((uid: string) => (el: HTMLInputElement | null) => {
+    if (el) allowanceInputRefsMap.current.set(uid, el);
+    else allowanceInputRefsMap.current.delete(uid);
+  }, []);
+
+  const getDeductionInputRef = useCallback((uid: string) => (el: HTMLInputElement | null) => {
+    if (el) deductionInputRefsMap.current.set(uid, el);
+    else deductionInputRefsMap.current.delete(uid);
+  }, []);
+
+  const rowsRef = useRef(rows);
+  useEffect(() => { rowsRef.current = rows; }, [rows]);
+  const deductionRowsRef = useRef(deductionRows);
+  useEffect(() => { deductionRowsRef.current = deductionRows; }, [deductionRows]);
+
+  const handleAllowanceEnterKey = useCallback((uid: string) => {
+    const currentRows = rowsRef.current;
+    const idx = currentRows.findIndex(r => r.uid === uid);
+    if (idx >= 0 && idx < currentRows.length - 1) {
+      const nextInput = allowanceInputRefsMap.current.get(currentRows[idx + 1].uid);
+      nextInput?.focus();
+    }
+  }, []);
+
+  const handleDeductionEnterKey = useCallback((uid: string) => {
+    const currentRows = deductionRowsRef.current;
+    const idx = currentRows.findIndex(r => r.uid === uid);
+    if (idx >= 0 && idx < currentRows.length - 1) {
+      const nextInput = deductionInputRefsMap.current.get(currentRows[idx + 1].uid);
+      nextInput?.focus();
+    }
+  }, []);
 
   // 「このemployeeIdで手当を一度でも初期化したか」を追うフラグ
   const allowancesInitializedRef = useRef<number | null>(null);
@@ -479,7 +540,7 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange }: Pr
                     setBaseSalaryInput(isNaN(v) ? 0 : v);
                     markDirty();
                   }}
-                  onFocus={(e) => e.target.select()}
+                  onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 0); }}
                   placeholder="0"
                 />
               </td>
@@ -502,6 +563,8 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange }: Pr
                       allowanceDefinitions={allowanceDefinitions as { id: number; name: string; isTaxable: boolean }[] | undefined}
                       onChange={handleAllowanceChange}
                       onDelete={handleAllowanceDelete}
+                      inputRef={getAllowanceInputRef(row.uid)}
+                      onEnterKey={() => handleAllowanceEnterKey(row.uid)}
                     />
                   ))}
                 </Reorder.Group>
@@ -589,6 +652,8 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange }: Pr
                       deductionDefinitions={deductionDefinitions as { id: number; name: string }[] | undefined}
                       onChange={handleDeductionChange}
                       onDelete={handleDeductionDelete}
+                      inputRef={getDeductionInputRef(row.uid)}
+                      onEnterKey={() => handleDeductionEnterKey(row.uid)}
                     />
                   ))}
                 </Reorder.Group>
