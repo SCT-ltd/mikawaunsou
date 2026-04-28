@@ -485,8 +485,15 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange }: Pr
 
   const totalInsurance = healthInsurance + childcareSupportContribution + pensionInsurance + employmentInsurance;
 
+  const nonTaxableAllowancesTotal = rows.reduce((s, r) => {
+    const def = allowanceDefinitions?.find(d => d.id === r.defId);
+    return s + (def && !def.isTaxable ? (r.amount || 0) : 0);
+  }, 0);
+
+  // 所得税計算基礎: 総支給額 - 非課税手当 - 健保 - 厚年 - 雇用保険
+  // ※子育て支援金(childcareSupportContribution)は所得税計算基礎から差し引かない
   const afterInsuranceSalary = Math.max(0,
-    grandTotal - healthInsurance - childcareSupportContribution - pensionInsurance - employmentInsurance
+    grandTotal - nonTaxableAllowancesTotal - healthInsurance - pensionInsurance - employmentInsurance
   );
   const dependentEquivCount = (employee.dependentCount ?? 0) + ((employee.hasSpouse ?? false) ? 1 : 0);
   const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
