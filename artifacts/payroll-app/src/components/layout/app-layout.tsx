@@ -1,6 +1,7 @@
 import { Sidebar } from "./sidebar";
 import { useAuth } from "@/context/auth-context";
 import { UnreadProvider } from "@/context/unread-context";
+import { useNavigationGuard } from "@/context/navigation-guard-context";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -10,12 +11,23 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { LogOut, UserCircle, ChevronDown } from "lucide-react";
 import { useLocation } from "wouter";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
   const [, setLocation] = useLocation();
+  const { pendingHref, cancelPending, confirmPending } = useNavigationGuard();
 
   const handleLogout = async () => {
     await logout();
@@ -75,6 +87,28 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </main>
         </div>
       </div>
+
+      <AlertDialog open={pendingHref !== null}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>未保存の変更があります</AlertDialogTitle>
+            <AlertDialogDescription>
+              入力内容がまだ保存されていません。このまま移動すると変更が失われます。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={cancelPending}>
+              キャンセル（入力を続ける）
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              保存せずに移動
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </UnreadProvider>
   );
 }

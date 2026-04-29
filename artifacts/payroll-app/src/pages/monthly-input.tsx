@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Reorder, useDragControls } from "framer-motion";
 import { AppLayout } from "@/components/layout/app-layout";
 import {
@@ -40,6 +40,7 @@ import {
 } from "lucide-react";
 import { AttendanceCalendarDialog } from "@/components/attendance-calendar-dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useNavigationGuard } from "@/context/navigation-guard-context";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -637,75 +638,123 @@ export default function MonthlyInput() {
   const [calendarEmp, setCalendarEmp] = useState<{ id: number; name: string } | null>(null);
   const [sidebarEmp, setSidebarEmp] = useState<Employee | null>(null);
   const [importing, setImporting] = useState(false);
+  const isAutoFilling = useRef(false);
+  const isDirtyRef = useRef(false);
+  const { setIsDirty } = useNavigationGuard();
 
-  const handleImportAttendance = async () => {
-    setImporting(true);
-    try {
-      const res = await fetch(`${BASE}/api/attendance/monthly-summary?year=${year}&month=${month}`);
-      if (!res.ok) throw new Error("取得失敗");
-      const summary: {
-        employeeId: number;
-        workDays: number;
-        saturdayWorkDays: number;
-        sundayWorkHours: number;
-        overtimeHours: number;
-        absenceDays: number;
-      }[] = await res.json();
+  const markDirty = useCallback((dirty: boolean) => {
+    isDirtyRef.current = dirty;
+    setIsDirty(dirty);
+  }, [setIsDirty]);
 
-      if (summary.length === 0) {
-        toast({ title: "取り込み対象なし", description: `${year}年${month}月の打刻データが見つかりませんでした。` });
-        return;
-      }
-
-      setEdits((prev) => {
-        const next = { ...prev };
-        for (const s of summary) {
-          next[s.employeeId] = {
-            ...(next[s.employeeId] || {}),
-            workDays: s.workDays,
-            saturdayWorkDays: s.saturdayWorkDays,
-            sundayWorkHours: s.sundayWorkHours,
-            overtimeHours: s.overtimeHours,
-            absenceDays: s.absenceDays ?? 0,
-          };
-        }
-        return next;
-      });
-      toast({
-        title: "勤怠データを取り込みました",
-        description: `${summary.length}名分の出勤・残業時間を反映しました。確認後「一括保存」してください。`,
-      });
-    } catch {
-      toast({ title: "エラー", description: "勤怠データの取り込みに失敗しました。", variant: "destructive" });
-    } finally {
-      setImporting(false);
-    }
-  };
-
+  // ブラウザ離脱（タブ閉じ・リロード）時の警告（ダーティ時のみ）
   useEffect(() => {
-    if (employees && monthlyRecords) {
-      const initialEdits: Record<number, Record<string, number | string>> = {};
-      employees.forEach((emp) => {
-        const empDefaultRate = (emp as Record<string, unknown>).mikawaCommissionRate as number ?? 0;
-        const record = monthlyRecords.find((r) => r.employeeId === emp.id);
-        if (record) {
-          initialEdits[emp.id] = {
-            ...record,
-            commissionRate: (record as Record<string, unknown>).commissionRate as number || empDefaultRate,
-            bluewingSalesAmount: (record as Record<string, unknown>).bluewingSalesAmount as number ?? 0,
-          };
-        } else {
-          initialEdits[emp.id] = {
-            workDays: 0, overtimeHours: 0, lateNightHours: 0,
-            holidayWorkDays: 0, drivingDistanceKm: 0, deliveryCases: 0,
-            absenceDays: 0, saturdayWorkDays: 0, sundayWorkHours: 0, notes: "",
-            salesAmount: 0, commissionRate: empDefaultRate, bluewingSalesAmount: 0,
-          };
-        }
-      });
-      setEdits(initialEdits);
-    }
-  }, [employees, monthlyRecords, year, month]);
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirtyRef.current) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, []);
+
+  // ページ離脱時にダーティ状態をリセット
+  useEffect(() => {
+    return () => { markDirty(false); };
+  }, [markDirty]);
+
+  // 勤怠データ取り込み関数（共通）
+  const applyAttendanceSummary = useCallback(
+    (currentEdits: Record<number, Record<string, number | string>>, shouldMarkDirty: boolean) => {
+      setImporting(true);
+      fetch(`${BASE}/api/attendance/monthly-summary?year=${year}&month=${month}`)
+        .then((res) => res.json())
+        .then((summary: {
+          employeeId: number;
+          workDays: number;
+          saturdayWorkDays: number;
+          sundayWorkHours: number;
+          overtimeHours: number;
+          absenceDays: number;
+          drivingDistanceKm: number;
+        }[]) => {
+          if (summary.length === 0) {
+            if (shouldMarkDirty) {
+              toast({ title: "取り込み対象なし", description: `${year}年${month}月の打刻データが見つかりませんでした。` });
+            }
+            return;
+          }
+          isAutoFilling.current = true;
+          setEdits((prev) => {
+            const next = { ...prev };
+            for (const s of summary) {
+              next[s.employeeId] = {
+                ...(next[s.employeeId] || currentEdits[s.employeeId] || {}),
+                workDays: s.workDays,
+                saturdayWorkDays: s.saturdayWorkDays,
+                sundayWorkHours: s.sundayWorkHours,
+                overtimeHours: s.overtimeHours,
+                absenceDays: s.absenceDays ?? 0,
+                drivingDistanceKm: s.drivingDistanceKm ?? 0,
+              };
+            }
+            return next;
+          });
+          if (shouldMarkDirty) {
+            toast({
+              title: "勤怠データを取り込みました",
+              description: `${summary.length}名分の出勤・残業・走行距離を反映しました。確認後「実績を保存」してください。`,
+            });
+            markDirty(true);
+          }
+        })
+        .catch(() => {
+          if (shouldMarkDirty) {
+            toast({ title: "エラー", description: "勤怠データの取り込みに失敗しました。", variant: "destructive" });
+          }
+        })
+        .finally(() => {
+          setImporting(false);
+          isAutoFilling.current = false;
+        });
+    },
+    [year, month, toast, markDirty]
+  );
+
+  // 手動ボタン用
+  const handleImportAttendance = useCallback(() => {
+    applyAttendanceSummary(edits, true);
+  }, [applyAttendanceSummary, edits]);
+
+  // DB データロード後に自動で勤怠を反映（ダーティにしない）
+  useEffect(() => {
+    if (!employees || !monthlyRecords) return;
+
+    const initialEdits: Record<number, Record<string, number | string>> = {};
+    employees.forEach((emp) => {
+      const empDefaultRate = (emp as Record<string, unknown>).mikawaCommissionRate as number ?? 0;
+      const record = monthlyRecords.find((r) => r.employeeId === emp.id);
+      if (record) {
+        initialEdits[emp.id] = {
+          ...record,
+          commissionRate: (record as Record<string, unknown>).commissionRate as number || empDefaultRate,
+          bluewingSalesAmount: (record as Record<string, unknown>).bluewingSalesAmount as number ?? 0,
+        };
+      } else {
+        initialEdits[emp.id] = {
+          workDays: 0, overtimeHours: 0, lateNightHours: 0,
+          holidayWorkDays: 0, drivingDistanceKm: 0, deliveryCases: 0,
+          absenceDays: 0, saturdayWorkDays: 0, sundayWorkHours: 0, notes: "",
+          salesAmount: 0, commissionRate: empDefaultRate, bluewingSalesAmount: 0,
+        };
+      }
+    });
+    setEdits(initialEdits);
+    setIsDirty(false);
+
+    // DB データをセットしてから勤怠を自動マージ（ダーティにしない）
+    applyAttendanceSummary(initialEdits, false);
+  }, [employees, monthlyRecords]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleEditChange = (employeeId: number, field: string, value: string) => {
     setEdits((prev) => ({
@@ -715,6 +764,9 @@ export default function MonthlyInput() {
         [field]: field === "notes" ? value : Number(value) || 0,
       },
     }));
+    if (!isAutoFilling.current) {
+      markDirty(true);
+    }
   };
 
   const handleSaveAll = async () => {
@@ -765,6 +817,7 @@ export default function MonthlyInput() {
         }
       }
       toast({ title: "保存完了", description: `${month}月分の実績を保存しました。` });
+      markDirty(false);
       queryClient.invalidateQueries({ queryKey: getListMonthlyRecordsQueryKey({ year, month }) });
     } catch {
       toast({ title: "エラー", description: "一部のデータの保存に失敗しました。", variant: "destructive" });

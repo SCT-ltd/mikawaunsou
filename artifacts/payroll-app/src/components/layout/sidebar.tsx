@@ -1,7 +1,8 @@
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useUnread } from "@/context/unread-context";
+import { useNavigationGuard } from "@/context/navigation-guard-context";
 import { 
   LayoutDashboard, 
   CalendarDays, 
@@ -30,8 +31,9 @@ const navigation = [
 ];
 
 export function Sidebar() {
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
   const { totalUnreadCount } = useUnread();
+  const { requestNavigate } = useNavigationGuard();
 
   return (
     <div className="flex h-full w-64 flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
@@ -48,10 +50,11 @@ export function Sidebar() {
               return (
                 <Tooltip key={item.name}>
                   <TooltipTrigger asChild>
-                    <Link
-                      href={item.href}
+                    <button
+                      type="button"
+                      onClick={() => requestNavigate(item.href, navigate)}
                       className={cn(
-                        "group flex items-center rounded-md px-2 py-2 text-sm font-medium transition-colors",
+                        "w-full group flex items-center rounded-md px-2 py-2 text-sm font-medium transition-colors text-left",
                         isActive
                           ? "bg-sidebar-accent text-sidebar-accent-foreground"
                           : "text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
@@ -72,7 +75,7 @@ export function Sidebar() {
                         )}
                       </div>
                       {item.name}
-                    </Link>
+                    </button>
                   </TooltipTrigger>
                   <TooltipContent side="right" className="max-w-[200px]">
                     {item.description}
