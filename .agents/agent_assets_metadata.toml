@@ -18,3 +18,9 @@ id = "KFbRM8RGK8BE-BjOvAvZl"
 uri = "file://三川運送_全データエクスポート.xlsx"
 type = "table"
 title = "三川運送 全データエクスポート"
+
+[[outputs]]
+id = "ttG79u9582-4GeTBi-lJM"
+uri = "file://docs/操作マニュアル.md"
+type = "text"
+title = "三川運送 給与管理システム 操作マニュアル"
