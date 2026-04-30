@@ -21,6 +21,7 @@ import {
   Employee,
 } from "@workspace/api-client-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RichMonthPicker } from "@/components/rich-month-picker";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
@@ -826,8 +827,6 @@ export default function MonthlyInput() {
     }
   };
 
-  const years = Array.from({ length: 3 }, (_, i) => currentDate.getFullYear() - 1 + i);
-  const months = Array.from({ length: 12 }, (_, i) => i + 1);
   const isLoading = employeesLoading || recordsLoading;
 
   // 入力値チェック（マイナス等）
@@ -847,26 +846,11 @@ export default function MonthlyInput() {
         {/* ── アクションバー ── */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex gap-2">
-            <Select value={year.toString()} onValueChange={(v) => setYear(parseInt(v))}>
-              <SelectTrigger className="w-[110px] bg-card">
-                <SelectValue placeholder="年" />
-              </SelectTrigger>
-              <SelectContent>
-                {years.map((y) => (
-                  <SelectItem key={y} value={y.toString()}>{y}年</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={month.toString()} onValueChange={(v) => setMonth(parseInt(v))}>
-              <SelectTrigger className="w-[90px] bg-card">
-                <SelectValue placeholder="月" />
-              </SelectTrigger>
-              <SelectContent>
-                {months.map((m) => (
-                  <SelectItem key={m} value={m.toString()}>{m}月</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <RichMonthPicker
+              year={year}
+              month={month}
+              onChange={(y, m) => { setYear(y); setMonth(m); }}
+            />
           </div>
 
           <div className="flex gap-2 ml-auto">

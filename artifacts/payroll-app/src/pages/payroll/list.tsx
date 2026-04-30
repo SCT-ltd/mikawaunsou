@@ -16,7 +16,7 @@ import {
 } from "@workspace/api-client-react";
 import { PayslipPrintClassic } from "@/components/payslip-print-classic";
 import { PayslipBulkPrint } from "@/components/payslip-bulk-print";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RichMonthPicker } from "@/components/rich-month-picker";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -223,9 +223,6 @@ export default function PayrollList() {
     });
   };
 
-  const years = Array.from({ length: 3 }, (_, i) => currentDate.getFullYear() - 1 + i);
-  const months = Array.from({ length: 12 }, (_, i) => i + 1);
-
   return (
     <AppLayout>
       <div className="space-y-6">
@@ -233,26 +230,11 @@ export default function PayrollList() {
           <h2 className="text-2xl font-bold tracking-tight">給与明細一覧</h2>
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex gap-2">
-              <Select value={year.toString()} onValueChange={(v) => setYear(parseInt(v))}>
-                <SelectTrigger className="w-[100px] bg-card">
-                  <SelectValue placeholder="年" />
-                </SelectTrigger>
-                <SelectContent>
-                  {years.map(y => (
-                    <SelectItem key={y} value={y.toString()}>{y}年</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={month.toString()} onValueChange={(v) => setMonth(parseInt(v))}>
-                <SelectTrigger className="w-[80px] bg-card">
-                  <SelectValue placeholder="月" />
-                </SelectTrigger>
-                <SelectContent>
-                  {months.map(m => (
-                    <SelectItem key={m} value={m.toString()}>{m}月</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <RichMonthPicker
+                year={year}
+                month={month}
+                onChange={(y, m) => { setYear(y); setMonth(m); }}
+              />
             </div>
             <Button variant="secondary" onClick={handleCalculateAll} disabled={calculating || !employees?.length}>
               <Calculator className="mr-2 h-4 w-4" />
