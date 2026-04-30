@@ -234,7 +234,6 @@ export default function CalendarPage() {
 
   const handlePrint = () => {
     const title = `${fiscalYear}年度 カレンダー（${fiscalYear}年4月〜${fiscalYear + 1}年3月）`;
-    const today = fmtDate(new Date());
 
     const monthsHTML = fiscalMonths.map(({ year, month }) => {
       const daysInMonth = new Date(year, month, 0).getDate();
@@ -260,17 +259,14 @@ export default function CalendarPage() {
         if (!day) return `<div></div>`;
         const dateStr = fmtDate(new Date(year, month - 1, day));
         const red = isRedDay(dateStr, overrides, holidays);
-        const isToday = dateStr === today;
         const holidayName = holidays.get(dateStr);
         const textColor = red ? "#dc2626" : "#111827";
-        const bgColor = isToday ? "#dbeafe" : "transparent";
-        const border = isToday ? "2px solid #2563eb" : "1px solid transparent";
         const dot = holidayName
           ? `<span style="display:block;width:4px;height:4px;border-radius:50%;background:#f87171;margin:-1px auto 0;line-height:1;"></span>`
           : "";
         const titleAttr = holidayName ? ` title="${holidayName}"` : "";
         return `<div style="text-align:center;padding:1px 0;">
-          <div${titleAttr} style="display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:20px;height:20px;border-radius:3px;font-size:9px;font-weight:${red?"600":"400"};color:${textColor};background:${bgColor};border:${border};box-sizing:border-box;">${day}${dot}</div>
+          <div${titleAttr} style="display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:20px;height:20px;border-radius:3px;font-size:9px;font-weight:${red?"600":"400"};color:${textColor};box-sizing:border-box;">${day}${dot}</div>
         </div>`;
       }).join("");
 
