@@ -21,9 +21,9 @@ const navigation = [
   { name: "ダッシュボード",     href: "/",              icon: LayoutDashboard, description: "全体の概要・給与サマリーを確認します" },
   { name: "リアルタイムマップ", href: "/realtime-map",  icon: MapPin,          description: "ドライバーのリアルタイム位置を地図で確認します" },
   { name: "メッセージ",         href: "/messages",      icon: MessageSquare,   description: "社員へのメッセージを送受信します", showUnread: true },
-  { name: "勤怠管理",           href: "/attendance",    icon: ClipboardCheck,  description: "社員の出退勤・勤怠状況を管理します" },
-  { name: "月次実績入力",       href: "/monthly-input", icon: CalendarDays,    description: "月次の売上・走行距離などの実績を入力します" },
-  { name: "給与明細",           href: "/payroll",       icon: FileText,        description: "給与明細の作成・確認・印刷をします" },
+  { name: "勤怠管理",           href: "/attendance",    icon: ClipboardCheck,  description: "社員の出退勤・勤怠状況を管理します",       highlight: "teal" },
+  { name: "月次実績入力",       href: "/monthly-input", icon: CalendarDays,    description: "月次の売上・走行距離などの実績を入力します", highlight: "amber" },
+  { name: "給与明細",           href: "/payroll",       icon: FileText,        description: "給与明細の作成・確認・印刷をします",         highlight: "violet" },
   { name: "カレンダー",         href: "/calendar",      icon: CalendarRange,   description: "シフト・スケジュールを管理します" },
   { name: "マスター管理",       href: "/allowances",    icon: Tag,             description: "手当・控除定義などのマスターデータを管理します" },
   { name: "ユーザー管理",       href: "/users",         icon: Users,           description: "システムユーザーの追加・編集・権限設定をします" },
@@ -47,6 +47,14 @@ export function Sidebar() {
             {navigation.map((item) => {
               const isActive = location === item.href || (item.href !== "/" && location.startsWith(item.href));
               const showBadge = item.showUnread && totalUnreadCount > 0;
+
+              const highlightStyles: Record<string, { base: string; active: string; icon: string }> = {
+                teal:   { base: "bg-teal-600/15 text-teal-100 hover:bg-teal-500/30",   active: "bg-teal-500/40 text-white",   icon: "text-teal-300" },
+                amber:  { base: "bg-amber-600/15 text-amber-100 hover:bg-amber-500/30", active: "bg-amber-500/40 text-white",  icon: "text-amber-300" },
+                violet: { base: "bg-violet-600/15 text-violet-100 hover:bg-violet-500/30", active: "bg-violet-500/40 text-white", icon: "text-violet-300" },
+              };
+              const hl = item.highlight ? highlightStyles[item.highlight] : null;
+
               return (
                 <Tooltip key={item.name}>
                   <TooltipTrigger asChild>
@@ -55,16 +63,20 @@ export function Sidebar() {
                       onClick={() => requestNavigate(item.href, navigate)}
                       className={cn(
                         "w-full group flex items-center rounded-md px-2 py-2 text-sm font-medium transition-colors text-left",
-                        isActive
-                          ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                          : "text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+                        hl
+                          ? isActive ? hl.active : hl.base
+                          : isActive
+                            ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                            : "text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
                       )}
                     >
                       <div className="relative mr-3 shrink-0">
                         <item.icon
                           className={cn(
                             "h-5 w-5",
-                            isActive ? "text-sidebar-accent-foreground" : "text-sidebar-foreground/70 group-hover:text-sidebar-accent-foreground"
+                            hl
+                              ? hl.icon
+                              : isActive ? "text-sidebar-accent-foreground" : "text-sidebar-foreground/70 group-hover:text-sidebar-accent-foreground"
                           )}
                           aria-hidden="true"
                         />
