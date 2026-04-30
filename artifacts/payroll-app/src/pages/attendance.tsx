@@ -4,9 +4,10 @@ import { Button } from "@/components/ui/button";
 import {
   RefreshCw, Clock, QrCode, Pencil, Trash2, Save, X,
   UserCheck, Coffee, LogOut, AlarmClock, Plus, GripVertical,
-  ChevronLeft, ChevronRight, CalendarOff,
+  ChevronLeft, ChevronRight, CalendarOff, CalendarDays,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Calendar } from "@/components/ui/calendar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -248,6 +249,7 @@ function Avatar({ name, size = "md" }: { name: string; size?: "sm" | "md" | "lg"
 /* ── メインページ ────────────────────────── */
 export default function AttendancePage() {
   const [selectedDate, setSelectedDate] = useState(() => todayJST());
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [data, setData] = useState<EmployeeStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(new Date());
@@ -541,20 +543,40 @@ export default function AttendancePage() {
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </button>
-                  <button
-                    type="button"
-                    className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors min-w-[180px] text-center relative"
-                  >
-                    {formatDateJP(selectedDate)}
-                    <input
-                      id="attendance-date-input"
-                      type="date"
-                      value={selectedDate}
-                      max={todayJST()}
-                      onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
-                      className="absolute inset-0 opacity-0 cursor-pointer w-full"
-                    />
-                  </button>
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setCalendarOpen(o => !o)}
+                      className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors min-w-[180px] text-center flex items-center justify-center gap-1.5"
+                    >
+                      <CalendarDays className="h-3.5 w-3.5 text-slate-400" />
+                      {formatDateJP(selectedDate)}
+                    </button>
+                    {calendarOpen && (
+                      <>
+                        <div
+                          className="fixed inset-0 z-40"
+                          onClick={() => setCalendarOpen(false)}
+                        />
+                        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50 rounded-xl border border-slate-200 bg-white shadow-xl p-2">
+                          <Calendar
+                            mode="single"
+                            selected={new Date(selectedDate + "T00:00:00")}
+                            onSelect={(date) => {
+                              if (date) {
+                                const y = date.getFullYear();
+                                const m = String(date.getMonth() + 1).padStart(2, "0");
+                                const d = String(date.getDate()).padStart(2, "0");
+                                setSelectedDate(`${y}-${m}-${d}`);
+                                setCalendarOpen(false);
+                              }
+                            }}
+                            disabled={(date) => date > new Date(todayJST() + "T23:59:59")}
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
                   <button
                     onClick={() => setSelectedDate(d => addDays(d, 1))}
                     disabled={isToday}
