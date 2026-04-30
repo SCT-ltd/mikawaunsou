@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import { AppLayout } from "@/components/layout/app-layout";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, Calendar, RotateCcw } from "lucide-react";
+import { ChevronLeft, ChevronRight, Calendar, RotateCcw, Printer } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 // ── 祝日データ（年 → Map<"YYYY-MM-DD", 祝日名>）───────────────────
@@ -104,7 +104,6 @@ function MonthCalendar({
 
   const today = fmtDate(new Date());
 
-  // 月ごとの出勤日数
   let workDays = 0;
   for (let d = 1; d <= daysInMonth; d++) {
     const ds = fmtDate(new Date(year, month - 1, d));
@@ -112,9 +111,9 @@ function MonthCalendar({
   }
 
   return (
-    <div className="border rounded-lg overflow-hidden bg-card shadow-sm">
+    <div className="border rounded-lg overflow-hidden bg-card shadow-sm month-calendar-cell">
       <div className="bg-muted/50 px-3 py-2 flex items-center justify-between border-b">
-        <span className="font-semibold text-sm">{MONTH_NAMES[month - 1]}</span>
+        <span className="font-semibold text-sm">{year}年 {MONTH_NAMES[month - 1]}</span>
         <span className="text-xs tabular-nums flex items-center gap-2">
           <span className="text-muted-foreground">出勤 <span className="font-semibold text-foreground">{workDays}</span>日</span>
           <span className="text-red-400">休 <span className="font-semibold">{daysInMonth - workDays}</span>日</span>
@@ -169,18 +168,47 @@ function MonthCalendar({
   );
 }
 
-export default function CalendarPage() {
-  const currentYear = new Date().getFullYear();
-  const [year, setYear] = useState(currentYear);
-  const [overrides, setOverrides] = useState<Record<string, boolean>>(loadOverrides);
+// ── 年度の月リスト（4月〜翌3月）
+function getFiscalMonths(fiscalYear: number): { year: number; month: number }[] {
+  return [
+    ...Array.from({ length: 9 }, (_, i) => ({ year: fiscalYear,     month: i + 4 })),
+    ...Array.from({ length: 3 }, (_, i) => ({ year: fiscalYear + 1, month: i + 1 })),
+  ];
+}
 
-  const holidays = getJapaneseHolidays(year);
+// ── 年度内の override かどうか
+function isInFiscalYear(dateStr: string, fiscalYear: number): boolean {
+  const [y, m] = dateStr.split("-").map(Number);
+  if (y === fiscalYear     && m >= 4) return true;
+  if (y === fiscalYear + 1 && m <= 3) return true;
+  return false;
+}
+
+export default function CalendarPage() {
+  const now = new Date();
+  const currentMonth = now.getMonth() + 1;
+  const currentYear  = now.getFullYear();
+  const defaultFiscalYear = currentMonth >= 4 ? currentYear : currentYear - 1;
+  const [fiscalYear, setFiscalYear] = useState(defaultFiscalYear);
+  const [overrides, setOverrides]   = useState<Record<string, boolean>>(loadOverrides);
+
+  // 年度の月リスト
+  const fiscalMonths = getFiscalMonths(fiscalYear);
+
+  // 祝日（年度をまたぐため両年分マージ）
+  const holidays = new Map([
+    ...getJapaneseHolidays(fiscalYear),
+    ...getJapaneseHolidays(fiscalYear + 1),
+  ]);
 
   const handleToggle = useCallback((dateStr: string) => {
     setOverrides(prev => {
       const dt = new Date(dateStr);
       const dow = dt.getDay();
-      const isNaturallyRed = dow === 0 || dow === 6 || holidays.has(dateStr);
+      // 当日時点の祝日マップで判定（年をまたぐため両年マージ済み holidays を使えないのでその場で判定）
+      const y = dt.getFullYear();
+      const hols = new Map([...getJapaneseHolidays(y)]);
+      const isNaturallyRed = dow === 0 || dow === 6 || hols.has(dateStr);
       const currentlyRed = dateStr in prev ? prev[dateStr] : isNaturallyRed;
       const next = { ...prev };
       if (currentlyRed === isNaturallyRed) {
@@ -191,40 +219,85 @@ export default function CalendarPage() {
       saveOverrides(next);
       return next;
     });
-  }, [holidays]);
+  }, []);
 
   const handleReset = () => {
-    const yearPrefix = `${year}-`;
     setOverrides(prev => {
       const next = { ...prev };
-      Object.keys(next).forEach(k => { if (k.startsWith(yearPrefix)) delete next[k]; });
+      Object.keys(next).forEach(k => {
+        if (isInFiscalYear(k, fiscalYear)) delete next[k];
+      });
       saveOverrides(next);
       return next;
     });
   };
 
-  // 年間日数（うるう年考慮）
-  const totalDays = new Date(year, 1, 29).getMonth() === 1 ? 366 : 365;
+  const handlePrint = () => {
+    window.print();
+  };
 
-  // 年間出勤日数合計
-  const totalWorkDays = (() => {
-    let count = 0;
-    for (let m = 1; m <= 12; m++) {
-      const days = new Date(year, m, 0).getDate();
-      for (let d = 1; d <= days; d++) {
-        const ds = `${year}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-        if (!isRedDay(ds, overrides, holidays)) count++;
-      }
+  // 年度内の override 数
+  const overrideCount = Object.keys(overrides).filter(k => isInFiscalYear(k, fiscalYear)).length;
+
+  // 年度の総日数・出勤日数
+  const totalFiscalDays = fiscalMonths.reduce(
+    (sum, { year, month }) => sum + new Date(year, month, 0).getDate(), 0
+  );
+  const totalWorkDays = fiscalMonths.reduce((sum, { year, month }) => {
+    const days = new Date(year, month, 0).getDate();
+    for (let d = 1; d <= days; d++) {
+      const ds = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      if (!isRedDay(ds, overrides, holidays)) sum++;
     }
-    return count;
-  })();
-
-  const overrideCount = Object.keys(overrides).filter(k => k.startsWith(`${year}-`)).length;
+    return sum;
+  }, 0);
 
   return (
     <AppLayout>
-      <div className="space-y-5">
-        <div className="flex items-center justify-between">
+      {/* ── 印刷用スタイル ── */}
+      <style>{`
+        @media print {
+          @page {
+            size: A4 landscape;
+            margin: 8mm;
+          }
+          * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          body * { visibility: hidden; }
+          #calendar-print-area,
+          #calendar-print-area * { visibility: visible; }
+          #calendar-print-area {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%;
+            padding: 0;
+          }
+          .print-hide { display: none !important; }
+          .month-calendar-cell { break-inside: avoid; }
+          #calendar-print-area .print-grid {
+            display: grid !important;
+            grid-template-columns: repeat(4, 1fr) !important;
+            gap: 6px !important;
+          }
+          #calendar-print-area .print-grid .month-calendar-cell {
+            font-size: 9px !important;
+          }
+          #calendar-print-area .print-grid .month-calendar-cell button {
+            height: 20px !important;
+            font-size: 9px !important;
+          }
+          #calendar-print-area .print-grid .month-calendar-cell .grid {
+            gap: 1px !important;
+          }
+          #calendar-print-area .print-legend { display: none !important; }
+        }
+      `}</style>
+
+      <div id="calendar-print-area" className="space-y-4">
+        {/* ── ページヘッダー ── */}
+        <div className="flex items-center justify-between print-hide">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-primary/10 rounded-lg text-primary">
               <Calendar className="h-5 w-5" />
@@ -236,27 +309,49 @@ export default function CalendarPage() {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             {overrideCount > 0 && (
               <Button variant="outline" size="sm" onClick={handleReset} className="gap-1.5 text-muted-foreground">
                 <RotateCcw className="h-3.5 w-3.5" />
-                {year}年のリセット
+                {fiscalYear}年度のリセット
               </Button>
             )}
+            <Button variant="outline" size="sm" onClick={handlePrint} className="gap-1.5">
+              <Printer className="h-3.5 w-3.5" />
+              印刷
+            </Button>
             <div className="flex items-center gap-1 border rounded-md px-1">
-              <button onClick={() => setYear(y => y - 1)} className="p-1.5 hover:bg-muted rounded transition-colors" title="前年">
+              <button onClick={() => setFiscalYear(y => y - 1)} className="p-1.5 hover:bg-muted rounded transition-colors" title="前年度">
                 <ChevronLeft className="h-4 w-4" />
               </button>
-              <span className="px-3 text-sm font-semibold tabular-nums w-16 text-center">{year}年</span>
-              <button onClick={() => setYear(y => y + 1)} className="p-1.5 hover:bg-muted rounded transition-colors" title="翌年">
+              <span className="px-2 text-sm font-semibold tabular-nums text-center whitespace-nowrap">
+                {fiscalYear}年度
+              </span>
+              <button onClick={() => setFiscalYear(y => y + 1)} className="p-1.5 hover:bg-muted rounded transition-colors" title="翌年度">
                 <ChevronRight className="h-4 w-4" />
               </button>
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-          {Array.from({ length: 12 }, (_, i) => i + 1).map(month => (
+        {/* ── 印刷時タイトル（画面では非表示） ── */}
+        <div className="hidden print:block text-center mb-2">
+          <h1 className="text-xl font-bold">
+            {fiscalYear}年度 カレンダー（{fiscalYear}年4月〜{fiscalYear + 1}年3月）
+          </h1>
+          <p className="text-xs text-gray-500 mt-0.5">
+            年間出勤日数 {totalWorkDays}日　年間休日数 {totalFiscalDays - totalWorkDays}日
+          </p>
+        </div>
+
+        {/* ── 年度表示サブタイトル（画面用） ── */}
+        <div className="text-xs text-muted-foreground -mt-3 print-hide">
+          {fiscalYear}年4月〜{fiscalYear + 1}年3月
+        </div>
+
+        {/* ── カレンダーグリッド ── */}
+        <div className="print-grid grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+          {fiscalMonths.map(({ year, month }) => (
             <MonthCalendar
               key={`${year}-${month}`}
               year={year}
@@ -268,7 +363,8 @@ export default function CalendarPage() {
           ))}
         </div>
 
-        <div className="flex flex-wrap items-center gap-x-8 gap-y-2 border rounded-md px-4 py-3 bg-muted/30 text-xs text-muted-foreground">
+        {/* ── 凡例・統計 ── */}
+        <div className="print-legend flex flex-wrap items-center gap-x-8 gap-y-2 border rounded-md px-4 py-3 bg-muted/30 text-xs text-muted-foreground">
           <span className="flex items-center gap-1.5">
             <span className="inline-block w-4 h-4 rounded bg-red-100 border border-red-200" />
             祝日・土曜・日曜（クリックで出勤日に変更）
@@ -289,14 +385,14 @@ export default function CalendarPage() {
           </span>
           <span className="ml-auto flex items-center gap-6">
             <span className="flex items-center gap-1.5">
-              <span className="text-muted-foreground">{year}年 年間出勤日数</span>
+              <span className="text-muted-foreground">{fiscalYear}年度 年間出勤日数</span>
               <span className="text-lg font-bold text-foreground tabular-nums">{totalWorkDays}</span>
               <span>日</span>
             </span>
             <span className="w-px h-5 bg-border" />
             <span className="flex items-center gap-1.5">
               <span className="text-muted-foreground">年間休日数</span>
-              <span className="text-lg font-bold text-red-600 tabular-nums">{totalDays - totalWorkDays}</span>
+              <span className="text-lg font-bold text-red-600 tabular-nums">{totalFiscalDays - totalWorkDays}</span>
               <span>日</span>
             </span>
           </span>
