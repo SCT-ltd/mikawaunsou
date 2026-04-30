@@ -8,8 +8,6 @@ import {
   ChevronLeft, ChevronRight, CalendarOff, CalendarDays,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Calendar } from "@/components/ui/calendar";
-import { ja } from "date-fns/locale";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -244,6 +242,162 @@ function Avatar({ name, size = "md" }: { name: string; size?: "sm" | "md" | "lg"
   return (
     <div className={`${sz} rounded-full bg-gradient-to-br ${grad} text-white font-bold flex items-center justify-center shrink-0 shadow-md`}>
       {name[0]}
+    </div>
+  );
+}
+
+/* ── リッチ日付カレンダー ────────────────── */
+const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+
+function RichDatePicker({
+  value,
+  onChange,
+  maxDate,
+  onClose,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  maxDate: string;
+  onClose: () => void;
+}) {
+  const selectedDate = new Date(value + "T00:00:00");
+  const [viewYear, setViewYear] = useState(selectedDate.getFullYear());
+  const [viewMonth, setViewMonth] = useState(selectedDate.getMonth());
+  const todayStr = todayJST();
+  const maxDateObj = new Date(maxDate + "T23:59:59");
+
+  const prevMonth = () => {
+    if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); }
+    else setViewMonth(m => m - 1);
+  };
+  const nextMonth = () => {
+    const nextY = viewMonth === 11 ? viewYear + 1 : viewYear;
+    const nextM = viewMonth === 11 ? 0 : viewMonth + 1;
+    const firstOfNext = new Date(nextY, nextM, 1);
+    if (firstOfNext <= maxDateObj) {
+      if (viewMonth === 11) { setViewYear(y => y + 1); setViewMonth(0); }
+      else setViewMonth(m => m + 1);
+    }
+  };
+
+  // カレンダーグリッド生成
+  const firstDay = new Date(viewYear, viewMonth, 1).getDay();
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const cells: (number | null)[] = [
+    ...Array(firstDay).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ];
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  const toStr = (d: number) => {
+    const m = String(viewMonth + 1).padStart(2, "0");
+    const dd = String(d).padStart(2, "0");
+    return `${viewYear}-${m}-${dd}`;
+  };
+
+  const canGoNext = (() => {
+    const nextY = viewMonth === 11 ? viewYear + 1 : viewYear;
+    const nextM = viewMonth === 11 ? 0 : viewMonth + 1;
+    return new Date(nextY, nextM, 1) <= maxDateObj;
+  })();
+
+  return (
+    <div className="w-[380px] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+      {/* ヘッダー */}
+      <div className="bg-gradient-to-r from-indigo-600 to-indigo-500 px-5 py-4 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={prevMonth}
+          className="w-8 h-8 rounded-full flex items-center justify-center text-white/80 hover:bg-white/20 hover:text-white transition-all"
+        >
+          <ChevronLeft className="h-5 w-5" />
+        </button>
+        <div className="text-center">
+          <p className="text-white font-bold text-lg leading-none">
+            {viewYear}年{viewMonth + 1}月
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={nextMonth}
+          disabled={!canGoNext}
+          className="w-8 h-8 rounded-full flex items-center justify-center text-white/80 hover:bg-white/20 hover:text-white transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          <ChevronRight className="h-5 w-5" />
+        </button>
+      </div>
+
+      {/* 曜日ヘッダー */}
+      <div className="grid grid-cols-7 bg-slate-50 border-b border-slate-100">
+        {WEEKDAYS.map((w, i) => (
+          <div
+            key={w}
+            className={`py-2 text-center text-xs font-bold tracking-wider
+              ${i === 0 ? "text-red-500" : i === 6 ? "text-blue-500" : "text-slate-500"}`}
+          >
+            {w}
+          </div>
+        ))}
+      </div>
+
+      {/* 日付グリッド */}
+      <div className="grid grid-cols-7 p-2 gap-1">
+        {cells.map((day, idx) => {
+          if (!day) return <div key={`empty-${idx}`} />;
+          const dateStr = toStr(day);
+          const isSelected = dateStr === value;
+          const isToday = dateStr === todayStr;
+          const isFuture = new Date(dateStr + "T00:00:00") > maxDateObj;
+          const dow = (firstDay + day - 1) % 7;
+          const isSun = dow === 0;
+          const isSat = dow === 6;
+
+          return (
+            <button
+              key={day}
+              type="button"
+              disabled={isFuture}
+              onClick={() => { onChange(dateStr); onClose(); }}
+              className={`
+                relative h-11 w-full rounded-xl text-sm font-semibold transition-all duration-100
+                flex flex-col items-center justify-center gap-0.5
+                ${isFuture ? "opacity-25 cursor-not-allowed" : "hover:scale-105 active:scale-95"}
+                ${isSelected
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-200"
+                  : isToday
+                    ? "bg-indigo-50 text-indigo-700 ring-2 ring-indigo-400 ring-offset-1"
+                    : isSun
+                      ? "text-red-500 hover:bg-red-50"
+                      : isSat
+                        ? "text-blue-500 hover:bg-blue-50"
+                        : "text-slate-700 hover:bg-slate-100"}
+              `}
+            >
+              <span>{day}</span>
+              {isToday && !isSelected && (
+                <span className="w-1 h-1 rounded-full bg-indigo-400" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* フッター */}
+      <div className="px-4 py-3 border-t border-slate-100 bg-slate-50/60 flex items-center justify-between">
+        <span className="text-xs text-slate-400">
+          選択中：<span className="text-slate-600 font-medium">{formatDateJP(value)}</span>
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            onChange(todayStr);
+            onClose();
+          }}
+          className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-colors"
+        >
+          今日
+        </button>
+      </div>
     </div>
   );
 }
@@ -570,29 +724,14 @@ export default function AttendancePage() {
                           onClick={() => setCalendarOpen(false)}
                         />
                         <div
-                          className="fixed z-50 rounded-xl border border-slate-200 bg-white shadow-xl p-2 -translate-x-1/2"
+                          className="fixed z-50 -translate-x-1/2"
                           style={{ top: calendarPos.top, left: calendarPos.left }}
                         >
-                          <Calendar
-                            mode="single"
-                            locale={ja}
-                            selected={new Date(selectedDate + "T00:00:00")}
-                            onSelect={(date) => {
-                              if (date) {
-                                const y = date.getFullYear();
-                                const m = String(date.getMonth() + 1).padStart(2, "0");
-                                const d = String(date.getDate()).padStart(2, "0");
-                                setSelectedDate(`${y}-${m}-${d}`);
-                                setCalendarOpen(false);
-                              }
-                            }}
-                            disabled={(date) => date > new Date(todayJST() + "T23:59:59")}
-                            formatters={{
-                              formatCaption: (date) =>
-                                `${date.getFullYear()}年${date.getMonth() + 1}月`,
-                              formatWeekdayName: (date) =>
-                                ["日", "月", "火", "水", "木", "金", "土"][date.getDay()],
-                            }}
+                          <RichDatePicker
+                            value={selectedDate}
+                            onChange={setSelectedDate}
+                            maxDate={todayJST()}
+                            onClose={() => setCalendarOpen(false)}
                           />
                         </div>
                       </>,
