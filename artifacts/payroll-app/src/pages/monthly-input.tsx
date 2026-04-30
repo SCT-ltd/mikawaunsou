@@ -38,6 +38,7 @@ import {
   ChevronDown,
   ChevronUp,
   Info,
+  FileSpreadsheet,
 } from "lucide-react";
 import { AttendanceCalendarDialog } from "@/components/attendance-calendar-dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -831,53 +832,62 @@ export default function MonthlyInput() {
 
   return (
     <AppLayout>
-      <div className="space-y-4">
-        {/* ── ヘッダー ── */}
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">月次実績入力</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            給与計算の基礎となる各社員の月次実績を入力・管理します。
-          </p>
-        </div>
+      <div className="space-y-0">
+        {/* ── スティッキーヘッダー ── */}
+        <div className="sticky top-0 z-30 -mx-4 md:-mx-6 lg:-mx-8 px-4 md:px-6 lg:px-8 bg-background/95 backdrop-blur-sm border-b border-border shadow-sm mb-4">
+          <div className="flex flex-wrap items-center gap-3 py-3">
+            {/* タイトル */}
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 text-white shadow-md">
+                <FileSpreadsheet className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold tracking-tight leading-tight">月次実績入力</h2>
+                <p className="text-[11px] text-muted-foreground leading-tight">給与計算の基礎となる各社員の月次実績を入力・管理します</p>
+              </div>
+            </div>
 
-        {/* ── アクションバー ── */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex gap-2">
-            <RichMonthPicker
-              year={year}
-              month={month}
-              onChange={(y, m) => { setYear(y); setMonth(m); }}
-            />
-          </div>
-
-          <div className="flex gap-2 ml-auto">
-            <Button
-              variant="outline"
-              onClick={handleImportAttendance}
-              disabled={isLoading || importing || saving || !employees?.length}
-              title="打刻データから出勤日数・残業時間を自動入力"
-            >
-              <RefreshCw className={`mr-2 h-4 w-4 ${importing ? "animate-spin" : ""}`} />
-              {importing ? "取り込み中..." : "勤怠から一括反映"}
-            </Button>
-            <Button onClick={handleSaveAll} disabled={isLoading || saving || !employees?.length}>
-              <Save className="mr-2 h-4 w-4" />
-              {saving ? "保存中..." : "実績を保存"}
-            </Button>
+            {/* 月選択 ＋ ボタン */}
+            <div className="flex flex-wrap items-center gap-2 ml-auto">
+              <RichMonthPicker
+                year={year}
+                month={month}
+                onChange={(y, m) => { setYear(y); setMonth(m); }}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleImportAttendance}
+                disabled={isLoading || importing || saving || !employees?.length}
+                title="打刻データから出勤日数・残業時間を自動入力"
+              >
+                <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${importing ? "animate-spin" : ""}`} />
+                {importing ? "取り込み中..." : "勤怠から一括反映"}
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleSaveAll}
+                disabled={isLoading || saving || !employees?.length}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm"
+              >
+                <Save className="mr-1.5 h-3.5 w-3.5" />
+                {saving ? "保存中..." : "実績を保存"}
+              </Button>
+            </div>
           </div>
         </div>
 
         {/* ── テーブル ── */}
-        <div className="rounded-lg border bg-card overflow-hidden shadow-sm">
-          <div className="overflow-x-auto">
+        <div className="rounded-lg border bg-card shadow-sm">
+          <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-210px)]">
             <table className="monthly-input-table w-full text-xs border-collapse">
-              <thead>
+              <thead className="sticky top-0 z-20">
                 {/* グループ行 */}
                 <tr className="border-b border-border">
                   {/* 社員名（2行分） */}
                   <th
                     rowSpan={2}
-                    className="sticky left-0 z-20 bg-muted/60 border-r border-border px-3 py-2 text-left font-semibold text-muted-foreground min-w-[160px] align-bottom"
+                    className="sticky left-0 z-30 bg-muted border-r border-border px-3 py-2 text-left font-semibold text-muted-foreground min-w-[160px] align-bottom"
                   >
                     社員名・所属
                   </th>
@@ -935,7 +945,7 @@ export default function MonthlyInput() {
                   {/* 概算（2行分） */}
                   <th
                     rowSpan={2}
-                    className="bg-muted/40 border-x border-border px-2 py-1.5 text-center font-semibold text-muted-foreground align-bottom min-w-[110px]"
+                    className="bg-muted border-x border-border px-2 py-1.5 text-center font-semibold text-muted-foreground align-bottom min-w-[110px]"
                   >
                     <div className="flex items-center justify-center gap-1">
                       概算
@@ -952,7 +962,7 @@ export default function MonthlyInput() {
                   {/* 備考（2行分） */}
                   <th
                     rowSpan={2}
-                    className="bg-muted/40 border-l border-border px-2 py-1.5 text-left font-semibold text-muted-foreground align-bottom min-w-[130px]"
+                    className="bg-muted border-l border-border px-2 py-1.5 text-left font-semibold text-muted-foreground align-bottom min-w-[130px]"
                   >
                     <div className="flex items-center gap-1">
                       備考
@@ -980,7 +990,7 @@ export default function MonthlyInput() {
                     { label: "深夜",  sub: "h",  tip: "深夜勤務時間（時間単位）。深夜割増（+0.25）が加算されます。" },
                     { label: "休日",  sub: "日", tip: "法定休日出勤日数。休日割増賃金（×1.35）で計算されます。" },
                   ].map(({ label, sub, tip }) => (
-                    <th key={label} className="bg-sky-50/60 border-x border-sky-100 px-1 py-1 text-center font-medium text-sky-700 w-[64px]">
+                    <th key={label} className="bg-sky-50 border-x border-sky-100 px-1 py-1 text-center font-medium text-sky-700 w-[64px]">
                       <div className="flex items-center justify-center gap-0.5 flex-wrap">
                         <span>{label}</span>
                         <span className="text-[9px] text-sky-500">({sub})</span>
@@ -997,7 +1007,7 @@ export default function MonthlyInput() {
                   {[
                     { label: "走行KM", sub: "km", tip: "当月の総走行距離（km）。走行距離手当の計算に使用します。" },
                   ].map(({ label, sub, tip }) => (
-                    <th key={label} className="bg-amber-50/60 border-x border-amber-100 px-1 py-1 text-center font-medium text-amber-700 w-[72px]">
+                    <th key={label} className="bg-amber-50 border-x border-amber-100 px-1 py-1 text-center font-medium text-amber-700 w-[72px]">
                       <div className="flex items-center justify-center gap-0.5 flex-wrap">
                         <span>{label}</span>
                         <span className="text-[9px] text-amber-500">({sub})</span>
@@ -1011,7 +1021,7 @@ export default function MonthlyInput() {
                     </th>
                   ))}
                   {/* 給与基礎1列 */}
-                  <th className="bg-violet-50/60 border-x border-violet-100 px-1 py-1 text-center font-medium text-violet-700 w-[96px]">
+                  <th className="bg-violet-50 border-x border-violet-100 px-1 py-1 text-center font-medium text-violet-700 w-[96px]">
                     <div className="flex items-center justify-center gap-0.5 flex-wrap">
                       <span>BW売上</span>
                       <span className="text-[9px] text-violet-500">(円)</span>
@@ -1090,7 +1100,7 @@ export default function MonthlyInput() {
                         </td>
 
                         {/* 勤怠7列 */}
-                        <td className="p-1 border-x border-sky-100/60">{numInput("workDays", { max: 31 })}</td>
+                        <td className="p-1 border-x border-sky-100/60">{numInput("workDays", { max: 31, step: "1" })}</td>
                         <td className="p-1 border-x border-sky-100/60">{numInput("saturdayWorkDays", { max: 31 })}</td>
                         <td className="p-1 border-x border-sky-100/60">{numInput("sundayWorkHours")}</td>
                         <td className="p-1 border-x border-sky-100/60">{numInput("absenceDays", { max: 31 })}</td>
@@ -1113,14 +1123,14 @@ export default function MonthlyInput() {
                         {/* 概算 */}
                         <td className="px-2 py-1 border-x border-border/40 text-right align-middle">
                           {gross > 0 ? (
-                            <div className="leading-tight">
-                              <div className="text-[9px] text-muted-foreground">総支給</div>
-                              <div className="font-semibold text-foreground tabular-nums text-[11px]">¥{gross.toLocaleString("ja-JP")}</div>
-                              <div className="text-[9px] text-muted-foreground mt-0.5">手取概算</div>
-                              <div className={`font-bold tabular-nums text-[11px] ${net >= 0 ? "text-green-700" : "text-red-600"}`}>¥{net.toLocaleString("ja-JP")}</div>
+                            <div className="leading-snug">
+                              <div className="text-[10px] text-muted-foreground font-medium">総支給</div>
+                              <div className="font-semibold text-foreground tabular-nums text-sm">¥{gross.toLocaleString("ja-JP")}</div>
+                              <div className="text-[10px] text-muted-foreground font-medium mt-0.5">手取概算</div>
+                              <div className={`font-bold tabular-nums text-sm ${net >= 0 ? "text-green-700" : "text-red-600"}`}>¥{net.toLocaleString("ja-JP")}</div>
                             </div>
                           ) : (
-                            <div className="text-center text-muted-foreground/40 text-[10px]">—</div>
+                            <div className="text-center text-muted-foreground/40 text-xs">—</div>
                           )}
                         </td>
 
