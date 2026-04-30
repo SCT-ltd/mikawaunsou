@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Calendar } from "@/components/ui/calendar";
+import { ja } from "date-fns/locale";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -574,6 +575,7 @@ export default function AttendancePage() {
                         >
                           <Calendar
                             mode="single"
+                            locale={ja}
                             selected={new Date(selectedDate + "T00:00:00")}
                             onSelect={(date) => {
                               if (date) {
@@ -585,6 +587,12 @@ export default function AttendancePage() {
                               }
                             }}
                             disabled={(date) => date > new Date(todayJST() + "T23:59:59")}
+                            formatters={{
+                              formatCaption: (date) =>
+                                `${date.getFullYear()}年${date.getMonth() + 1}月`,
+                              formatWeekdayName: (date) =>
+                                ["日", "月", "火", "水", "木", "金", "土"][date.getDay()],
+                            }}
                           />
                         </div>
                       </>,
