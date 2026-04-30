@@ -265,33 +265,50 @@ export default function CalendarPage() {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
-          body * { visibility: hidden; }
-          #calendar-print-area,
-          #calendar-print-area * { visibility: visible; }
-          #calendar-print-area {
-            position: fixed;
-            top: 0; left: 0;
-            width: 100%;
-            padding: 0;
+
+          /* レイアウトの overflow / height 制約を解除 */
+          body { overflow: visible !important; }
+          #layout-root {
+            display: block !important;
+            height: auto !important;
+            overflow: visible !important;
           }
+          #layout-main-panel {
+            display: block !important;
+            height: auto !important;
+            overflow: visible !important;
+          }
+          #layout-main {
+            overflow: visible !important;
+            height: auto !important;
+            padding: 0 !important;
+          }
+          #layout-main > div { max-width: none !important; }
+
+          /* サイドバー・トップヘッダーを非表示 */
+          #layout-sidebar { display: none !important; }
+          #layout-header   { display: none !important; }
+
+          /* ページ内の非印刷要素を非表示 */
           .print-hide { display: none !important; }
-          .month-calendar-cell { break-inside: avoid; }
-          #calendar-print-area .print-grid {
+
+          /* 印刷専用タイトルを表示 */
+          .print-only { display: block !important; }
+
+          /* カレンダーグリッドを4列に */
+          .print-grid {
             display: grid !important;
             grid-template-columns: repeat(4, 1fr) !important;
             gap: 6px !important;
           }
-          #calendar-print-area .print-grid .month-calendar-cell {
-            font-size: 9px !important;
-          }
-          #calendar-print-area .print-grid .month-calendar-cell button {
-            height: 20px !important;
-            font-size: 9px !important;
-          }
-          #calendar-print-area .print-grid .month-calendar-cell .grid {
-            gap: 1px !important;
-          }
-          #calendar-print-area .print-legend { display: none !important; }
+
+          /* 各月カレンダーを小さく */
+          .month-calendar-cell { break-inside: avoid; font-size: 9px !important; }
+          .month-calendar-cell button { height: 20px !important; font-size: 9px !important; }
+          .month-calendar-cell .grid { gap: 1px !important; }
+
+          /* 凡例は非表示 */
+          .print-legend { display: none !important; }
         }
       `}</style>
 
@@ -335,7 +352,7 @@ export default function CalendarPage() {
         </div>
 
         {/* ── 印刷時タイトル（画面では非表示） ── */}
-        <div className="hidden print:block text-center mb-2">
+        <div className="print-only text-center mb-2" style={{ display: "none" }}>
           <h1 className="text-xl font-bold">
             {fiscalYear}年度 カレンダー（{fiscalYear}年4月〜{fiscalYear + 1}年3月）
           </h1>

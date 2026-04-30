@@ -36,10 +36,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <UnreadProvider>
-      <div className="flex h-screen overflow-hidden bg-background">
-        <Sidebar />
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <header className="flex h-14 items-center justify-between border-b bg-card px-4 lg:px-6 shadow-sm">
+      <div id="layout-root" className="flex h-screen overflow-hidden bg-background">
+        <div id="layout-sidebar"><Sidebar /></div>
+        <div id="layout-main-panel" className="flex flex-1 flex-col overflow-hidden">
+          <header id="layout-header" className="flex h-14 items-center justify-between border-b bg-card px-4 lg:px-6 shadow-sm">
             <div className="flex items-center gap-4">
               <h1 className="text-lg font-semibold tracking-tight text-foreground">
                 給与管理
@@ -80,7 +80,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               )}
             </div>
           </header>
-          <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
+          <main id="layout-main" className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
             <div className="mx-auto max-w-7xl">
               {children}
             </div>
