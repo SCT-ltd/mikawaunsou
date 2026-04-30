@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { AppLayout } from "@/components/layout/app-layout";
 import { Button } from "@/components/ui/button";
 import {
@@ -250,6 +251,8 @@ function Avatar({ name, size = "md" }: { name: string; size?: "sm" | "md" | "lg"
 export default function AttendancePage() {
   const [selectedDate, setSelectedDate] = useState(() => todayJST());
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [calendarPos, setCalendarPos] = useState({ top: 0, left: 0 });
+  const calendarBtnRef = useRef<HTMLButtonElement>(null);
   const [data, setData] = useState<EmployeeStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(new Date());
@@ -545,20 +548,30 @@ export default function AttendancePage() {
                   </button>
                   <div className="relative">
                     <button
+                      ref={calendarBtnRef}
                       type="button"
-                      onClick={() => setCalendarOpen(o => !o)}
+                      onClick={() => {
+                        if (!calendarOpen && calendarBtnRef.current) {
+                          const r = calendarBtnRef.current.getBoundingClientRect();
+                          setCalendarPos({ top: r.bottom + 6, left: r.left + r.width / 2 });
+                        }
+                        setCalendarOpen(o => !o);
+                      }}
                       className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors min-w-[180px] text-center flex items-center justify-center gap-1.5"
                     >
                       <CalendarDays className="h-3.5 w-3.5 text-slate-400" />
                       {formatDateJP(selectedDate)}
                     </button>
-                    {calendarOpen && (
+                    {calendarOpen && createPortal(
                       <>
                         <div
                           className="fixed inset-0 z-40"
                           onClick={() => setCalendarOpen(false)}
                         />
-                        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-50 rounded-xl border border-slate-200 bg-white shadow-xl p-2">
+                        <div
+                          className="fixed z-50 rounded-xl border border-slate-200 bg-white shadow-xl p-2 -translate-x-1/2"
+                          style={{ top: calendarPos.top, left: calendarPos.left }}
+                        >
                           <Calendar
                             mode="single"
                             selected={new Date(selectedDate + "T00:00:00")}
@@ -574,7 +587,8 @@ export default function AttendancePage() {
                             disabled={(date) => date > new Date(todayJST() + "T23:59:59")}
                           />
                         </div>
-                      </>
+                      </>,
+                      document.body
                     )}
                   </div>
                   <button
