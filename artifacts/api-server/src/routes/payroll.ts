@@ -212,10 +212,16 @@ router.post("/payroll/calculate", async (req, res) => {
     const grossSalary = mikawaResult.finalSalary;
     const insBase = (emp.standardRemuneration ?? 0) > 0 ? emp.standardRemuneration : grossSalary;
 
+    // 非課税手当合計: 通勤手当 + isTaxable=false のカスタム手当
+    const mikawanonTaxableCustom = customAllowances
+      .filter(a => !a.isTaxable)
+      .reduce((sum, a) => sum + a.amount, 0);
+    const mikawaNonTaxableAllowances = (emp.transportationAllowance ?? 0) + mikawanonTaxableCustom;
+
     const ins = calculateInsuranceAndTax({
       standardRemuneration: insBase,
       grossSalary,
-      nonTaxableAllowances: emp.transportationAllowance ?? 0,
+      nonTaxableAllowances: mikawaNonTaxableAllowances,
       dependentCount: emp.dependentCount ?? 0,
       hasSpouse: emp.hasSpouse ?? false,
       careInsuranceApplied: emp.careInsuranceApplied ?? false,
@@ -603,6 +609,10 @@ router.post("/payroll/calculate", async (req, res) => {
     traceExpectedIncomeTax: isTamagawa ? 10220 : undefined,
   });
 
+  // カスタム控除（積立金等）を totalDeductions / netSalary に反映
+  const stdTotalDeductions = roundJapanese(result.totalDeductions + customDeductionsTotal);
+  const stdNetSalary = roundJapanese(result.grossSalary - stdTotalDeductions);
+
   // Upsert payroll
   const existing = await db.select().from(payrollsTable)
     .where(and(
@@ -633,8 +643,8 @@ router.post("/payroll/calculate", async (req, res) => {
       employmentInsurance: result.employmentInsurance,
       incomeTax: result.incomeTax,
       residentTax: result.residentTax,
-      totalDeductions: result.totalDeductions,
-      netSalary: result.netSalary,
+      totalDeductions: stdTotalDeductions,
+      netSalary: stdNetSalary,
       overtimeHours: record.overtimeHours,
       lateNightHours: record.lateNightHours,
       holidayWorkDays: record.holidayWorkDays,
@@ -669,8 +679,8 @@ router.post("/payroll/calculate", async (req, res) => {
       employmentInsurance: result.employmentInsurance,
       incomeTax: result.incomeTax,
       residentTax: result.residentTax,
-      totalDeductions: result.totalDeductions,
-      netSalary: result.netSalary,
+      totalDeductions: stdTotalDeductions,
+      netSalary: stdNetSalary,
       overtimeHours: record.overtimeHours,
       lateNightHours: record.lateNightHours,
       holidayWorkDays: record.holidayWorkDays,
