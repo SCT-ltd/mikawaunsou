@@ -900,7 +900,7 @@ export default function MonthlyInput() {
                   </th>
                   {/* 運行実績 */}
                   <th
-                    colSpan={2}
+                    colSpan={1}
                     className="border-x border-amber-200 bg-amber-50 py-1.5 text-center font-semibold text-amber-800 text-[11px] tracking-wide"
                   >
                     <div className="flex items-center justify-center gap-1">
@@ -910,14 +910,14 @@ export default function MonthlyInput() {
                           <Info className="h-3 w-3 text-amber-500/60 cursor-help" />
                         </TooltipTrigger>
                         <TooltipContent className="text-xs max-w-[200px]">
-                          当月の走行距離（km）と配送件数を入力します。
+                          当月の走行距離（km）を入力します。
                         </TooltipContent>
                       </Tooltip>
                     </div>
                   </th>
                   {/* 給与計算基礎 */}
                   <th
-                    colSpan={3}
+                    colSpan={1}
                     className="border-x border-violet-200 bg-violet-50 py-1.5 text-center font-semibold text-violet-800 text-[11px] tracking-wide"
                   >
                     <div className="flex items-center justify-center gap-1">
@@ -927,7 +927,7 @@ export default function MonthlyInput() {
                           <Info className="h-3 w-3 text-violet-500/60 cursor-help" />
                         </TooltipTrigger>
                         <TooltipContent className="text-xs max-w-[220px]">
-                          売上・歩合率・BW売上を入力します。歩合給やBluewing計算の基礎データです。
+                          BW売上を入力します。Bluewing計算方式の社員のみ使用します。
                         </TooltipContent>
                       </Tooltip>
                     </div>
@@ -993,10 +993,9 @@ export default function MonthlyInput() {
                       </div>
                     </th>
                   ))}
-                  {/* 運行2列 */}
+                  {/* 運行1列 */}
                   {[
                     { label: "走行KM", sub: "km", tip: "当月の総走行距離（km）。走行距離手当の計算に使用します。" },
-                    { label: "件数",   sub: "件",  tip: "当月の配送件数。件数連動の手当計算に使用します。" },
                   ].map(({ label, sub, tip }) => (
                     <th key={label} className="bg-amber-50/60 border-x border-amber-100 px-1 py-1 text-center font-medium text-amber-700 w-[72px]">
                       <div className="flex items-center justify-center gap-0.5 flex-wrap">
@@ -1011,34 +1010,7 @@ export default function MonthlyInput() {
                       </div>
                     </th>
                   ))}
-                  {/* 給与基礎3列 */}
-                  <th className="bg-violet-50/60 border-x border-violet-100 px-1 py-1 text-center font-medium text-violet-700 w-[96px]">
-                    <div className="flex items-center justify-center gap-0.5 flex-wrap">
-                      <span>売上</span>
-                      <span className="text-[9px] text-violet-500">(円)</span>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Info className="h-2.5 w-2.5 text-violet-400/60 cursor-help flex-shrink-0" />
-                        </TooltipTrigger>
-                        <TooltipContent className="text-xs max-w-[200px]">
-                          当月の売上金額。歩合給の計算基礎（売上×歩合率）に使用します。
-                        </TooltipContent>
-                      </Tooltip>
-                    </div>
-                  </th>
-                  <th className="bg-violet-50/60 border-x border-violet-100 px-1 py-1 text-center font-medium text-violet-700 w-[68px]">
-                    <div className="flex items-center justify-center gap-0.5">
-                      <span>歩合%</span>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Info className="h-2.5 w-2.5 text-violet-400/60 cursor-help flex-shrink-0" />
-                        </TooltipTrigger>
-                        <TooltipContent className="text-xs max-w-[200px]">
-                          歩合率（%単位で入力）。例：36.8と入力すると36.8%として計算されます。
-                        </TooltipContent>
-                      </Tooltip>
-                    </div>
-                  </th>
+                  {/* 給与基礎1列 */}
                   <th className="bg-violet-50/60 border-x border-violet-100 px-1 py-1 text-center font-medium text-violet-700 w-[96px]">
                     <div className="flex items-center justify-center gap-0.5 flex-wrap">
                       <span>BW売上</span>
@@ -1059,7 +1031,7 @@ export default function MonthlyInput() {
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={15} className="text-center py-10 text-muted-foreground">
+                    <td colSpan={12} className="text-center py-10 text-muted-foreground">
                       <div className="flex items-center justify-center gap-2">
                         <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                         読み込み中...
@@ -1068,7 +1040,7 @@ export default function MonthlyInput() {
                   </tr>
                 ) : !employees || employees.length === 0 ? (
                   <tr>
-                    <td colSpan={15} className="text-center py-10 text-muted-foreground">
+                    <td colSpan={12} className="text-center py-10 text-muted-foreground">
                       有効な社員が見つかりません
                     </td>
                   </tr>
@@ -1126,28 +1098,10 @@ export default function MonthlyInput() {
                         <td className="p-1 border-x border-sky-100/60">{numInput("lateNightHours")}</td>
                         <td className="p-1 border-x border-sky-100/60">{numInput("holidayWorkDays", { max: 31 })}</td>
 
-                        {/* 運行2列 */}
+                        {/* 運行1列 */}
                         <td className="p-1 border-x border-amber-100/60">{numInput("drivingDistanceKm", { step: "0.1" })}</td>
-                        <td className="p-1 border-x border-amber-100/60">{numInput("deliveryCases", { step: "1" })}</td>
 
-                        {/* 給与基礎3列 */}
-                        <td className="p-1 border-x border-violet-100/60">{numInput("salesAmount", { step: "1" })}</td>
-                        <td className="p-1 border-x border-violet-100/60">
-                          <Input
-                            type="number"
-                            min="0"
-                            max="100"
-                            step="0.1"
-                            className="h-7 w-full text-right text-xs px-1"
-                            value={rowData.commissionRate ? (Number(rowData.commissionRate) * 100).toFixed(1) : ""}
-                            onChange={(e) => {
-                              const pct = parseFloat(e.target.value) || 0;
-                              handleEditChange(emp.id, "commissionRate", String(pct / 100));
-                            }}
-                            onWheel={(e) => e.currentTarget.blur()}
-                            placeholder="0"
-                          />
-                        </td>
+                        {/* 給与基礎1列 */}
                         <td className="p-1 border-x border-violet-100/60">
                           {isBW ? (
                             numInput("bluewingSalesAmount", { step: "1" })
