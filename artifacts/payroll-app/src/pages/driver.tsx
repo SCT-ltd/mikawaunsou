@@ -130,6 +130,7 @@ export default function DriverPage() {
   const watchIdRef = useRef<number | null>(null);
   const liveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastPosSentRef = useRef<{ lat: number; lng: number; time: number } | null>(null);
+  const latestGpsRef = useRef<{ latitude: number; longitude: number; time: number } | null>(null);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
   const checklistSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const checklistLoadedRef = useRef(false);
@@ -580,6 +581,11 @@ export default function DriverPage() {
       const id = navigator.geolocation.watchPosition(
         (pos) => {
           setGpsStatus("active");
+          latestGpsRef.current = {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            time: Date.now(),
+          };
           sendPos(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
         },
         (err) => {
@@ -678,13 +684,24 @@ export default function DriverPage() {
   }, [pinInput, pinVerifying, employeeId]);
 
   const getGps = (): Promise<{ latitude: number; longitude: number } | null> => {
+    // watchPosition で最近取得済みの位置があれば即座に返す（30秒以内）
+    const cached = latestGpsRef.current;
+    if (cached && Date.now() - cached.time < 30000) {
+      return Promise.resolve({ latitude: cached.latitude, longitude: cached.longitude });
+    }
+    // キャッシュがない場合のみ新規取得（最大5秒待ち、30秒以内の既取得位置は使用可）
     return new Promise((resolve) => {
       if (!navigator.geolocation) { resolve(null); return; }
-      const timer = setTimeout(() => resolve(null), 6000);
+      const timer = setTimeout(() => resolve(null), 5000);
       navigator.geolocation.getCurrentPosition(
-        (pos) => { clearTimeout(timer); resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }); },
+        (pos) => {
+          clearTimeout(timer);
+          const gps = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+          latestGpsRef.current = { ...gps, time: Date.now() };
+          resolve(gps);
+        },
         () => { clearTimeout(timer); resolve(null); },
-        { timeout: 6000, maximumAge: 0 },
+        { timeout: 5000, maximumAge: 30000 },
       );
     });
   };
