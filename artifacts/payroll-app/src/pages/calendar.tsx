@@ -233,7 +233,93 @@ export default function CalendarPage() {
   };
 
   const handlePrint = () => {
-    window.print();
+    const title = `${fiscalYear}年度 カレンダー（${fiscalYear}年4月〜${fiscalYear + 1}年3月）`;
+    const today = fmtDate(new Date());
+
+    const monthsHTML = fiscalMonths.map(({ year, month }) => {
+      const daysInMonth = new Date(year, month, 0).getDate();
+      const startDow = new Date(year, month - 1, 1).getDay();
+
+      const cells: (number | null)[] = [];
+      for (let i = 0; i < startDow; i++) cells.push(null);
+      for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+      while (cells.length % 7 !== 0) cells.push(null);
+
+      let workDays = 0;
+      for (let d = 1; d <= daysInMonth; d++) {
+        const ds = fmtDate(new Date(year, month - 1, d));
+        if (!isRedDay(ds, overrides, holidays)) workDays++;
+      }
+
+      const dayHeadersHTML = ["日","月","火","水","木","金","土"].map((h, i) => {
+        const color = (i === 0 || i === 6) ? "#dc2626" : "#6b7280";
+        return `<div style="text-align:center;font-size:8px;color:${color};font-weight:600;padding:1px 0;">${h}</div>`;
+      }).join("");
+
+      const cellsHTML = cells.map((day) => {
+        if (!day) return `<div></div>`;
+        const dateStr = fmtDate(new Date(year, month - 1, day));
+        const red = isRedDay(dateStr, overrides, holidays);
+        const isToday = dateStr === today;
+        const holidayName = holidays.get(dateStr);
+        const textColor = red ? "#dc2626" : "#111827";
+        const bgColor = isToday ? "#dbeafe" : "transparent";
+        const border = isToday ? "2px solid #2563eb" : "1px solid transparent";
+        const dot = holidayName
+          ? `<span style="display:block;width:4px;height:4px;border-radius:50%;background:#f87171;margin:-1px auto 0;line-height:1;"></span>`
+          : "";
+        const titleAttr = holidayName ? ` title="${holidayName}"` : "";
+        return `<div style="text-align:center;padding:1px 0;">
+          <div${titleAttr} style="display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:20px;height:20px;border-radius:3px;font-size:9px;font-weight:${red?"600":"400"};color:${textColor};background:${bgColor};border:${border};box-sizing:border-box;">${day}${dot}</div>
+        </div>`;
+      }).join("");
+
+      return `<div style="border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;background:#fff;break-inside:avoid;">
+        <div style="background:#f3f4f6;padding:4px 8px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e5e7eb;">
+          <span style="font-weight:700;font-size:10px;">${year}年 ${MONTH_NAMES[month - 1]}</span>
+          <span style="font-size:8px;color:#6b7280;">出勤<strong style="color:#111;">${workDays}</strong>日 <span style="color:#ef4444;">休<strong>${daysInMonth - workDays}</strong>日</span></span>
+        </div>
+        <div style="padding:4px;">
+          <div style="display:grid;grid-template-columns:repeat(7,1fr);margin-bottom:2px;">${dayHeadersHTML}</div>
+          <div style="display:grid;grid-template-columns:repeat(7,1fr);">${cellsHTML}</div>
+        </div>
+      </div>`;
+    }).join("");
+
+    const html = `<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>${title}</title>
+<style>
+  @page { size: A4 landscape; margin: 8mm; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Hiragino Kaku Gothic ProN','Hiragino Sans',Meiryo,'MS PGothic',Arial,sans-serif; background:#fff; padding: 0; }
+  .header { text-align:center; margin-bottom:8px; }
+  .header h1 { font-size:14px; font-weight:bold; margin-bottom:2px; }
+  .header p { font-size:9px; color:#6b7280; }
+  .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>${title}</h1>
+  <p>年間出勤日数 ${totalWorkDays}日　年間休日数 ${totalFiscalDays - totalWorkDays}日</p>
+</div>
+<div class="grid">${monthsHTML}</div>
+</body>
+</html>`;
+
+    const win = window.open("", "_blank", "width=1200,height=800");
+    if (!win) { alert("ポップアップがブロックされました。ブラウザの設定でポップアップを許可してください。"); return; }
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+    win.addEventListener("load", () => {
+      win.focus();
+      win.print();
+      win.close();
+    });
   };
 
   // 年度内の override 数
@@ -254,67 +340,9 @@ export default function CalendarPage() {
 
   return (
     <AppLayout>
-      {/* ── 印刷用スタイル ── */}
-      <style>{`
-        @media print {
-          @page {
-            size: A4 landscape;
-            margin: 8mm;
-          }
-          * {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-
-          /* レイアウトの overflow / height 制約を解除 */
-          body { overflow: visible !important; }
-          #layout-root {
-            display: block !important;
-            height: auto !important;
-            overflow: visible !important;
-          }
-          #layout-main-panel {
-            display: block !important;
-            height: auto !important;
-            overflow: visible !important;
-          }
-          #layout-main {
-            overflow: visible !important;
-            height: auto !important;
-            padding: 0 !important;
-          }
-          #layout-main > div { max-width: none !important; }
-
-          /* サイドバー・トップヘッダーを非表示 */
-          #layout-sidebar { display: none !important; }
-          #layout-header   { display: none !important; }
-
-          /* ページ内の非印刷要素を非表示 */
-          .print-hide { display: none !important; }
-
-          /* 印刷専用タイトルを表示 */
-          .print-only { display: block !important; }
-
-          /* カレンダーグリッドを4列に */
-          .print-grid {
-            display: grid !important;
-            grid-template-columns: repeat(4, 1fr) !important;
-            gap: 6px !important;
-          }
-
-          /* 各月カレンダーを小さく */
-          .month-calendar-cell { break-inside: avoid; font-size: 9px !important; }
-          .month-calendar-cell button { height: 20px !important; font-size: 9px !important; }
-          .month-calendar-cell .grid { gap: 1px !important; }
-
-          /* 凡例は非表示 */
-          .print-legend { display: none !important; }
-        }
-      `}</style>
-
-      <div id="calendar-print-area" className="space-y-4">
+      <div className="space-y-4">
         {/* ── ページヘッダー ── */}
-        <div className="flex items-center justify-between print-hide">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-primary/10 rounded-lg text-primary">
               <Calendar className="h-5 w-5" />
@@ -351,23 +379,13 @@ export default function CalendarPage() {
           </div>
         </div>
 
-        {/* ── 印刷時タイトル（画面では非表示） ── */}
-        <div className="print-only text-center mb-2" style={{ display: "none" }}>
-          <h1 className="text-xl font-bold">
-            {fiscalYear}年度 カレンダー（{fiscalYear}年4月〜{fiscalYear + 1}年3月）
-          </h1>
-          <p className="text-xs text-gray-500 mt-0.5">
-            年間出勤日数 {totalWorkDays}日　年間休日数 {totalFiscalDays - totalWorkDays}日
-          </p>
-        </div>
-
-        {/* ── 年度表示サブタイトル（画面用） ── */}
-        <div className="text-xs text-muted-foreground -mt-3 print-hide">
+        {/* ── 年度表示サブタイトル ── */}
+        <div className="text-xs text-muted-foreground -mt-3">
           {fiscalYear}年4月〜{fiscalYear + 1}年3月
         </div>
 
         {/* ── カレンダーグリッド ── */}
-        <div className="print-grid grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
           {fiscalMonths.map(({ year, month }) => (
             <MonthCalendar
               key={`${year}-${month}`}
@@ -381,7 +399,7 @@ export default function CalendarPage() {
         </div>
 
         {/* ── 凡例・統計 ── */}
-        <div className="print-legend flex flex-wrap items-center gap-x-8 gap-y-2 border rounded-md px-4 py-3 bg-muted/30 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-8 gap-y-2 border rounded-md px-4 py-3 bg-muted/30 text-xs text-muted-foreground">
           <span className="flex items-center gap-1.5">
             <span className="inline-block w-4 h-4 rounded bg-red-100 border border-red-200" />
             祝日・土曜・日曜（クリックで出勤日に変更）
