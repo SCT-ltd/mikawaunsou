@@ -727,7 +727,7 @@ export default function MonthlyInput() {
     applyAttendanceSummary(edits, true);
   }, [applyAttendanceSummary, edits]);
 
-  // DB データロード後に自動で勤怠を反映（ダーティにしない）
+  // DB データロード後に編集状態を初期化
   useEffect(() => {
     if (!employees || !monthlyRecords) return;
 
@@ -752,9 +752,6 @@ export default function MonthlyInput() {
     });
     setEdits(initialEdits);
     setIsDirty(false);
-
-    // DB データをセットしてから勤怠を自動マージ（ダーティにしない）
-    applyAttendanceSummary(initialEdits, false);
   }, [employees, monthlyRecords]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleEditChange = (employeeId: number, field: string, value: string) => {
