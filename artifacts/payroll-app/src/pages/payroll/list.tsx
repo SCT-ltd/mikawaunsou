@@ -584,7 +584,7 @@ export default function PayrollList() {
                             ["出勤日数", `${selectedPayroll.workDays} 日`],
                             ["時間外労働", `${selectedPayroll.overtimeHours} 時間`],
                             ["深夜労働", `${selectedPayroll.lateNightHours} 時間`],
-                            ["祝日/休日出勤日数", `${selectedPayroll.holidayWorkDays} 日`],
+                            ["日曜/祝日出勤日数", `${selectedPayroll.sundayWorkDays} 日`],
                           ].map(([label, val]) => (
                             <tr key={String(label)} className="border-b border-dotted border-gray-300">
                               <td className="py-1.5 text-gray-700">{label}</td>

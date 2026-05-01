@@ -924,7 +924,7 @@ export default function MonthlyInput() {
                   </th>
                   {/* 勤怠・時間管理 */}
                   <th
-                    colSpan={7}
+                    colSpan={6}
                     className="border-x border-sky-200 bg-sky-50 py-1.5 text-center font-semibold text-sky-800 text-[11px] tracking-wide"
                   >
                     <div className="flex items-center justify-center gap-1">
@@ -934,7 +934,7 @@ export default function MonthlyInput() {
                           <Info className="h-3 w-3 text-sky-500/60 cursor-help" />
                         </TooltipTrigger>
                         <TooltipContent className="text-xs max-w-[220px]">
-                          平日・土曜・日曜・欠勤・残業・深夜・休日の勤務実績を入力します。給与計算の基礎データになります。
+                          平日・土曜・日曜（祝日含む）・欠勤・残業・深夜の勤務実績を入力します。給与計算の基礎データになります。
                         </TooltipContent>
                       </Tooltip>
                     </div>
@@ -1032,11 +1032,10 @@ export default function MonthlyInput() {
                   {[
                     { label: "平日",  sub: "日", tip: "平日の出勤日数。日給制社員の基本給計算に使用します。" },
                     { label: "土曜",  sub: "日", tip: "土曜日の出勤日数。土曜日給（平日と異なる日給）で計算されます。" },
-                    { label: "日曜",  sub: "日", tip: "日曜出勤の日数（日単位）。日当×1.35で計算されます。" },
+                    { label: "日曜/祝日",  sub: "日", tip: "日曜・祝日・振替休日など会社が休みとしている赤い日の出勤日数。日当×1.35で計算されます。" },
                     { label: "欠勤",  sub: "日", tip: "欠勤日数。欠勤控除の計算に使用します。" },
                     { label: "残業",  sub: "h",  tip: "法定外残業時間（時間単位）。割増賃金（×1.25）で計算されます。" },
                     { label: "深夜",  sub: "h",  tip: "深夜勤務時間（時間単位）。深夜割増（+0.25）が加算されます。" },
-                    { label: "祝日/休日",  sub: "日", tip: "祝日・振替休日など会社が休みとしている日の出勤日数。日当×1.35（または時給×8×1.35）で計算されます。" },
                   ].map(({ label, sub, tip }) => (
                     <th key={label} className="bg-sky-50 border-x border-sky-100 px-1 py-1 text-center font-medium text-sky-700 w-[64px]">
                       <div className="flex items-center justify-center gap-0.5 flex-wrap">
@@ -1102,7 +1101,7 @@ export default function MonthlyInput() {
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={13} className="text-center py-10 text-muted-foreground">
+                    <td colSpan={12} className="text-center py-10 text-muted-foreground">
                       <div className="flex items-center justify-center gap-2">
                         <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                         読み込み中...
@@ -1111,7 +1110,7 @@ export default function MonthlyInput() {
                   </tr>
                 ) : !employees || employees.length === 0 ? (
                   <tr>
-                    <td colSpan={13} className="text-center py-10 text-muted-foreground">
+                    <td colSpan={12} className="text-center py-10 text-muted-foreground">
                       有効な社員が見つかりません
                     </td>
                   </tr>
@@ -1161,14 +1160,13 @@ export default function MonthlyInput() {
                           </button>
                         </td>
 
-                        {/* 勤怠7列 */}
+                        {/* 勤怠6列 */}
                         <td className="p-1 border-x border-sky-100/60">{numInput("workDays", { max: 31, step: "1" })}</td>
                         <td className="p-1 border-x border-sky-100/60">{numInput("saturdayWorkDays", { max: 31 })}</td>
                         <td className="p-1 border-x border-sky-100/60">{numInput("sundayWorkDays")}</td>
                         <td className="p-1 border-x border-sky-100/60">{numInput("absenceDays", { max: 31 })}</td>
                         <td className="p-1 border-x border-sky-100/60">{numInput("overtimeHours")}</td>
                         <td className="p-1 border-x border-sky-100/60">{numInput("lateNightHours")}</td>
-                        <td className="p-1 border-x border-sky-100/60">{numInput("holidayWorkDays", { max: 31 })}</td>
 
                         {/* 実働時間（時給制事務員用） */}
                         <td className="p-1 border-x border-indigo-100/60">

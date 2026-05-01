@@ -182,8 +182,8 @@ export default function PayrollDetail() {
                     <td className="py-2 text-right">{payroll.lateNightHours} 時間</td>
                   </tr>
                   <tr className="border-b border-dotted border-gray-300">
-                    <td className="py-2">祝日/休日出勤日数</td>
-                    <td className="py-2 text-right">{payroll.holidayWorkDays} 日</td>
+                    <td className="py-2">日曜/祝日出勤日数</td>
+                    <td className="py-2 text-right">{payroll.sundayWorkDays} 日</td>
                   </tr>
                 </tbody>
               </table>
