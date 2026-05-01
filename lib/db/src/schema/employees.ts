@@ -41,6 +41,12 @@ export const employeesTable = pgTable("employees", {
   scheduledWorkStart: text("scheduled_work_start").default("08:00"),
   scheduledWorkEnd: text("scheduled_work_end").default("17:00"),
   pin: text("pin"),
+  /** 日給制社員の個人日当単価（>0 の場合は会社共通単価を上書き） */
+  dailyRateOverride: doublePrecision("daily_rate_override").default(0),
+  /** 残業を n 分単位で切り上げ計算する場合の単位（分）。null=標準計算 */
+  overtimeUnitMinutes: integer("overtime_unit_minutes"),
+  /** 残業単位あたり加算額（円）。overtimeUnitMinutes が設定されている場合のみ有効 */
+  overtimeUnitRate: doublePrecision("overtime_unit_rate").default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

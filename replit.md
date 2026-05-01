@@ -48,6 +48,8 @@
 `artifacts/api-server/src/lib/tax-tables-reiwa8.ts`（令和8年テーブル）
 
 - **時給制（hourly）**: baseSalary（社員マスタ）= 時給単価。基本給 = 時給単価 × actualWorkHours（30分切り上げ済み実働時間）
+- **日給制個人単価オーバーライド**: employees.dailyRateOverride > 0 の場合、会社共通日当を上書き（例: 清水 13,000円/日）
+- **残業単位計算**: employees.overtimeUnitMinutes & overtimeUnitRate 設定時、標準計算の代わりに `ceil(残業分 / 単位分) × 単位単価` で計算（例: 清水 10分単位 × 2,031円）
 - 時間外手当: (基本給 ÷ 月平均労働時間) × 1.25 × 残業時間
 - 深夜手当: (基本給 ÷ 月平均労働時間) × 0.25 × 深夜時間
 - 歩合給: 走行距離 × km単価 + 件数 × 件単価

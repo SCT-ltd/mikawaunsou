@@ -79,6 +79,19 @@ export interface PayrollCalculationInput {
   absenceDays: number;
   /** 時給制（hourly）の場合の月間実働時間（30分切り上げ済み）*/
   actualWorkHours?: number;
+  /**
+   * 日給制社員の個人日当単価オーバーライド（> 0 の場合は dailyRateWeekday を上書き）
+   * 例: 清水さん固有の 13,000 円/日
+   */
+  dailyRateOverride?: number;
+  /**
+   * 残業を n 分単位で切り上げ計算する場合の単位（分）
+   * 例: 10 → 10分未満でも 1 単位として計上
+   * null / 0 = 標準計算（時間外時間 × 割増時給）
+   */
+  overtimeUnitMinutes?: number | null;
+  /** overtimeUnitMinutes が設定されている場合の 1 単位あたり加算額（円）*/
+  overtimeUnitRate?: number;
   // Custom allowances
   customAllowances?: CustomAllowanceItem[];
   /** デバッグ用トレースログを出力するか（省略時 false）*/
@@ -120,7 +133,6 @@ export interface PayrollCalculationResult {
 export function calculatePayroll(input: PayrollCalculationInput): PayrollCalculationResult {
   const {
     salaryType,
-    dailyRateWeekday,
     dailyRateSaturday,
     hourlyRateSunday,
     transportationAllowance,
@@ -152,6 +164,12 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     customAllowances = [],
   } = input;
 
+  // 個人日当単価オーバーライド（> 0 の場合は会社共通単価を上書き）
+  const dailyRateWeekday =
+    (input.dailyRateOverride ?? 0) > 0
+      ? input.dailyRateOverride!
+      : input.dailyRateWeekday;
+
   // ────────────────────────────────────────────────────────────────
   // 基本給・時給単価の決定
   // ────────────────────────────────────────────────────────────────
@@ -174,8 +192,20 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     hourlyRate = monthlyAverageWorkHours > 0 ? baseSalary / monthlyAverageWorkHours : 0;
   }
 
+  // ────────────────────────────────────────────────────────────────
   // 時間外手当・深夜手当・休日手当
-  const overtimePay   = roundJapanese(hourlyRate * 1.25 * overtimeHours);
+  // ────────────────────────────────────────────────────────────────
+  let overtimePay: number;
+  if ((input.overtimeUnitMinutes ?? 0) > 0 && (input.overtimeUnitRate ?? 0) > 0) {
+    // 単位切り上げ計算: 例）10分単位で2031円
+    const unitMins = input.overtimeUnitMinutes!;
+    const unitRate = input.overtimeUnitRate!;
+    const overtimeMins = overtimeHours * 60;
+    const units = overtimeMins > 0 ? Math.ceil(overtimeMins / unitMins) : 0;
+    overtimePay = roundJapanese(units * unitRate);
+  } else {
+    overtimePay = roundJapanese(hourlyRate * 1.25 * overtimeHours);
+  }
   const lateNightPay  = roundJapanese(hourlyRate * 0.25 * lateNightHours);
   const holidayPay    = roundJapanese(hourlyRate * 1.35 * holidayWorkDays * 8);
 

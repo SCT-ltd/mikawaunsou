@@ -148,6 +148,20 @@ export const ListEmployeesResponseItem = zod.object({
     .describe(
       "事務員フラグ（true=事務員用打刻画面, false=ドライバー用打刻画面）",
     ),
+  dailyRateOverride: zod
+    .number()
+    .optional()
+    .describe("日給制社員の個人日当単価（>0 の場合は会社共通単価を上書き）"),
+  overtimeUnitMinutes: zod
+    .number()
+    .nullish()
+    .describe("残業切り上げ単位（分）。例：10分単位なら10。null=標準計算"),
+  overtimeUnitRate: zod
+    .number()
+    .optional()
+    .describe(
+      "残業単位あたり加算額（円）。overtimeUnitMinutes が設定されている場合のみ有効",
+    ),
   hireDate: zod.coerce.date(),
   isActive: zod.boolean(),
   createdAt: zod.coerce.date(),
@@ -219,6 +233,20 @@ export const GetEmployeeResponse = zod.object({
     .describe(
       "事務員フラグ（true=事務員用打刻画面, false=ドライバー用打刻画面）",
     ),
+  dailyRateOverride: zod
+    .number()
+    .optional()
+    .describe("日給制社員の個人日当単価（>0 の場合は会社共通単価を上書き）"),
+  overtimeUnitMinutes: zod
+    .number()
+    .nullish()
+    .describe("残業切り上げ単位（分）。例：10分単位なら10。null=標準計算"),
+  overtimeUnitRate: zod
+    .number()
+    .optional()
+    .describe(
+      "残業単位あたり加算額（円）。overtimeUnitMinutes が設定されている場合のみ有効",
+    ),
   hireDate: zod.coerce.date(),
   isActive: zod.boolean(),
   createdAt: zod.coerce.date(),
@@ -265,6 +293,18 @@ export const UpdateEmployeeBody = zod.object({
     .enum(["fixed", "daily"])
     .optional()
     .describe("給与形態（fixed=固定給, daily=日給制）"),
+  dailyRateOverride: zod
+    .number()
+    .optional()
+    .describe("日給制社員の個人日当単価（>0 の場合は会社共通単価を上書き）"),
+  overtimeUnitMinutes: zod
+    .number()
+    .nullish()
+    .describe("残業切り上げ単位（分）。null=標準計算"),
+  overtimeUnitRate: zod
+    .number()
+    .optional()
+    .describe("残業単位あたり加算額（円）"),
   hireDate: zod.coerce.date().optional(),
   isActive: zod.boolean().optional(),
 });
@@ -302,6 +342,20 @@ export const UpdateEmployeeResponse = zod.object({
     .boolean()
     .describe(
       "事務員フラグ（true=事務員用打刻画面, false=ドライバー用打刻画面）",
+    ),
+  dailyRateOverride: zod
+    .number()
+    .optional()
+    .describe("日給制社員の個人日当単価（>0 の場合は会社共通単価を上書き）"),
+  overtimeUnitMinutes: zod
+    .number()
+    .nullish()
+    .describe("残業切り上げ単位（分）。例：10分単位なら10。null=標準計算"),
+  overtimeUnitRate: zod
+    .number()
+    .optional()
+    .describe(
+      "残業単位あたり加算額（円）。overtimeUnitMinutes が設定されている場合のみ有効",
     ),
   hireDate: zod.coerce.date(),
   isActive: zod.boolean(),

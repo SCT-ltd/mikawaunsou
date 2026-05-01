@@ -34,6 +34,12 @@ export interface UpdateEmployeeBody {
   residentTax?: number;
   /** 給与形態（fixed=固定給, daily=日給制） */
   salaryType?: UpdateEmployeeBodySalaryType;
+  /** 日給制社員の個人日当単価（>0 の場合は会社共通単価を上書き） */
+  dailyRateOverride?: number;
+  /** 残業切り上げ単位（分）。null=標準計算 */
+  overtimeUnitMinutes?: number | null;
+  /** 残業単位あたり加算額（円） */
+  overtimeUnitRate?: number;
   hireDate?: Date;
   isActive?: boolean;
 }

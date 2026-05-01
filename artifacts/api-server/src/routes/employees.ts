@@ -67,6 +67,9 @@ router.post("/employees", async (req, res) => {
     isActive: true,
     scheduledWorkStart: body.scheduledWorkStart || null,
     scheduledWorkEnd: body.scheduledWorkEnd || null,
+    dailyRateOverride: body.dailyRateOverride ?? 0,
+    overtimeUnitMinutes: body.overtimeUnitMinutes ?? null,
+    overtimeUnitRate: body.overtimeUnitRate ?? 0,
     updatedAt: new Date(),
   };
 
@@ -138,6 +141,9 @@ router.put("/employees/:id", async (req, res) => {
       ...(body.isOfficeStaff !== undefined && { isOfficeStaff: body.isOfficeStaff }),
       ...(body.scheduledWorkStart !== undefined && { scheduledWorkStart: body.scheduledWorkStart || null }),
       ...(body.scheduledWorkEnd !== undefined && { scheduledWorkEnd: body.scheduledWorkEnd || null }),
+      ...(body.dailyRateOverride !== undefined && { dailyRateOverride: body.dailyRateOverride }),
+      ...(body.overtimeUnitMinutes !== undefined && { overtimeUnitMinutes: body.overtimeUnitMinutes ?? null }),
+      ...(body.overtimeUnitRate !== undefined && { overtimeUnitRate: body.overtimeUnitRate }),
       updatedAt: new Date(),
     })
     .where(eq(employeesTable.id, id))

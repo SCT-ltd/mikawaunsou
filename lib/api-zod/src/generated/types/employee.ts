@@ -55,6 +55,12 @@ export interface Employee {
   salaryType: EmployeeSalaryType;
   /** 事務員フラグ（true=事務員用打刻画面, false=ドライバー用打刻画面） */
   isOfficeStaff: boolean;
+  /** 日給制社員の個人日当単価（>0 の場合は会社共通単価を上書き） */
+  dailyRateOverride?: number;
+  /** 残業切り上げ単位（分）。例：10分単位なら10。null=標準計算 */
+  overtimeUnitMinutes?: number | null;
+  /** 残業単位あたり加算額（円）。overtimeUnitMinutes が設定されている場合のみ有効 */
+  overtimeUnitRate?: number;
   hireDate: Date;
   isActive: boolean;
   createdAt: Date;
