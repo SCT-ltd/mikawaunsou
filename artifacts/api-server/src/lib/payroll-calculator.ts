@@ -206,9 +206,11 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     overtimePay = roundJapanese(hourlyRate * 1.25 * overtimeHours);
   }
   const lateNightPay  = roundJapanese(hourlyRate * 0.25 * lateNightHours);
-  const holidayPay    = roundJapanese(hourlyRate * 1.35 * holidayWorkDays * 8);
-  // 日曜出勤: 全社員共通で日当（時給×8時間）× 1.35 × 出勤日数
-  const sundayPay     = roundJapanese(hourlyRate * 8 * 1.35 * sundayWorkDays);
+  // 日曜/祝日手当: 個人日当オーバーライドに関わらず会社標準日当 × 1.35 で計算
+  // 日給制は input.dailyRateWeekday（会社標準）を使用。それ以外は hourlyRate × 8 を使用
+  const standardDailyRate = salaryType === "daily" ? input.dailyRateWeekday : hourlyRate * 8;
+  const holidayPay    = roundJapanese(standardDailyRate * 1.35 * holidayWorkDays);
+  const sundayPay     = roundJapanese(standardDailyRate * 1.35 * sundayWorkDays);
 
   // 歩合給
   const commissionPay = roundJapanese(

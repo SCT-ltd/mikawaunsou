@@ -591,12 +591,14 @@ function computeQuickEstimate(
   const weekdayRate = isDaily && (emp.dailyRateOverride ?? 0) > 0
     ? (emp.dailyRateOverride ?? 0)
     : (company?.dailyWageWeekday ?? 9808);
+  // 日曜/祝日手当は個人オーバーライドに関わらず会社標準日当 × 1.35 で計算
+  const companyDailyRate = company?.dailyWageWeekday ?? 9808;
 
   const baseSalary = isDaily && company
     ? Math.round(
         (Number(editData.workDays) || 0) * weekdayRate +
           (Number(editData.saturdayWorkDays) || 0) * (company.dailyWageSaturday ?? 12260) +
-          (Number(editData.sundayWorkDays) || 0) * weekdayRate * 1.35
+          (Number(editData.sundayWorkDays) || 0) * companyDailyRate * 1.35
       )
     : isHourly
     ? Math.round((emp.baseSalary ?? 0) * actualWorkHours)
@@ -618,8 +620,8 @@ function computeQuickEstimate(
     overtimePay = overtimeMinutes > 0 ? Math.ceil(overtimeMinutes / unitMinutes) * unitRate : 0;
     const lateNightMinutes = lateNightHours * 60;
     lateNightPay = lateNightMinutes > 0 ? Math.ceil(lateNightMinutes / unitMinutes) * unitRate : 0;
-    // 祝日/休日手当は残業単位計算ではなく日当×1.35で計算
-    holidayPay = roundJapanese(weekdayRate * 1.35 * holidayWorkDays);
+    // 祝日/休日手当は会社標準日当×1.35で計算（個人オーバーライドは使わない）
+    holidayPay = roundJapanese(companyDailyRate * 1.35 * holidayWorkDays);
   } else {
     const hourlyRate = isHourly
       ? (emp.baseSalary ?? 0)
