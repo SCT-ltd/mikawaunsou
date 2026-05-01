@@ -111,6 +111,8 @@ export default function PayrollList() {
   const { data: printEmployeeDeductions, isLoading: deductionsLoading } = useGetEmployeeDeductions(selectedEmployeeId, {
     query: { enabled: !!selectedPayroll?.employeeId },
   });
+  const selectedEmployee = employees?.find(e => e.id === selectedEmployeeId);
+  const isTaxExempt = (selectedEmployee as any)?.taxExempt === true;
 
   const handleConfirm = async () => {
     if (!selectedPayrollId) return;
@@ -605,19 +607,48 @@ export default function PayrollList() {
                       <h3 className="font-bold border-l-4 border-black pl-2 bg-gray-100 py-1 text-sm mb-2">控除項目</h3>
                       <table className="w-full text-sm">
                         <tbody>
-                          {[
-                            ["社会保険料（健保・子育て支援金・厚年）", selectedPayroll.socialInsurance],
-                            ...(((selectedPayroll.childcareSupportContribution ?? 0) > 0) ? [["　うち 子ども・子育て支援金", selectedPayroll.childcareSupportContribution]] : []),
-                            ["雇用保険料", selectedPayroll.employmentInsurance],
-                            ["源泉所得税", selectedPayroll.incomeTax],
-                            ["市県民税", selectedPayroll.residentTax],
-                            ...(Number(selectedPayroll.absenceDeduction) > 0 ? [["欠勤控除", selectedPayroll.absenceDeduction]] : []),
-                          ].map(([label, val]) => (
-                            <tr key={String(label)} className="border-b border-dotted border-gray-300">
-                              <td className="py-1.5 text-gray-700">{label}</td>
-                              <td className="py-1.5 text-right">{formatCurrency(Number(val))}</td>
+                          {/* 社会保険料 */}
+                          <tr className="border-b border-dotted border-gray-300">
+                            <td className="py-1.5 text-gray-700">社会保険料（健保・子育て支援金・厚年）</td>
+                            <td className="py-1.5 text-right">
+                              {isTaxExempt ? <span className="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">非課税</span> : formatCurrency(Number(selectedPayroll.socialInsurance))}
+                            </td>
+                          </tr>
+                          {/* うち子育て支援金 */}
+                          {(selectedPayroll.childcareSupportContribution ?? 0) > 0 && (
+                            <tr className="border-b border-dotted border-gray-300">
+                              <td className="py-1.5 text-gray-700">　うち 子ども・子育て支援金</td>
+                              <td className="py-1.5 text-right">
+                                {isTaxExempt ? <span className="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">非課税</span> : formatCurrency(Number(selectedPayroll.childcareSupportContribution))}
+                              </td>
                             </tr>
-                          ))}
+                          )}
+                          {/* 雇用保険料 */}
+                          <tr className="border-b border-dotted border-gray-300">
+                            <td className="py-1.5 text-gray-700">雇用保険料</td>
+                            <td className="py-1.5 text-right">
+                              {isTaxExempt ? <span className="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">非課税</span> : formatCurrency(Number(selectedPayroll.employmentInsurance))}
+                            </td>
+                          </tr>
+                          {/* 源泉所得税 */}
+                          <tr className="border-b border-dotted border-gray-300">
+                            <td className="py-1.5 text-gray-700">源泉所得税</td>
+                            <td className="py-1.5 text-right">
+                              {isTaxExempt ? <span className="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">非課税</span> : formatCurrency(Number(selectedPayroll.incomeTax))}
+                            </td>
+                          </tr>
+                          {/* 市県民税（住民税）は非課税でも金額表示 */}
+                          <tr className="border-b border-dotted border-gray-300">
+                            <td className="py-1.5 text-gray-700">市県民税</td>
+                            <td className="py-1.5 text-right">{formatCurrency(Number(selectedPayroll.residentTax))}</td>
+                          </tr>
+                          {/* 欠勤控除 */}
+                          {Number(selectedPayroll.absenceDeduction) > 0 && (
+                            <tr className="border-b border-dotted border-gray-300">
+                              <td className="py-1.5 text-gray-700">欠勤控除</td>
+                              <td className="py-1.5 text-right">{formatCurrency(Number(selectedPayroll.absenceDeduction))}</td>
+                            </tr>
+                          )}
                           {/* 積立金・カスタム控除（個別表示） */}
                           {printEmployeeDeductions && printEmployeeDeductions.length > 0
                             ? printEmployeeDeductions.map((d) => (
