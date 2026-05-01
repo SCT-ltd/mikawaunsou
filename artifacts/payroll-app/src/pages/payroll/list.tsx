@@ -100,7 +100,7 @@ export default function PayrollList() {
 
   const { data: selectedPayroll, isLoading: detailLoading } = useGetPayroll(
     selectedPayrollId ?? 0,
-    { query: { enabled: !!selectedPayrollId, queryKey: getGetPayrollQueryKey(selectedPayrollId ?? 0) } }
+    { query: { enabled: !!selectedPayrollId, queryKey: getGetPayrollQueryKey(selectedPayrollId ?? 0), staleTime: 0, refetchOnMount: "always" } }
   );
   const confirmPayroll = useConfirmPayroll();
 
