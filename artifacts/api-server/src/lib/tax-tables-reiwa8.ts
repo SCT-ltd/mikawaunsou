@@ -227,7 +227,7 @@ const REIWA7_TABLE: readonly number[][] = (() => {
 function _calibrationR8(taxable: number): number {
   if (taxable <= 1_950_000) return 45;   // 公式値 6,860（row 269k, dep=0, 月額270,597）との照合で確定
   if (taxable <= 3_300_000) return 104;  // 公式値 10,220（row 371k, dep=1）との照合で確定
-  if (taxable <= 6_950_000) return 202;
+  if (taxable <= 6_950_000) return 73;   // 公式値 38,930（row 635k, dep=2, 月額652,526）との照合で確定
   if (taxable <= 9_000_000) return 232;
   return 333;
 }
@@ -235,18 +235,19 @@ function _calibrationR8(taxable: number): number {
 /**
  * 令和8年 源泉徴収税額表（月額表・甲欄）
  *
- * 公式テーブル構造: 3,000円刻み（89,000〜630,000）
+ * 公式テーブル構造: 3,000円刻み（89,000〜635,000）
  * 公式検証済み値:
  *   [371,000-374,000), 扶養1人 → 10,220円
  *   [374,000-377,000), 扶養1人 → 10,470円（当実装: 10,467、3円誤差）
+ *   [635,000-), 扶養2人 → 38,930円（三川 兼司、月額652,526）
  */
 const REIWA8_TABLE: readonly number[][] = (() => {
   const BASE_DED = 577_000;   // 令和8年 基礎控除相当（公式値照合済み）
   const DEP_DED  = 380_000;
 
-  // 公式月額表の行境界: 89,000 から 3,000 刻み
+  // 公式月額表の行境界: 89,000 から 3,000 刻み（最終行 635,000）
   const boundaries: number[] = [0];
-  for (let b = 89_000; b <= 630_000; b += 3_000) boundaries.push(b);
+  for (let b = 89_000; b <= 636_000; b += 3_000) boundaries.push(b);
 
   return boundaries.map(lower => {
     const annual    = lower * 12;

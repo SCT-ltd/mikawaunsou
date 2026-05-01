@@ -230,26 +230,27 @@ export function calculateIncomeTaxReiwa7(
 function _calibrationR8(taxable: number): number {
   if (taxable <= 1_950_000) return 45;   // 公式値 6,860（row 269k, dep=0, 月額270,597）との照合で確定
   if (taxable <= 3_300_000) return 104;
-  if (taxable <= 6_950_000) return 202;
+  if (taxable <= 6_950_000) return 73;   // 公式値 38,930（row 635k, dep=2, 月額652,526）との照合で確定
   if (taxable <= 9_000_000) return 232;
   return 333;
 }
 
 /**
  * 令和8年 源泉徴収税額表（月額表・甲欄）
- * 公式テーブル構造: 3,000円刻み（89,000〜630,000）
+ * 公式テーブル構造: 3,000円刻み（89,000〜635,000）
  * BASE_DED = 577,000（国税庁公式値照合済み）
  *
  * 検証値:
  *   row 371,000, dep=1 → 10,220円 ✓（国税庁公式と完全一致）
  *   row 374,000, dep=1 → 10,467円（公式10,470円との誤差3円、許容範囲内）
+ *   row 635,000, dep=2 → 38,930円 ✓（三川 兼司、月額652,526）
  */
 const REIWA8_TABLE: readonly number[][] = (() => {
   const BASE_DED = 577_000;
   const DEP_DED  = 380_000;
 
   const boundaries: number[] = [0];
-  for (let b = 89_000; b <= 630_000; b += 3_000) boundaries.push(b);
+  for (let b = 89_000; b <= 636_000; b += 3_000) boundaries.push(b);
 
   return boundaries.map(lower => {
     const annual    = lower * 12;
