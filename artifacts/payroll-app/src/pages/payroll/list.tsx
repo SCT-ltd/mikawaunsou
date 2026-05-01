@@ -481,7 +481,7 @@ export default function PayrollList() {
                           )}
                           {Number(selectedPayroll.holidayPay) !== 0 && (
                             <tr className="border-b border-dotted border-gray-300">
-                              <td className="py-1.5 text-gray-700">休日手当</td>
+                              <td className="py-1.5 text-gray-700">祝日/休日手当</td>
                               <td className="py-1.5 text-right">{formatCurrency(Number(selectedPayroll.holidayPay))}</td>
                             </tr>
                           )}
@@ -584,7 +584,7 @@ export default function PayrollList() {
                             ["出勤日数", `${selectedPayroll.workDays} 日`],
                             ["時間外労働", `${selectedPayroll.overtimeHours} 時間`],
                             ["深夜労働", `${selectedPayroll.lateNightHours} 時間`],
-                            ["休日労働日数", `${selectedPayroll.holidayWorkDays} 日`],
+                            ["祝日/休日出勤日数", `${selectedPayroll.holidayWorkDays} 日`],
                           ].map(([label, val]) => (
                             <tr key={String(label)} className="border-b border-dotted border-gray-300">
                               <td className="py-1.5 text-gray-700">{label}</td>

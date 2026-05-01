@@ -128,7 +128,7 @@ export default function PayrollDetail() {
                     <td className="py-2 text-right">{formatCurrency(payroll.lateNightPay)}</td>
                   </tr>
                   <tr className="border-b border-dotted border-gray-300">
-                    <td className="py-2">休日手当</td>
+                    <td className="py-2">祝日/休日手当</td>
                     <td className="py-2 text-right">{formatCurrency(payroll.holidayPay)}</td>
                   </tr>
                   <tr className="border-b border-dotted border-gray-300">
@@ -182,7 +182,7 @@ export default function PayrollDetail() {
                     <td className="py-2 text-right">{payroll.lateNightHours} 時間</td>
                   </tr>
                   <tr className="border-b border-dotted border-gray-300">
-                    <td className="py-2">休日労働日数</td>
+                    <td className="py-2">祝日/休日出勤日数</td>
                     <td className="py-2 text-right">{payroll.holidayWorkDays} 日</td>
                   </tr>
                 </tbody>

@@ -618,7 +618,8 @@ function computeQuickEstimate(
     overtimePay = overtimeMinutes > 0 ? Math.ceil(overtimeMinutes / unitMinutes) * unitRate : 0;
     const lateNightMinutes = lateNightHours * 60;
     lateNightPay = lateNightMinutes > 0 ? Math.ceil(lateNightMinutes / unitMinutes) * unitRate : 0;
-    holidayPay = holidayWorkDays > 0 ? Math.ceil(holidayWorkDays * 8 * 60 / unitMinutes) * unitRate : 0;
+    // 祝日/休日手当は残業単位計算ではなく日当×1.35で計算
+    holidayPay = roundJapanese(weekdayRate * 1.35 * holidayWorkDays);
   } else {
     const hourlyRate = isHourly
       ? (emp.baseSalary ?? 0)
@@ -1035,7 +1036,7 @@ export default function MonthlyInput() {
                     { label: "欠勤",  sub: "日", tip: "欠勤日数。欠勤控除の計算に使用します。" },
                     { label: "残業",  sub: "h",  tip: "法定外残業時間（時間単位）。割増賃金（×1.25）で計算されます。" },
                     { label: "深夜",  sub: "h",  tip: "深夜勤務時間（時間単位）。深夜割増（+0.25）が加算されます。" },
-                    { label: "休日",  sub: "日", tip: "法定休日出勤日数。休日割増賃金（×1.35）で計算されます。" },
+                    { label: "祝日/休日",  sub: "日", tip: "祝日・振替休日など会社が休みとしている日の出勤日数。日当×1.35（または時給×8×1.35）で計算されます。" },
                   ].map(({ label, sub, tip }) => (
                     <th key={label} className="bg-sky-50 border-x border-sky-100 px-1 py-1 text-center font-medium text-sky-700 w-[64px]">
                       <div className="flex items-center justify-center gap-0.5 flex-wrap">
