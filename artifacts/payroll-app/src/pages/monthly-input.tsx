@@ -627,8 +627,11 @@ function computeQuickEstimate(
     // 祝日/休日手当は会社標準日当×1.35で計算（個人オーバーライドは使わない）
     holidayPay = roundJapanese(companyDailyRate * 1.35 * holidayWorkDays);
   } else {
+    // 日給制: 出勤日数が0でも正しい時間単価を得るため日当÷8hで算出
     const hourlyRate = isHourly
       ? (emp.baseSalary ?? 0)
+      : isDaily
+      ? (hasRateOverride ? overrideRate : companyDailyRate) / 8
       : monthlyHours > 0 ? baseSalary / monthlyHours : 0;
     overtimePay = roundJapanese(hourlyRate * (company?.overtimeRate ?? 1.25) * overtimeHours);
     lateNightPay = roundJapanese(hourlyRate * (company?.lateNightAdditionalRate ?? 0.25) * lateNightHours);
