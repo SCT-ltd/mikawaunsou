@@ -665,7 +665,7 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
   }, 0);
 
   const employmentInsurance = (employee.employmentInsuranceApplied !== false)
-    ? round50sen((grandTotal - nonTaxableAllowancesTotal) * empInsRate)
+    ? round50sen(grandTotal * empInsRate)
     : 0;
 
   const totalInsurance = healthInsurance + childcareSupportContribution + pensionInsurance + employmentInsurance;
