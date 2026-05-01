@@ -77,6 +77,8 @@ export interface PayrollCalculationInput {
   drivingDistanceKm: number;
   deliveryCases: number;
   absenceDays: number;
+  /** 時給制（hourly）の場合の月間実働時間（30分切り上げ済み）*/
+  actualWorkHours?: number;
   // Custom allowances
   customAllowances?: CustomAllowanceItem[];
   /** デバッグ用トレースログを出力するか（省略時 false）*/
@@ -163,9 +165,13 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
       sundayWorkHours * hourlyRateSunday
     );
     hourlyRate = dailyRateWeekday / 8;
+  } else if (salaryType === "hourly") {
+    // 時給制: baseSalary = 時給単価。実働時間（30分切り上げ済み）× 時給 で基本給を算出
+    hourlyRate = input.baseSalary;
+    baseSalary = roundJapanese(hourlyRate * (input.actualWorkHours ?? 0));
   } else {
     baseSalary = input.baseSalary;
-    hourlyRate = baseSalary / monthlyAverageWorkHours;
+    hourlyRate = monthlyAverageWorkHours > 0 ? baseSalary / monthlyAverageWorkHours : 0;
   }
 
   // 時間外手当・深夜手当・休日手当

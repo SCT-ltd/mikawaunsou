@@ -1093,6 +1093,9 @@ components:
           description: 欠勤日数
         notes:
           type: string
+        actualWorkHours:
+          type: number
+          description: 実働時間（時給制・事務員用、30分切り上げ後の合計時間）
         createdAt:
           type: string
           format: date-time
@@ -1139,6 +1142,9 @@ components:
           type: number
         notes:
           type: string
+        actualWorkHours:
+          type: number
+          description: 実働時間（時給制・事務員用、30分切り上げ後の合計時間）
       required:
         - employeeId
         - year
@@ -1168,6 +1174,9 @@ components:
           type: integer
         absenceDays:
           type: number
+        actualWorkHours:
+          type: number
+          description: 実働時間（時給制・事務員用、30分切り上げ後の合計時間）
         notes:
           type: string
 

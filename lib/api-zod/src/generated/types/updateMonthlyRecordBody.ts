@@ -14,5 +14,7 @@ export interface UpdateMonthlyRecordBody {
   drivingDistanceKm?: number;
   deliveryCases?: number;
   absenceDays?: number;
+  /** 実働時間（時給制・事務員用、30分切り上げ後の合計時間） */
+  actualWorkHours?: number;
   notes?: string;
 }

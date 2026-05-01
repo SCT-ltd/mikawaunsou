@@ -211,6 +211,8 @@ export interface MonthlyRecord {
   /** 欠勤日数 */
   absenceDays: number;
   notes?: string;
+  /** 実働時間（時給制・事務員用、30分切り上げ後の合計時間） */
+  actualWorkHours?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -227,6 +229,8 @@ export interface CreateMonthlyRecordBody {
   deliveryCases: number;
   absenceDays: number;
   notes?: string;
+  /** 実働時間（時給制・事務員用、30分切り上げ後の合計時間） */
+  actualWorkHours?: number;
 }
 
 export interface UpdateMonthlyRecordBody {
@@ -237,6 +241,8 @@ export interface UpdateMonthlyRecordBody {
   drivingDistanceKm?: number;
   deliveryCases?: number;
   absenceDays?: number;
+  /** 実働時間（時給制・事務員用、30分切り上げ後の合計時間） */
+  actualWorkHours?: number;
   notes?: string;
 }
 

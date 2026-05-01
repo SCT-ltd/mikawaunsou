@@ -338,6 +338,10 @@ export const ListMonthlyRecordsResponseItem = zod.object({
   deliveryCases: zod.number().describe("配送件数"),
   absenceDays: zod.number().describe("欠勤日数"),
   notes: zod.string().optional(),
+  actualWorkHours: zod
+    .number()
+    .optional()
+    .describe("実働時間（時給制・事務員用、30分切り上げ後の合計時間）"),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -360,6 +364,10 @@ export const CreateMonthlyRecordBody = zod.object({
   deliveryCases: zod.number(),
   absenceDays: zod.number(),
   notes: zod.string().optional(),
+  actualWorkHours: zod
+    .number()
+    .optional()
+    .describe("実働時間（時給制・事務員用、30分切り上げ後の合計時間）"),
 });
 
 /**
@@ -383,6 +391,10 @@ export const GetMonthlyRecordResponse = zod.object({
   deliveryCases: zod.number().describe("配送件数"),
   absenceDays: zod.number().describe("欠勤日数"),
   notes: zod.string().optional(),
+  actualWorkHours: zod
+    .number()
+    .optional()
+    .describe("実働時間（時給制・事務員用、30分切り上げ後の合計時間）"),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -402,6 +414,10 @@ export const UpdateMonthlyRecordBody = zod.object({
   drivingDistanceKm: zod.number().optional(),
   deliveryCases: zod.number().optional(),
   absenceDays: zod.number().optional(),
+  actualWorkHours: zod
+    .number()
+    .optional()
+    .describe("実働時間（時給制・事務員用、30分切り上げ後の合計時間）"),
   notes: zod.string().optional(),
 });
 
@@ -419,6 +435,10 @@ export const UpdateMonthlyRecordResponse = zod.object({
   deliveryCases: zod.number().describe("配送件数"),
   absenceDays: zod.number().describe("欠勤日数"),
   notes: zod.string().optional(),
+  actualWorkHours: zod
+    .number()
+    .optional()
+    .describe("実働時間（時給制・事務員用、30分切り上げ後の合計時間）"),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });

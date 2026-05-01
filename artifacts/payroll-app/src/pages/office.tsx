@@ -61,7 +61,7 @@ function formatDate(d: Date): string {
   return d.toLocaleDateString("ja-JP", { year: "numeric", month: "long", day: "numeric", weekday: "long" });
 }
 
-function calcWorkMinutes(records: AttendanceRecord[]): number {
+function calcRawWorkMinutes(records: AttendanceRecord[]): number {
   let totalMs = 0;
   let clockInTime: Date | null = null;
   let breakStartTime: Date | null = null;
@@ -74,6 +74,16 @@ function calcWorkMinutes(records: AttendanceRecord[]): number {
   }
   if (clockInTime) { totalMs += Date.now() - clockInTime.getTime(); }
   return Math.floor(totalMs / 60000);
+}
+
+// 30分単位で切り上げ（事務員時給計算用）
+function roundUpTo30Min(minutes: number): number {
+  if (minutes === 0) return 0;
+  return Math.ceil(minutes / 30) * 30;
+}
+
+function calcWorkMinutes(records: AttendanceRecord[]): number {
+  return roundUpTo30Min(calcRawWorkMinutes(records));
 }
 
 function calcBreakMinutes(records: AttendanceRecord[]): number {
@@ -272,7 +282,8 @@ export default function OfficePage() {
 
   const status = getStatus(records);
   const statusConf = STATUS_CONFIG[status];
-  const workMin = calcWorkMinutes(records);
+  const rawWorkMin = calcRawWorkMinutes(records);
+  const workMin = roundUpTo30Min(rawWorkMin);
   const breakMin = calcBreakMinutes(records);
   const clockInRecord = records.find(r => r.eventType === "clock_in");
   const clockOutRecord = [...records].reverse().find(r => r.eventType === "clock_out");
@@ -372,8 +383,9 @@ export default function OfficePage() {
             </div>
             {status !== "未出勤" && (
               <div className="text-right">
-                <p className="text-xs text-slate-500 mb-0.5">勤務時間</p>
-                <p className="text-lg font-bold text-slate-700 tabular-nums">{fmtDuration(workMin)}</p>
+                <p className="text-xs text-slate-500 mb-0.5">計算時間 <span className="text-[10px] text-indigo-400">30分単位</span></p>
+                <p className="text-lg font-bold text-indigo-700 tabular-nums">{fmtDuration(workMin)}</p>
+                <p className="text-xs text-slate-400">実績 {fmtDuration(rawWorkMin)}</p>
                 {breakMin > 0 && (
                   <p className="text-xs text-slate-400">休憩 {fmtDuration(breakMin)}</p>
                 )}

@@ -485,6 +485,19 @@ router.get("/attendance/monthly-summary", async (req, res) => {
     return 0;
   }
 
+  // 社員情報（salaryType / isOfficeStaff）を取得
+  const allEmployees = await db.select({
+    id: employeesTable.id,
+    salaryType: employeesTable.salaryType,
+    isOfficeStaff: employeesTable.isOfficeStaff,
+  }).from(employeesTable);
+  const empInfoMap = new Map(allEmployees.map(e => [e.id, e]));
+
+  // 30分切り上げ（時給制事務員向け）
+  function roundUpTo30Min(minutes: number): number {
+    return Math.ceil(minutes / 30) * 30;
+  }
+
   // 社員ごとに集計
   const summaryMap = new Map<number, {
     workDays: number;
@@ -492,6 +505,7 @@ router.get("/attendance/monthly-summary", async (req, res) => {
     sundayWorkHours: number;
     overtimeHours: number;
     drivingDistanceKm: number;
+    actualWorkHours: number;
   }>();
 
   for (const [key, recs] of byEmpDate.entries()) {
@@ -501,21 +515,27 @@ router.get("/attendance/monthly-summary", async (req, res) => {
     if (!recs.some(r => r.eventType === "clock_in")) continue;
 
     if (!summaryMap.has(empId)) {
-      summaryMap.set(empId, { workDays: 0, saturdayWorkDays: 0, sundayWorkHours: 0, overtimeHours: 0, drivingDistanceKm: 0 });
+      summaryMap.set(empId, { workDays: 0, saturdayWorkDays: 0, sundayWorkHours: 0, overtimeHours: 0, drivingDistanceKm: 0, actualWorkHours: 0 });
     }
     const s = summaryMap.get(empId)!;
     const dow = new Date(dateStr).getDay(); // 0=日, 6=土
-    const workMins = calcWorkMinutes(recs);
+    const rawWorkMins = calcWorkMinutes(recs);
     const distKm = calcDrivingKm(recs);
     s.drivingDistanceKm = Math.round((s.drivingDistanceKm + distKm) * 10) / 10;
 
+    // 時給制事務員は30分切り上げで実働時間を集計
+    const empInfo = empInfoMap.get(empId);
+    const isHourlyOffice = empInfo?.salaryType === "hourly" || empInfo?.isOfficeStaff === true;
+    const billingMins = isHourlyOffice ? roundUpTo30Min(rawWorkMins) : rawWorkMins;
+    s.actualWorkHours = Math.round((s.actualWorkHours + billingMins / 60) * 100) / 100;
+
     if (dow === 0) {
-      s.sundayWorkHours = Math.round((s.sundayWorkHours + workMins / 60) * 10) / 10;
+      s.sundayWorkHours = Math.round((s.sundayWorkHours + rawWorkMins / 60) * 10) / 10;
     } else if (dow === 6) {
       s.saturdayWorkDays += 1;
     } else {
       s.workDays += 1;
-      const overtimeMins = Math.max(0, workMins - 480);
+      const overtimeMins = Math.max(0, rawWorkMins - 480);
       s.overtimeHours = Math.round((s.overtimeHours + overtimeMins / 60) * 10) / 10;
     }
   }
@@ -539,7 +559,7 @@ router.get("/attendance/monthly-summary", async (req, res) => {
   // 欠勤のみの社員も結果に含める
   for (const [empId] of absenceSummary.entries()) {
     if (!summaryMap.has(empId)) {
-      summaryMap.set(empId, { workDays: 0, saturdayWorkDays: 0, sundayWorkHours: 0, overtimeHours: 0, drivingDistanceKm: 0 });
+      summaryMap.set(empId, { workDays: 0, saturdayWorkDays: 0, sundayWorkHours: 0, overtimeHours: 0, drivingDistanceKm: 0, actualWorkHours: 0 });
     }
   }
 

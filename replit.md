@@ -32,6 +32,7 @@
 - `employees` — 社員マスタ（基本給、各手当、扶養人数、住民税、歩合単価等）
   - 新フィールド: hasSpouse（配偶者の有無）, healthInsuranceMonthly（健保月額固定）, pensionMonthly（厚年月額固定）, employmentInsuranceApplied（雇保適用）
 - `monthly_records` — 月次実績（出勤日数、残業時間、深夜時間、走行距離、配送件数等）
+  - 新フィールド: `actualWorkHours`（時給制事務員用：30分切り上げ後の月間実働時間）
 - `payrolls` — 給与計算結果（各支給項目・控除項目・差引支給額・カスタム手当合計）
 - `journal_entries` — 振替伝票（自動生成）
 - `allowance_definitions` — カスタム手当マスタ（名称・課税区分・calculationType・表示順・有効フラグ）
@@ -46,6 +47,7 @@
 `artifacts/api-server/src/lib/payroll-calculator.ts`
 `artifacts/api-server/src/lib/tax-tables-reiwa8.ts`（令和8年テーブル）
 
+- **時給制（hourly）**: baseSalary（社員マスタ）= 時給単価。基本給 = 時給単価 × actualWorkHours（30分切り上げ済み実働時間）
 - 時間外手当: (基本給 ÷ 月平均労働時間) × 1.25 × 残業時間
 - 深夜手当: (基本給 ÷ 月平均労働時間) × 0.25 × 深夜時間
 - 歩合給: 走行距離 × km単価 + 件数 × 件単価

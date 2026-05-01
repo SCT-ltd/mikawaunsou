@@ -604,6 +604,7 @@ router.post("/payroll/calculate", async (req, res) => {
     drivingDistanceKm: record.drivingDistanceKm,
     deliveryCases: record.deliveryCases,
     absenceDays: record.absenceDays,
+    actualWorkHours: record.actualWorkHours ?? 0,
     customAllowances,
     enableTrace: isTamagawa,
     traceExpectedIncomeTax: isTamagawa ? 10220 : undefined,

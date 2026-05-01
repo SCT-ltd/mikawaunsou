@@ -18,4 +18,6 @@ export interface CreateMonthlyRecordBody {
   deliveryCases: number;
   absenceDays: number;
   notes?: string;
+  /** 実働時間（時給制・事務員用、30分切り上げ後の合計時間） */
+  actualWorkHours?: number;
 }

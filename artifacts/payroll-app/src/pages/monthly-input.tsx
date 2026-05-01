@@ -584,12 +584,17 @@ function computeQuickEstimate(
   company: ReturnType<typeof useGetCompany>["data"]
 ) {
   const isDaily = emp.salaryType === "daily";
+  const isHourly = emp.salaryType === "hourly";
+  const actualWorkHours = Number(editData.actualWorkHours) || 0;
+
   const baseSalary = isDaily && company
     ? Math.round(
         (Number(editData.workDays) || 0) * (company.dailyWageWeekday ?? 9808) +
           (Number(editData.saturdayWorkDays) || 0) * (company.dailyWageSaturday ?? 12260) +
           (Number(editData.sundayWorkHours) || 0) * (company.hourlyWageSunday ?? 1655)
       )
+    : isHourly
+    ? Math.round((emp.baseSalary ?? 0) * actualWorkHours)
     : emp.baseSalary ?? 0;
 
   const monthlyHours = company?.monthlyWorkingHours ?? 160;
@@ -597,7 +602,9 @@ function computeQuickEstimate(
   const lateNightHours = Number(editData.lateNightHours) || 0;
   const holidayWorkDays = Number(editData.holidayWorkDays) || 0;
 
-  const hourlyRate = monthlyHours > 0 ? baseSalary / monthlyHours : 0;
+  const hourlyRate = isHourly
+    ? (emp.baseSalary ?? 0)
+    : monthlyHours > 0 ? baseSalary / monthlyHours : 0;
   const overtimePay = roundJapanese(hourlyRate * (company?.overtimeRate ?? 1.25) * overtimeHours);
   const lateNightPay = roundJapanese(hourlyRate * (company?.lateNightAdditionalRate ?? 0.25) * lateNightHours);
   const holidayPay = roundJapanese(hourlyRate * (company?.holidayRate ?? 1.35) * holidayWorkDays * 8);
@@ -679,6 +686,7 @@ export default function MonthlyInput() {
           overtimeHours: number;
           absenceDays: number;
           drivingDistanceKm: number;
+          actualWorkHours: number;
         }[]) => {
           if (summary.length === 0) {
             if (shouldMarkDirty) {
@@ -698,6 +706,7 @@ export default function MonthlyInput() {
                 overtimeHours: s.overtimeHours,
                 absenceDays: s.absenceDays ?? 0,
                 drivingDistanceKm: s.drivingDistanceKm ?? 0,
+                actualWorkHours: s.actualWorkHours ?? 0,
               };
             }
             return next;
@@ -747,7 +756,7 @@ export default function MonthlyInput() {
           workDays: 0, overtimeHours: 0, lateNightHours: 0,
           holidayWorkDays: 0, drivingDistanceKm: 0, deliveryCases: 0,
           absenceDays: 0, saturdayWorkDays: 0, sundayWorkHours: 0, notes: "",
-          salesAmount: 0, commissionRate: empDefaultRate, bluewingSalesAmount: 0,
+          salesAmount: 0, commissionRate: empDefaultRate, bluewingSalesAmount: 0, actualWorkHours: 0,
         };
       }
     });
@@ -789,6 +798,7 @@ export default function MonthlyInput() {
           salesAmount: Number(ed.salesAmount) || 0,
           commissionRate: Number(ed.commissionRate) || 0,
           bluewingSalesAmount: Number(ed.bluewingSalesAmount) || 0,
+          actualWorkHours: Number(ed.actualWorkHours) || 0,
         };
 
         if (existingRecord) {
@@ -797,7 +807,8 @@ export default function MonthlyInput() {
           const hasData =
             payload.workDays > 0 || payload.saturdayWorkDays > 0 ||
             payload.drivingDistanceKm > 0 || payload.deliveryCases > 0 ||
-            payload.salesAmount > 0 || payload.bluewingSalesAmount > 0;
+            payload.salesAmount > 0 || payload.bluewingSalesAmount > 0 ||
+            payload.actualWorkHours > 0;
           if (hasData) {
             await createRecord.mutateAsync({ data: { employeeId: emp.id, year, month, ...payload } });
           }
@@ -908,6 +919,23 @@ export default function MonthlyInput() {
                       </Tooltip>
                     </div>
                   </th>
+                  {/* 実働時間（時給制） */}
+                  <th
+                    colSpan={1}
+                    className="border-x border-indigo-200 bg-indigo-50 py-1.5 text-center font-semibold text-indigo-800 text-[11px] tracking-wide"
+                  >
+                    <div className="flex items-center justify-center gap-1">
+                      実働時間
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-3 w-3 text-indigo-500/60 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent className="text-xs max-w-[200px]">
+                          時給制（事務員）専用。30分単位切り上げ後の月間実働時間です。
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                  </th>
                   {/* 運行実績 */}
                   <th
                     colSpan={1}
@@ -1003,6 +1031,19 @@ export default function MonthlyInput() {
                       </div>
                     </th>
                   ))}
+                  {/* 実働時間（時給制事務員用） */}
+                  <th className="bg-indigo-50 border-x border-indigo-100 px-1 py-1 text-center font-medium text-indigo-700 w-[64px]">
+                    <div className="flex items-center justify-center gap-0.5 flex-wrap">
+                      <span>実働</span>
+                      <span className="text-[9px] text-indigo-500">(h)</span>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-2.5 w-2.5 text-indigo-400/60 cursor-help flex-shrink-0" />
+                        </TooltipTrigger>
+                        <TooltipContent className="text-xs max-w-[200px]">時給制（事務員）専用。打刻から自動集計された実働時間（30分切り上げ）。時給×実働時間＝基本給。</TooltipContent>
+                      </Tooltip>
+                    </div>
+                  </th>
                   {/* 運行1列 */}
                   {[
                     { label: "走行KM", sub: "km", tip: "当月の総走行距離（km）。走行距離手当の計算に使用します。" },
@@ -1041,7 +1082,7 @@ export default function MonthlyInput() {
               <tbody>
                 {isLoading ? (
                   <tr>
-                    <td colSpan={12} className="text-center py-10 text-muted-foreground">
+                    <td colSpan={13} className="text-center py-10 text-muted-foreground">
                       <div className="flex items-center justify-center gap-2">
                         <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                         読み込み中...
@@ -1050,7 +1091,7 @@ export default function MonthlyInput() {
                   </tr>
                 ) : !employees || employees.length === 0 ? (
                   <tr>
-                    <td colSpan={12} className="text-center py-10 text-muted-foreground">
+                    <td colSpan={13} className="text-center py-10 text-muted-foreground">
                       有効な社員が見つかりません
                     </td>
                   </tr>
@@ -1059,6 +1100,7 @@ export default function MonthlyInput() {
                     const rowData = edits[emp.id] ?? {};
                     const { gross, net } = computeQuickEstimate(emp, rowData, company);
                     const isBW = (emp as Record<string, unknown>).useBluewingLogic as boolean;
+                    const isHourly = emp.salaryType === "hourly";
                     const rowBg = empIdx % 2 === 0 ? "bg-card" : "bg-muted/20";
 
                     const numInput = (
@@ -1107,6 +1149,15 @@ export default function MonthlyInput() {
                         <td className="p-1 border-x border-sky-100/60">{numInput("overtimeHours")}</td>
                         <td className="p-1 border-x border-sky-100/60">{numInput("lateNightHours")}</td>
                         <td className="p-1 border-x border-sky-100/60">{numInput("holidayWorkDays", { max: 31 })}</td>
+
+                        {/* 実働時間（時給制事務員用） */}
+                        <td className="p-1 border-x border-indigo-100/60">
+                          {isHourly ? (
+                            numInput("actualWorkHours", { step: "0.5" })
+                          ) : (
+                            <div className="h-7 flex items-center justify-center text-muted-foreground/40">—</div>
+                          )}
+                        </td>
 
                         {/* 運行1列 */}
                         <td className="p-1 border-x border-amber-100/60">{numInput("drivingDistanceKm", { step: "0.1" })}</td>
