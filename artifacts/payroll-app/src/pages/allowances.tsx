@@ -583,6 +583,7 @@ const empFullSchema = z.object({
   standardRemuneration: z.coerce.number().min(0).default(0),
   careInsuranceApplied: z.boolean().default(false),
   employmentInsuranceApplied: z.boolean().default(true),
+  pensionAppliedMode: z.enum(["auto", "on", "off"]).default("auto"),
   taxExempt: z.boolean().default(false),
   scheduledWorkStart: z.string().optional().default(""),
   scheduledWorkEnd: z.string().optional().default(""),
@@ -1031,6 +1032,28 @@ function EmpFormFields({
                 <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
               </FormItem>
             )} />
+            <FormField control={f.control} name="pensionAppliedMode" render={({ field }) => (
+              <FormItem className="rounded-lg border p-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <FormLabel>厚生年金</FormLabel>
+                    <p className="text-xs text-muted-foreground">70歳以上は自動的に不適用。手動で上書き可。</p>
+                  </div>
+                  <FormControl>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger className="w-44">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="auto">🔄 自動（生年月日から判定）</SelectItem>
+                        <SelectItem value="on">✅ 強制 適用</SelectItem>
+                        <SelectItem value="off">❌ 強制 不適用（70歳以上等）</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </FormControl>
+                </div>
+              </FormItem>
+            )} />
             <FormField control={f.control} name="taxExempt" render={({ field }) => (
               <FormItem className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50/50 p-3">
                 <div><FormLabel className="text-amber-800">全額非課税</FormLabel>
@@ -1123,7 +1146,7 @@ function EmployeeMasterTab() {
       useBluewingLogic: false, bluewingCommissionRate: 0,
       bluewingFixedOvertimeHours: 0, bluewingFixedOvertimeAmount: 0,
       dependentCount: 0, hasSpouse: false, standardRemuneration: 0,
-      careInsuranceApplied: false, employmentInsuranceApplied: true, taxExempt: false,
+      careInsuranceApplied: false, employmentInsuranceApplied: true, pensionAppliedMode: "auto", taxExempt: false,
       scheduledWorkStart: "", scheduledWorkEnd: "",
       dailyRateOverride: 0, overtimeUnitMinutes: 0, overtimeUnitRate: 0,
     },
@@ -1140,7 +1163,7 @@ function EmployeeMasterTab() {
       useBluewingLogic: false, bluewingCommissionRate: 0,
       bluewingFixedOvertimeHours: 0, bluewingFixedOvertimeAmount: 0,
       dependentCount: 0, hasSpouse: false, standardRemuneration: 0,
-      careInsuranceApplied: false, employmentInsuranceApplied: true, taxExempt: false,
+      careInsuranceApplied: false, employmentInsuranceApplied: true, pensionAppliedMode: "auto", taxExempt: false,
       scheduledWorkStart: "", scheduledWorkEnd: "",
       dailyRateOverride: 0, overtimeUnitMinutes: 0, overtimeUnitRate: 0,
     },
@@ -1180,6 +1203,11 @@ function EmployeeMasterTab() {
       standardRemuneration: emp.standardRemuneration ?? 0,
       careInsuranceApplied: emp.careInsuranceApplied ?? false,
       employmentInsuranceApplied: emp.employmentInsuranceApplied ?? true,
+      pensionAppliedMode: (() => {
+        const v = (emp as unknown as { pensionApplied?: boolean | null }).pensionApplied;
+        if (v === null || v === undefined) return "auto";
+        return v ? "on" : "off";
+      })() as "auto" | "on" | "off",
       taxExempt: (emp as unknown as { taxExempt?: boolean }).taxExempt ?? false,
       scheduledWorkStart: (emp as unknown as { scheduledWorkStart?: string | null }).scheduledWorkStart ?? "",
       scheduledWorkEnd: (emp as unknown as { scheduledWorkEnd?: string | null }).scheduledWorkEnd ?? "",
@@ -1192,11 +1220,13 @@ function EmployeeMasterTab() {
   const onEditSubmit = async (data: EmpFullValues) => {
     if (!editingEmployee) return;
     try {
+      const { pensionAppliedMode, ...rest } = data;
       const saveData = {
-        ...data,
+        ...rest,
         mikawaCommissionRate: (data.mikawaCommissionRate ?? 0) / 100,
         bluewingCommissionRate: (data.bluewingCommissionRate ?? 0) / 100,
         overtimeUnitMinutes: (data.overtimeUnitMinutes ?? 0) > 0 ? data.overtimeUnitMinutes : null,
+        pensionApplied: pensionAppliedMode === "auto" ? null : pensionAppliedMode === "on",
       };
       await updateEmployee.mutateAsync({ id: editingEmployee.id, data: saveData });
       toast({ title: "保存しました", description: `${editingEmployee.name}の情報を更新しました。` });
@@ -1209,10 +1239,12 @@ function EmployeeMasterTab() {
 
   const onCreateSubmit = async (data: EmpFullValues) => {
     try {
+      const { pensionAppliedMode, ...rest } = data;
       const saveData = {
-        ...data,
+        ...rest,
         mikawaCommissionRate: (data.mikawaCommissionRate ?? 0) / 100,
         bluewingCommissionRate: (data.bluewingCommissionRate ?? 0) / 100,
+        pensionApplied: pensionAppliedMode === "auto" ? null : pensionAppliedMode === "on",
       };
       const res = await createEmployee.mutateAsync({ data: saveData });
       toast({ title: "登録しました", description: `${res.name}を登録しました。` });

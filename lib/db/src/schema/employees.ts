@@ -30,6 +30,8 @@ export const employeesTable = pgTable("employees", {
   healthInsuranceMonthly: doublePrecision("health_insurance_monthly").notNull().default(0),
   pensionMonthly: doublePrecision("pension_monthly").notNull().default(0),
   employmentInsuranceApplied: boolean("employment_insurance_applied").notNull().default(true),
+  /** 厚生年金適用（null=生年月日から自動判定、true=強制ON、false=強制OFF）70歳以上は自動的にfalse */
+  pensionApplied: boolean("pension_applied"),
   taxExempt: boolean("tax_exempt").notNull().default(false),
   residentTax: doublePrecision("resident_tax").notNull().default(0),
   incomeTaxMonthly: doublePrecision("income_tax_monthly").notNull().default(0),

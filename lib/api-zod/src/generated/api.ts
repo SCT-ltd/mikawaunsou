@@ -139,6 +139,12 @@ export const ListEmployeesResponseItem = zod.object({
   healthInsuranceMonthly: zod.number().describe("健康保険料（月額）固定額"),
   pensionMonthly: zod.number().describe("厚生年金保険料（月額）固定額"),
   employmentInsuranceApplied: zod.boolean().describe("雇用保険適用"),
+  pensionApplied: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "厚生年金適用（null=生年月日から自動判定、true=強制ON、false=強制OFF。70歳以上は自動的にfalse）",
+    ),
   taxExempt: zod
     .boolean()
     .describe(
@@ -229,6 +235,12 @@ export const GetEmployeeResponse = zod.object({
   healthInsuranceMonthly: zod.number().describe("健康保険料（月額）固定額"),
   pensionMonthly: zod.number().describe("厚生年金保険料（月額）固定額"),
   employmentInsuranceApplied: zod.boolean().describe("雇用保険適用"),
+  pensionApplied: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "厚生年金適用（null=生年月日から自動判定、true=強制ON、false=強制OFF。70歳以上は自動的にfalse）",
+    ),
   taxExempt: zod
     .boolean()
     .describe(
@@ -298,6 +310,10 @@ export const UpdateEmployeeBody = zod.object({
   healthInsuranceMonthly: zod.number().optional(),
   pensionMonthly: zod.number().optional(),
   employmentInsuranceApplied: zod.boolean().optional(),
+  pensionApplied: zod
+    .boolean()
+    .nullish()
+    .describe("厚生年金適用（null=自動判定、true=強制ON、false=強制OFF）"),
   taxExempt: zod
     .boolean()
     .optional()
@@ -350,6 +366,12 @@ export const UpdateEmployeeResponse = zod.object({
   healthInsuranceMonthly: zod.number().describe("健康保険料（月額）固定額"),
   pensionMonthly: zod.number().describe("厚生年金保険料（月額）固定額"),
   employmentInsuranceApplied: zod.boolean().describe("雇用保険適用"),
+  pensionApplied: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "厚生年金適用（null=生年月日から自動判定、true=強制ON、false=強制OFF。70歳以上は自動的にfalse）",
+    ),
   taxExempt: zod
     .boolean()
     .describe(

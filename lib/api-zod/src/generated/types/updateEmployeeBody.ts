@@ -31,6 +31,8 @@ export interface UpdateEmployeeBody {
   healthInsuranceMonthly?: number;
   pensionMonthly?: number;
   employmentInsuranceApplied?: boolean;
+  /** 厚生年金適用（null=自動判定、true=強制ON、false=強制OFF） */
+  pensionApplied?: boolean | null;
   /** 全額非課税フラグ（true=社会保険・所得税・住民税すべて控除なし、手取り=総支給） */
   taxExempt?: boolean;
   residentTax?: number;

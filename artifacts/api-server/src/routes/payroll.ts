@@ -6,6 +6,25 @@ import { calculateInsuranceAndTax, calculateIncomeTaxReiwa7, calculateIncomeTaxR
 
 const router = Router();
 
+/**
+ * 厚生年金適用判定
+ * - emp.pensionApplied が null の場合: 生年月日から計算月時点の年齢を算出し、70歳以上なら false
+ * - emp.pensionApplied が true/false の場合: その値をそのまま使用（手動オーバーライド）
+ */
+function resolvePensionApplied(emp: typeof employeesTable.$inferSelect, year: number, month: number): boolean {
+  if (emp.pensionApplied !== null && emp.pensionApplied !== undefined) {
+    return emp.pensionApplied;
+  }
+  if (!emp.dateOfBirth) return true;
+  const dob = new Date(emp.dateOfBirth);
+  // 計算月の1日時点での年齢を算出
+  const calcDate = new Date(year, month - 1, 1);
+  let age = calcDate.getFullYear() - dob.getFullYear();
+  const monthDiff = calcDate.getMonth() - dob.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && calcDate.getDate() < dob.getDate())) age--;
+  return age < 70;
+}
+
 function buildPayrollResponse(p: typeof payrollsTable.$inferSelect, emp: typeof employeesTable.$inferSelect) {
   return {
     ...p,
@@ -116,7 +135,7 @@ router.post("/payroll/calculate", async (req, res) => {
       dependentCount: emp.dependentCount ?? 0,
       hasSpouse: emp.hasSpouse ?? false,
       careInsuranceApplied: emp.careInsuranceApplied ?? false,
-      pensionApplied: true,
+      pensionApplied: resolvePensionApplied(emp, year, month),
       employmentInsuranceApplied: emp.employmentInsuranceApplied ?? true,
       residentTax: emp.residentTax ?? 0,
       customDeductionsTotal,
@@ -223,7 +242,7 @@ router.post("/payroll/calculate", async (req, res) => {
       dependentCount: emp.dependentCount ?? 0,
       hasSpouse: emp.hasSpouse ?? false,
       careInsuranceApplied: emp.careInsuranceApplied ?? false,
-      pensionApplied: true,
+      pensionApplied: resolvePensionApplied(emp, year, month),
       employmentInsuranceApplied: emp.employmentInsuranceApplied ?? true,
       residentTax: emp.residentTax ?? 0,
       customDeductionsTotal,
@@ -359,7 +378,7 @@ router.post("/payroll/calculate", async (req, res) => {
       dependentCount: emp.dependentCount ?? 0,
       hasSpouse: emp.hasSpouse ?? false,
       careInsuranceApplied: emp.careInsuranceApplied ?? false,
-      pensionApplied: true,
+      pensionApplied: resolvePensionApplied(emp, year, month),
       employmentInsuranceApplied: emp.employmentInsuranceApplied ?? true,
       residentTax: emp.residentTax ?? 0,
       customDeductionsTotal,
@@ -584,7 +603,7 @@ router.post("/payroll/calculate", async (req, res) => {
     standardRemuneration: emp.standardRemuneration ?? 0,
     careInsuranceApplied: emp.careInsuranceApplied ?? false,
     employmentInsuranceApplied: emp.employmentInsuranceApplied ?? true,
-    pensionApplied: true,
+    pensionApplied: resolvePensionApplied(emp, year, month),
     employmentInsuranceRate: empInsRate,
     residentTax: emp.residentTax,
     monthlyAverageWorkHours: company.monthlyAverageWorkHours,
