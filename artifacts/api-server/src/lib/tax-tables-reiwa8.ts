@@ -101,7 +101,7 @@ const INSURANCE_GRADES: [number, number, number, boolean][] = [
 
 function round50sen(x: number): number {
   const frac = x - Math.floor(x);
-  return frac <= 0.5 ? Math.floor(x) : Math.ceil(x);
+  return frac < 0.5 ? Math.floor(x) : Math.ceil(x);
 }
 
 /**
