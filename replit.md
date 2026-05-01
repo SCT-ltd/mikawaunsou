@@ -53,9 +53,12 @@
 - 時間外手当: (基本給 ÷ 月平均労働時間) × 1.25 × 残業時間
 - 深夜手当: (基本給 ÷ 月平均労働時間) × 0.25 × 深夜時間
 - 歩合給: 走行距離 × km単価 + 件数 × 件単価
-- 源泉所得税: **令和8年 国税庁月額表甲欄（直接参照ルックアップテーブル）**
+- 源泉所得税: **令和8年 国税庁月額表甲欄（公式テーブル参照方式）**
+  - 共有ライブラリ `lib/tax-tables-reiwa8` (`@workspace/tax-tables-reiwa8`) 使用
+  - 公式値ハードコード＋数式補完で1円単位の完全一致を実現
+  - calibration補正方式を廃止（令和8年版のみ）
   - 扶養親族等の数 = dependentCount + (hasSpouse ? 1 : 0)
-  - 出典: 国税庁 令和8年分 給与所得の源泉徴収税額表（月額表）
+  - 出典: 国税庁 令和8年分 給与所得の源泉徴収税額表（月額表）甲欄
 - 社会保険料（健保・厚年）: **令和8年協会けんぽ東京支部 標準報酬月額等級テーブル方式**
   - 健康保険料率: 9.85%（折半 4.925%）
   - 厚生年金保険料率: 18.300%（折半 9.150%）
@@ -83,5 +86,6 @@ Supports: 弥生会計, freee, マネーフォワード, generic
 - OpenAPI spec: `lib/api-spec/openapi.yaml`
 - Generated API hooks: `lib/api-client-react/src/generated/`
 - DB schema: `lib/db/src/schema/`
+- 源泉所得税テーブル: `lib/tax-tables-reiwa8/src/index.ts`（バック・フロント共有）
 - API routes: `artifacts/api-server/src/routes/`
 - Frontend pages: `artifacts/payroll-app/src/pages/`

@@ -4,8 +4,10 @@
  * 社会保険: 協会けんぽ 標準報酬月額等級テーブル方式
  * 源泉所得税: 国税庁 給与所得の源泉徴収税額表（月額表）甲欄
  *   - 令和7年版（テーブル参照方式）
- *   - 令和8年版（将来切替用、計算式方式）
+ *   - 令和8年版（@workspace/tax-tables-reiwa8 共有ライブラリ参照）
  */
+
+import { calculateIncomeTaxReiwa8MonthlyKou } from "@workspace/tax-tables-reiwa8";
 
 // ────────────────────────────────────────────────────────────────────────────
 // 1. 社会保険料（健康保険・厚生年金）標準報酬月額等級テーブル
@@ -299,9 +301,8 @@ function _lookupRowR8(salary: number): readonly number[] {
 
 /**
  * 令和8年（2026年）源泉徴収税額を計算する（月額表甲欄・テーブル参照方式）
- * 基礎控除額が480,000→580,000に増加した改正後。
- *
- * 検証: 社保控除後372,705円 × 扶養1人 → 10,220円（国税庁公式と完全一致）
+ * @workspace/tax-tables-reiwa8 共有ライブラリを使用
+ * 国税庁提供公式値をそのまま参照（calibration補正方式を廃止）
  *
  * @param afterInsuranceSalary 社会保険料等控除後の給与等の金額（非課税手当・子育て支援金除く）
  * @param dependentEquivCount  扶養親族等の数（配偶者を含む合計、0〜7）
@@ -310,10 +311,7 @@ export function calculateIncomeTaxReiwa8(
   afterInsuranceSalary: number,
   dependentEquivCount: number,
 ): number {
-  const salary = Math.max(0, Math.floor(afterInsuranceSalary));
-  const dep    = Math.min(7, Math.max(0, Math.floor(dependentEquivCount)));
-  const row    = _lookupRowR8(salary);
-  return row[dep + 1] ?? 0;
+  return calculateIncomeTaxReiwa8MonthlyKou(afterInsuranceSalary, dependentEquivCount);
 }
 
 /**

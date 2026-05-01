@@ -5,8 +5,10 @@
  * 社会保険: 協会けんぽ東京支部
  * 源泉所得税: 国税庁 給与所得の源泉徴収税額表（月額表）甲欄
  *   - 令和7年版（テーブル参照方式）
- *   - 令和8年版（テーブル参照方式）
+ *   - 令和8年版（@workspace/tax-tables-reiwa8 共有ライブラリ参照）
  */
+
+import { calculateIncomeTaxReiwa8MonthlyKou } from "@workspace/tax-tables-reiwa8";
 
 // ────────────────────────────────────────────────────────────────────────────
 // 令和8年度 保険料率定数（協会けんぽ東京支部）
@@ -315,7 +317,8 @@ export function calculateIncomeTaxReiwa7(
 
 /**
  * 令和8年（2026年）源泉徴収税額を計算する（月額表甲欄・テーブル参照方式）
- * 基礎控除額が480,000→580,000に増加した改正後。
+ * @workspace/tax-tables-reiwa8 共有ライブラリを使用
+ * 国税庁提供公式値をそのまま参照（calibration補正方式を廃止）
  *
  * @param afterInsuranceSalary 社会保険料等控除後の給与等の金額
  * @param dependentEquivCount  扶養親族等の数（配偶者を含む合計、0〜7）
@@ -324,10 +327,7 @@ export function calculateIncomeTaxReiwa8(
   afterInsuranceSalary: number,
   dependentEquivCount: number,
 ): number {
-  const salary = Math.max(0, Math.floor(afterInsuranceSalary));
-  const dep    = Math.min(7, Math.max(0, Math.floor(dependentEquivCount)));
-  const row    = _lookupRow(REIWA8_TABLE, salary);
-  return row[dep + 1] ?? 0;
+  return calculateIncomeTaxReiwa8MonthlyKou(afterInsuranceSalary, dependentEquivCount);
 }
 
 /**
@@ -470,12 +470,13 @@ export function calculateInsuranceAndTax(input: InsuranceTaxInput): InsuranceTax
   // 子育て支援金は源泉所得税の計算基礎から除外（国税庁公式月額表の定義に従う）
   const afterInsuranceSalary = taxableSalaryForIncomeTaxExcludingChildcareSupport;
 
-  // 源泉所得税：令和8年月額表甲欄テーブル参照
+  // 源泉所得税：令和8年月額表甲欄テーブル参照（@workspace/tax-tables-reiwa8 使用）
   // 扶養親族等の数 = dependentCount + (hasSpouse ? 1 : 0)
   const dependentEquivalentCount = dependentCount + (hasSpouse ? 1 : 0);
-  const matchedRow = _lookupRow(REIWA8_TABLE, Math.max(0, Math.floor(afterInsuranceSalary)));
+  const afterInsuranceSalaryInt = Math.max(0, Math.floor(afterInsuranceSalary));
+  const matchedRow = _lookupRow(REIWA8_TABLE, afterInsuranceSalaryInt);
   const matchedIncomeTaxBracket = matchedRow[0];
-  const incomeTax = matchedRow[Math.min(7, Math.max(0, dependentEquivalentCount)) + 1] ?? 0;
+  const incomeTax = calculateIncomeTaxReiwa8MonthlyKou(afterInsuranceSalary, dependentEquivalentCount);
 
   // トレースログ（enableTrace が true の場合のみ出力）
   if (enableTrace) {

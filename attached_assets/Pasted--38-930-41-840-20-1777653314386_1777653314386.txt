@@ -1,0 +1,122 @@
+今回の修正で、三川兼司さんの所得税について重要な点が整理できました。
+
+まず、以下の条件であれば、所得税38,930円ではなく41,840円が正しいという理解で進めます。
+
+三川兼司さん 2026年4月
+所得税計算基礎：652,526円
+扶養親族等の数：2人
+税額表：令和8年分 源泉徴収税額表 月額表・甲欄
+
+この条件では、該当行は
+650,000円以上〜653,000円未満
+扶養親族等の数2人
+所得税：41,840円
+
+で進めてください。
+
+ただし、現在の実装にはまだ問題があります。
+
+現在の報告では、
+
+calculateIncomeTaxReiwa8(653000, 2) → 42,384円
+公式値 → 42,390円
+差額 → 6円
+
+となっています。
+
+給与計算システムでは、所得税の数円誤差もNGです。
+所得税は計算式 + calibration補正で近似するのではなく、国税庁の令和8年分 源泉徴収税額表 月額表・甲欄の公式表をそのまま参照する方式にしてください。
+
+修正方針：
+
+1. calibration方式をやめてください。
+2. 公式表の該当範囲を正確にテーブル化してください。
+3. 少なくとも現在システムで使う範囲は、全行・全扶養列を正確に持ってください。
+4. 可能であれば、国税庁が公開している令和8年分 源泉徴収税額表のExcelまたはPDFから、月額表・甲欄をそのままデータ化してください。
+5. フロントとバックエンドで同じ税額表データを使ってください。
+6. フロント独自の近似式・バックエンド独自の近似式が残らないようにしてください。
+7. 所得税計算では、入力された incomeTaxBase がどの「以上〜未満」レンジに入るかを判定し、その行の扶養人数列の金額をそのまま返してください。
+
+実装イメージ：
+
+type MonthlyKouTaxRow = {
+  min: number;
+  max: number | null;
+  dep0: number;
+  dep1: number;
+  dep2: number;
+  dep3: number;
+  dep4: number;
+  dep5: number;
+  dep6: number;
+  dep7: number;
+};
+
+const REIWA8_MONTHLY_KOU_TABLE: MonthlyKouTaxRow[] = [
+  { min: 650000, max: 653000, dep0: 54770, dep1: 48300, dep2: 41840, dep3: 35370, dep4: 28900, dep5: 22440, dep6: 17880, dep7: 14640 },
+  { min: 653000, max: 656000, dep0: 55260, dep1: 48790, dep2: 42390, dep3: 35850, dep4: 29380, dep5: 22920, dep6: 18360, dep7: 15120 },
+  ...
+];
+
+function calculateIncomeTaxReiwa8MonthlyKou(incomeTaxBase: number, dependentEquivalentCount: number): number {
+  const dep = Math.min(Math.max(dependentEquivalentCount, 0), 7);
+  const row = REIWA8_MONTHLY_KOU_TABLE.find(row =>
+    incomeTaxBase >= row.min && (row.max === null || incomeTaxBase < row.max)
+  );
+
+  if (!row) {
+    throw new Error(`令和8年 月額表・甲欄の範囲外です: ${incomeTaxBase}`);
+  }
+
+  return row[`dep${dep}`];
+}
+
+必ず以下のテストが全て通るようにしてください。
+
+// 玉川さん確認用
+expect(calculateIncomeTaxReiwa8MonthlyKou(371000, 1)).toBe(10220);
+expect(calculateIncomeTaxReiwa8MonthlyKou(372485, 1)).toBe(10220);
+expect(calculateIncomeTaxReiwa8MonthlyKou(373999, 1)).toBe(10220);
+expect(calculateIncomeTaxReiwa8MonthlyKou(374000, 1)).toBe(10470);
+
+// 三川兼司さん確認用
+expect(calculateIncomeTaxReiwa8MonthlyKou(650000, 2)).toBe(41840);
+expect(calculateIncomeTaxReiwa8MonthlyKou(652526, 2)).toBe(41840);
+expect(calculateIncomeTaxReiwa8MonthlyKou(652999, 2)).toBe(41840);
+expect(calculateIncomeTaxReiwa8MonthlyKou(653000, 2)).toBe(42390);
+
+// 38,930円がどこにあるかの確認
+expect(calculateIncomeTaxReiwa8MonthlyKou(599000, 1)).toBe(38930);
+expect(calculateIncomeTaxReiwa8MonthlyKou(601999, 1)).toBe(38930);
+
+重要：
+三川兼司さんの正解がどうしても38,930円である場合は、所得税テーブルを無理やり補正しないでください。
+その場合は、三川兼司さんの入力条件が間違っている可能性があります。
+
+確認すべき項目：
+- 所得税計算基礎が本当に652,526円なのか
+- 扶養親族等の数が本当に2人なのか
+- hasSpouse=trueでよいのか
+- dependentCount=1でよいのか
+- 38,930円はどの月・どの明細の正式値なのか
+- その38,930円は所得税計算基礎599,000円以上〜602,000円未満、扶養1人の値ではないか
+
+今回の方針：
+- 三川兼司さんの現在条件が incomeTaxBase=652,526 / 扶養2人なら、所得税は41,840円
+- 38,930円に合わせるための calibration 補正は撤廃
+- 所得税テーブルは公式表をそのまま参照
+- 1円単位で公式表と一致させる
+- フロント・バックエンド・DB保存値・画面表示・印刷表示を一致させる
+
+最終報告では以下を必ず出してください。
+
+1. calibration方式を撤廃したか
+2. 公式表テーブル参照方式に変更したか
+3. calculateIncomeTaxReiwa8MonthlyKou(652526, 2) の結果
+4. calculateIncomeTaxReiwa8MonthlyKou(653000, 2) の結果
+5. 6円差が解消されたか
+6. 玉川さん3月分の所得税10,220円が維持されているか
+7. 三川兼司さん4月分の所得税が41,840円になるか
+8. もし38,930円を使う必要がある場合、どの入力条件なら38,930円になるか
+9. 修正したファイル名
+10. フロントとバックエンドで同じ所得税表を使っていること
