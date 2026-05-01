@@ -140,6 +140,14 @@ export const ListEmployeesResponseItem = zod.object({
   pensionMonthly: zod.number().describe("厚生年金保険料（月額）固定額"),
   employmentInsuranceApplied: zod.boolean().describe("雇用保険適用"),
   residentTax: zod.number().describe("住民税（月額）"),
+  salaryType: zod
+    .enum(["fixed", "daily"])
+    .describe("給与形態（fixed=固定給, daily=日給制）"),
+  isOfficeStaff: zod
+    .boolean()
+    .describe(
+      "事務員フラグ（true=事務員用打刻画面, false=ドライバー用打刻画面）",
+    ),
   hireDate: zod.coerce.date(),
   isActive: zod.boolean(),
   createdAt: zod.coerce.date(),
@@ -203,6 +211,14 @@ export const GetEmployeeResponse = zod.object({
   pensionMonthly: zod.number().describe("厚生年金保険料（月額）固定額"),
   employmentInsuranceApplied: zod.boolean().describe("雇用保険適用"),
   residentTax: zod.number().describe("住民税（月額）"),
+  salaryType: zod
+    .enum(["fixed", "daily"])
+    .describe("給与形態（fixed=固定給, daily=日給制）"),
+  isOfficeStaff: zod
+    .boolean()
+    .describe(
+      "事務員フラグ（true=事務員用打刻画面, false=ドライバー用打刻画面）",
+    ),
   hireDate: zod.coerce.date(),
   isActive: zod.boolean(),
   createdAt: zod.coerce.date(),
@@ -245,6 +261,10 @@ export const UpdateEmployeeBody = zod.object({
   pensionMonthly: zod.number().optional(),
   employmentInsuranceApplied: zod.boolean().optional(),
   residentTax: zod.number().optional(),
+  salaryType: zod
+    .enum(["fixed", "daily"])
+    .optional()
+    .describe("給与形態（fixed=固定給, daily=日給制）"),
   hireDate: zod.coerce.date().optional(),
   isActive: zod.boolean().optional(),
 });
@@ -275,6 +295,14 @@ export const UpdateEmployeeResponse = zod.object({
   pensionMonthly: zod.number().describe("厚生年金保険料（月額）固定額"),
   employmentInsuranceApplied: zod.boolean().describe("雇用保険適用"),
   residentTax: zod.number().describe("住民税（月額）"),
+  salaryType: zod
+    .enum(["fixed", "daily"])
+    .describe("給与形態（fixed=固定給, daily=日給制）"),
+  isOfficeStaff: zod
+    .boolean()
+    .describe(
+      "事務員フラグ（true=事務員用打刻画面, false=ドライバー用打刻画面）",
+    ),
   hireDate: zod.coerce.date(),
   isActive: zod.boolean(),
   createdAt: zod.coerce.date(),

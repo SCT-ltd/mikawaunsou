@@ -117,7 +117,7 @@ interface AttendanceDraft {
 }
 
 interface EmployeeStatus {
-  employee: { id: number; employeeCode: string; name: string; department: string };
+  employee: { id: number; employeeCode: string; name: string; department: string; isOfficeStaff?: boolean };
   status: Status;
   clockInTime: string | null;
   records: AttendanceRecord[];
@@ -660,7 +660,8 @@ export default function AttendancePage() {
     left: data.filter(d => d.status === "退勤済").length,
   };
 
-  const qrUrl = qrEmployee ? `${window.location.origin}${BASE}/driver/${qrEmployee.id}` : "";
+  const qrAttendancePath = qrEmployee?.isOfficeStaff ? "office" : "driver";
+  const qrUrl = qrEmployee ? `${window.location.origin}${BASE}/${qrAttendancePath}/${qrEmployee.id}` : "";
   const panelOpen = !!selected;
 
   return (

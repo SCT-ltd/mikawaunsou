@@ -5,6 +5,7 @@
  * 給与明細・バックオフィス効率化システム API
  * OpenAPI spec version: 0.1.0
  */
+import type { EmployeeSalaryType } from "./employeeSalaryType";
 
 export interface Employee {
   id: number;
@@ -50,6 +51,10 @@ export interface Employee {
   employmentInsuranceApplied: boolean;
   /** 住民税（月額） */
   residentTax: number;
+  /** 給与形態（fixed=固定給, daily=日給制） */
+  salaryType: EmployeeSalaryType;
+  /** 事務員フラグ（true=事務員用打刻画面, false=ドライバー用打刻画面） */
+  isOfficeStaff: boolean;
   hireDate: Date;
   isActive: boolean;
   createdAt: Date;

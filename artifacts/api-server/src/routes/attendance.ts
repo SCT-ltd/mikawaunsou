@@ -70,6 +70,7 @@ async function buildSnapshot(date?: string) {
         employeeCode: emp.employeeCode,
         name: emp.name,
         department: emp.department,
+        isOfficeStaff: emp.isOfficeStaff ?? false,
       },
       status,
       clockInTime: clockIn?.recordedAt ?? null,

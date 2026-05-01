@@ -563,6 +563,7 @@ const empFullSchema = z.object({
   dateOfBirth: z.string().optional().default(""),
   hireDate: z.string().min(1, "入社日を入力してください"),
   isActive: z.boolean().default(true),
+  isOfficeStaff: z.boolean().default(false),
   salaryType: z.enum(["fixed", "daily", "hourly"]).default("daily"),
   baseSalary: z.coerce.number().min(0).default(0),
   residentTax: z.coerce.number().min(0).default(0),
@@ -663,6 +664,34 @@ function EmpFormFields({
           <FormField control={f.control} name="position" render={({ field }) => (
             <FormItem><FormLabel>役職</FormLabel>
               <FormControl><Input {...field} value={field.value || ""} /></FormControl></FormItem>
+          )} />
+        </div>
+
+        <Separator />
+
+        <div>
+          <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">勤怠区分</h4>
+          <FormField control={f.control} name="isOfficeStaff" render={({ field }) => (
+            <FormItem>
+              <label className="flex items-center gap-3 cursor-pointer select-none rounded-xl border-2 px-4 py-3 transition-colors hover:bg-muted/50"
+                style={{ borderColor: field.value ? "#6366f1" : undefined, background: field.value ? "#eef2ff" : undefined }}>
+                <input
+                  type="checkbox"
+                  checked={field.value ?? false}
+                  onChange={(e) => field.onChange(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 accent-indigo-600"
+                />
+                <div>
+                  <span className="font-semibold text-sm">事務員</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    チェックあり→ 事務専用打刻画面　／　チェックなし→ ドライバー打刻画面
+                  </p>
+                </div>
+                {field.value && (
+                  <span className="ml-auto text-xs font-bold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-full">事務員</span>
+                )}
+              </label>
+            </FormItem>
           )} />
         </div>
 
@@ -1035,7 +1064,7 @@ function EmployeeMasterTab() {
     resolver: zodResolver(empFullSchema),
     defaultValues: {
       employeeCode: "", name: "", nameKana: "", department: "", position: "",
-      dateOfBirth: "", hireDate: "", isActive: true, salaryType: "daily", baseSalary: 0,
+      dateOfBirth: "", hireDate: "", isActive: true, isOfficeStaff: false, salaryType: "daily", baseSalary: 0,
       residentTax: 0, healthInsuranceMonthly: 0, pensionMonthly: 0,
       incomeTaxMonthly: 0, otherDeductionMonthly: 0,
       commissionRatePerKm: 0, commissionRatePerCase: 0,
@@ -1051,7 +1080,7 @@ function EmployeeMasterTab() {
     resolver: zodResolver(empFullSchema),
     defaultValues: {
       employeeCode: "", name: "", nameKana: "", department: "配送部", position: "",
-      dateOfBirth: "", hireDate: new Date().toISOString().split("T")[0], isActive: true,
+      dateOfBirth: "", hireDate: new Date().toISOString().split("T")[0], isActive: true, isOfficeStaff: false,
       salaryType: "daily", baseSalary: 0, residentTax: 0,
       healthInsuranceMonthly: 0, pensionMonthly: 0, incomeTaxMonthly: 0, otherDeductionMonthly: 0,
       commissionRatePerKm: 0, commissionRatePerCase: 0,
@@ -1078,6 +1107,7 @@ function EmployeeMasterTab() {
       dateOfBirth: (emp as unknown as { dateOfBirth?: string | null }).dateOfBirth?.split("T")[0] || "",
       hireDate: emp.hireDate.split("T")[0],
       isActive: emp.isActive,
+      isOfficeStaff: (emp as unknown as { isOfficeStaff?: boolean }).isOfficeStaff ?? false,
       salaryType: (emp.salaryType as "fixed" | "daily" | "hourly") ?? "daily",
       baseSalary: emp.baseSalary ?? 0,
       residentTax: emp.residentTax ?? 0,

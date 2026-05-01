@@ -907,6 +907,9 @@ components:
           type: string
           description: 給与形態（fixed=固定給, daily=日給制）
           enum: [fixed, daily]
+        isOfficeStaff:
+          type: boolean
+          description: 事務員フラグ（true=事務員用打刻画面, false=ドライバー用打刻画面）
         hireDate:
           type: string
           format: date
@@ -942,6 +945,7 @@ components:
         - employmentInsuranceApplied
         - residentTax
         - salaryType
+        - isOfficeStaff
         - hireDate
         - isActive
         - createdAt

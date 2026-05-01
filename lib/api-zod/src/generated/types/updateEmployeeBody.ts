@@ -5,6 +5,7 @@
  * 給与明細・バックオフィス効率化システム API
  * OpenAPI spec version: 0.1.0
  */
+import type { UpdateEmployeeBodySalaryType } from "./updateEmployeeBodySalaryType";
 
 export interface UpdateEmployeeBody {
   employeeCode?: string;
@@ -31,6 +32,8 @@ export interface UpdateEmployeeBody {
   pensionMonthly?: number;
   employmentInsuranceApplied?: boolean;
   residentTax?: number;
+  /** 給与形態（fixed=固定給, daily=日給制） */
+  salaryType?: UpdateEmployeeBodySalaryType;
   hireDate?: Date;
   isActive?: boolean;
 }
