@@ -229,18 +229,46 @@ router.post("/attendance/record", async (req, res) => {
 // ── 打刻レコード修正 ─────────────────────────────────
 router.patch("/attendance/records/:id", async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { eventType, recordedAt } = req.body as {
+  const { eventType, recordedAt, workDate } = req.body as {
     eventType?: "clock_in" | "clock_out" | "break_start" | "break_end";
     recordedAt?: string;
+    workDate?: string;
   };
 
-  if (!eventType && !recordedAt) {
-    return res.status(400).json({ error: "eventType または recordedAt が必要です" });
+  if (!eventType && !recordedAt && !workDate) {
+    return res.status(400).json({ error: "eventType・recordedAt・workDate のいずれかが必要です" });
+  }
+
+  // workDate変更時は同一従業員・同一日付で同種レコードが重複しないか確認（clock_in/clock_outのみ）
+  if (workDate && eventType && (eventType === "clock_in" || eventType === "clock_out")) {
+    // まず対象レコードの employeeId を取得
+    const [target] = await db
+      .select()
+      .from(attendanceRecordsTable)
+      .where(eq(attendanceRecordsTable.id, id));
+    if (!target) {
+      return res.status(404).json({ error: "レコードが見つかりません" });
+    }
+    const existing = await db
+      .select()
+      .from(attendanceRecordsTable)
+      .where(
+        and(
+          eq(attendanceRecordsTable.employeeId, target.employeeId),
+          eq(attendanceRecordsTable.workDate, workDate),
+          eq(attendanceRecordsTable.eventType, eventType),
+        )
+      );
+    const conflict = existing.find(r => r.id !== id);
+    if (conflict) {
+      return res.status(409).json({ error: `${workDate} にすでに同種の打刻（${eventType}）が存在します` });
+    }
   }
 
   const updateValues: Record<string, unknown> = {};
   if (eventType) updateValues.eventType = eventType;
   if (recordedAt) updateValues.recordedAt = new Date(recordedAt);
+  if (workDate) updateValues.workDate = workDate;
 
   const [updated] = await db
     .update(attendanceRecordsTable)

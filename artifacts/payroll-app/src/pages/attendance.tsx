@@ -423,6 +423,7 @@ export default function AttendancePage() {
   const [editRecord, setEditRecord] = useState<AttendanceRecord | null>(null);
   const [editEventType, setEditEventType] = useState<EventType>("clock_in");
   const [editTime, setEditTime] = useState("");
+  const [editDate, setEditDate] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
 
@@ -506,6 +507,7 @@ export default function AttendancePage() {
     setEditRecord(r);
     setEditEventType(r.eventType);
     setEditTime(toTimeInput(r.recordedAt));
+    setEditDate(r.workDate);
     setDeleteConfirm(false);
     setEditError(null);
   };
@@ -514,25 +516,33 @@ export default function AttendancePage() {
   const saveEdit = async () => {
     if (!editRecord) return;
     setEditError(null);
-    // JST日付＋入力時刻でタイムスタンプを構築（workDateを基準日として使用）
-    const recordedAt = new Date(`${editRecord.workDate}T${editTime}:00+09:00`).toISOString();
-    if (isFuture(editRecord.workDate, editTime)) {
+    if (!editDate) {
+      setEditError("日付を入力してください");
+      return;
+    }
+    // JST日付＋入力時刻でタイムスタンプを構築（編集後の日付を使用）
+    const recordedAt = new Date(`${editDate}T${editTime}:00+09:00`).toISOString();
+    if (isFuture(editDate, editTime)) {
       setEditError("未来の時刻は登録できません");
       return;
     }
+    const dateChanged = editDate !== editRecord.workDate;
     setSaving(true);
     try {
+      const body: Record<string, string> = { eventType: editEventType, recordedAt };
+      if (dateChanged) body.workDate = editDate;
       const res = await fetch(`${BASE}/api/attendance/records/${editRecord.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ eventType: editEventType, recordedAt }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setEditError(body.error ?? "保存に失敗しました");
+        const err = await res.json().catch(() => ({}));
+        setEditError(err.error ?? "保存に失敗しました");
         return;
       }
       setEditRecord(null);
+      // 日付が変わった場合は両日付を更新
       await fetchData(selectedDate);
     } finally { setSaving(false); }
   };
@@ -1402,11 +1412,25 @@ export default function AttendancePage() {
                 </Select>
               </div>
               <div className="space-y-1.5">
+                <Label className="text-xs">日付（勤務日）</Label>
+                <Input
+                  type="date"
+                  value={editDate}
+                  max={todayJST()}
+                  onChange={(e) => { setEditDate(e.target.value); setEditError(null); }}
+                />
+                {editDate !== editRecord.workDate && (
+                  <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                    ⚠️ 日付を変更します（元: {editRecord.workDate}）
+                  </p>
+                )}
+              </div>
+              <div className="space-y-1.5">
                 <Label className="text-xs">打刻時刻</Label>
                 <Input
                   type="time"
                   value={editTime}
-                  max={editRecord.workDate === todayJST() ? nowTimeJST() : undefined}
+                  max={editDate === todayJST() ? nowTimeJST() : undefined}
                   onChange={(e) => { setEditTime(e.target.value); setEditError(null); }}
                 />
               </div>
