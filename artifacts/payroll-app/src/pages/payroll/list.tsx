@@ -376,7 +376,12 @@ export default function PayrollList() {
         <SheetContent className="w-full sm:max-w-2xl overflow-y-auto print:fixed print:inset-0 print:max-w-none">
           <SheetHeader className="print:hidden">
             <div className="flex items-center justify-between">
-              <SheetTitle>給与明細詳細</SheetTitle>
+              <SheetTitle>
+                給与明細詳細
+                {selectedPayroll && (
+                  <span className="ml-2 text-base font-normal text-muted-foreground">{selectedPayroll.employeeName}</span>
+                )}
+              </SheetTitle>
               <div className="flex items-center gap-2 flex-wrap justify-end">
                 {selectedPayroll && (
                   <Button
