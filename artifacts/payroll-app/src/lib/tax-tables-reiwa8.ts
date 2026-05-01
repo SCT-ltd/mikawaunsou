@@ -74,11 +74,11 @@ const INSURANCE_GRADES: [number, number, number, boolean][] = [
 ];
 
 /**
- * 50銭以下切捨て・50銭超切上げ（社会保険料の端数処理）
+ * 四捨五入（社会保険料の端数処理）: 50銭未満切捨て・50銭以上切上げ
  */
 export function round50sen(x: number): number {
   const frac = x - Math.floor(x);
-  return frac <= 0.5 ? Math.floor(x) : Math.ceil(x);
+  return frac < 0.5 ? Math.floor(x) : Math.ceil(x);
 }
 
 /**

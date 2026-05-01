@@ -476,7 +476,9 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
     : HEALTH_RATE_NO_CARE;
 
   const empSR = (employee as unknown as { standardRemuneration?: number }).standardRemuneration ?? 0;
-  const insBase = empSR > 0 ? empSR : grandTotal;
+  // プレビューは入力値（grandTotal）ベースで動的計算する。
+  // 実際のサーバー計算は標準報酬月額（empSR）ベースのため、確定値と異なる場合があります。
+  const insBase = grandTotal;
 
   const healthInsurance = round50sen(insBase * appliedHealthRate);
   const childcareSupportApplicable = !(year !== undefined && month !== undefined && (year < 2026 || (year === 2026 && month <= 4)));
@@ -722,7 +724,9 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
             {employee.careInsuranceApplied && <span className="text-amber-600">（介護込）</span>}
             {childcareSupportApplicable ? "・子育て支援金 0.115%" : "・子育て支援金 0%（4月以前）"}・厚年 {(pensionRate * 100).toFixed(2)}%・雇保 {(empInsRate * 100).toFixed(1)}%
             {empSR > 0 && (
-              <span className="ml-2 text-blue-600">（健保・厚年{childcareSupportApplicable ? "・支援金" : ""}は標準報酬月額 {empSR.toLocaleString("ja-JP")} 円ベース）</span>
+              <span className="ml-2 text-amber-700">
+                ※上記は入力値による試算です。確定計算は標準報酬月額（{empSR.toLocaleString("ja-JP")}円）ベースで算出されます。
+              </span>
             )}
           </div>
         )}
