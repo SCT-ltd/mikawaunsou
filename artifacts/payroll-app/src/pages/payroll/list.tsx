@@ -105,10 +105,10 @@ export default function PayrollList() {
   const confirmPayroll = useConfirmPayroll();
 
   const selectedEmployeeId = selectedPayroll?.employeeId ?? 0;
-  const { data: printEmployeeAllowances } = useGetEmployeeAllowances(selectedEmployeeId, {
+  const { data: printEmployeeAllowances, isLoading: allowancesLoading } = useGetEmployeeAllowances(selectedEmployeeId, {
     query: { enabled: !!selectedPayroll?.employeeId },
   });
-  const { data: printEmployeeDeductions } = useGetEmployeeDeductions(selectedEmployeeId, {
+  const { data: printEmployeeDeductions, isLoading: deductionsLoading } = useGetEmployeeDeductions(selectedEmployeeId, {
     query: { enabled: !!selectedPayroll?.employeeId },
   });
 
@@ -422,7 +422,7 @@ export default function PayrollList() {
             </div>
           </SheetHeader>
 
-          {detailLoading ? (
+          {(detailLoading || (!!selectedPayroll?.employeeId && (allowancesLoading || deductionsLoading))) ? (
             <div className="flex items-center justify-center py-12 text-muted-foreground">読み込み中...</div>
           ) : !selectedPayroll ? (
             <div className="py-12 text-center text-muted-foreground">データが見つかりません</div>
