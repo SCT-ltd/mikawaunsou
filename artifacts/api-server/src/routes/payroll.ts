@@ -153,9 +153,14 @@ router.post("/payroll/calculate", async (req, res) => {
     });
 
     if (!isChildcareSupportApplicable(year, month)) manualIns.childcareSupportContribution = 0;
-    const manualSocialInsurance = manualIns.healthInsurance + manualIns.childcareSupportContribution + manualIns.pension;
+    const isManualExempt = emp.taxExempt === true;
+    const manualSocialInsurance = isManualExempt ? 0 : (manualIns.healthInsurance + manualIns.childcareSupportContribution + manualIns.pension);
+    const manualChildcare = isManualExempt ? 0 : manualIns.childcareSupportContribution;
+    const manualEmpIns = isManualExempt ? 0 : manualIns.employmentInsurance;
+    const manualIncomeTax = isManualExempt ? 0 : manualIns.incomeTax;
+    const manualResidentTax = emp.residentTax ?? 0;
     const manualTotalDeductions = roundJapanese(
-      manualSocialInsurance + manualIns.employmentInsurance + manualIns.incomeTax + (emp.residentTax ?? 0) + customDeductionsTotal
+      manualSocialInsurance + manualEmpIns + manualIncomeTax + manualResidentTax + customDeductionsTotal
     );
     const manualNetSalary = roundJapanese(manualGrossSalary - manualTotalDeductions);
 
@@ -175,10 +180,10 @@ router.post("/payroll/calculate", async (req, res) => {
       absenceDeduction: 0,
       grossSalary: manualGrossSalary,
       socialInsurance: manualSocialInsurance,
-      childcareSupportContribution: manualIns.childcareSupportContribution,
-      employmentInsurance: manualIns.employmentInsurance,
-      incomeTax: manualIns.incomeTax,
-      residentTax: emp.residentTax ?? 0,
+      childcareSupportContribution: manualChildcare,
+      employmentInsurance: manualEmpIns,
+      incomeTax: manualIncomeTax,
+      residentTax: manualResidentTax,
       totalDeductions: manualTotalDeductions,
       netSalary: manualNetSalary,
       customDeductionsTotal,
