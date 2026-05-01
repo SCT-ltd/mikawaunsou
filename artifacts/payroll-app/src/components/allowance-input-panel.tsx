@@ -407,6 +407,7 @@ function DisplayRow({
   labelClass = "text-muted-foreground",
   valueClass = "tabular-nums",
   bold = false,
+  exempt = false,
 }: {
   label: string;
   value: number;
@@ -414,6 +415,7 @@ function DisplayRow({
   labelClass?: string;
   valueClass?: string;
   bold?: boolean;
+  exempt?: boolean;
 }) {
   const fmt = (v: number) => v > 0 ? v.toLocaleString("ja-JP") : "0";
   return (
@@ -421,7 +423,11 @@ function DisplayRow({
       <div className={COL_DRAG} />
       <div className={`${COL_NAME} text-xs ${labelClass} ${bold ? "font-semibold" : ""}`}>{label}</div>
       <div className={COL_TAX} />
-      <div className={`${COL_AMOUNT} text-right text-xs pr-1 ${valueClass} ${bold ? "font-bold" : ""}`}>{fmt(value)}</div>
+      <div className={`${COL_AMOUNT} text-right text-xs pr-1 ${valueClass} ${bold ? "font-bold" : ""}`}>
+        {exempt
+          ? <span className="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">非課税</span>
+          : fmt(value)}
+      </div>
       <div className={COL_DEL} />
     </div>
   );
@@ -775,10 +781,10 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
       {/* ══ 控除（社会保険料）セクション ══ */}
       <SectionHeader label="控　除（社会保険料）" accent="bg-orange-50/80 text-orange-800" />
 
-      <DisplayRow label={`健康保険料${employee.careInsuranceApplied === true ? "（介護込）" : ""}`} value={healthInsurance} />
-      <DisplayRow label="子ども・子育て支援金" value={childcareSupportContribution} bg="bg-muted/10" />
-      <DisplayRow label="厚生年金保険料" value={pensionInsurance} />
-      <DisplayRow label="雇用保険料" value={employmentInsurance} bg="bg-muted/10" />
+      <DisplayRow label={`健康保険料${employee.careInsuranceApplied === true ? "（介護込）" : ""}`} value={healthInsurance} exempt={employee.taxExempt === true} />
+      <DisplayRow label="子ども・子育て支援金" value={childcareSupportContribution} bg="bg-muted/10" exempt={employee.taxExempt === true} />
+      <DisplayRow label="厚生年金保険料" value={pensionInsurance} exempt={employee.taxExempt === true} />
+      <DisplayRow label="雇用保険料" value={employmentInsurance} bg="bg-muted/10" exempt={employee.taxExempt === true} />
       <DisplayRow label="社会保険料控除後の金額" value={afterInsuranceSalary} labelClass="font-medium text-foreground" valueClass="tabular-nums font-medium" />
 
       {/* 社会保険料合計 */}
@@ -793,7 +799,7 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
       {/* ══ 差引セクション ══ */}
       <SectionHeader label="差　引" accent="bg-red-50/80 text-red-800" />
 
-      <DisplayRow label="所得税" value={incomeTax} />
+      <DisplayRow label="所得税" value={incomeTax} exempt={employee.taxExempt === true} />
       <DisplayRow label="市町村民税" value={residentTax} bg="bg-muted/10" />
 
       {/* 差引ドラッグ行 */}

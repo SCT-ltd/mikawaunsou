@@ -112,7 +112,7 @@ export default function PayrollList() {
     query: { enabled: !!selectedPayroll?.employeeId },
   });
   const selectedEmployee = employees?.find(e => e.id === selectedEmployeeId);
-  const isTaxExempt = (selectedEmployee as any)?.taxExempt === true;
+  const isTaxExempt = selectedEmployee?.taxExempt === true;
 
   const handleConfirm = async () => {
     if (!selectedPayrollId) return;
