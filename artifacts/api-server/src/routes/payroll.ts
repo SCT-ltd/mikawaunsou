@@ -169,13 +169,13 @@ router.post("/payroll/calculate", async (req, res) => {
       )).limit(1);
 
     let manualPayroll;
-    if (existingManual.length > 0 && existingManual[0].status !== "confirmed") {
+    if (existingManual.length > 0) {
       [manualPayroll] = await db.update(payrollsTable).set({
         ...manualPayrollData,
         status: "draft",
         updatedAt: new Date(),
       }).where(eq(payrollsTable.id, existingManual[0].id)).returning();
-    } else if (existingManual.length === 0) {
+    } else {
       [manualPayroll] = await db.insert(payrollsTable).values({
         employeeId,
         year,
@@ -183,8 +183,6 @@ router.post("/payroll/calculate", async (req, res) => {
         status: "draft",
         ...manualPayrollData,
       }).returning();
-    } else {
-      manualPayroll = existingManual[0];
     }
 
     return res.json(buildPayrollResponse(manualPayroll!, emp));
@@ -280,13 +278,13 @@ router.post("/payroll/calculate", async (req, res) => {
       )).limit(1);
 
     let mikawaPayroll;
-    if (existingMikawa.length > 0 && existingMikawa[0].status !== "confirmed") {
+    if (existingMikawa.length > 0) {
       [mikawaPayroll] = await db.update(payrollsTable).set({
         ...mikawaPayrollData,
         status: "draft",
         updatedAt: new Date(),
       }).where(eq(payrollsTable.id, existingMikawa[0].id)).returning();
-    } else if (existingMikawa.length === 0) {
+    } else {
       [mikawaPayroll] = await db.insert(payrollsTable).values({
         employeeId,
         year,
@@ -294,8 +292,6 @@ router.post("/payroll/calculate", async (req, res) => {
         status: "draft",
         ...mikawaPayrollData,
       }).returning();
-    } else {
-      mikawaPayroll = existingMikawa[0];
     }
 
     return res.json(buildPayrollResponse(mikawaPayroll, emp));
@@ -547,13 +543,13 @@ router.post("/payroll/calculate", async (req, res) => {
       )).limit(1);
 
     let bwPayroll;
-    if (existingBw.length > 0 && existingBw[0].status !== "confirmed") {
+    if (existingBw.length > 0) {
       [bwPayroll] = await db.update(payrollsTable).set({
         ...bwPayrollData,
         status: "draft",
         updatedAt: new Date(),
       }).where(eq(payrollsTable.id, existingBw[0].id)).returning();
-    } else if (existingBw.length === 0) {
+    } else {
       [bwPayroll] = await db.insert(payrollsTable).values({
         employeeId,
         year,
@@ -561,8 +557,6 @@ router.post("/payroll/calculate", async (req, res) => {
         status: "draft",
         ...bwPayrollData,
       }).returning();
-    } else {
-      bwPayroll = existingBw[0];
     }
 
     return res.json(buildPayrollResponse(bwPayroll!, emp));
@@ -623,7 +617,7 @@ router.post("/payroll/calculate", async (req, res) => {
     )).limit(1);
 
   let payroll;
-  if (existing.length > 0 && existing[0].status !== "confirmed") {
+  if (existing.length > 0) {
     [payroll] = await db.update(payrollsTable).set({
       baseSalary: result.baseSalary,
       overtimePay: result.overtimePay,
@@ -655,7 +649,7 @@ router.post("/payroll/calculate", async (req, res) => {
       status: "draft",
       updatedAt: new Date(),
     }).where(eq(payrollsTable.id, existing[0].id)).returning();
-  } else if (existing.length === 0) {
+  } else {
     [payroll] = await db.insert(payrollsTable).values({
       employeeId,
       year,
@@ -689,8 +683,6 @@ router.post("/payroll/calculate", async (req, res) => {
       customDeductionsTotal,
       calculationMode: "auto",
     }).returning();
-  } else {
-    payroll = existing[0];
   }
 
   return res.json(buildPayrollResponse(payroll, emp));

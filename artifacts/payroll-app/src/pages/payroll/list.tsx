@@ -341,7 +341,7 @@ export default function PayrollList() {
                           variant="ghost"
                           size="sm"
                           className="h-7 px-2 text-xs text-primary hover:text-primary/80"
-                          disabled={calculating || payroll.status === "confirmed"}
+                          disabled={calculating}
                           onClick={(e) => {
                             e.stopPropagation();
                             (async () => {
@@ -378,7 +378,7 @@ export default function PayrollList() {
             <div className="flex items-center justify-between">
               <SheetTitle>給与明細詳細</SheetTitle>
               <div className="flex items-center gap-2 flex-wrap justify-end">
-                {selectedPayroll && selectedPayroll.status !== "confirmed" && (
+                {selectedPayroll && (
                   <Button
                     variant="outline"
                     size="sm"
