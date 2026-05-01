@@ -35,6 +35,8 @@ interface Props {
   employee: Employee;
   monthlyData?: { workDays: number; saturdayWorkDays: number; sundayWorkDays: number };
   onDirtyChange?: (isDirty: boolean) => void;
+  year?: number;
+  month?: number;
 }
 
 type AllowanceRow = { uid: string; defId: number | null; amount: number };
@@ -240,7 +242,7 @@ function DeductionReorderItem({
   );
 }
 
-export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange }: Props) {
+export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year, month }: Props) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const employeeId = employee.id;
@@ -477,7 +479,8 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange }: Pr
   const insBase = empSR > 0 ? empSR : grandTotal;
 
   const healthInsurance = round50sen(insBase * appliedHealthRate);
-  const childcareSupportContribution = round50sen(insBase * CHILDCARE_RATE);
+  const childcareSupportApplicable = !(year !== undefined && month !== undefined && (year < 2026 || (year === 2026 && month <= 4)));
+  const childcareSupportContribution = childcareSupportApplicable ? round50sen(insBase * CHILDCARE_RATE) : 0;
   const pensionInsurance = round50sen(Math.min(insBase, 650_000) * pensionRate);
   const employmentInsurance = (employee.employmentInsuranceApplied !== false)
     ? round50sen(grandTotal * empInsRate)
@@ -713,9 +716,9 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange }: Pr
           <div className="mx-0 mt-2 mb-1 px-3 py-2 bg-muted/40 border rounded text-xs text-muted-foreground">
             適用料率：健保 {(appliedHealthRate * 100).toFixed(3)}%
             {employee.careInsuranceApplied && <span className="text-amber-600">（介護込）</span>}
-            ・子育て支援金 0.115%・厚年 {(pensionRate * 100).toFixed(2)}%・雇保 {(empInsRate * 100).toFixed(1)}%
+            {childcareSupportApplicable ? "・子育て支援金 0.115%" : "・子育て支援金 0%（4月以前）"}・厚年 {(pensionRate * 100).toFixed(2)}%・雇保 {(empInsRate * 100).toFixed(1)}%
             {empSR > 0 && (
-              <span className="ml-2 text-blue-600">（健保・厚年・支援金は標準報酬月額 {empSR.toLocaleString("ja-JP")} 円ベース）</span>
+              <span className="ml-2 text-blue-600">（健保・厚年{childcareSupportApplicable ? "・支援金" : ""}は標準報酬月額 {empSR.toLocaleString("ja-JP")} 円ベース）</span>
             )}
           </div>
         )}

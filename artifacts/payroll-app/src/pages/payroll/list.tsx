@@ -672,6 +672,8 @@ export default function PayrollList() {
                       };
                     })()}
                     onDirtyChange={setIsDirty}
+                    year={year}
+                    month={month}
                   />
                 ) : (
                   <div className="py-12 text-center text-muted-foreground">社員データが見つかりません</div>
