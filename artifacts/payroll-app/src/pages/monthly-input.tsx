@@ -240,7 +240,7 @@ function AllowanceSidebar({
   employee: Employee | null;
   open: boolean;
   onClose: () => void;
-  monthlyData?: { workDays: number; saturdayWorkDays: number; sundayWorkHours: number };
+  monthlyData?: { workDays: number; saturdayWorkDays: number; sundayWorkDays: number };
 }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -276,7 +276,7 @@ function AllowanceSidebar({
       ? Math.round(
           (monthlyData?.workDays ?? 0) * (company.dailyWageWeekday ?? 9808) +
             (monthlyData?.saturdayWorkDays ?? 0) * (company.dailyWageSaturday ?? 12260) +
-            (monthlyData?.sundayWorkHours ?? 0) * (company.hourlyWageSunday ?? 1655)
+            (monthlyData?.sundayWorkDays ?? 0) * (company.dailyWageWeekday ?? 9808) * 1.35
         )
       : null;
 
@@ -596,7 +596,7 @@ function computeQuickEstimate(
     ? Math.round(
         (Number(editData.workDays) || 0) * weekdayRate +
           (Number(editData.saturdayWorkDays) || 0) * (company.dailyWageSaturday ?? 12260) +
-          (Number(editData.sundayWorkHours) || 0) * (company.hourlyWageSunday ?? 1655)
+          (Number(editData.sundayWorkDays) || 0) * weekdayRate * 1.35
       )
     : isHourly
     ? Math.round((emp.baseSalary ?? 0) * actualWorkHours)
@@ -701,7 +701,7 @@ export default function MonthlyInput() {
           employeeId: number;
           workDays: number;
           saturdayWorkDays: number;
-          sundayWorkHours: number;
+          sundayWorkDays: number;
           overtimeHours: number;
           absenceDays: number;
           drivingDistanceKm: number;
@@ -721,7 +721,7 @@ export default function MonthlyInput() {
                 ...(next[s.employeeId] || currentEdits[s.employeeId] || {}),
                 workDays: s.workDays,
                 saturdayWorkDays: s.saturdayWorkDays,
-                sundayWorkHours: s.sundayWorkHours,
+                sundayWorkDays: s.sundayWorkDays,
                 overtimeHours: s.overtimeHours,
                 absenceDays: s.absenceDays ?? 0,
                 drivingDistanceKm: s.drivingDistanceKm ?? 0,
@@ -774,7 +774,7 @@ export default function MonthlyInput() {
         initialEdits[emp.id] = {
           workDays: 0, overtimeHours: 0, lateNightHours: 0,
           holidayWorkDays: 0, drivingDistanceKm: 0, deliveryCases: 0,
-          absenceDays: 0, saturdayWorkDays: 0, sundayWorkHours: 0, notes: "",
+          absenceDays: 0, saturdayWorkDays: 0, sundayWorkDays: 0, notes: "",
           salesAmount: 0, commissionRate: empDefaultRate, bluewingSalesAmount: 0, actualWorkHours: 0,
         };
       }
@@ -812,7 +812,7 @@ export default function MonthlyInput() {
           deliveryCases: Number(ed.deliveryCases) || 0,
           absenceDays: Number(ed.absenceDays) || 0,
           saturdayWorkDays: Number(ed.saturdayWorkDays) || 0,
-          sundayWorkHours: Number(ed.sundayWorkHours) || 0,
+          sundayWorkDays: Number(ed.sundayWorkDays) || 0,
           notes: String(ed.notes || ""),
           salesAmount: Number(ed.salesAmount) || 0,
           commissionRate: Number(ed.commissionRate) || 0,
@@ -1031,7 +1031,7 @@ export default function MonthlyInput() {
                   {[
                     { label: "平日",  sub: "日", tip: "平日の出勤日数。日給制社員の基本給計算に使用します。" },
                     { label: "土曜",  sub: "日", tip: "土曜日の出勤日数。土曜日給（平日と異なる日給）で計算されます。" },
-                    { label: "日曜",  sub: "h",  tip: "日曜・祝日の勤務時間（時間単位）。日曜時給で計算されます。" },
+                    { label: "日曜",  sub: "日", tip: "日曜出勤の日数（日単位）。日当×1.35で計算されます。" },
                     { label: "欠勤",  sub: "日", tip: "欠勤日数。欠勤控除の計算に使用します。" },
                     { label: "残業",  sub: "h",  tip: "法定外残業時間（時間単位）。割増賃金（×1.25）で計算されます。" },
                     { label: "深夜",  sub: "h",  tip: "深夜勤務時間（時間単位）。深夜割増（+0.25）が加算されます。" },
@@ -1163,7 +1163,7 @@ export default function MonthlyInput() {
                         {/* 勤怠7列 */}
                         <td className="p-1 border-x border-sky-100/60">{numInput("workDays", { max: 31, step: "1" })}</td>
                         <td className="p-1 border-x border-sky-100/60">{numInput("saturdayWorkDays", { max: 31 })}</td>
-                        <td className="p-1 border-x border-sky-100/60">{numInput("sundayWorkHours")}</td>
+                        <td className="p-1 border-x border-sky-100/60">{numInput("sundayWorkDays")}</td>
                         <td className="p-1 border-x border-sky-100/60">{numInput("absenceDays", { max: 31 })}</td>
                         <td className="p-1 border-x border-sky-100/60">{numInput("overtimeHours")}</td>
                         <td className="p-1 border-x border-sky-100/60">{numInput("lateNightHours")}</td>
@@ -1246,7 +1246,7 @@ export default function MonthlyInput() {
             ? {
                 workDays: Number(edits[sidebarEmp.id]?.workDays) || 0,
                 saturdayWorkDays: Number(edits[sidebarEmp.id]?.saturdayWorkDays) || 0,
-                sundayWorkHours: Number(edits[sidebarEmp.id]?.sundayWorkHours) || 0,
+                sundayWorkDays: Number(edits[sidebarEmp.id]?.sundayWorkDays) || 0,
               }
             : undefined
         }

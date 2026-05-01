@@ -1111,6 +1111,12 @@ components:
         absenceDays:
           type: number
           description: 欠勤日数
+        saturdayWorkDays:
+          type: number
+          description: 土曜出勤日数
+        sundayWorkDays:
+          type: number
+          description: 日曜出勤日数（日当×1.35で計算）
         notes:
           type: string
         actualWorkHours:
@@ -1160,6 +1166,11 @@ components:
           type: integer
         absenceDays:
           type: number
+        saturdayWorkDays:
+          type: number
+        sundayWorkDays:
+          type: number
+          description: 日曜出勤日数（日当×1.35で計算）
         notes:
           type: string
         actualWorkHours:
@@ -1194,6 +1205,11 @@ components:
           type: integer
         absenceDays:
           type: number
+        saturdayWorkDays:
+          type: number
+        sundayWorkDays:
+          type: number
+          description: 日曜出勤日数（日当×1.35で計算）
         actualWorkHours:
           type: number
           description: 実働時間（時給制・事務員用、30分切り上げ後の合計時間）

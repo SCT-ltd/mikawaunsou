@@ -16,7 +16,7 @@ export const monthlyRecordsTable = pgTable("monthly_records", {
   deliveryCases: integer("delivery_cases").notNull().default(0),
   absenceDays: doublePrecision("absence_days").notNull().default(0),
   saturdayWorkDays: doublePrecision("saturday_work_days").notNull().default(0),
-  sundayWorkHours: doublePrecision("sunday_work_hours").notNull().default(0),
+  sundayWorkDays: doublePrecision("sunday_work_days").notNull().default(0),
   notes: text("notes"),
   salesAmount: doublePrecision("sales_amount").notNull().default(0),
   commissionRate: doublePrecision("commission_rate").notNull().default(0),

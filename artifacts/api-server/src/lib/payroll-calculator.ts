@@ -39,8 +39,6 @@ export interface PayrollCalculationInput {
   dailyRateWeekday: number;
   /** 日給制: 土曜日給 */
   dailyRateSaturday: number;
-  /** 日給制: 日曜時給 */
-  hourlyRateSunday: number;
   transportationAllowance: number;
   safetyDrivingAllowance: number;
   longDistanceAllowance: number;
@@ -70,7 +68,8 @@ export interface PayrollCalculationInput {
   // Monthly record
   workDays: number;
   saturdayWorkDays: number;
-  sundayWorkHours: number;
+  /** 日曜出勤日数（1日単位）。日当×1.35で計算 */
+  sundayWorkDays: number;
   overtimeHours: number;
   lateNightHours: number;
   holidayWorkDays: number;
@@ -105,6 +104,8 @@ export interface PayrollCalculationResult {
   overtimePay: number;
   lateNightPay: number;
   holidayPay: number;
+  /** 日曜出勤手当（日当×1.35×出勤日数）*/
+  sundayPay: number;
   commissionPay: number;
   transportationAllowance: number;
   safetyDrivingAllowance: number;
@@ -134,7 +135,6 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
   const {
     salaryType,
     dailyRateSaturday,
-    hourlyRateSunday,
     transportationAllowance,
     safetyDrivingAllowance,
     longDistanceAllowance,
@@ -154,7 +154,7 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     monthlyAverageWorkHours,
     workDays,
     saturdayWorkDays,
-    sundayWorkHours,
+    sundayWorkDays,
     overtimeHours,
     lateNightHours,
     holidayWorkDays,
@@ -179,8 +179,7 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
   if (salaryType === "daily") {
     baseSalary = roundJapanese(
       workDays * dailyRateWeekday +
-      saturdayWorkDays * dailyRateSaturday +
-      sundayWorkHours * hourlyRateSunday
+      saturdayWorkDays * dailyRateSaturday
     );
     hourlyRate = dailyRateWeekday / 8;
   } else if (salaryType === "hourly") {
@@ -193,7 +192,7 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
   }
 
   // ────────────────────────────────────────────────────────────────
-  // 時間外手当・深夜手当・休日手当
+  // 時間外手当・深夜手当・休日手当・日曜出勤手当
   // ────────────────────────────────────────────────────────────────
   let overtimePay: number;
   if ((input.overtimeUnitMinutes ?? 0) > 0 && (input.overtimeUnitRate ?? 0) > 0) {
@@ -208,6 +207,8 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
   }
   const lateNightPay  = roundJapanese(hourlyRate * 0.25 * lateNightHours);
   const holidayPay    = roundJapanese(hourlyRate * 1.35 * holidayWorkDays * 8);
+  // 日曜出勤: 全社員共通で日当（時給×8時間）× 1.35 × 出勤日数
+  const sundayPay     = roundJapanese(hourlyRate * 8 * 1.35 * sundayWorkDays);
 
   // 歩合給
   const commissionPay = roundJapanese(
@@ -233,6 +234,7 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     overtimePay +
     lateNightPay +
     holidayPay +
+    sundayPay +
     commissionPay +
     transportationAllowance +
     safetyDrivingAllowance +
@@ -291,6 +293,7 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     overtimePay,
     lateNightPay,
     holidayPay,
+    sundayPay,
     commissionPay,
     transportationAllowance,
     safetyDrivingAllowance,

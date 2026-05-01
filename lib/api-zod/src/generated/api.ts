@@ -391,6 +391,11 @@ export const ListMonthlyRecordsResponseItem = zod.object({
   drivingDistanceKm: zod.number().describe("走行距離（km）"),
   deliveryCases: zod.number().describe("配送件数"),
   absenceDays: zod.number().describe("欠勤日数"),
+  saturdayWorkDays: zod.number().optional().describe("土曜出勤日数"),
+  sundayWorkDays: zod
+    .number()
+    .optional()
+    .describe("日曜出勤日数（日当×1.35で計算）"),
   notes: zod.string().optional(),
   actualWorkHours: zod
     .number()
@@ -417,6 +422,11 @@ export const CreateMonthlyRecordBody = zod.object({
   drivingDistanceKm: zod.number(),
   deliveryCases: zod.number(),
   absenceDays: zod.number(),
+  saturdayWorkDays: zod.number().optional(),
+  sundayWorkDays: zod
+    .number()
+    .optional()
+    .describe("日曜出勤日数（日当×1.35で計算）"),
   notes: zod.string().optional(),
   actualWorkHours: zod
     .number()
@@ -444,6 +454,11 @@ export const GetMonthlyRecordResponse = zod.object({
   drivingDistanceKm: zod.number().describe("走行距離（km）"),
   deliveryCases: zod.number().describe("配送件数"),
   absenceDays: zod.number().describe("欠勤日数"),
+  saturdayWorkDays: zod.number().optional().describe("土曜出勤日数"),
+  sundayWorkDays: zod
+    .number()
+    .optional()
+    .describe("日曜出勤日数（日当×1.35で計算）"),
   notes: zod.string().optional(),
   actualWorkHours: zod
     .number()
@@ -468,6 +483,11 @@ export const UpdateMonthlyRecordBody = zod.object({
   drivingDistanceKm: zod.number().optional(),
   deliveryCases: zod.number().optional(),
   absenceDays: zod.number().optional(),
+  saturdayWorkDays: zod.number().optional(),
+  sundayWorkDays: zod
+    .number()
+    .optional()
+    .describe("日曜出勤日数（日当×1.35で計算）"),
   actualWorkHours: zod
     .number()
     .optional()
@@ -488,6 +508,11 @@ export const UpdateMonthlyRecordResponse = zod.object({
   drivingDistanceKm: zod.number().describe("走行距離（km）"),
   deliveryCases: zod.number().describe("配送件数"),
   absenceDays: zod.number().describe("欠勤日数"),
+  saturdayWorkDays: zod.number().optional().describe("土曜出勤日数"),
+  sundayWorkDays: zod
+    .number()
+    .optional()
+    .describe("日曜出勤日数（日当×1.35で計算）"),
   notes: zod.string().optional(),
   actualWorkHours: zod
     .number()

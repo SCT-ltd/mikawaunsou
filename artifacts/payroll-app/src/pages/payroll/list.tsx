@@ -663,7 +663,7 @@ export default function PayrollList() {
                       return {
                         workDays: rec?.workDays ?? selectedPayroll.workDays ?? 0,
                         saturdayWorkDays: (rec as { saturdayWorkDays?: number } | undefined)?.saturdayWorkDays ?? 0,
-                        sundayWorkHours: (rec as { sundayWorkHours?: number } | undefined)?.sundayWorkHours ?? 0,
+                        sundayWorkDays: (rec as { sundayWorkDays?: number } | undefined)?.sundayWorkDays ?? 0,
                       };
                     })()}
                     onDirtyChange={setIsDirty}

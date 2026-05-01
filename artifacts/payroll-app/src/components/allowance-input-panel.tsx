@@ -33,7 +33,7 @@ function newUid() {
 
 interface Props {
   employee: Employee;
-  monthlyData?: { workDays: number; saturdayWorkDays: number; sundayWorkHours: number };
+  monthlyData?: { workDays: number; saturdayWorkDays: number; sundayWorkDays: number };
   onDirtyChange?: (isDirty: boolean) => void;
 }
 
@@ -368,7 +368,7 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange }: Pr
     ? Math.round(
         (monthlyData?.workDays ?? 0) * (company.dailyWageWeekday ?? 9808) +
         (monthlyData?.saturdayWorkDays ?? 0) * (company.dailyWageSaturday ?? 12260) +
-        (monthlyData?.sundayWorkHours ?? 0) * (company.hourlyWageSunday ?? 1655)
+        (monthlyData?.sundayWorkDays ?? 0) * (company.dailyWageWeekday ?? 9808) * 1.35
       )
     : null;
 
