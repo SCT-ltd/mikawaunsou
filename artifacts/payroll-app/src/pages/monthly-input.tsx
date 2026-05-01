@@ -327,6 +327,10 @@ function AllowanceSidebar({
   // ── 計算 ─────────────────────────────────────────────────────────────
   const allowancesTotal = rows.reduce((s, r) => s + (r.amount || 0), 0);
   const grandTotal = baseSalaryInput + allowancesTotal;
+  const nonTaxableAllowancesTotal = rows.reduce((s, r) => {
+    const def = allowanceDefinitions.find(d => d.id === r.defId);
+    return s + (def && !def.isTaxable ? (r.amount || 0) : 0);
+  }, 0);
 
   const healthRate = company?.healthInsuranceEmployeeRate ?? 0.05;
   const pensionRate = company?.pensionEmployeeRate ?? 0.0915;
@@ -334,8 +338,11 @@ function AllowanceSidebar({
 
   const healthInsurance = roundJapanese(grandTotal * healthRate);
   const pensionInsurance = roundJapanese(grandTotal * pensionRate);
+  // 雇用保険: 総支給額から非課税手当を除いた金額 × 料率
   const employmentInsurance =
-    employee?.employmentInsuranceApplied !== false ? roundJapanese(grandTotal * eiRate) : 0;
+    employee?.employmentInsuranceApplied !== false
+      ? roundJapanese((grandTotal - nonTaxableAllowancesTotal) * eiRate)
+      : 0;
   const totalInsurance = healthInsurance + pensionInsurance + employmentInsurance;
 
   const afterInsuranceSalary = Math.max(0, grandTotal - totalInsurance);

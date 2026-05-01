@@ -483,16 +483,18 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
   const childcareSupportApplicable = !(year !== undefined && month !== undefined && (year < 2026 || (year === 2026 && month <= 4)));
   const childcareSupportContribution = childcareSupportApplicable ? round50sen(insBase * CHILDCARE_RATE) : 0;
   const pensionInsurance = round50sen(Math.min(insBase, 650_000) * pensionRate);
-  const employmentInsurance = (employee.employmentInsuranceApplied !== false)
-    ? round50sen(grandTotal * empInsRate)
-    : 0;
-
-  const totalInsurance = healthInsurance + childcareSupportContribution + pensionInsurance + employmentInsurance;
 
   const nonTaxableAllowancesTotal = rows.reduce((s, r) => {
     const def = allowanceDefinitions?.find(d => d.id === r.defId);
     return s + (def && !def.isTaxable ? (r.amount || 0) : 0);
   }, 0);
+
+  // 雇用保険: 総支給額から非課税手当を除いた金額 × 料率
+  const employmentInsurance = (employee.employmentInsuranceApplied !== false)
+    ? round50sen((grandTotal - nonTaxableAllowancesTotal) * empInsRate)
+    : 0;
+
+  const totalInsurance = healthInsurance + childcareSupportContribution + pensionInsurance + employmentInsurance;
 
   // 所得税計算基礎: 総支給額 - 非課税手当 - 健保 - 厚年 - 雇用保険
   // ※子育て支援金(childcareSupportContribution)は所得税計算基礎から差し引かない
