@@ -1123,6 +1123,12 @@ export default function MonthlyInput() {
                     const isHourly = emp.salaryType === "hourly";
                     const rowBg = empIdx % 2 === 0 ? "bg-card" : "bg-muted/20";
 
+                    // 残業・深夜の入力ステップ: 個人単位分数がある社員はその分数÷60 を切り捨て4桁
+                    // (例: 10分 → 10/60=0.16666… → floor → 0.1666h) ※切り上げを防ぐため切り捨て
+                    const overtimeStep = (emp.overtimeUnitMinutes ?? 0) > 0
+                      ? String(Math.floor((emp.overtimeUnitMinutes! / 60) * 10000) / 10000)
+                      : "0.5";
+
                     const numInput = (
                       field: string,
                       opts?: { max?: number; step?: string; width?: string }
@@ -1163,11 +1169,11 @@ export default function MonthlyInput() {
 
                         {/* 勤怠6列 */}
                         <td className="p-1 border-x border-sky-100/60">{numInput("workDays", { max: 31, step: "1" })}</td>
-                        <td className="p-1 border-x border-sky-100/60">{numInput("saturdayWorkDays", { max: 31 })}</td>
-                        <td className="p-1 border-x border-sky-100/60">{numInput("sundayWorkDays")}</td>
-                        <td className="p-1 border-x border-sky-100/60">{numInput("absenceDays", { max: 31 })}</td>
-                        <td className="p-1 border-x border-sky-100/60">{numInput("overtimeHours")}</td>
-                        <td className="p-1 border-x border-sky-100/60">{numInput("lateNightHours")}</td>
+                        <td className="p-1 border-x border-sky-100/60">{numInput("saturdayWorkDays", { max: 31, step: "1" })}</td>
+                        <td className="p-1 border-x border-sky-100/60">{numInput("sundayWorkDays", { step: "1" })}</td>
+                        <td className="p-1 border-x border-sky-100/60">{numInput("absenceDays", { max: 31, step: "1" })}</td>
+                        <td className="p-1 border-x border-sky-100/60">{numInput("overtimeHours", { step: overtimeStep })}</td>
+                        <td className="p-1 border-x border-sky-100/60">{numInput("lateNightHours", { step: overtimeStep })}</td>
 
                         {/* 実働時間（時給制事務員用） */}
                         <td className="p-1 border-x border-indigo-100/60">
