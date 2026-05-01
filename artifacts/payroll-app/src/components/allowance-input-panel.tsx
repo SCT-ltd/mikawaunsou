@@ -657,22 +657,22 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
   const empSR = (employee as unknown as { standardRemuneration?: number }).standardRemuneration ?? 0;
   const insBase = empSR > 0 ? empSR : grandTotal;
 
-  const healthInsurance = round50sen(insBase * appliedHealthRate);
+  const isTaxExemptEmployee = employee.taxExempt === true;
+
+  const healthInsurance = isTaxExemptEmployee ? 0 : round50sen(insBase * appliedHealthRate);
   const childcareSupportApplicable = !(year !== undefined && month !== undefined && (year < 2026 || (year === 2026 && month <= 4)));
-  const childcareSupportContribution = childcareSupportApplicable ? round50sen(insBase * CHILDCARE_RATE) : 0;
+  const childcareSupportContribution = (isTaxExemptEmployee || !childcareSupportApplicable) ? 0 : round50sen(insBase * CHILDCARE_RATE);
   const isPensionApplied = resolvePensionApplied(employee, year, month);
-  const pensionInsurance = isPensionApplied
-    ? round50sen(Math.min(insBase, 650_000) * pensionRate)
-    : 0;
+  const pensionInsurance = (isTaxExemptEmployee || !isPensionApplied) ? 0 : round50sen(Math.min(insBase, 650_000) * pensionRate);
 
   const nonTaxableAllowancesTotal = rows.reduce((s, r) => {
     const def = allowanceDefinitions?.find(d => d.id === r.defId);
     return s + (def && !def.isTaxable ? (r.amount || 0) : 0);
   }, 0);
 
-  const employmentInsurance = (employee.employmentInsuranceApplied !== false)
-    ? round50sen(grandTotal * empInsRate)
-    : 0;
+  const employmentInsurance = (isTaxExemptEmployee || employee.employmentInsuranceApplied === false)
+    ? 0
+    : round50sen(grandTotal * empInsRate);
 
   const totalInsurance = healthInsurance + childcareSupportContribution + pensionInsurance + employmentInsurance;
 
@@ -683,7 +683,7 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
     grandTotal - healthInsurance - childcareSupportContribution - pensionInsurance - employmentInsurance
   );
   const dependentEquivCount = (employee.dependentCount ?? 0) + ((employee.hasSpouse ?? false) ? 1 : 0);
-  const incomeTax = calculateIncomeTaxReiwa8(incomeTaxBase, dependentEquivCount);
+  const incomeTax = isTaxExemptEmployee ? 0 : calculateIncomeTaxReiwa8(incomeTaxBase, dependentEquivCount);
 
   const residentTax = employee.residentTax ?? 0;
   const customDeductionsTotal = deductionRows.reduce((s, r) => s + (r.amount || 0), 0);
@@ -792,7 +792,11 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
         <div className={COL_DRAG} />
         <div className={`${COL_NAME} text-xs font-semibold text-orange-900`}>社会保険料合計</div>
         <div className={COL_TAX} />
-        <div className={`${COL_AMOUNT} text-right pr-1 text-xs font-bold text-orange-700 tabular-nums`}>{fmt(totalInsurance)}</div>
+        <div className={`${COL_AMOUNT} text-right pr-1 text-xs font-bold text-orange-700 tabular-nums`}>
+          {isTaxExemptEmployee
+            ? <span className="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">非課税</span>
+            : fmt(totalInsurance)}
+        </div>
         <div className={COL_DEL} />
       </div>
 
