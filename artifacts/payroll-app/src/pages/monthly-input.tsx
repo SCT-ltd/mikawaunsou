@@ -1123,11 +1123,39 @@ export default function MonthlyInput() {
                     const isHourly = emp.salaryType === "hourly";
                     const rowBg = empIdx % 2 === 0 ? "bg-card" : "bg-muted/20";
 
-                    // 残業・深夜の入力ステップ: 個人単位分数がある社員はその分数÷60 を切り捨て4桁
-                    // (例: 10分 → 10/60=0.16666… → floor → 0.1666h) ※切り上げを防ぐため切り捨て
-                    const overtimeStep = (emp.overtimeUnitMinutes ?? 0) > 0
-                      ? String(Math.floor((emp.overtimeUnitMinutes! / 60) * 10000) / 10000)
-                      : "0.5";
+                    // 個人残業単位設定（清水さんなど）
+                    const unitMinutes = emp.overtimeUnitMinutes ?? 0;
+                    const unitRate    = emp.overtimeUnitRate   ?? 0;
+                    const hasUnit     = unitMinutes > 0 && unitRate > 0;
+
+                    // 単位（回）入力セル: 表示は "回" 単位、内部は時間で保持
+                    const unitInput = (field: "overtimeHours" | "lateNightHours") => {
+                      const hours    = Number(rowData[field]) || 0;
+                      const unitVal  = hours > 0 ? Math.round(hours * 60 / unitMinutes) : "";
+                      return (
+                        <div className="flex flex-col items-end gap-0.5">
+                          <div className="flex items-center gap-1">
+                            <Input
+                              type="number"
+                              min="0"
+                              step="1"
+                              className="h-7 w-14 text-right text-xs px-1"
+                              value={unitVal}
+                              onChange={(e) => {
+                                const units = Number(e.target.value) || 0;
+                                handleEditChange(emp.id, field, String(units * unitMinutes / 60));
+                              }}
+                              onWheel={(e) => e.currentTarget.blur()}
+                              placeholder="0"
+                            />
+                            <span className="text-[10px] text-muted-foreground whitespace-nowrap">回</span>
+                          </div>
+                          <div className="text-[9px] text-muted-foreground/60 whitespace-nowrap">
+                            1回={unitMinutes}分/¥{unitRate.toLocaleString()}
+                          </div>
+                        </div>
+                      );
+                    };
 
                     const numInput = (
                       field: string,
@@ -1172,8 +1200,12 @@ export default function MonthlyInput() {
                         <td className="p-1 border-x border-sky-100/60">{numInput("saturdayWorkDays", { max: 31, step: "1" })}</td>
                         <td className="p-1 border-x border-sky-100/60">{numInput("sundayWorkDays", { step: "1" })}</td>
                         <td className="p-1 border-x border-sky-100/60">{numInput("absenceDays", { max: 31, step: "1" })}</td>
-                        <td className="p-1 border-x border-sky-100/60">{numInput("overtimeHours", { step: overtimeStep })}</td>
-                        <td className="p-1 border-x border-sky-100/60">{numInput("lateNightHours", { step: overtimeStep })}</td>
+                        <td className="p-1 border-x border-sky-100/60">
+                          {hasUnit ? unitInput("overtimeHours") : numInput("overtimeHours", { step: "0.5" })}
+                        </td>
+                        <td className="p-1 border-x border-sky-100/60">
+                          {hasUnit ? unitInput("lateNightHours") : numInput("lateNightHours", { step: "0.5" })}
+                        </td>
 
                         {/* 実働時間（時給制事務員用） */}
                         <td className="p-1 border-x border-indigo-100/60">
