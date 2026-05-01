@@ -43,7 +43,7 @@ export default function PayrollList() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: payrolls, isLoading: payrollsLoading } = useListPayrolls({ year, month });
+  const { data: payrolls, isLoading: payrollsLoading } = useListPayrolls({ year, month }, { query: { staleTime: 0, refetchOnMount: "always" } });
   const { data: employees } = useListEmployees({ active: true }, { query: { staleTime: 0, refetchOnMount: "always" } });
   const { data: company } = useGetCompany();
   const calculatePayroll = useCalculatePayroll();
