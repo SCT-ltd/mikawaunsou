@@ -587,18 +587,22 @@ function computeQuickEstimate(
   const isHourly = emp.salaryType === "hourly";
   const actualWorkHours = Number(editData.actualWorkHours) || 0;
 
-  // 日給制の場合、個人日当単価（dailyRateOverride）が設定されていれば会社共通値を上書き
-  const weekdayRate = isDaily && (emp.dailyRateOverride ?? 0) > 0
-    ? (emp.dailyRateOverride ?? 0)
-    : (company?.dailyWageWeekday ?? 9808);
-  // 日曜/祝日手当は個人オーバーライドに関わらず会社標準日当 × 1.35 で計算
-  const companyDailyRate = company?.dailyWageWeekday ?? 9808;
+  // 個人日当単価オーバーライドの有無
+  const overrideRate    = isDaily ? ((emp.dailyRateOverride ?? 0) > 0 ? (emp.dailyRateOverride ?? 0) : 0) : 0;
+  const hasRateOverride = overrideRate > 0;
+  // 会社標準日当（オーバーライドなし社員用）
+  const companyDailyRate    = company?.dailyWageWeekday ?? 9808;
+  const companySaturdayRate = company?.dailyWageSaturday ?? 12260;
 
   const baseSalary = isDaily && company
     ? Math.round(
-        (Number(editData.workDays) || 0) * weekdayRate +
-          (Number(editData.saturdayWorkDays) || 0) * (company.dailyWageSaturday ?? 12260) +
-          (Number(editData.sundayWorkDays) || 0) * companyDailyRate * 1.35
+        hasRateOverride
+          // 個人単価あり: 平日・土曜・日曜/祝日 すべて一律同単価
+          ? ((Number(editData.workDays) || 0) + (Number(editData.saturdayWorkDays) || 0) + (Number(editData.sundayWorkDays) || 0)) * overrideRate
+          // 会社標準: 平日=companyDailyRate / 土曜=companySaturdayRate / 日曜祝日=companyDailyRate×1.35
+          : (Number(editData.workDays) || 0) * companyDailyRate +
+            (Number(editData.saturdayWorkDays) || 0) * companySaturdayRate +
+            (Number(editData.sundayWorkDays) || 0) * companyDailyRate * 1.35
       )
     : isHourly
     ? Math.round((emp.baseSalary ?? 0) * actualWorkHours)
