@@ -700,16 +700,11 @@ export default function MonthlyInput() {
       setImporting(true);
       fetch(`${BASE}/api/attendance/monthly-summary?year=${year}&month=${month}`)
         .then((res) => res.json())
-        .then((summary: {
-          employeeId: number;
-          workDays: number;
-          saturdayWorkDays: number;
-          sundayWorkDays: number;
-          overtimeHours: number;
-          absenceDays: number;
-          drivingDistanceKm: number;
-          actualWorkHours: number;
-        }[]) => {
+        .then((summary: unknown) => {
+          if (!Array.isArray(summary)) {
+            toast({ title: "エラー", description: "勤怠データの取得に失敗しました。再ログインして再試行してください。", variant: "destructive" });
+            return;
+          }
           if (summary.length === 0) {
             if (shouldMarkDirty) {
               toast({ title: "取り込み対象なし", description: `${year}年${month}月の打刻データが見つかりませんでした。` });
