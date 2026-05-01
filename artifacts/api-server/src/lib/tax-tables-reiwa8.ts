@@ -225,7 +225,7 @@ const REIWA7_TABLE: readonly number[][] = (() => {
  * 国税庁公表の令和8年分月額表・甲欄との照合で導出
  */
 function _calibrationR8(taxable: number): number {
-  if (taxable <= 1_950_000) return 50;
+  if (taxable <= 1_950_000) return 45;   // 公式値 6,860（row 269k, dep=0, 月額270,597）との照合で確定
   if (taxable <= 3_300_000) return 104;  // 公式値 10,220（row 371k, dep=1）との照合で確定
   if (taxable <= 6_950_000) return 202;
   if (taxable <= 9_000_000) return 232;

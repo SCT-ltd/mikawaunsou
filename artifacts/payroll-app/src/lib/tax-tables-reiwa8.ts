@@ -228,7 +228,7 @@ export function calculateIncomeTaxReiwa7(
  * 検証: row 371,000, dep=1 → 10,220円（国税庁公式値と完全一致）
  */
 function _calibrationR8(taxable: number): number {
-  if (taxable <= 1_950_000) return 50;
+  if (taxable <= 1_950_000) return 45;   // 公式値 6,860（row 269k, dep=0, 月額270,597）との照合で確定
   if (taxable <= 3_300_000) return 104;
   if (taxable <= 6_950_000) return 202;
   if (taxable <= 9_000_000) return 232;
