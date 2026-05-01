@@ -58,6 +58,30 @@ function roundJapanese(amount: number): number {
   return fraction <= 0.5 ? Math.floor(amount) : Math.ceil(amount);
 }
 
+/**
+ * 厚生年金適用判定（サーバー側 resolvePensionApplied と同ロジック）
+ * - pensionApplied が true/false → その値をそのまま使用
+ * - null/undefined → 生年月日から年齢を算出し 70歳以上なら false
+ */
+function resolvePensionApplied(
+  employee: Employee,
+  year?: number,
+  month?: number
+): boolean {
+  const pa = (employee as unknown as { pensionApplied?: boolean | null }).pensionApplied;
+  if (pa !== null && pa !== undefined) return pa;
+  const dob = (employee as unknown as { dateOfBirth?: string }).dateOfBirth;
+  if (!dob) return true;
+  const birthDate = new Date(dob);
+  const checkYear = year ?? new Date().getFullYear();
+  const checkMonth = month ?? new Date().getMonth() + 1;
+  const calcDate = new Date(checkYear, checkMonth - 1, 1);
+  let age = calcDate.getFullYear() - birthDate.getFullYear();
+  const md = calcDate.getMonth() - birthDate.getMonth();
+  if (md < 0 || (md === 0 && calcDate.getDate() < birthDate.getDate())) age--;
+  return age < 70;
+}
+
 function calculateIncomeTax(afterInsuranceSalary: number, dependentCount: number): number {
   const X = afterInsuranceSalary;
   let tax0 = 0;
@@ -336,8 +360,9 @@ function AllowanceSidebar({
   const pensionRate = company?.pensionEmployeeRate ?? 0.0915;
   const eiRate = company?.employmentInsuranceRate ?? 0.006;
 
+  const isPensionApplied = employee ? resolvePensionApplied(employee) : true;
   const healthInsurance = roundJapanese(grandTotal * healthRate);
-  const pensionInsurance = roundJapanese(grandTotal * pensionRate);
+  const pensionInsurance = isPensionApplied ? roundJapanese(grandTotal * pensionRate) : 0;
   // 雇用保険: 総支給額から非課税手当を除いた金額 × 料率
   const employmentInsurance =
     employee?.employmentInsuranceApplied !== false
@@ -656,9 +681,10 @@ function computeQuickEstimate(
     const healthRate = company?.healthInsuranceEmployeeRate ?? 0.05;
     const pensionRate = company?.pensionEmployeeRate ?? 0.0915;
     const eiRate = company?.employmentInsuranceRate ?? 0.006;
+    const isPensionApplied = resolvePensionApplied(emp);
     const totalInsurance = roundJapanese(
       grossEstimate * healthRate +
-        grossEstimate * pensionRate +
+        (isPensionApplied ? grossEstimate * pensionRate : 0) +
         (emp.employmentInsuranceApplied !== false ? grossEstimate * eiRate : 0)
     );
     const afterInsurance = Math.max(0, grossEstimate - totalInsurance);

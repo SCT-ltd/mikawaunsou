@@ -24,6 +24,30 @@ function roundJapanese(amount: number): number {
   return Math.floor(amount);
 }
 
+/**
+ * 厚生年金適用判定（サーバー側 resolvePensionApplied と同ロジック）
+ * - pensionApplied が true/false → その値をそのまま使用
+ * - null/undefined → 生年月日から年齢を算出し 70歳以上なら false
+ */
+function resolvePensionApplied(
+  employee: Employee,
+  year?: number,
+  month?: number
+): boolean {
+  const pa = (employee as unknown as { pensionApplied?: boolean | null }).pensionApplied;
+  if (pa !== null && pa !== undefined) return pa;
+  const dob = (employee as unknown as { dateOfBirth?: string }).dateOfBirth;
+  if (!dob) return true;
+  const birthDate = new Date(dob);
+  const checkYear = year ?? new Date().getFullYear();
+  const checkMonth = month ?? new Date().getMonth() + 1;
+  const calcDate = new Date(checkYear, checkMonth - 1, 1);
+  let age = calcDate.getFullYear() - birthDate.getFullYear();
+  const md = calcDate.getMonth() - birthDate.getMonth();
+  if (md < 0 || (md === 0 && calcDate.getDate() < birthDate.getDate())) age--;
+  return age < 70;
+}
+
 let uidCounter = 0;
 function newUid() {
   return `row-${Date.now()}-${++uidCounter}`;
@@ -630,7 +654,10 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
   const healthInsurance = round50sen(insBase * appliedHealthRate);
   const childcareSupportApplicable = !(year !== undefined && month !== undefined && (year < 2026 || (year === 2026 && month <= 4)));
   const childcareSupportContribution = childcareSupportApplicable ? round50sen(insBase * CHILDCARE_RATE) : 0;
-  const pensionInsurance = round50sen(Math.min(insBase, 650_000) * pensionRate);
+  const isPensionApplied = resolvePensionApplied(employee, year, month);
+  const pensionInsurance = isPensionApplied
+    ? round50sen(Math.min(insBase, 650_000) * pensionRate)
+    : 0;
 
   const nonTaxableAllowancesTotal = rows.reduce((s, r) => {
     const def = allowanceDefinitions?.find(d => d.id === r.defId);
