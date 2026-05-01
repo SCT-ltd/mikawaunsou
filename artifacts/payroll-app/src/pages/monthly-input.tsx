@@ -587,9 +587,14 @@ function computeQuickEstimate(
   const isHourly = emp.salaryType === "hourly";
   const actualWorkHours = Number(editData.actualWorkHours) || 0;
 
+  // 日給制の場合、個人日当単価（dailyRateOverride）が設定されていれば会社共通値を上書き
+  const weekdayRate = isDaily && (emp.dailyRateOverride ?? 0) > 0
+    ? (emp.dailyRateOverride ?? 0)
+    : (company?.dailyWageWeekday ?? 9808);
+
   const baseSalary = isDaily && company
     ? Math.round(
-        (Number(editData.workDays) || 0) * (company.dailyWageWeekday ?? 9808) +
+        (Number(editData.workDays) || 0) * weekdayRate +
           (Number(editData.saturdayWorkDays) || 0) * (company.dailyWageSaturday ?? 12260) +
           (Number(editData.sundayWorkHours) || 0) * (company.hourlyWageSunday ?? 1655)
       )
@@ -602,12 +607,26 @@ function computeQuickEstimate(
   const lateNightHours = Number(editData.lateNightHours) || 0;
   const holidayWorkDays = Number(editData.holidayWorkDays) || 0;
 
-  const hourlyRate = isHourly
-    ? (emp.baseSalary ?? 0)
-    : monthlyHours > 0 ? baseSalary / monthlyHours : 0;
-  const overtimePay = roundJapanese(hourlyRate * (company?.overtimeRate ?? 1.25) * overtimeHours);
-  const lateNightPay = roundJapanese(hourlyRate * (company?.lateNightAdditionalRate ?? 0.25) * lateNightHours);
-  const holidayPay = roundJapanese(hourlyRate * (company?.holidayRate ?? 1.35) * holidayWorkDays * 8);
+  // 個人残業単位設定がある場合はその計算式を使用（切り上げ×単位単価）
+  const unitMinutes = emp.overtimeUnitMinutes ?? 0;
+  const unitRate = emp.overtimeUnitRate ?? 0;
+  let overtimePay: number;
+  let lateNightPay: number;
+  let holidayPay: number;
+  if (isDaily && unitMinutes > 0 && unitRate > 0) {
+    const overtimeMinutes = overtimeHours * 60;
+    overtimePay = overtimeMinutes > 0 ? Math.ceil(overtimeMinutes / unitMinutes) * unitRate : 0;
+    const lateNightMinutes = lateNightHours * 60;
+    lateNightPay = lateNightMinutes > 0 ? Math.ceil(lateNightMinutes / unitMinutes) * unitRate : 0;
+    holidayPay = holidayWorkDays > 0 ? Math.ceil(holidayWorkDays * 8 * 60 / unitMinutes) * unitRate : 0;
+  } else {
+    const hourlyRate = isHourly
+      ? (emp.baseSalary ?? 0)
+      : monthlyHours > 0 ? baseSalary / monthlyHours : 0;
+    overtimePay = roundJapanese(hourlyRate * (company?.overtimeRate ?? 1.25) * overtimeHours);
+    lateNightPay = roundJapanese(hourlyRate * (company?.lateNightAdditionalRate ?? 0.25) * lateNightHours);
+    holidayPay = roundJapanese(hourlyRate * (company?.holidayRate ?? 1.35) * holidayWorkDays * 8);
+  }
 
   const grossEstimate = baseSalary + overtimePay + lateNightPay + holidayPay;
 
