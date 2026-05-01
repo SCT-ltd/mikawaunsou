@@ -93,6 +93,8 @@ export interface PayrollCalculationInput {
   overtimeUnitRate?: number;
   // Custom allowances
   customAllowances?: CustomAllowanceItem[];
+  /** 全額非課税フラグ（true=社会保険・所得税・住民税すべて控除なし、手取り=総支給）*/
+  taxExempt?: boolean;
   /** デバッグ用トレースログを出力するか（省略時 false）*/
   enableTrace?: boolean;
   /** トレースログ出力時の期待値（照合用）*/
@@ -290,16 +292,20 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     traceExpectedIncomeTax: input.traceExpectedIncomeTax,
   });
 
-  const healthInsurance             = ins.healthInsurance;
-  const childcareSupportContribution = ins.childcareSupportContribution;
-  const pension                     = ins.pension;
+  // 全額非課税の場合は全控除を0にする（手取り=総支給）
+  const isExempt = input.taxExempt === true;
+
+  const healthInsurance             = isExempt ? 0 : ins.healthInsurance;
+  const childcareSupportContribution = isExempt ? 0 : ins.childcareSupportContribution;
+  const pension                     = isExempt ? 0 : ins.pension;
   const socialInsurance             = healthInsurance + childcareSupportContribution + pension;
-  const employmentInsurance         = ins.employmentInsurance;
-  const incomeTax                   = ins.incomeTax;
+  const employmentInsurance         = isExempt ? 0 : ins.employmentInsurance;
+  const incomeTax                   = isExempt ? 0 : ins.incomeTax;
+  const effectiveResidentTax        = isExempt ? 0 : residentTax;
 
   // 控除合計（社保＋雇保＋源泉＋住民税）
   const totalDeductions = roundJapanese(
-    socialInsurance + employmentInsurance + incomeTax + residentTax
+    socialInsurance + employmentInsurance + incomeTax + effectiveResidentTax
   );
 
   // 差引支給額

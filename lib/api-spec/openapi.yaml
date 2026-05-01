@@ -900,6 +900,9 @@ components:
         employmentInsuranceApplied:
           type: boolean
           description: 雇用保険適用
+        taxExempt:
+          type: boolean
+          description: 全額非課税フラグ（true=社会保険・所得税・住民税すべて控除なし、手取り=総支給）
         residentTax:
           type: number
           description: 住民税（月額）
@@ -953,6 +956,7 @@ components:
         - healthInsuranceMonthly
         - pensionMonthly
         - employmentInsuranceApplied
+        - taxExempt
         - residentTax
         - salaryType
         - isOfficeStaff
@@ -1055,6 +1059,9 @@ components:
           type: number
         employmentInsuranceApplied:
           type: boolean
+        taxExempt:
+          type: boolean
+          description: 全額非課税フラグ（true=社会保険・所得税・住民税すべて控除なし、手取り=総支給）
         residentTax:
           type: number
         salaryType:

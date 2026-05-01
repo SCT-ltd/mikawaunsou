@@ -139,6 +139,11 @@ export const ListEmployeesResponseItem = zod.object({
   healthInsuranceMonthly: zod.number().describe("健康保険料（月額）固定額"),
   pensionMonthly: zod.number().describe("厚生年金保険料（月額）固定額"),
   employmentInsuranceApplied: zod.boolean().describe("雇用保険適用"),
+  taxExempt: zod
+    .boolean()
+    .describe(
+      "全額非課税フラグ（true=社会保険・所得税・住民税すべて控除なし、手取り=総支給）",
+    ),
   residentTax: zod.number().describe("住民税（月額）"),
   salaryType: zod
     .enum(["fixed", "daily"])
@@ -224,6 +229,11 @@ export const GetEmployeeResponse = zod.object({
   healthInsuranceMonthly: zod.number().describe("健康保険料（月額）固定額"),
   pensionMonthly: zod.number().describe("厚生年金保険料（月額）固定額"),
   employmentInsuranceApplied: zod.boolean().describe("雇用保険適用"),
+  taxExempt: zod
+    .boolean()
+    .describe(
+      "全額非課税フラグ（true=社会保険・所得税・住民税すべて控除なし、手取り=総支給）",
+    ),
   residentTax: zod.number().describe("住民税（月額）"),
   salaryType: zod
     .enum(["fixed", "daily"])
@@ -288,6 +298,12 @@ export const UpdateEmployeeBody = zod.object({
   healthInsuranceMonthly: zod.number().optional(),
   pensionMonthly: zod.number().optional(),
   employmentInsuranceApplied: zod.boolean().optional(),
+  taxExempt: zod
+    .boolean()
+    .optional()
+    .describe(
+      "全額非課税フラグ（true=社会保険・所得税・住民税すべて控除なし、手取り=総支給）",
+    ),
   residentTax: zod.number().optional(),
   salaryType: zod
     .enum(["fixed", "daily"])
@@ -334,6 +350,11 @@ export const UpdateEmployeeResponse = zod.object({
   healthInsuranceMonthly: zod.number().describe("健康保険料（月額）固定額"),
   pensionMonthly: zod.number().describe("厚生年金保険料（月額）固定額"),
   employmentInsuranceApplied: zod.boolean().describe("雇用保険適用"),
+  taxExempt: zod
+    .boolean()
+    .describe(
+      "全額非課税フラグ（true=社会保険・所得税・住民税すべて控除なし、手取り=総支給）",
+    ),
   residentTax: zod.number().describe("住民税（月額）"),
   salaryType: zod
     .enum(["fixed", "daily"])

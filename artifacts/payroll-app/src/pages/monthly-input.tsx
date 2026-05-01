@@ -640,18 +640,25 @@ function computeQuickEstimate(
 
   const grossEstimate = baseSalary + overtimePay + lateNightPay + holidayPay;
 
-  const healthRate = company?.healthInsuranceEmployeeRate ?? 0.05;
-  const pensionRate = company?.pensionEmployeeRate ?? 0.0915;
-  const eiRate = company?.employmentInsuranceRate ?? 0.006;
-  const totalInsurance = roundJapanese(
-    grossEstimate * healthRate +
-      grossEstimate * pensionRate +
-      (emp.employmentInsuranceApplied !== false ? grossEstimate * eiRate : 0)
-  );
-  const afterInsurance = Math.max(0, grossEstimate - totalInsurance);
-  const incomeTax = calculateIncomeTax(afterInsurance, emp.dependentCount ?? 0);
-  const residentTax = emp.residentTax ?? 0;
-  const net = roundJapanese(grossEstimate - totalInsurance - incomeTax - residentTax);
+  // 全額非課税社員は控除なし（手取り=総支給）
+  const isExempt = emp.taxExempt === true;
+  let net: number;
+  if (isExempt) {
+    net = grossEstimate;
+  } else {
+    const healthRate = company?.healthInsuranceEmployeeRate ?? 0.05;
+    const pensionRate = company?.pensionEmployeeRate ?? 0.0915;
+    const eiRate = company?.employmentInsuranceRate ?? 0.006;
+    const totalInsurance = roundJapanese(
+      grossEstimate * healthRate +
+        grossEstimate * pensionRate +
+        (emp.employmentInsuranceApplied !== false ? grossEstimate * eiRate : 0)
+    );
+    const afterInsurance = Math.max(0, grossEstimate - totalInsurance);
+    const incomeTax = calculateIncomeTax(afterInsurance, emp.dependentCount ?? 0);
+    const residentTax = emp.residentTax ?? 0;
+    net = roundJapanese(grossEstimate - totalInsurance - incomeTax - residentTax);
+  }
 
   return { gross: grossEstimate, net };
 }

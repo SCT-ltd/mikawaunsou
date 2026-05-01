@@ -601,6 +601,7 @@ router.post("/payroll/calculate", async (req, res) => {
     dailyRateOverride: emp.dailyRateOverride ?? 0,
     overtimeUnitMinutes: emp.overtimeUnitMinutes ?? null,
     overtimeUnitRate: emp.overtimeUnitRate ?? 0,
+    taxExempt: emp.taxExempt ?? false,
     customAllowances,
     enableTrace: isTamagawa,
     traceExpectedIncomeTax: isTamagawa ? 10220 : undefined,

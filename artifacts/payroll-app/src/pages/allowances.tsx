@@ -583,6 +583,7 @@ const empFullSchema = z.object({
   standardRemuneration: z.coerce.number().min(0).default(0),
   careInsuranceApplied: z.boolean().default(false),
   employmentInsuranceApplied: z.boolean().default(true),
+  taxExempt: z.boolean().default(false),
   scheduledWorkStart: z.string().optional().default(""),
   scheduledWorkEnd: z.string().optional().default(""),
   dailyRateOverride: z.coerce.number().min(0).default(0),
@@ -1030,6 +1031,13 @@ function EmpFormFields({
                 <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
               </FormItem>
             )} />
+            <FormField control={f.control} name="taxExempt" render={({ field }) => (
+              <FormItem className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50/50 p-3">
+                <div><FormLabel className="text-amber-800">全額非課税</FormLabel>
+                  <p className="text-xs text-muted-foreground">ONにすると社会保険・所得税・住民税すべて控除なし（手取り＝総支給）</p></div>
+                <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+              </FormItem>
+            )} />
           </div>
         </div>
       </TabsContent>
@@ -1115,7 +1123,7 @@ function EmployeeMasterTab() {
       useBluewingLogic: false, bluewingCommissionRate: 0,
       bluewingFixedOvertimeHours: 0, bluewingFixedOvertimeAmount: 0,
       dependentCount: 0, hasSpouse: false, standardRemuneration: 0,
-      careInsuranceApplied: false, employmentInsuranceApplied: true,
+      careInsuranceApplied: false, employmentInsuranceApplied: true, taxExempt: false,
       scheduledWorkStart: "", scheduledWorkEnd: "",
       dailyRateOverride: 0, overtimeUnitMinutes: 0, overtimeUnitRate: 0,
     },
@@ -1132,7 +1140,7 @@ function EmployeeMasterTab() {
       useBluewingLogic: false, bluewingCommissionRate: 0,
       bluewingFixedOvertimeHours: 0, bluewingFixedOvertimeAmount: 0,
       dependentCount: 0, hasSpouse: false, standardRemuneration: 0,
-      careInsuranceApplied: false, employmentInsuranceApplied: true,
+      careInsuranceApplied: false, employmentInsuranceApplied: true, taxExempt: false,
       scheduledWorkStart: "", scheduledWorkEnd: "",
       dailyRateOverride: 0, overtimeUnitMinutes: 0, overtimeUnitRate: 0,
     },
@@ -1172,6 +1180,7 @@ function EmployeeMasterTab() {
       standardRemuneration: emp.standardRemuneration ?? 0,
       careInsuranceApplied: emp.careInsuranceApplied ?? false,
       employmentInsuranceApplied: emp.employmentInsuranceApplied ?? true,
+      taxExempt: (emp as unknown as { taxExempt?: boolean }).taxExempt ?? false,
       scheduledWorkStart: (emp as unknown as { scheduledWorkStart?: string | null }).scheduledWorkStart ?? "",
       scheduledWorkEnd: (emp as unknown as { scheduledWorkEnd?: string | null }).scheduledWorkEnd ?? "",
       dailyRateOverride: (emp as unknown as { dailyRateOverride?: number }).dailyRateOverride ?? 0,
