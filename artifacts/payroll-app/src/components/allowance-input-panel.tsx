@@ -495,11 +495,15 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
 
   // 所得税計算基礎: 総支給額 - 非課税手当 - 健保 - 厚年 - 雇用保険
   // ※子育て支援金(childcareSupportContribution)は所得税計算基礎から差し引かない
-  const afterInsuranceSalary = Math.max(0,
+  const incomeTaxBase = Math.max(0,
     grandTotal - nonTaxableAllowancesTotal - healthInsurance - pensionInsurance - employmentInsurance
   );
+  // 社会保険料控除後の金額（表示用）: 総支給 - 社保合計（非課税手当は含む）
+  const afterInsuranceSalary = Math.max(0,
+    grandTotal - healthInsurance - childcareSupportContribution - pensionInsurance - employmentInsurance
+  );
   const dependentEquivCount = (employee.dependentCount ?? 0) + ((employee.hasSpouse ?? false) ? 1 : 0);
-  const incomeTax = calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
+  const incomeTax = calculateIncomeTaxReiwa8(incomeTaxBase, dependentEquivCount);
 
   const residentTax = employee.residentTax ?? 0;
   const customDeductionsTotal = deductionRows.reduce((s, r) => s + (r.amount || 0), 0);
