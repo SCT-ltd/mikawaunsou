@@ -44,7 +44,7 @@ export default function PayrollList() {
   const queryClient = useQueryClient();
 
   const { data: payrolls, isLoading: payrollsLoading } = useListPayrolls({ year, month });
-  const { data: employees } = useListEmployees({ active: true });
+  const { data: employees } = useListEmployees({ active: true }, { query: { staleTime: 0, refetchOnMount: "always" } });
   const { data: company } = useGetCompany();
   const calculatePayroll = useCalculatePayroll();
 
