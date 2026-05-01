@@ -13,12 +13,10 @@ import {
   getListEmployeesQueryKey,
   Employee,
 } from "@workspace/api-client-react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus, X, GripVertical } from "lucide-react";
+import { Plus, X, GripVertical, ChevronDown, Check } from "lucide-react";
 import { Reorder, useDragControls } from "framer-motion";
 import { calculateIncomeTaxReiwa8, round50sen } from "@/lib/tax-tables-reiwa8";
 
@@ -42,7 +40,195 @@ interface Props {
 type AllowanceRow = { uid: string; defId: number | null; amount: number };
 type DeductionRow = { uid: string; defId: number | null; amount: number };
 
-/* ── ドラッグハンドル付き手当行 ── */
+// ── 列幅定数（全行で共有） ──────────────────────────────────────────
+const COL_DRAG  = "w-5 shrink-0";
+const COL_NAME  = "flex-1 min-w-0";
+const COL_TAX   = "w-[52px] shrink-0 text-center";
+const COL_AMOUNT = "w-[92px] shrink-0";
+const COL_DEL   = "w-5 shrink-0";
+
+// ── 検索付きコンボボックス（cmdk不使用・純React実装） ─────────────
+function SearchableCombobox({
+  options,
+  value,
+  onValueChange,
+  placeholder,
+}: {
+  options: { id: number; name: string }[];
+  value: number | null;
+  onValueChange: (id: number) => void;
+  placeholder: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [activeIdx, setActiveIdx] = useState(0);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+
+  const selected = options.find(o => o.id === value);
+  const filtered = query.trim()
+    ? options.filter(o => o.name.includes(query))
+    : options;
+
+  const openDropdown = () => {
+    setOpen(true);
+    setQuery("");
+    setActiveIdx(0);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  const closeDropdown = () => {
+    setOpen(false);
+    setQuery("");
+  };
+
+  const selectOption = (id: number) => {
+    onValueChange(id);
+    closeDropdown();
+  };
+
+  // クリックアウトで閉じる
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        closeDropdown();
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  // activeIdx をリスト内に収める
+  useEffect(() => {
+    setActiveIdx(prev => Math.min(prev, Math.max(filtered.length - 1, 0)));
+  }, [filtered.length]);
+
+  // activeIdx の項目をスクロールして見せる
+  useEffect(() => {
+    if (!listRef.current) return;
+    const item = listRef.current.children[activeIdx] as HTMLElement | undefined;
+    item?.scrollIntoView({ block: "nearest" });
+  }, [activeIdx]);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); setActiveIdx(i => Math.min(i + 1, filtered.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setActiveIdx(i => Math.max(i - 1, 0)); }
+    else if (e.key === "Enter") { e.preventDefault(); if (filtered[activeIdx]) selectOption(filtered[activeIdx].id); }
+    else if (e.key === "Escape") { closeDropdown(); }
+  };
+
+  return (
+    <div ref={wrapperRef} className="relative w-full">
+      {/* トリガーボタン */}
+      <button
+        type="button"
+        onClick={openDropdown}
+        className="h-7 w-full flex items-center justify-between gap-1 px-2 text-xs border border-border/60 bg-transparent rounded hover:bg-muted/30 focus:outline-none focus:ring-1 focus:ring-primary transition-colors"
+      >
+        <span className={`truncate ${selected ? "text-foreground" : "text-muted-foreground"}`}>
+          {selected?.name ?? placeholder}
+        </span>
+        <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
+      </button>
+
+      {/* ドロップダウン */}
+      {open && (
+        <div className="absolute z-50 left-0 top-full mt-0.5 w-full min-w-[180px] max-w-[260px] rounded-md border border-border bg-popover shadow-lg overflow-hidden">
+          {/* 検索入力 */}
+          <div className="border-b border-border px-2 py-1.5">
+            <input
+              ref={inputRef}
+              type="text"
+              value={query}
+              onChange={(e) => { setQuery(e.target.value); setActiveIdx(0); }}
+              onKeyDown={handleKeyDown}
+              placeholder="検索…"
+              className="w-full text-xs bg-transparent outline-none placeholder:text-muted-foreground/60"
+            />
+          </div>
+          {/* 候補リスト */}
+          <ul ref={listRef} className="max-h-[180px] overflow-y-auto py-1">
+            {filtered.length === 0 ? (
+              <li className="px-3 py-2 text-xs text-muted-foreground text-center">見つかりません</li>
+            ) : (
+              filtered.map((o, i) => (
+                <li
+                  key={o.id}
+                  onMouseDown={(e) => { e.preventDefault(); selectOption(o.id); }}
+                  onMouseEnter={() => setActiveIdx(i)}
+                  className={`flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer transition-colors ${i === activeIdx ? "bg-accent text-accent-foreground" : "hover:bg-muted/50"}`}
+                >
+                  <Check className={`h-3 w-3 shrink-0 ${o.id === value ? "opacity-100 text-primary" : "opacity-0"}`} />
+                  <span className="truncate">{o.name}</span>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 金額入力（固定幅・千区切り表示） ──────────────────────────────
+function AmountInput({
+  value,
+  onChange,
+  onEnterKey,
+  inputRef,
+  placeholder = "0",
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  onEnterKey?: () => void;
+  inputRef?: (el: HTMLInputElement | null) => void;
+  placeholder?: string;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [raw, setRaw] = useState("");
+
+  const displayValue = focused
+    ? raw
+    : value > 0 ? value.toLocaleString("ja-JP") : "";
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      inputMode="numeric"
+      className="h-7 w-full text-right bg-transparent border border-border/60 rounded px-2 text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground/50"
+      value={displayValue}
+      placeholder={placeholder}
+      onFocus={(e) => {
+        setFocused(true);
+        setRaw(value > 0 ? String(value) : "");
+        setTimeout(() => e.target.select(), 0);
+      }}
+      onBlur={() => {
+        setFocused(false);
+        const n = parseInt(raw.replace(/[^0-9]/g, ""), 10);
+        onChange(isNaN(n) ? 0 : n);
+      }}
+      onChange={(e) => {
+        const digits = e.target.value.replace(/[^0-9]/g, "");
+        setRaw(digits);
+        const n = parseInt(digits, 10);
+        onChange(isNaN(n) ? 0 : n);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          (e.target as HTMLInputElement).blur();
+          onEnterKey?.();
+        }
+      }}
+    />
+  );
+}
+
+// ── ドラッグハンドル付き手当行 ────────────────────────────────────
 function AllowanceReorderItem({
   row,
   allowanceDefinitions,
@@ -63,81 +249,50 @@ function AllowanceReorderItem({
 
   return (
     <Reorder.Item
-      key={row.uid}
       value={row}
       dragListener={false}
       dragControls={controls}
       className="list-none"
-      whileDrag={{ scale: 1.025, boxShadow: "0 10px 30px rgba(0,0,0,0.18)", zIndex: 50, borderRadius: "8px", backgroundColor: "hsl(var(--background))" }}
-      transition={{ duration: 0.15 }}
+      whileDrag={{ scale: 1.02, boxShadow: "0 8px 24px rgba(0,0,0,0.15)", zIndex: 50, borderRadius: "6px", backgroundColor: "hsl(var(--background))" }}
+      transition={{ duration: 0.13 }}
     >
-      <div className="flex items-center gap-1.5 px-2 py-1.5 bg-background hover:bg-primary/5 transition-colors border-b border-border/50 group select-none">
-        {/* ドラッグハンドル */}
+      <div className="flex items-center gap-1.5 px-2 py-1 border-b border-border/40 bg-background hover:bg-primary/5 transition-colors group">
         <div
           onPointerDown={(e) => controls.start(e)}
-          className="cursor-grab active:cursor-grabbing touch-none text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors shrink-0"
-          title="ドラッグして並び替え"
+          className={`${COL_DRAG} cursor-grab active:cursor-grabbing touch-none text-muted-foreground/30 group-hover:text-muted-foreground/50 transition-colors`}
         >
           <GripVertical className="h-4 w-4" />
         </div>
-
-        {/* 名称 */}
-        <div className="flex-1 min-w-0">
-          <Select
-            value={row.defId?.toString() ?? ""}
-            onValueChange={(v) => onChange(row.uid, { defId: parseInt(v, 10) })}
-          >
-            <SelectTrigger className="h-7 text-xs border border-border/60 bg-transparent focus:ring-1 focus:ring-primary px-2 w-full rounded">
-              <SelectValue placeholder="手当を選択…" />
-            </SelectTrigger>
-            <SelectContent>
-              {allowanceDefinitions?.map(d => (
-                <SelectItem key={d.id} value={d.id.toString()}>{d.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className={COL_NAME}>
+          <SearchableCombobox
+            options={allowanceDefinitions ?? []}
+            value={row.defId}
+            onValueChange={(id) => onChange(row.uid, { defId: id })}
+            placeholder="手当を選択…"
+          />
         </div>
-
-        {/* 課税バッジ */}
-        <div className="w-[44px] text-center shrink-0">
-          {def && (
+        <div className={COL_TAX}>
+          {def ? (
             <span
-              className={`px-1 py-0.5 rounded border font-medium ${def.isTaxable ? "bg-red-50 text-red-700 border-red-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}
+              className={`inline-block px-1 py-0.5 rounded border font-medium leading-none ${def.isTaxable ? "bg-red-50 text-red-700 border-red-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}
               style={{ fontSize: "9px" }}
             >
               {def.isTaxable ? "課税" : "非課税"}
             </span>
-          )}
+          ) : null}
         </div>
-
-        {/* 金額 */}
-        <div className="w-24 shrink-0">
-          <Input
-            ref={inputRef}
-            type="text"
-            inputMode="numeric"
-            className="h-7 w-full text-right border border-border/60 bg-transparent focus-visible:ring-1 focus-visible:ring-primary px-2 text-xs rounded"
-            value={row.amount || ""}
-            onChange={(e) => {
-              const raw = e.target.value.replace(/[^0-9]/g, "");
-              onChange(row.uid, { amount: raw === "" ? 0 : parseInt(raw, 10) });
-            }}
-            onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 0); }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                onEnterKey?.();
-              }
-            }}
-            placeholder="0"
+        <div className={COL_AMOUNT}>
+          <AmountInput
+            value={row.amount}
+            onChange={(v) => onChange(row.uid, { amount: v })}
+            onEnterKey={onEnterKey}
+            inputRef={inputRef}
           />
         </div>
-
-        {/* 削除 */}
         <button
           type="button"
           onClick={() => onDelete(row.uid)}
-          className="text-muted-foreground/40 hover:text-destructive transition-colors p-0.5 shrink-0"
+          className={`${COL_DEL} flex items-center justify-center text-muted-foreground/30 hover:text-destructive transition-colors`}
           title="削除"
         >
           <X className="h-3.5 w-3.5" />
@@ -147,7 +302,7 @@ function AllowanceReorderItem({
   );
 }
 
-/* ── ドラッグハンドル付き差引行 ── */
+// ── ドラッグハンドル付き差引行 ────────────────────────────────────
 function DeductionReorderItem({
   row,
   deductionDefinitions,
@@ -167,78 +322,84 @@ function DeductionReorderItem({
 
   return (
     <Reorder.Item
-      key={row.uid}
       value={row}
       dragListener={false}
       dragControls={controls}
       className="list-none"
-      whileDrag={{ scale: 1.025, boxShadow: "0 10px 30px rgba(0,0,0,0.18)", zIndex: 50, borderRadius: "8px", backgroundColor: "hsl(var(--background))" }}
-      transition={{ duration: 0.15 }}
+      whileDrag={{ scale: 1.02, boxShadow: "0 8px 24px rgba(0,0,0,0.15)", zIndex: 50, borderRadius: "6px", backgroundColor: "hsl(var(--background))" }}
+      transition={{ duration: 0.13 }}
     >
-      <div className="flex items-center gap-1.5 px-2 py-1.5 bg-background hover:bg-primary/5 transition-colors border-b border-border/50 group select-none">
-        {/* ドラッグハンドル */}
+      <div className="flex items-center gap-1.5 px-2 py-1 border-b border-border/40 bg-background hover:bg-primary/5 transition-colors group">
         <div
           onPointerDown={(e) => controls.start(e)}
-          className="cursor-grab active:cursor-grabbing touch-none text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors shrink-0"
-          title="ドラッグして並び替え"
+          className={`${COL_DRAG} cursor-grab active:cursor-grabbing touch-none text-muted-foreground/30 group-hover:text-muted-foreground/50 transition-colors`}
         >
           <GripVertical className="h-4 w-4" />
         </div>
-
-        {/* 名称 */}
-        <div className="flex-1 min-w-0">
-          <Select
-            value={row.defId?.toString() ?? ""}
-            onValueChange={(v) => onChange(row.uid, { defId: parseInt(v, 10) })}
-          >
-            <SelectTrigger className="h-7 text-xs border border-border/60 bg-transparent focus:ring-1 focus:ring-primary px-2 w-full rounded">
-              <SelectValue placeholder="差引を選択…" />
-            </SelectTrigger>
-            <SelectContent>
-              {deductionDefinitions?.map(d => (
-                <SelectItem key={d.id} value={d.id.toString()}>{d.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* 空 (課税列の幅合わせ) */}
-        <div className="w-[44px] shrink-0" />
-
-        {/* 金額 */}
-        <div className="w-24 shrink-0">
-          <Input
-            ref={inputRef}
-            type="text"
-            inputMode="numeric"
-            className="h-7 w-full text-right border border-border/60 bg-transparent focus-visible:ring-1 focus-visible:ring-primary px-2 text-xs rounded"
-            value={row.amount || ""}
-            onChange={(e) => {
-              const raw = e.target.value.replace(/[^0-9]/g, "");
-              onChange(row.uid, { amount: raw === "" ? 0 : parseInt(raw, 10) });
-            }}
-            onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 0); }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                onEnterKey?.();
-              }
-            }}
-            placeholder="0"
+        <div className={COL_NAME}>
+          <SearchableCombobox
+            options={deductionDefinitions ?? []}
+            value={row.defId}
+            onValueChange={(id) => onChange(row.uid, { defId: id })}
+            placeholder="差引を選択…"
           />
         </div>
-
-        {/* 削除 */}
+        <div className={COL_TAX} />
+        <div className={COL_AMOUNT}>
+          <AmountInput
+            value={row.amount}
+            onChange={(v) => onChange(row.uid, { amount: v })}
+            onEnterKey={onEnterKey}
+            inputRef={inputRef}
+          />
+        </div>
         <button
           type="button"
           onClick={() => onDelete(row.uid)}
-          className="text-muted-foreground/40 hover:text-destructive transition-colors p-0.5 shrink-0"
+          className={`${COL_DEL} flex items-center justify-center text-muted-foreground/30 hover:text-destructive transition-colors`}
           title="削除"
         >
           <X className="h-3.5 w-3.5" />
         </button>
       </div>
     </Reorder.Item>
+  );
+}
+
+// ── セクションヘッダー ────────────────────────────────────────────
+function SectionHeader({ label, accent }: { label: string; accent: string }) {
+  return (
+    <div className={`flex items-center gap-2 px-3 py-1 ${accent} border-b border-border`}>
+      <span className="text-[10px] font-bold tracking-widest uppercase">{label}</span>
+    </div>
+  );
+}
+
+// ── 表示行（固定金額表示） ─────────────────────────────────────────
+function DisplayRow({
+  label,
+  value,
+  bg = "",
+  labelClass = "text-muted-foreground",
+  valueClass = "tabular-nums",
+  bold = false,
+}: {
+  label: string;
+  value: number;
+  bg?: string;
+  labelClass?: string;
+  valueClass?: string;
+  bold?: boolean;
+}) {
+  const fmt = (v: number) => v > 0 ? v.toLocaleString("ja-JP") : "0";
+  return (
+    <div className={`flex items-center gap-1.5 px-2 py-1 border-b border-border/40 ${bg}`}>
+      <div className={COL_DRAG} />
+      <div className={`${COL_NAME} text-xs ${labelClass} ${bold ? "font-semibold" : ""}`}>{label}</div>
+      <div className={COL_TAX} />
+      <div className={`${COL_AMOUNT} text-right text-xs pr-1 ${valueClass} ${bold ? "font-bold" : ""}`}>{fmt(value)}</div>
+      <div className={COL_DEL} />
+    </div>
   );
 }
 
@@ -272,7 +433,6 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
 
   const [deductionRows, setDeductionRows] = useState<DeductionRow[]>([{ uid: newUid(), defId: null, amount: 0 }]);
 
-  // 金額入力欄の ref マップ（Enter キーでの行間ナビゲーション用）
   const allowanceInputRefsMap = useRef<Map<string, HTMLInputElement>>(new Map());
   const deductionInputRefsMap = useRef<Map<string, HTMLInputElement>>(new Map());
 
@@ -295,8 +455,7 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
     const currentRows = rowsRef.current;
     const idx = currentRows.findIndex(r => r.uid === uid);
     if (idx >= 0 && idx < currentRows.length - 1) {
-      const nextInput = allowanceInputRefsMap.current.get(currentRows[idx + 1].uid);
-      nextInput?.focus();
+      allowanceInputRefsMap.current.get(currentRows[idx + 1].uid)?.focus();
     }
   }, []);
 
@@ -304,16 +463,13 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
     const currentRows = deductionRowsRef.current;
     const idx = currentRows.findIndex(r => r.uid === uid);
     if (idx >= 0 && idx < currentRows.length - 1) {
-      const nextInput = deductionInputRefsMap.current.get(currentRows[idx + 1].uid);
-      nextInput?.focus();
+      deductionInputRefsMap.current.get(currentRows[idx + 1].uid)?.focus();
     }
   }, []);
 
-  // 「このemployeeIdで手当を一度でも初期化したか」を追うフラグ
   const allowancesInitializedRef = useRef<number | null>(null);
   const deductionsInitializedRef = useRef<number | null>(null);
 
-  // 未保存変更追跡
   const [isDirty, setIsDirty] = useState(false);
   const onDirtyChangeRef = useRef(onDirtyChange);
   useEffect(() => { onDirtyChangeRef.current = onDirtyChange; });
@@ -328,7 +484,6 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
     onDirtyChangeRef.current?.(false);
   }, []);
 
-  // employeeId が変わったらフラグをリセット（次に data が来たとき再初期化する）
   useEffect(() => {
     allowancesInitializedRef.current = null;
     deductionsInitializedRef.current = null;
@@ -337,8 +492,6 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
     markClean();
   }, [employeeId, markClean]);
 
-  // 手当データ初回ロード時のみ rows を上書き（refetchOnWindowFocus 等の再取得では上書きしない）
-  // ただし「空配列 + fetching中」は stale な空キャッシュの可能性があるのでスキップ
   useEffect(() => {
     if (employeeAllowances === undefined) return;
     if (allowancesInitializedRef.current === employeeId) return;
@@ -351,7 +504,6 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
     markClean();
   }, [employeeAllowances, employeeId, isAllowancesFetching, allowancesUpdatedAt, markClean]);
 
-  // 差引データ初回ロード時のみ deductionRows を上書き
   useEffect(() => {
     if (employeeDeductions === undefined) return;
     if (deductionsInitializedRef.current === employeeId) return;
@@ -384,7 +536,6 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
 
   const handleSave = async () => {
     try {
-      // defId が選択済みの行はすべて保存（金額0でも手当定義IDを保持するため amount > 0 条件を除去）
       const allowancePayload = rows
         .filter(r => r.defId !== null)
         .map(r => ({ allowanceDefinitionId: r.defId!, amount: r.amount }));
@@ -398,8 +549,6 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
         updateEmployee.mutateAsync({ id: employeeId, data: { baseSalary: baseSalaryInput } }),
       ]);
 
-      // キャッシュを保存済みデータで直接更新（次回マウント時の初期化で正しく復元するため）
-      // allowanceDefinitionId を含む完全なデータでキャッシュを更新する
       const savedAllowances = allowancePayload.map((item, idx) => {
         const def = (allowanceDefinitions as { id: number; name: string; isTaxable: boolean }[] | undefined)
           ?.find(d => d.id === item.allowanceDefinitionId);
@@ -458,6 +607,7 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
     markDirty();
   }, [markDirty]);
 
+  // ── 計算 ──────────────────────────────────────────────────────────
   const allowancesTotal = rows.reduce((s, r) => s + (r.amount || 0), 0);
   const grandTotal = baseSalaryInput + allowancesTotal;
 
@@ -466,17 +616,15 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
     ? company!.employmentInsuranceRate
     : 0.005;
 
-  // 令和8年度レート
-  const HEALTH_RATE_NO_CARE = 0.04925;     // 健保のみ: 9.85%/2
-  const HEALTH_RATE_WITH_CARE = 0.05735;   // 健保+介護: (9.85+1.62)%/2
-  const CHILDCARE_RATE = 0.00115;          // 子育て支援金: 0.23%/2
+  const HEALTH_RATE_NO_CARE  = 0.04925;
+  const HEALTH_RATE_WITH_CARE = 0.05735;
+  const CHILDCARE_RATE = 0.00115;
 
   const appliedHealthRate = employee.careInsuranceApplied === true
     ? HEALTH_RATE_WITH_CARE
     : HEALTH_RATE_NO_CARE;
 
   const empSR = (employee as unknown as { standardRemuneration?: number }).standardRemuneration ?? 0;
-  // 健保・厚年の計算基礎: 標準報酬月額が設定されている場合はそれを使用、未設定時は総支給額
   const insBase = empSR > 0 ? empSR : grandTotal;
 
   const healthInsurance = round50sen(insBase * appliedHealthRate);
@@ -489,19 +637,15 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
     return s + (def && !def.isTaxable ? (r.amount || 0) : 0);
   }, 0);
 
-  // 雇用保険: 総支給額から非課税手当を除いた金額 × 料率
   const employmentInsurance = (employee.employmentInsuranceApplied !== false)
     ? round50sen((grandTotal - nonTaxableAllowancesTotal) * empInsRate)
     : 0;
 
   const totalInsurance = healthInsurance + childcareSupportContribution + pensionInsurance + employmentInsurance;
 
-  // 所得税計算基礎: 総支給額 - 非課税手当 - 健保 - 厚年 - 雇用保険
-  // ※子育て支援金(childcareSupportContribution)は所得税計算基礎から差し引かない
   const incomeTaxBase = Math.max(0,
     grandTotal - nonTaxableAllowancesTotal - healthInsurance - pensionInsurance - employmentInsurance
   );
-  // 社会保険料控除後の金額（表示用）: 総支給 - 社保合計（非課税手当は含む）
   const afterInsuranceSalary = Math.max(0,
     grandTotal - healthInsurance - childcareSupportContribution - pensionInsurance - employmentInsurance
   );
@@ -516,228 +660,193 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
   const netSalary = roundJapanese(grandTotal - totalDeductions);
 
   const isBwEmployee = !!(employee as unknown as { useBluewingLogic?: boolean }).useBluewingLogic;
-
-  const fmt = (v: number) => v > 0 ? v.toLocaleString("ja-JP") : v === 0 ? "0" : "—";
-
-  const sectionLabel = (label: string, rowSpan: number) => (
-    <td
-      rowSpan={rowSpan}
-      className="border border-border text-center align-middle font-medium bg-muted/30"
-      style={{ writingMode: "vertical-rl", letterSpacing: "0.15em", padding: "6px 3px", fontSize: "11px", width: "22px" }}
-    >
-      {label}
-    </td>
-  );
+  const fmt = (v: number) => v >= 0 ? v.toLocaleString("ja-JP") : "—";
 
   return (
-    <div className="flex flex-col gap-0">
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-xs">
-          <thead>
-            <tr className="bg-muted/60">
-              <th className="border border-border py-1.5 text-center font-medium text-muted-foreground" style={{ width: "22px" }}></th>
-              <th className="border border-border px-2 py-1.5 text-left font-medium text-muted-foreground">名称</th>
-              <th className="border border-border px-1 py-1.5 text-center font-medium text-muted-foreground" style={{ width: "44px" }}>課税</th>
-              <th className="border border-border px-2 py-1.5 text-right font-medium text-muted-foreground" style={{ width: "100px" }}>金額（円）</th>
-            </tr>
-          </thead>
-          <tbody>
-            {/* ── 支給セクション ── */}
-            <tr className="bg-background">
-              {sectionLabel("支　給", 3)}
-              <td className="border border-border px-2 py-1">
-                <div className="font-medium">基本給</div>
-                {isDaily && (
-                  <div className="text-muted-foreground leading-tight" style={{ fontSize: "9px" }}>日給制（手動設定可）</div>
-                )}
-              </td>
-              <td className="border border-border px-1 py-1 text-center">
-                <span className="px-1 py-0.5 rounded border bg-red-50 text-red-700 border-red-200" style={{ fontSize: "10px" }}>課税</span>
-              </td>
-              <td className="border border-border px-1 py-0.5">
-                <Input
-                  ref={baseSalaryRef}
-                  type="number"
-                  min="0"
-                  className="h-6 w-full text-right border-0 shadow-none bg-transparent focus-visible:ring-1 focus-visible:ring-primary px-1 text-xs font-medium"
-                  value={baseSalaryInput || ""}
-                  onChange={(e) => {
-                    const v = e.target.value === "" ? 0 : parseInt(e.target.value, 10);
-                    setBaseSalaryInput(isNaN(v) ? 0 : v);
-                    markDirty();
-                  }}
-                  onFocus={(e) => { const t = e.target; setTimeout(() => t.select(), 0); }}
-                  placeholder="0"
-                />
-              </td>
-            </tr>
-
-            {/* ── 手当ドラッグ列 (1行にまとめてReorderを内包) ── */}
-            <tr>
-              <td colSpan={3} className="border border-border p-0">
-                <Reorder.Group
-                  axis="y"
-                  values={rows}
-                  onReorder={(newRows) => { setRows(newRows); markDirty(); }}
-                  className="divide-y divide-border/40"
-                  style={{ listStyle: "none", margin: 0, padding: 0 }}
-                >
-                  {rows.map((row) => (
-                    <AllowanceReorderItem
-                      key={row.uid}
-                      row={row}
-                      allowanceDefinitions={allowanceDefinitions as { id: number; name: string; isTaxable: boolean }[] | undefined}
-                      onChange={handleAllowanceChange}
-                      onDelete={handleAllowanceDelete}
-                      inputRef={getAllowanceInputRef(row.uid)}
-                      onEnterKey={() => handleAllowanceEnterKey(row.uid)}
-                    />
-                  ))}
-                </Reorder.Group>
-                <div className="px-2 py-1.5 bg-muted/10">
-                  <button
-                    type="button"
-                    onClick={() => { setRows(prev => [...prev, { uid: newUid(), defId: null, amount: 0 }]); markDirty(); }}
-                    className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors"
-                  >
-                    <Plus className="h-3 w-3" />
-                    行を追加
-                  </button>
-                </div>
-              </td>
-            </tr>
-
-            <tr className="bg-blue-50 font-semibold">
-              <td className="border border-border px-2 py-1.5 text-muted-foreground text-center" colSpan={2}>
-                総支給金額
-                {isBwEmployee && (
-                  <span className="ml-1 text-xs text-blue-600 font-normal">※BW分除く</span>
-                )}
-              </td>
-              <td className="border border-border" />
-              <td className="border border-border px-2 py-1.5 text-right tabular-nums font-bold text-blue-800">
-                {grandTotal > 0 ? grandTotal.toLocaleString("ja-JP") : "—"}
-              </td>
-            </tr>
-
-            {/* ── 控除（社会保険料）セクション ── */}
-            <tr className="bg-background">
-              {sectionLabel("控　除", 5)}
-              <td className="border border-border px-2 py-1 text-muted-foreground">
-                健康保険料{employee.careInsuranceApplied === true ? "（介護込）" : ""}
-              </td>
-              <td className="border border-border" />
-              <td className="border border-border px-2 py-1.5 text-right tabular-nums">{fmt(healthInsurance)}</td>
-            </tr>
-            <tr className="bg-muted/20">
-              <td className="border border-border px-2 py-1 text-muted-foreground">子ども・子育て支援金</td>
-              <td className="border border-border" />
-              <td className="border border-border px-2 py-1.5 text-right tabular-nums">{fmt(childcareSupportContribution)}</td>
-            </tr>
-            <tr className="bg-background">
-              <td className="border border-border px-2 py-1 text-muted-foreground">厚生年金保険料</td>
-              <td className="border border-border" />
-              <td className="border border-border px-2 py-1.5 text-right tabular-nums">{fmt(pensionInsurance)}</td>
-            </tr>
-            <tr className="bg-background">
-              <td className="border border-border px-2 py-1 text-muted-foreground">雇用保険料</td>
-              <td className="border border-border" />
-              <td className="border border-border px-2 py-1.5 text-right tabular-nums">{fmt(employmentInsurance)}</td>
-            </tr>
-            <tr className="bg-muted/20">
-              <td className="border border-border px-2 py-1 text-muted-foreground font-medium" colSpan={2}>
-                社会保険料控除後の金額
-              </td>
-              <td className="border border-border px-2 py-1.5 text-right tabular-nums font-medium">{fmt(afterInsuranceSalary)}</td>
-            </tr>
-            <tr className="bg-orange-50 font-semibold">
-              <td className="border border-border px-2 py-1.5 text-center text-muted-foreground" colSpan={2}>社会保険料合計</td>
-              <td className="border border-border px-2 py-1.5 text-right tabular-nums text-orange-800 font-bold">{fmt(totalInsurance)}</td>
-            </tr>
-
-            {/* ── 差引セクション ── */}
-            <tr className="bg-background">
-              {sectionLabel("差引金額", 5)}
-              <td className="border border-border px-2 py-1 text-muted-foreground">所得税</td>
-              <td className="border border-border" />
-              <td className="border border-border px-2 py-1.5 text-right tabular-nums">{fmt(incomeTax)}</td>
-            </tr>
-            <tr className="bg-muted/20">
-              <td className="border border-border px-2 py-1 text-muted-foreground">市町村民税</td>
-              <td className="border border-border" />
-              <td className="border border-border px-2 py-1.5 text-right tabular-nums">{fmt(residentTax)}</td>
-            </tr>
-
-            {/* ── 差引ドラッグ列 ── */}
-            <tr>
-              <td colSpan={3} className="border border-border p-0">
-                <Reorder.Group
-                  axis="y"
-                  values={deductionRows}
-                  onReorder={(newRows) => { setDeductionRows(newRows); markDirty(); }}
-                  className="divide-y divide-border/40"
-                  style={{ listStyle: "none", margin: 0, padding: 0 }}
-                >
-                  {deductionRows.map((row) => (
-                    <DeductionReorderItem
-                      key={row.uid}
-                      row={row}
-                      deductionDefinitions={deductionDefinitions as { id: number; name: string }[] | undefined}
-                      onChange={handleDeductionChange}
-                      onDelete={handleDeductionDelete}
-                      inputRef={getDeductionInputRef(row.uid)}
-                      onEnterKey={() => handleDeductionEnterKey(row.uid)}
-                    />
-                  ))}
-                </Reorder.Group>
-                <div className="px-2 py-1.5 bg-muted/10">
-                  <button
-                    type="button"
-                    onClick={() => { setDeductionRows(prev => [...prev, { uid: newUid(), defId: null, amount: 0 }]); markDirty(); }}
-                    className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors"
-                  >
-                    <Plus className="h-3 w-3" />
-                    行を追加
-                  </button>
-                </div>
-              </td>
-            </tr>
-
-            <tr className="bg-muted/40 font-semibold">
-              <td className="border border-border px-2 py-1.5 text-center text-muted-foreground" colSpan={2}>差引合計額</td>
-              <td className="border border-border px-2 py-1.5 text-right tabular-nums text-red-700 font-bold">{fmt(totalDeductions)}</td>
-            </tr>
-            <tr className="bg-green-50 font-bold">
-              <td className="border border-border px-2 py-1.5 text-center font-semibold" colSpan={2}>差引支給額</td>
-              <td className="border border-border px-2 py-1.5 text-right tabular-nums text-green-800 text-sm font-extrabold">{fmt(netSalary)}</td>
-            </tr>
-          </tbody>
-        </table>
-
-        {isBwEmployee && (
-          <div className="mx-0 mt-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
-            <strong>BW社員:</strong> 上記は基本給・手当のみ。時間外手当・業績手当（BW計算）は「給与明細」タブで確認してください。
-          </div>
-        )}
-        {company && (
-          <div className="mx-0 mt-2 mb-1 px-3 py-2 bg-muted/40 border rounded text-xs text-muted-foreground">
-            適用料率：健保 {(appliedHealthRate * 100).toFixed(3)}%
-            {employee.careInsuranceApplied && <span className="text-amber-600">（介護込）</span>}
-            {childcareSupportApplicable ? "・子育て支援金 0.115%" : "・子育て支援金 0%（4月以前）"}・厚年 {(pensionRate * 100).toFixed(2)}%・雇保 {(empInsRate * 100).toFixed(1)}%
-            {empSR > 0 && (
-              <span className="ml-2 text-blue-600">（健保・厚年{childcareSupportApplicable ? "・支援金" : ""}は標準報酬月額 {empSR.toLocaleString("ja-JP")} 円ベース）</span>
-            )}
-          </div>
-        )}
+    <div className="flex flex-col gap-0 select-none">
+      {/* ── ヘッダー行 ── */}
+      <div className="flex items-center gap-1.5 px-2 py-1 bg-muted/60 border-b border-border text-[10px] font-semibold text-muted-foreground">
+        <div className={COL_DRAG} />
+        <div className={COL_NAME}>名称</div>
+        <div className={`${COL_TAX} text-center`}>課税</div>
+        <div className={`${COL_AMOUNT} text-right pr-1`}>金額（円）</div>
+        <div className={COL_DEL} />
       </div>
 
+      {/* ══ 支給セクション ══ */}
+      <SectionHeader label="支　給" accent="bg-blue-50/80 text-blue-800" />
+
+      {/* 基本給行 */}
+      <div className="flex items-center gap-1.5 px-2 py-1 border-b border-border/40 bg-background">
+        <div className={COL_DRAG} />
+        <div className={`${COL_NAME} text-xs`}>
+          <span className="font-medium">基本給</span>
+          {isDaily && (
+            <span className="ml-1.5 text-muted-foreground" style={{ fontSize: "9px" }}>日給制（手動設定可）</span>
+          )}
+        </div>
+        <div className={COL_TAX}>
+          <span className="inline-block px-1 py-0.5 rounded border font-medium bg-red-50 text-red-700 border-red-200 leading-none" style={{ fontSize: "9px" }}>課税</span>
+        </div>
+        <div className={COL_AMOUNT}>
+          <AmountInput
+            value={baseSalaryInput}
+            onChange={(v) => { setBaseSalaryInput(v); markDirty(); }}
+            inputRef={(el) => { (baseSalaryRef as React.MutableRefObject<HTMLInputElement | null>).current = el; }}
+          />
+        </div>
+        <div className={COL_DEL} />
+      </div>
+
+      {/* 手当ドラッグ行 */}
+      <Reorder.Group
+        axis="y"
+        values={rows}
+        onReorder={(newRows) => { setRows(newRows); markDirty(); }}
+        style={{ listStyle: "none", margin: 0, padding: 0 }}
+      >
+        {rows.map((row) => (
+          <AllowanceReorderItem
+            key={row.uid}
+            row={row}
+            allowanceDefinitions={allowanceDefinitions as { id: number; name: string; isTaxable: boolean }[] | undefined}
+            onChange={handleAllowanceChange}
+            onDelete={handleAllowanceDelete}
+            inputRef={getAllowanceInputRef(row.uid)}
+            onEnterKey={() => handleAllowanceEnterKey(row.uid)}
+          />
+        ))}
+      </Reorder.Group>
+
+      {/* 行を追加 */}
+      <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-border/40 bg-muted/10">
+        <div className={COL_DRAG} />
+        <button
+          type="button"
+          onClick={() => { setRows(prev => [...prev, { uid: newUid(), defId: null, amount: 0 }]); markDirty(); }}
+          className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors"
+        >
+          <Plus className="h-3 w-3" />
+          行を追加
+        </button>
+      </div>
+
+      {/* 総支給金額 */}
+      <div className="flex items-center gap-1.5 px-2 py-1.5 bg-blue-50 border-b border-border">
+        <div className={COL_DRAG} />
+        <div className={`${COL_NAME} text-xs font-semibold text-blue-900`}>
+          総支給金額
+          {isBwEmployee && <span className="ml-1 font-normal text-blue-600">※BW分除く</span>}
+        </div>
+        <div className={COL_TAX} />
+        <div className={`${COL_AMOUNT} text-right pr-1 text-xs font-bold text-blue-800 tabular-nums`}>
+          {grandTotal > 0 ? grandTotal.toLocaleString("ja-JP") : "—"}
+        </div>
+        <div className={COL_DEL} />
+      </div>
+
+      {/* ══ 控除（社会保険料）セクション ══ */}
+      <SectionHeader label="控　除（社会保険料）" accent="bg-orange-50/80 text-orange-800" />
+
+      <DisplayRow label={`健康保険料${employee.careInsuranceApplied === true ? "（介護込）" : ""}`} value={healthInsurance} />
+      <DisplayRow label="子ども・子育て支援金" value={childcareSupportContribution} bg="bg-muted/10" />
+      <DisplayRow label="厚生年金保険料" value={pensionInsurance} />
+      <DisplayRow label="雇用保険料" value={employmentInsurance} bg="bg-muted/10" />
+      <DisplayRow label="社会保険料控除後の金額" value={afterInsuranceSalary} labelClass="font-medium text-foreground" valueClass="tabular-nums font-medium" />
+
+      {/* 社会保険料合計 */}
+      <div className="flex items-center gap-1.5 px-2 py-1.5 bg-orange-50 border-b border-border">
+        <div className={COL_DRAG} />
+        <div className={`${COL_NAME} text-xs font-semibold text-orange-900`}>社会保険料合計</div>
+        <div className={COL_TAX} />
+        <div className={`${COL_AMOUNT} text-right pr-1 text-xs font-bold text-orange-700 tabular-nums`}>{fmt(totalInsurance)}</div>
+        <div className={COL_DEL} />
+      </div>
+
+      {/* ══ 差引セクション ══ */}
+      <SectionHeader label="差　引" accent="bg-red-50/80 text-red-800" />
+
+      <DisplayRow label="所得税" value={incomeTax} />
+      <DisplayRow label="市町村民税" value={residentTax} bg="bg-muted/10" />
+
+      {/* 差引ドラッグ行 */}
+      <Reorder.Group
+        axis="y"
+        values={deductionRows}
+        onReorder={(newRows) => { setDeductionRows(newRows); markDirty(); }}
+        style={{ listStyle: "none", margin: 0, padding: 0 }}
+      >
+        {deductionRows.map((row) => (
+          <DeductionReorderItem
+            key={row.uid}
+            row={row}
+            deductionDefinitions={deductionDefinitions as { id: number; name: string }[] | undefined}
+            onChange={handleDeductionChange}
+            onDelete={handleDeductionDelete}
+            inputRef={getDeductionInputRef(row.uid)}
+            onEnterKey={() => handleDeductionEnterKey(row.uid)}
+          />
+        ))}
+      </Reorder.Group>
+
+      {/* 差引 行を追加 */}
+      <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-border/40 bg-muted/10">
+        <div className={COL_DRAG} />
+        <button
+          type="button"
+          onClick={() => { setDeductionRows(prev => [...prev, { uid: newUid(), defId: null, amount: 0 }]); markDirty(); }}
+          className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors"
+        >
+          <Plus className="h-3 w-3" />
+          行を追加
+        </button>
+      </div>
+
+      {/* 差引合計額 */}
+      <div className="flex items-center gap-1.5 px-2 py-1.5 bg-muted/40 border-b border-border">
+        <div className={COL_DRAG} />
+        <div className={`${COL_NAME} text-xs font-semibold text-muted-foreground`}>差引合計額</div>
+        <div className={COL_TAX} />
+        <div className={`${COL_AMOUNT} text-right pr-1 text-xs font-bold text-red-700 tabular-nums`}>{fmt(totalDeductions)}</div>
+        <div className={COL_DEL} />
+      </div>
+
+      {/* 差引支給額 */}
+      <div className="flex items-center gap-1.5 px-2 py-2 bg-green-50 border-b border-border">
+        <div className={COL_DRAG} />
+        <div className={`${COL_NAME} text-xs font-bold text-green-900`}>差引支給額</div>
+        <div className={COL_TAX} />
+        <div className={`${COL_AMOUNT} text-right pr-1 font-extrabold text-green-800 tabular-nums`} style={{ fontSize: "13px" }}>
+          {fmt(netSalary)}
+        </div>
+        <div className={COL_DEL} />
+      </div>
+
+      {/* 注記 */}
+      {isBwEmployee && (
+        <div className="mt-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
+          <strong>BW社員:</strong> 上記は基本給・手当のみ。時間外手当・業績手当（BW計算）は「給与明細」タブで確認してください。
+        </div>
+      )}
+      {company && (
+        <div className="mt-1 px-3 py-2 bg-muted/40 border rounded text-xs text-muted-foreground">
+          適用料率：健保 {(appliedHealthRate * 100).toFixed(3)}%
+          {employee.careInsuranceApplied && <span className="text-amber-600">（介護込）</span>}
+          {childcareSupportApplicable ? "・子育て支援金 0.115%" : "・子育て支援金 0%（4月以前）"}・厚年 {(pensionRate * 100).toFixed(2)}%・雇保 {(empInsRate * 100).toFixed(1)}%
+          {empSR > 0 && (
+            <span className="ml-2 text-blue-600">（健保・厚年{childcareSupportApplicable ? "・支援金" : ""}は標準報酬月額 {empSR.toLocaleString("ja-JP")} 円ベース）</span>
+          )}
+        </div>
+      )}
+
+      {/* 保存ボタン */}
       <div className="border-t pt-3 mt-2">
         <Button
           className="w-full"
           onClick={handleSave}
-          disabled={updateAllowances.isPending || updateDeductions.isPending}
+          disabled={updateAllowances.isPending || updateDeductions.isPending || updateEmployee.isPending}
         >
-          保存
+          {isDirty ? "💾 保存（未保存の変更あり）" : "保存"}
         </Button>
       </div>
     </div>
