@@ -11,6 +11,16 @@ const router = Router();
  * - emp.pensionApplied が null の場合: 生年月日から計算月時点の年齢を算出し、70歳以上なら false
  * - emp.pensionApplied が true/false の場合: その値をそのまま使用（手動オーバーライド）
  */
+/**
+ * 子ども・子育て支援金は2026年5月給与（4月分）から徴収開始。
+ * システム上の month が 2026/05 より前の場合は 0 とする。
+ */
+function isChildcareSupportApplicable(year: number, month: number): boolean {
+  if (year < 2026) return false;
+  if (year === 2026 && month <= 4) return false;
+  return true;
+}
+
 function resolvePensionApplied(emp: typeof employeesTable.$inferSelect, year: number, month: number): boolean {
   if (emp.pensionApplied !== null && emp.pensionApplied !== undefined) {
     return emp.pensionApplied;
@@ -142,6 +152,7 @@ router.post("/payroll/calculate", async (req, res) => {
       employmentInsuranceRate: empInsRate,
     });
 
+    if (!isChildcareSupportApplicable(year, month)) manualIns.childcareSupportContribution = 0;
     const manualSocialInsurance = manualIns.healthInsurance + manualIns.childcareSupportContribution + manualIns.pension;
     const manualTotalDeductions = roundJapanese(
       manualSocialInsurance + manualIns.employmentInsurance + manualIns.incomeTax + (emp.residentTax ?? 0) + customDeductionsTotal
@@ -249,6 +260,7 @@ router.post("/payroll/calculate", async (req, res) => {
       employmentInsuranceRate: empInsRate,
     });
 
+    if (!isChildcareSupportApplicable(year, month)) ins.childcareSupportContribution = 0;
     const socialInsurance = ins.healthInsurance + ins.childcareSupportContribution + ins.pension;
     const totalDeductions = roundJapanese(
       socialInsurance + ins.employmentInsurance + ins.incomeTax + (emp.residentTax ?? 0) + customDeductionsTotal
@@ -387,6 +399,7 @@ router.post("/payroll/calculate", async (req, res) => {
       traceExpectedIncomeTax: isBwTamagawa ? 10220 : undefined,
     });
 
+    if (!isChildcareSupportApplicable(year, month)) bwIns.childcareSupportContribution = 0;
     const socialInsurance = bwIns.healthInsurance + bwIns.childcareSupportContribution + bwIns.pension;
     const totalDeductions = roundJapanese(
       socialInsurance + bwIns.employmentInsurance + bwIns.incomeTax + (emp.residentTax ?? 0) + customDeductionsTotal
@@ -625,6 +638,15 @@ router.post("/payroll/calculate", async (req, res) => {
     enableTrace: isTamagawa,
     traceExpectedIncomeTax: isTamagawa ? 10220 : undefined,
   });
+
+  // 子育て支援金：2026年5月以前は0にする
+  if (!isChildcareSupportApplicable(year, month)) {
+    const csc = result.childcareSupportContribution;
+    result.childcareSupportContribution = 0;
+    result.socialInsurance -= csc;
+    result.totalDeductions -= csc;
+    result.netSalary += csc;
+  }
 
   // カスタム控除（積立金等）を totalDeductions / netSalary に反映
   const stdTotalDeductions = roundJapanese(result.totalDeductions + customDeductionsTotal);
