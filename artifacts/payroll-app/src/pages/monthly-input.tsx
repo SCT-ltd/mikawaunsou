@@ -910,50 +910,262 @@ export default function MonthlyInput() {
       <div className="space-y-0">
         {/* ── スティッキーヘッダー ── */}
         <div className="sticky top-0 z-30 -mx-4 md:-mx-6 lg:-mx-8 px-4 md:px-6 lg:px-8 bg-background/95 backdrop-blur-sm border-b border-border shadow-sm mb-4">
-          <div className="flex flex-wrap items-center gap-3 py-3">
-            {/* タイトル */}
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 text-white shadow-md">
-                <FileSpreadsheet className="h-5 w-5" />
-              </div>
-              <div>
-                <h2 className="text-lg font-bold tracking-tight leading-tight">月次実績入力</h2>
-                <p className="text-[11px] text-muted-foreground leading-tight">給与計算の基礎となる各社員の月次実績を入力・管理します</p>
-              </div>
+          {/* タイトル行 */}
+          <div className="flex items-center gap-3 pt-3 pb-1.5 md:pb-3">
+            <div className="p-2 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 text-white shadow-md shrink-0">
+              <FileSpreadsheet className="h-5 w-5" />
             </div>
-
-            {/* 月選択 ＋ ボタン */}
-            <div className="flex flex-wrap items-center gap-2 ml-auto">
-              <RichMonthPicker
-                year={year}
-                month={month}
-                onChange={(y, m) => { setYear(y); setMonth(m); }}
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleImportAttendance}
-                disabled={isLoading || importing || saving || !employees?.length}
-                title="打刻データから出勤日数・残業時間を自動入力"
-              >
+            <div className="min-w-0 flex-1">
+              <h2 className="text-base md:text-lg font-bold tracking-tight leading-tight">月次実績入力</h2>
+              <p className="hidden sm:block text-[11px] text-muted-foreground leading-tight">給与計算の基礎となる各社員の月次実績を入力・管理します</p>
+            </div>
+            {/* デスクトップ操作群 */}
+            <div className="hidden md:flex items-center gap-2 shrink-0">
+              <RichMonthPicker year={year} month={month} onChange={(y, m) => { setYear(y); setMonth(m); }} />
+              <Button variant="outline" size="sm" onClick={handleImportAttendance} disabled={isLoading || importing || saving || !employees?.length} title="打刻データから出勤日数・残業時間を自動入力">
                 <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${importing ? "animate-spin" : ""}`} />
                 {importing ? "取り込み中..." : "勤怠から一括反映"}
               </Button>
-              <Button
-                size="sm"
-                onClick={handleSaveAll}
-                disabled={isLoading || saving || !employees?.length}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm"
-              >
+              <Button size="sm" onClick={handleSaveAll} disabled={isLoading || saving || !employees?.length} className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm">
                 <Save className="mr-1.5 h-3.5 w-3.5" />
                 {saving ? "保存中..." : "実績を保存"}
               </Button>
             </div>
           </div>
+          {/* モバイル操作行 */}
+          <div className="flex md:hidden items-center gap-2 pb-2.5">
+            <RichMonthPicker year={year} month={month} onChange={(y, m) => { setYear(y); setMonth(m); }} />
+            <Button variant="outline" size="sm" onClick={handleImportAttendance} disabled={isLoading || importing || saving || !employees?.length} className="flex-1 min-w-0">
+              <RefreshCw className={`mr-1 h-3.5 w-3.5 shrink-0 ${importing ? "animate-spin" : ""}`} />
+              <span className="truncate">{importing ? "取込中..." : "勤怠反映"}</span>
+            </Button>
+            <Button size="sm" onClick={handleSaveAll} disabled={isLoading || saving || !employees?.length} className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm flex-1 min-w-0">
+              <Save className="mr-1 h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{saving ? "保存中..." : "保存"}</span>
+            </Button>
+          </div>
         </div>
 
-        {/* ── テーブル ── */}
-        <div className="rounded-lg border bg-card shadow-sm">
+        {/* ── モバイル カードリスト ── */}
+        <div className="md:hidden space-y-3">
+          {isLoading ? (
+            <div className="flex items-center justify-center gap-2 py-16 text-muted-foreground text-sm">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+              読み込み中...
+            </div>
+          ) : !employees || employees.length === 0 ? (
+            <div className="text-center py-16 text-muted-foreground text-sm">有効な社員が見つかりません</div>
+          ) : (
+            employees.map((emp) => {
+              const rowData = edits[emp.id] ?? {};
+              const { gross, net } = computeQuickEstimate(emp, rowData, company);
+              const isBW = (emp as Record<string, unknown>).useBluewingLogic as boolean;
+              const isHourly = emp.salaryType === "hourly";
+              const unitMinutes = emp.overtimeUnitMinutes ?? 0;
+              const unitRate    = emp.overtimeUnitRate   ?? 0;
+              const hasUnit     = unitMinutes > 0 && unitRate > 0;
+
+              const mobileInput = (field: string, opts?: { step?: string; max?: number }) => {
+                const val = rowData[field];
+                const invalid = Number(val) < 0;
+                return (
+                  <Input
+                    type="number" min="0" max={opts?.max} step={opts?.step ?? "0.5"}
+                    className={`h-9 text-right text-sm px-2 w-full ${invalid ? "border-red-400 bg-red-50" : ""}`}
+                    value={Number(val) || ""}
+                    onChange={(e) => handleEditChange(emp.id, field, e.target.value)}
+                    onWheel={(e) => e.currentTarget.blur()}
+                    placeholder="0"
+                  />
+                );
+              };
+
+              const mobileUnitInput = (field: "overtimeHours" | "lateNightHours") => {
+                const hours   = Number(rowData[field]) || 0;
+                const unitVal = hours > 0 ? Math.round(hours * 60 / unitMinutes) : "";
+                return (
+                  <div>
+                    <div className="flex items-center gap-1">
+                      <Input
+                        type="number" min="0" step="1"
+                        className="h-9 text-right text-sm px-2 w-full"
+                        value={unitVal}
+                        onChange={(e) => {
+                          const units = Number(e.target.value) || 0;
+                          handleEditChange(emp.id, field, String(units * unitMinutes / 60));
+                        }}
+                        onWheel={(e) => e.currentTarget.blur()}
+                        placeholder="0"
+                      />
+                      <span className="text-xs text-muted-foreground shrink-0">回</span>
+                    </div>
+                    <div className="text-[10px] text-muted-foreground/70 mt-0.5 text-right">1回={unitMinutes}分 / ¥{unitRate.toLocaleString()}</div>
+                  </div>
+                );
+              };
+
+              return (
+                <div key={emp.id} className="rounded-xl border bg-card shadow-sm overflow-hidden">
+                  {/* 社員ヘッダー */}
+                  <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-slate-50 to-white border-b">
+                    <button
+                      className="text-left group flex items-center gap-2.5 flex-1 min-w-0"
+                      onClick={() => setCalendarEmp({ id: emp.id, name: emp.name })}
+                      title="クリックして勤怠カレンダーを表示"
+                    >
+                      <div className="h-10 w-10 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-sm shrink-0">
+                        {emp.name.charAt(0)}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-semibold text-sm group-hover:text-indigo-600 transition-colors truncate flex items-center gap-1.5">
+                          {emp.name}
+                          <CalIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40 group-hover:text-indigo-400 transition-colors" />
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate flex items-center gap-1 mt-0.5">
+                          <span>{emp.department}</span>
+                          <span className={`inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                            emp.salaryType === "daily"   ? "bg-amber-100 text-amber-700" :
+                            emp.salaryType === "hourly"  ? "bg-indigo-100 text-indigo-700" :
+                                                          "bg-slate-100 text-slate-600"
+                          }`}>
+                            {emp.salaryType === "daily" ? "日給" : emp.salaryType === "hourly" ? "時給" : "月給"}
+                          </span>
+                          {isBW && <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-100 text-violet-700">BW</span>}
+                        </div>
+                      </div>
+                    </button>
+                    <Button variant="ghost" size="sm" className="ml-2 h-9 w-9 p-0 rounded-lg hover:bg-indigo-50" onClick={() => setSidebarEmp(emp)} title="手当・控除を設定">
+                      <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  </div>
+
+                  <div className="divide-y divide-border/40">
+                    {/* 勤怠・時間管理 */}
+                    <div className="px-4 py-3">
+                      <div className="flex items-center gap-1.5 mb-2.5">
+                        <div className="h-2 w-2 rounded-full bg-sky-400 shrink-0" />
+                        <span className="text-xs font-semibold text-sky-700 tracking-wide">勤怠・時間管理</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-x-3 gap-y-2.5 mb-2.5">
+                        {[
+                          { field: "workDays",        label: "平日",    sub: "日", opts: { max: 31, step: "1" } },
+                          { field: "saturdayWorkDays", label: "土曜",   sub: "日", opts: { max: 31, step: "1" } },
+                          { field: "sundayWorkDays",   label: "日祝",   sub: "日", opts: { step: "1" } },
+                        ].map(({ field, label, sub, opts }) => (
+                          <div key={field}>
+                            <label className="text-[11px] font-semibold text-sky-600 block mb-1">
+                              {label}<span className="font-normal text-sky-400 ml-0.5">({sub})</span>
+                            </label>
+                            {mobileInput(field, opts)}
+                          </div>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-3 gap-x-3 gap-y-2.5">
+                        <div>
+                          <label className="text-[11px] font-semibold text-sky-600 block mb-1">
+                            欠勤<span className="font-normal text-sky-400 ml-0.5">(日)</span>
+                          </label>
+                          {mobileInput("absenceDays", { max: 31, step: "1" })}
+                        </div>
+                        <div>
+                          <label className="text-[11px] font-semibold text-sky-600 block mb-1">
+                            残業<span className="font-normal text-sky-400 ml-0.5">(h)</span>
+                          </label>
+                          {hasUnit ? mobileUnitInput("overtimeHours") : mobileInput("overtimeHours", { step: "0.5" })}
+                        </div>
+                        <div>
+                          <label className="text-[11px] font-semibold text-sky-600 block mb-1">
+                            深夜<span className="font-normal text-sky-400 ml-0.5">(h)</span>
+                          </label>
+                          {hasUnit ? mobileUnitInput("lateNightHours") : mobileInput("lateNightHours", { step: "0.5" })}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 実働時間 + 運行実績 */}
+                    <div className="px-4 py-3">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <div className="h-2 w-2 rounded-full bg-indigo-400 shrink-0" />
+                            <span className="text-xs font-semibold text-indigo-700 tracking-wide">実働時間</span>
+                          </div>
+                          {isHourly ? (
+                            <div>
+                              <label className="text-[11px] font-semibold text-indigo-600 block mb-1">
+                                実働<span className="font-normal text-indigo-400 ml-0.5">(h)</span>
+                              </label>
+                              {mobileInput("actualWorkHours", { step: "0.5" })}
+                            </div>
+                          ) : (
+                            <div className="h-9 flex items-center text-muted-foreground/40 text-xs">— 対象外（日給・月給）</div>
+                          )}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <div className="h-2 w-2 rounded-full bg-amber-400 shrink-0" />
+                            <span className="text-xs font-semibold text-amber-700 tracking-wide">運行実績</span>
+                          </div>
+                          <div>
+                            <label className="text-[11px] font-semibold text-amber-600 block mb-1">
+                              走行KM<span className="font-normal text-amber-400 ml-0.5">(km)</span>
+                            </label>
+                            {mobileInput("drivingDistanceKm", { step: "0.1" })}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* BW売上（Bluewing社員のみ） */}
+                    {isBW && (
+                      <div className="px-4 py-3">
+                        <div className="flex items-center gap-1.5 mb-2.5">
+                          <div className="h-2 w-2 rounded-full bg-violet-400 shrink-0" />
+                          <span className="text-xs font-semibold text-violet-700 tracking-wide">給与計算基礎（Bluewing）</span>
+                        </div>
+                        <div>
+                          <label className="text-[11px] font-semibold text-violet-600 block mb-1">
+                            BW売上<span className="font-normal text-violet-400 ml-0.5">(円)</span>
+                          </label>
+                          {mobileInput("bluewingSalesAmount", { step: "1" })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 備考 + 概算 */}
+                    <div className="px-4 py-3">
+                      <div className="flex items-start gap-3">
+                        <div className="flex-1 min-w-0">
+                          <label className="text-[11px] font-semibold text-muted-foreground block mb-1">備考・摘要</label>
+                          <Input
+                            type="text"
+                            className="h-9 text-sm px-2 w-full"
+                            placeholder="メモ・摘要"
+                            value={String(rowData.notes || "")}
+                            onChange={(e) => handleEditChange(emp.id, "notes", e.target.value)}
+                          />
+                        </div>
+                        {gross > 0 && (
+                          <div className="shrink-0 text-right bg-muted/40 rounded-lg px-3 py-2">
+                            <div className="text-[10px] text-muted-foreground font-medium">総支給</div>
+                            <div className="font-semibold text-sm tabular-nums text-foreground">¥{gross.toLocaleString("ja-JP")}</div>
+                            <div className="text-[10px] text-muted-foreground font-medium mt-1">手取概算</div>
+                            <div className={`font-bold text-sm tabular-nums ${net >= 0 ? "text-green-700" : "text-red-600"}`}>
+                              ¥{net.toLocaleString("ja-JP")}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* ── デスクトップ テーブル ── */}
+        <div className="hidden md:block rounded-lg border bg-card shadow-sm">
           <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-210px)]">
             <table className="monthly-input-table w-full text-xs border-collapse">
               <thead className="sticky top-0 z-20">
