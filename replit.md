@@ -93,6 +93,8 @@ Supports: 弥生会計, freee, マネーフォワード, generic
 - **Monthly Input**: テーブルは既存の `overflow-x-auto` を維持
 - **Allowances**: タブラベルをモバイルで短縮、社員テーブルをモバイルカードリスト化
 - **Calendar**: ヘッダーを `flex-col sm:flex-row`
+- **Attendance Date Picker**: カレンダー幅 `w-[min(380px,calc(100vw-16px))]`、ボタンクリック時に左位置をビューポート内クランプ
+- **Realtime Map**: モバイルは地図全画面 + 浮遊リストボタン → `Sheet`（ボトムシート、`h-[85dvh]`）。`EmployeePanel`/`Legend` サブコンポーネントでデスクトップ・モバイル両方で再利用。フローティング要素は `z-[800]`（Leafletのpopup/tooltipより上）
 
 ## Key Architecture Notes
 
