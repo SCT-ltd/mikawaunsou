@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { formatCurrency, formatMonth } from "@/lib/format";
-import { calculateInsuranceByGrade } from "@/lib/tax-tables-reiwa8";
 
 interface PayrollData {
   year: number;
@@ -270,17 +269,10 @@ const styles = {
   },
 };
 
-export function ClassicContent({ payroll, companyName, employeeAllowances, employeeDeductions, employee, company }: ClassicPayslipProps) {
+export function ClassicContent({ payroll, companyName, employeeAllowances, employeeDeductions, employee }: ClassicPayslipProps) {
   const isBW = !!(payroll.useBluewingLogic as boolean);
   const childcare = payroll.childcareSupportContribution ?? 0;
-
-  const stdRemun = employee?.standardRemuneration ?? 0;
-  const healthRate = (company?.healthInsuranceEmployeeRate as number | undefined) ?? 0.04925;
-  const pensionRate = (company?.pensionEmployeeRate as number | undefined) ?? 0.0915;
-  const { healthInsurance: computedHealth, pension: computedPension } =
-    stdRemun > 0
-      ? calculateInsuranceByGrade(stdRemun, healthRate, pensionRate)
-      : { healthInsurance: 0, pension: 0 };
+  const isTaxExempt = !!(employee as Record<string, unknown> | undefined)?.taxExempt;
 
   const payItemsFixed: Array<{ label: string; value: number; nonTaxable?: boolean }> = [];
   if (isBW) {
@@ -314,18 +306,19 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
 
   const allPayItems = [...payItemsFixed, ...payItemsCustom];
 
-  const deductionItems: Array<{ label: string; value: number }> = [];
-  if (stdRemun > 0) {
-    if (computedHealth > 0) deductionItems.push({ label: "健康保険料", value: computedHealth });
-    if (childcare > 0) deductionItems.push({ label: "子ども・子育て支援金", value: childcare });
-    if (computedPension > 0) deductionItems.push({ label: "厚生年金保険料", value: computedPension });
+  // 控除項目：DBに保存された値をそのまま使用（再計算しない）
+  const deductionItems: Array<{ label: string; value: number; exempt?: boolean }> = [];
+  const socialBase = (payroll.socialInsurance ?? 0) - childcare;
+  if (isTaxExempt) {
+    deductionItems.push({ label: "社会保険料（健保・厚年）", value: 0, exempt: true });
+    deductionItems.push({ label: "雇用保険料", value: 0, exempt: true });
+    deductionItems.push({ label: "源泉所得税", value: 0, exempt: true });
   } else {
-    const socialBase = (payroll.socialInsurance ?? 0) - childcare;
     if (socialBase > 0) deductionItems.push({ label: "社会保険料（健保・厚年）", value: socialBase });
     if (childcare > 0) deductionItems.push({ label: "子ども・子育て支援金", value: childcare });
+    if ((payroll.employmentInsurance ?? 0) > 0) deductionItems.push({ label: "雇用保険料", value: payroll.employmentInsurance });
+    if ((payroll.incomeTax ?? 0) > 0) deductionItems.push({ label: "源泉所得税", value: payroll.incomeTax });
   }
-  if ((payroll.employmentInsurance ?? 0) > 0) deductionItems.push({ label: "雇用保険料", value: payroll.employmentInsurance });
-  if ((payroll.incomeTax ?? 0) > 0) deductionItems.push({ label: "源泉所得税", value: payroll.incomeTax });
   if ((payroll.residentTax ?? 0) > 0) deductionItems.push({ label: "市町村民税", value: payroll.residentTax });
   if ((payroll.absenceDeduction ?? 0) > 0) deductionItems.push({ label: "欠勤控除", value: payroll.absenceDeduction });
   (employeeDeductions ?? []).filter(d => d.amount !== 0).forEach(d => {
@@ -467,7 +460,11 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
               {deductionItems.map((item, idx) => (
                 <tr key={`ded-${idx}`}>
                   <td style={styles.td}>{item.label}</td>
-                  <td style={styles.tdRight}>{formatCurrency(item.value)}</td>
+                  <td style={styles.tdRight}>
+                    {item.exempt
+                      ? <span style={styles.nonTaxBadge}>非課税</span>
+                      : formatCurrency(item.value)}
+                  </td>
                 </tr>
               ))}
             </tbody>
