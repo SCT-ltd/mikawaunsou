@@ -152,6 +152,13 @@ export default function PayrollList() {
           setPrintPayroll(null);
           return;
         }
+        const prevTitle = document.title;
+        document.title = `${selectedPayroll.employeeName}_${selectedPayroll.year}年${selectedPayroll.month}月`;
+        const restoreTitle = () => {
+          document.title = prevTitle;
+          window.removeEventListener("afterprint", restoreTitle);
+        };
+        window.addEventListener("afterprint", restoreTitle);
         window.print();
       });
     });
@@ -749,6 +756,8 @@ export default function PayrollList() {
           employees={(employees ?? []) as Parameters<typeof PayslipBulkPrint>[0]["employees"]}
           company={company as Parameters<typeof PayslipBulkPrint>[0]["company"]}
           onDone={() => setBulkPrintActive(false)}
+          year={year}
+          month={month}
         />
       )}
 

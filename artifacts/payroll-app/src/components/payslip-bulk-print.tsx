@@ -75,12 +75,16 @@ export function PayslipBulkPrint({
   employees,
   company,
   onDone,
+  year,
+  month,
 }: {
   payrolls: PayrollItem[];
   companyName: string;
   employees: AnyEmployee[];
   company: CompanyInfo;
   onDone: () => void;
+  year?: number;
+  month?: number;
 }) {
   const [portalEl] = useState<HTMLDivElement>(() => {
     const existing = document.getElementById("payroll-print-root");
@@ -103,11 +107,22 @@ export function PayslipBulkPrint({
     if (readyCount >= payrolls.length && !printTriggeredRef.current && payrolls.length > 0) {
       printTriggeredRef.current = true;
       console.log("[PayslipBulkPrint] All items ready. Triggering print.", readyCount, "/", payrolls.length);
+      const prevTitle = document.title;
+      const y = year ?? payrolls[0]?.year;
+      const m = month ?? payrolls[0]?.month;
+      if (y && m) {
+        document.title = `一括_${y}年${m}月`;
+      }
+      const restoreTitle = () => {
+        document.title = prevTitle;
+        window.removeEventListener("afterprint", restoreTitle);
+      };
+      window.addEventListener("afterprint", restoreTitle);
       requestAnimationFrame(() => {
         window.print();
       });
     }
-  }, [readyCount, payrolls.length]);
+  }, [readyCount, payrolls, year, month]);
 
   useEffect(() => {
     const cleanup = () => {
