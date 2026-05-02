@@ -1014,7 +1014,7 @@ export default function MonthlyInput() {
                       title="クリックして勤怠カレンダーを表示"
                     >
                       <div className="h-10 w-10 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-sm shrink-0">
-                        {emp.name.charAt(0)}
+                        {emp.name?.charAt(0) ?? "?"}
                       </div>
                       <div className="min-w-0">
                         <div className="font-semibold text-sm group-hover:text-indigo-600 transition-colors truncate flex items-center gap-1.5">
