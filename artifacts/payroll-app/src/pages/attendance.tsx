@@ -302,7 +302,7 @@ function RichDatePicker({
   })();
 
   return (
-    <div className="w-[380px] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+    <div className="w-[min(380px,calc(100vw-16px))] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
       {/* ヘッダー */}
       <div className="bg-gradient-to-r from-indigo-600 to-indigo-500 px-5 py-4 flex items-center justify-between">
         <button
@@ -719,7 +719,17 @@ export default function AttendancePage() {
                       onClick={() => {
                         if (!calendarOpen && calendarBtnRef.current) {
                           const r = calendarBtnRef.current.getBoundingClientRect();
-                          setCalendarPos({ top: r.bottom + 6, left: r.left + r.width / 2 });
+                          // ビューポート内に収まるよう左位置をクランプ（-translate-x-1/2 を考慮）
+                          const vw = window.innerWidth;
+                          const calWidth = Math.min(380, vw - 16);
+                          const halfWidth = calWidth / 2;
+                          const padding = 8;
+                          const desiredLeft = r.left + r.width / 2;
+                          const clampedLeft = Math.max(
+                            halfWidth + padding,
+                            Math.min(vw - halfWidth - padding, desiredLeft)
+                          );
+                          setCalendarPos({ top: r.bottom + 6, left: clampedLeft });
                         }
                         setCalendarOpen(o => !o);
                       }}
