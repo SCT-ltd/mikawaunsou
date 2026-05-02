@@ -75,6 +75,7 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 export default function MessagesPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [mobileView, setMobileView] = useState<"list" | "chat">("list");
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -295,9 +296,14 @@ export default function MessagesPage() {
     return bTime.localeCompare(aTime);
   });
 
+  const handleSelectConversation = (empId: number) => {
+    setSelectedId(empId);
+    setMobileView("chat");
+  };
+
   return (
     <AppLayout>
-      <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden -m-4 md:-m-6 lg:-m-8">
+      <div className="flex h-[calc(100vh-3.5rem-56px)] md:h-[calc(100vh-3.5rem)] overflow-hidden -m-3 md:-m-6 lg:-m-8">
 
         {/* 一斉送信モーダル */}
         {broadcastOpen && (
@@ -393,7 +399,11 @@ export default function MessagesPage() {
         )}
 
         {/* 左：会話一覧 */}
-        <div className="w-72 shrink-0 border-r bg-background flex flex-col">
+        <div className={`
+          shrink-0 border-r bg-background flex flex-col
+          w-full md:w-72
+          ${mobileView === "chat" ? "hidden md:flex" : "flex"}
+        `}>
           <div className="px-4 py-3 border-b flex items-center justify-between">
             <h2 className="font-bold text-sm flex items-center gap-1.5">
               <MessageSquare className="h-4 w-4" />メッセージ
@@ -425,10 +435,10 @@ export default function MessagesPage() {
               return (
                 <button
                   key={conv.employee.id}
-                  className={`w-full text-left px-4 py-3 border-b flex items-start gap-3 hover:bg-muted/50 transition-colors
+                  className={`w-full text-left px-4 py-3.5 border-b flex items-start gap-3 hover:bg-muted/50 transition-colors
                     ${isSelected ? "bg-primary/8 border-l-2 border-l-primary" : ""}
                     ${hasUnread && !isSelected ? "bg-blue-50/60" : ""}`}
-                  onClick={() => setSelectedId(conv.employee.id)}
+                  onClick={() => handleSelectConversation(conv.employee.id)}
                 >
                   <div className="relative shrink-0">
                     <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-base">
@@ -465,7 +475,7 @@ export default function MessagesPage() {
 
         {/* 右：チャット画面 */}
         {selectedId == null ? (
-          <div className="flex-1 flex items-center justify-center bg-muted/20">
+          <div className="hidden md:flex flex-1 items-center justify-center bg-muted/20">
             <div className="text-center text-muted-foreground">
               <MessageSquare className="h-12 w-12 mx-auto mb-3 opacity-20" />
               <p className="font-medium">従業員を選択してください</p>
@@ -473,10 +483,20 @@ export default function MessagesPage() {
             </div>
           </div>
         ) : (
-          <div className="flex-1 flex flex-col min-w-0">
+          <div className={`flex-1 flex flex-col min-w-0 ${mobileView === "list" ? "hidden md:flex" : "flex"}`}>
             {/* チャットヘッダー */}
-            <div className="px-5 py-3 border-b bg-white flex items-center gap-3 shrink-0">
-              <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
+            <div className="px-4 py-3 border-b bg-white flex items-center gap-3 shrink-0">
+              {/* モバイル 戻るボタン */}
+              <button
+                type="button"
+                className="md:hidden p-1 -ml-1 rounded text-muted-foreground hover:text-foreground"
+                onClick={() => setMobileView("list")}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0">
                 {selected?.employee.name[0]}
               </div>
               <div>

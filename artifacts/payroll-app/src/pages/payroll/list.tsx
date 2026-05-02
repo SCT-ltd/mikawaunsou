@@ -299,7 +299,58 @@ export default function PayrollList() {
           </div>
         )}
 
-        <div className="rounded-md border bg-card">
+        {/* ── モバイル：カードリスト ── */}
+        <div className="sm:hidden space-y-2">
+          {payrollsLoading ? (
+            <div className="text-center py-8 text-muted-foreground text-sm">読み込み中...</div>
+          ) : !payrolls || payrolls.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground text-sm">
+              {formatMonth(year, month)}の給与データはありません。
+            </div>
+          ) : (
+            [...payrolls].sort((a, b) => a.employeeCode.localeCompare(b.employeeCode)).map((payroll) => (
+              <div
+                key={payroll.id}
+                className={`rounded-lg border bg-card p-3 cursor-pointer transition-colors ${selectedPayrollId === payroll.id ? "border-primary/40 bg-primary/5" : "hover:bg-muted/40"}`}
+                onClick={() => trySelectPayroll(payroll.id)}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <span className="font-semibold text-sm">{payroll.employeeName}</span>
+                    <span className="ml-2 text-xs text-muted-foreground">{payroll.employeeCode}</span>
+                  </div>
+                  {payroll.status === "confirmed" ? (
+                    <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs">確定済</Badge>
+                  ) : (
+                    <Badge variant="secondary" className="bg-amber-50 text-amber-700 border-amber-200 text-xs">未確定</Badge>
+                  )}
+                </div>
+                <div className="grid grid-cols-3 gap-1 text-xs">
+                  <div>
+                    <p className="text-muted-foreground">総支給</p>
+                    <p className="font-medium">{formatCurrency(payroll.grossSalary)}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">控除</p>
+                    <p className="font-medium">{formatCurrency(payroll.totalDeductions)}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">差引</p>
+                    <p className="font-bold text-primary">{formatCurrency(payroll.netSalary)}</p>
+                  </div>
+                </div>
+                <div className="flex items-center justify-end mt-2">
+                  <span className="text-xs text-primary flex items-center gap-0.5">
+                    詳細 <ChevronRight className="h-3 w-3" />
+                  </span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* ── デスクトップ：テーブル ── */}
+        <div className="hidden sm:block rounded-md border bg-card overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>

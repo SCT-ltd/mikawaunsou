@@ -683,11 +683,11 @@ export default function AttendancePage() {
           <div className="space-y-6 max-w-5xl">
 
             {/* ヘッダー */}
-            <div className="flex items-start justify-between gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2.5 mb-1">
                   <div className="w-1 h-7 rounded-full bg-gradient-to-b from-indigo-500 to-violet-600" />
-                  <h2 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
+                  <h2 className="text-xl sm:text-2xl font-bold tracking-tight bg-gradient-to-r from-slate-800 to-slate-600 bg-clip-text text-transparent">
                     勤怠ダッシュボード
                   </h2>
                   {isToday && (
@@ -696,13 +696,13 @@ export default function AttendancePage() {
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-muted-foreground pl-3.5">
+                <p className="text-xs text-muted-foreground pl-3.5 hidden sm:block">
                   {isToday
                     ? `最終更新: ${lastUpdated.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} ・ 社員行をクリックで詳細表示`
                     : "過去の記録（読み取り専用）・ 社員行をクリックで詳細表示"}
                 </p>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
                 {/* 日付ナビゲーション */}
                 <div className="flex items-center rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                   <button
@@ -770,7 +770,7 @@ export default function AttendancePage() {
             </div>
 
             {/* サマリーカード */}
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
                 {
                   label: "出勤中", value: counts.working,

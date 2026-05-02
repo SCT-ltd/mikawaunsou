@@ -24,11 +24,11 @@ export default function Dashboard() {
   return (
     <AppLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-2xl font-bold tracking-tight">ダッシュボード</h2>
           <div className="flex gap-2">
             <Select value={year.toString()} onValueChange={(v) => setYear(parseInt(v))}>
-              <SelectTrigger className="w-[120px] bg-card">
+              <SelectTrigger className="w-[90px] sm:w-[120px] bg-card">
                 <SelectValue placeholder="年" />
               </SelectTrigger>
               <SelectContent>
@@ -38,7 +38,7 @@ export default function Dashboard() {
               </SelectContent>
             </Select>
             <Select value={month.toString()} onValueChange={(v) => setMonth(parseInt(v))}>
-              <SelectTrigger className="w-[100px] bg-card">
+              <SelectTrigger className="w-[72px] sm:w-[100px] bg-card">
                 <SelectValue placeholder="月" />
               </SelectTrigger>
               <SelectContent>
@@ -99,8 +99,8 @@ export default function Dashboard() {
           </Card>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-          <Card className="col-span-4">
+        <div className="grid gap-4 lg:grid-cols-7">
+          <Card className="lg:col-span-4">
             <CardHeader>
               <CardTitle>支給額推移（過去12ヶ月）</CardTitle>
             </CardHeader>
@@ -130,12 +130,12 @@ export default function Dashboard() {
               </div>
             </CardContent>
           </Card>
-          <Card className="col-span-3">
+          <Card className="lg:col-span-3">
             <CardHeader>
               <CardTitle>要対応アラート（{month}月）</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="rounded-md border">
+              <div className="rounded-md border overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>

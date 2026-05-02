@@ -338,7 +338,7 @@ export default function CalendarPage() {
     <AppLayout>
       <div className="space-y-4">
         {/* ── ページヘッダー ── */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-primary/10 rounded-lg text-primary">
               <Calendar className="h-5 w-5" />
@@ -350,16 +350,16 @@ export default function CalendarPage() {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {overrideCount > 0 && (
               <Button variant="outline" size="sm" onClick={handleReset} className="gap-1.5 text-muted-foreground">
                 <RotateCcw className="h-3.5 w-3.5" />
-                {fiscalYear}年度のリセット
+                <span className="hidden sm:inline">{fiscalYear}年度のリセット</span><span className="sm:hidden">リセット</span>
               </Button>
             )}
             <Button variant="outline" size="sm" onClick={handlePrint} className="gap-1.5">
               <Printer className="h-3.5 w-3.5" />
-              印刷
+              <span className="hidden sm:inline">印刷</span>
             </Button>
             <div className="flex items-center gap-1 border rounded-md px-1">
               <button onClick={() => setFiscalYear(y => y - 1)} className="p-1.5 hover:bg-muted rounded transition-colors" title="前年度">

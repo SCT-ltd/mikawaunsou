@@ -3,12 +3,11 @@ import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useUnread } from "@/context/unread-context";
 import { useNavigationGuard } from "@/context/navigation-guard-context";
-import { 
-  LayoutDashboard, 
-  CalendarDays, 
-  FileText, 
+import { X, Truck,
+  LayoutDashboard,
+  CalendarDays,
+  FileText,
   Settings,
-  Truck,
   Tag,
   CalendarRange,
   ClipboardCheck,
@@ -30,16 +29,35 @@ const navigation = [
   { name: "会社設定",           href: "/settings",      icon: Settings,        description: "会社情報・保険料率・各種計算設定を管理します" },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+  onClose?: () => void;
+}
+
+export function Sidebar({ onClose }: SidebarProps) {
   const [location, navigate] = useLocation();
   const { totalUnreadCount } = useUnread();
   const { requestNavigate } = useNavigationGuard();
 
+  const handleNav = (href: string) => {
+    requestNavigate(href, navigate);
+    onClose?.();
+  };
+
   return (
     <div className="flex h-full w-64 flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border">
       <div className="flex h-14 items-center px-4 font-bold text-lg border-b border-sidebar-border gap-2">
-        <Truck className="h-5 w-5" />
-        <span>運送給与システム</span>
+        <Truck className="h-5 w-5 shrink-0" />
+        <span className="flex-1 truncate">運送給与システム</span>
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="ml-auto p-1 rounded hover:bg-sidebar-accent/50 text-sidebar-foreground/70 hover:text-sidebar-foreground"
+            aria-label="サイドバーを閉じる"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        )}
       </div>
       <div className="flex-1 overflow-y-auto py-4">
         <TooltipProvider delayDuration={400}>
@@ -60,9 +78,9 @@ export function Sidebar() {
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      onClick={() => requestNavigate(item.href, navigate)}
+                      onClick={() => handleNav(item.href)}
                       className={cn(
-                        "w-full group flex items-center rounded-md px-2 py-2 text-sm font-medium transition-colors text-left",
+                        "w-full group flex items-center rounded-md px-2 py-2.5 text-sm font-medium transition-colors text-left",
                         hl
                           ? isActive ? hl.active : hl.base
                           : isActive
@@ -89,7 +107,7 @@ export function Sidebar() {
                       {item.name}
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="right" className="max-w-[200px]">
+                  <TooltipContent side="right" className="max-w-[200px] hidden md:block">
                     {item.description}
                   </TooltipContent>
                 </Tooltip>

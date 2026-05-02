@@ -81,6 +81,19 @@ Supports: 弥生会計, freee, マネーフォワード, generic
 - バックエンド: `artifacts/api-server/src/routes/auth.ts`（login/logout/me）
 - パスワードリセット: ユーザー管理画面（/users）から「編集」で変更可能
 
+## Mobile Responsive Implementation
+
+- **AppLayout**: ハンバーガーメニュー（モバイル）、サイドバーオーバーレイ、`pb-20 md:pb-6` でフッター高さ確保
+- **MobileBottomNav**: `fixed bottom-0 … md:hidden` — 5ボタン（ホーム/月次実績/給与明細/勤怠管理/メッセージ）、未読バッジ付き
+- **Sidebar**: `onClose` prop追加、モバイル閉じるボタン
+- **Dashboard**: `lg:grid-cols-7` 対応、ヘッダーのYear/Month Selectがモバイル幅で縮小
+- **Payroll List**: モバイル=カードリスト（`sm:hidden`）、デスクトップ=テーブル（`hidden sm:block`）
+- **Messages**: `mobileView` state（list/chat切り替え）、チャット画面に「戻る」ボタン
+- **Attendance**: ヘッダーを `flex-col sm:flex-row`、サマリーカードを `grid-cols-2 sm:grid-cols-4`
+- **Monthly Input**: テーブルは既存の `overflow-x-auto` を維持
+- **Allowances**: タブラベルをモバイルで短縮、社員テーブルをモバイルカードリスト化
+- **Calendar**: ヘッダーを `flex-col sm:flex-row`
+
 ## Key Architecture Notes
 
 - OpenAPI spec: `lib/api-spec/openapi.yaml`

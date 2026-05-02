@@ -1312,7 +1312,39 @@ function EmployeeMasterTab() {
               社員が見つかりません。
             </div>
           ) : (
-            <div className="rounded-md overflow-hidden">
+            <>
+            {/* モバイル：カードリスト */}
+            <div className="sm:hidden divide-y">
+              {filtered.map((emp) => (
+                <div
+                  key={emp.id}
+                  className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-muted/40 transition-colors"
+                  onClick={() => handleOpenEdit(emp)}
+                >
+                  <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm shrink-0">
+                    {emp.name[0]}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-sm truncate">{emp.name}</span>
+                      {emp.isActive ? (
+                        <Badge className="bg-emerald-600 text-xs shrink-0">在籍</Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-xs shrink-0">退職</Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-xs text-muted-foreground">{emp.employeeCode}</span>
+                      <span className="text-xs text-muted-foreground">·</span>
+                      <span className="text-xs text-muted-foreground truncate">{emp.department}</span>
+                    </div>
+                  </div>
+                  <Edit2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                </div>
+              ))}
+            </div>
+            {/* デスクトップ：テーブル */}
+            <div className="hidden sm:block overflow-x-auto rounded-md">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -1361,6 +1393,7 @@ function EmployeeMasterTab() {
                 </TableBody>
               </Table>
             </div>
+            </>
           )}
         </CardContent>
       </Card>
@@ -1840,17 +1873,17 @@ export default function MasterManagement() {
 
         <Tabs defaultValue="employees" className="w-full">
           <TabsList className="grid w-full grid-cols-4 mb-6">
-            <TabsTrigger value="employees" className="flex items-center gap-2">
-              <Users className="h-4 w-4" />社員マスター
+            <TabsTrigger value="employees" className="flex items-center gap-1.5">
+              <Users className="h-4 w-4" /><span className="hidden sm:inline">社員マスター</span><span className="sm:hidden">社員</span>
             </TabsTrigger>
-            <TabsTrigger value="allowances" className="flex items-center gap-2">
-              <Wallet className="h-4 w-4" />手当マスター
+            <TabsTrigger value="allowances" className="flex items-center gap-1.5">
+              <Wallet className="h-4 w-4" /><span className="hidden sm:inline">手当マスター</span><span className="sm:hidden">手当</span>
             </TabsTrigger>
-            <TabsTrigger value="deductions" className="flex items-center gap-2">
-              <Minus className="h-4 w-4" />差引マスター
+            <TabsTrigger value="deductions" className="flex items-center gap-1.5">
+              <Minus className="h-4 w-4" /><span className="hidden sm:inline">差引マスター</span><span className="sm:hidden">差引</span>
             </TabsTrigger>
-            <TabsTrigger value="calc-tables" className="flex items-center gap-2">
-              <Calculator className="h-4 w-4" />計算テーブルマスター
+            <TabsTrigger value="calc-tables" className="flex items-center gap-1.5">
+              <Calculator className="h-4 w-4" /><span className="hidden sm:inline">計算テーブルマスター</span><span className="sm:hidden">計算</span>
             </TabsTrigger>
           </TabsList>
 
