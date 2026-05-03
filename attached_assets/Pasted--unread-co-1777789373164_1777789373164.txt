@@ -1,0 +1,158 @@
+一度ここで作業を止めてください。
+
+根本の仕様やデータ構造が変わってしまっていないか心配です。
+また、画面上で従業員データが消えているように見えます。
+
+今回の認可修正や unread-count 修正は必要ですが、既存の従業員データ・給与データ・勤怠データが消えたり、画面から見えなくなったりするのは困ります。
+
+まず、これ以上修正せずに現状確認だけしてください。
+
+====================================
+確認したいこと
+====================================
+
+1. employees テーブルのデータは残っていますか？
+以下を確認してください。
+
+SELECT id, employee_code, name, salary_type, is_active
+FROM employees
+ORDER BY id;
+
+または実際のカラム名に合わせて、従業員一覧を全件出してください。
+
+2. employees の件数を確認してください。
+
+SELECT COUNT(*) FROM employees;
+
+3. payrolls テーブルのデータは残っていますか？
+
+SELECT COUNT(*) FROM payrolls;
+
+4. monthly_records テーブルのデータは残っていますか？
+
+SELECT COUNT(*) FROM monthly_records;
+
+5. attendance_records テーブルのデータは残っていますか？
+
+SELECT COUNT(*) FROM attendance_records;
+
+6. employee_allowances / employee_deductions のデータは残っていますか？
+
+SELECT COUNT(*) FROM employee_allowances;
+SELECT COUNT(*) FROM employee_deductions;
+
+7. system_users は現在何件ありますか？
+
+SELECT id, username, display_name, role, employee_id
+FROM system_users
+ORDER BY id;
+
+====================================
+特に確認したいこと
+====================================
+
+前回の報告で、
+
+「残る system_users は本番 sum411211（admin）1件のみ」
+
+とありました。
+
+これは system_users のテストユーザーだけを削除したという意味ですか？
+それとも本来あったドライバー用ログインユーザーも削除されていますか？
+
+もし元々ドライバー用ユーザーが存在していた場合は、削除してしまっていないか確認してください。
+
+====================================
+削除SQLの確認
+====================================
+
+今回実行したDELETE文をすべて教えてください。
+
+特に以下のDELETEが、想定より広く効いていないか確認してください。
+
+- DELETE FROM messages WHERE content LIKE '__test_%'
+- DELETE FROM system_users WHERE username IN (...)
+- DELETE FROM attendance_records WHERE ...
+- DELETE FROM live_locations WHERE ...
+- DELETE FROM push_subscriptions WHERE ...
+
+実際に削除した件数も教えてください。
+
+例：
+DELETE FROM system_users ... → 3件削除
+DELETE FROM messages ... → 5件削除
+
+====================================
+画面で従業員が消えて見える原因確認
+====================================
+
+従業員データがDBに残っているのに画面で見えない場合は、以下を確認してください。
+
+1. adminログインで GET /api/employees が200を返すか
+2. レスポンスに従業員一覧が含まれているか
+3. フロントで /api/employees が403/401/500になっていないか
+4. requireAdmin を入れたことで、admin判定が失敗していないか
+5. req.session.role が本当に admin になっているか
+6. /api/auth/me の role が admin になっているか
+7. フロントの employees 一覧が空配列を表示していないか
+8. TanStack Query / キャッシュで古い空データを表示していないか
+
+確認ログ：
+
+console.log("[EMPLOYEES_VISIBILITY_CHECK]", {
+  sessionUserId: req.session?.userId,
+  sessionRole: req.session?.role,
+  status,
+  employeesCount,
+});
+
+====================================
+重要な方針
+====================================
+
+今後の修正では、既存の根本仕様を大きく変えないでください。
+
+特に以下は勝手に変更しないでください。
+
+- 従業員データ
+- 給与データ
+- 勤怠データ
+- 手当データ
+- 控除データ
+- 給与計算ロジック
+- 既存画面の基本的な使い方
+- 既存DBの本番データ
+
+セキュリティ修正は必要ですが、既存の業務データや基本動作を壊さないように、最小限の変更でお願いします。
+
+====================================
+今回やってほしいこと
+====================================
+
+修正ではなく、以下の確認だけしてください。
+
+1. 従業員データがDBに残っているか
+2. 画面/APIで見えなくなっているだけか
+3. どのDELETE文で何件削除したか
+4. system_users の本来必要なユーザーが消えていないか
+5. adminで /api/employees が見られるか
+6. requireAdmin の影響で画面が空になっていないか
+7. もしデータが本当に消えている場合、復元方法があるか
+
+====================================
+最終報告で出してほしいこと
+====================================
+
+- employees の現在件数
+- payrolls の現在件数
+- monthly_records の現在件数
+- attendance_records の現在件数
+- employee_allowances の現在件数
+- employee_deductions の現在件数
+- system_users の現在一覧
+- 実行したDELETE文一覧
+- 各DELETEで削除された件数
+- 従業員データが本当に消えたのか、表示されていないだけなのか
+- 原因
+- 復旧が必要かどうか
+- 今後、既存データを消さないための対策
