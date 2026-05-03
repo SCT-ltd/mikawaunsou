@@ -12,6 +12,11 @@ declare module "express-session" {
     username?: string;
     displayName?: string;
     role?: string;
+    /**
+     * driver ロールでログインしている場合の本人 employees.id。
+     * admin ロールの場合は null。
+     */
+    employeeId?: number | null;
   }
 }
 

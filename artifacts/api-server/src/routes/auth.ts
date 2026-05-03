@@ -29,12 +29,14 @@ router.post("/auth/login", async (req, res) => {
   req.session.username = user.username;
   req.session.displayName = user.displayName;
   req.session.role = user.role;
+  req.session.employeeId = user.employeeId ?? null;
 
   return res.json({
     id: user.id,
     username: user.username,
     displayName: user.displayName,
     role: user.role,
+    employeeId: user.employeeId ?? null,
   });
 });
 
@@ -57,6 +59,7 @@ router.get("/auth/me", (req, res) => {
     username: req.session.username,
     displayName: req.session.displayName,
     role: req.session.role,
+    employeeId: req.session.employeeId ?? null,
   });
 });
 

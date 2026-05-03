@@ -2,7 +2,7 @@ import { Router, type Response } from "express";
 import { db, attendanceRecordsTable, employeesTable, absenceRecordsTable, liveLocationsTable, attendanceDraftsTable } from "@workspace/db";
 import { asc, eq, and, gte, lte, sql } from "drizzle-orm";
 import { ABSENCE_DAYS } from "./absences";
-import { requireAdmin } from "../lib/auth-middleware";
+import { requireAdmin, requireOwnerOrAdmin } from "../lib/auth-middleware";
 
 const router = Router();
 
@@ -120,7 +120,7 @@ router.get("/attendance/today", async (req, res) => {
 });
 
 // ── 社員の今日の打刻一覧 ─────────────────────────────
-router.get("/attendance/employee/:employeeId/today", async (req, res) => {
+router.get("/attendance/employee/:employeeId/today", requireOwnerOrAdmin(req => parseInt(req.params.employeeId, 10)), async (req, res) => {
   const employeeId = parseInt(req.params.employeeId, 10);
   const today = todayJST();
 
@@ -359,7 +359,7 @@ router.patch("/attendance/checklist/:employeeId", async (req, res) => {
 });
 
 // ── 入力ドラフト 取得 ─────────────────────────────────
-router.get("/attendance/draft/:employeeId", async (req, res) => {
+router.get("/attendance/draft/:employeeId", requireOwnerOrAdmin(req => parseInt(req.params.employeeId, 10)), async (req, res) => {
   const employeeId = parseInt(req.params.employeeId, 10);
   const today = todayJST();
 
@@ -376,7 +376,7 @@ router.get("/attendance/draft/:employeeId", async (req, res) => {
 });
 
 // ── 入力ドラフト 保存（upsert） ───────────────────────
-router.patch("/attendance/draft/:employeeId", async (req, res) => {
+router.patch("/attendance/draft/:employeeId", requireOwnerOrAdmin(req => parseInt(req.params.employeeId, 10)), async (req, res) => {
   const employeeId = parseInt(req.params.employeeId, 10);
   const { departure, arrival, startOdometer, endOdometer } = req.body as {
     departure?: string | null;
@@ -415,7 +415,7 @@ router.patch("/attendance/draft/:employeeId", async (req, res) => {
 });
 
 // ── 社員の打刻履歴（日付指定） ───────────────────────
-router.get("/attendance/employee/:employeeId", async (req, res) => {
+router.get("/attendance/employee/:employeeId", requireOwnerOrAdmin(req => parseInt(req.params.employeeId, 10)), async (req, res) => {
   const employeeId = parseInt(req.params.employeeId, 10);
   const { date } = req.query;
   const targetDate = (date as string) ?? todayJST();
@@ -433,7 +433,7 @@ router.get("/attendance/employee/:employeeId", async (req, res) => {
 });
 
 // ── 社員の月間打刻履歴 ───────────────────────────────
-router.get("/attendance/employee/:employeeId/month", async (req, res) => {
+router.get("/attendance/employee/:employeeId/month", requireOwnerOrAdmin(req => parseInt(req.params.employeeId, 10)), async (req, res) => {
   const employeeId = parseInt(req.params.employeeId, 10);
   const year = parseInt(req.query.year as string, 10) || new Date().getFullYear();
   const month = parseInt(req.query.month as string, 10) || (new Date().getMonth() + 1);
@@ -603,13 +603,20 @@ router.get("/attendance/monthly-summary", requireAdmin, async (req, res) => {
 });
 
 // ── ライブ位置情報 更新（ドライバーから定期送信） ────────────
-router.post("/attendance/location/live", async (req, res) => {
-  const { employeeId, latitude, longitude, accuracy } = req.body as {
+// driver は session.employeeId を強制使用（body の employeeId が他人IDなら 403）
+// admin は body の employeeId をそのまま使用
+router.post("/attendance/location/live", requireOwnerOrAdmin(req => Number((req.body as { employeeId?: number })?.employeeId)), async (req, res) => {
+  const { employeeId: bodyEmployeeId, latitude, longitude, accuracy } = req.body as {
     employeeId: number;
     latitude: number;
     longitude: number;
     accuracy?: number;
   };
+
+  // driver の場合は session.employeeId を強制使用（owner ミドルウェアが既に検証済）
+  const employeeId = req.session?.role === "driver"
+    ? Number(req.session.employeeId)
+    : Number(bodyEmployeeId);
 
   if (!employeeId || latitude == null || longitude == null) {
     return res.status(400).json({ error: "employeeId, latitude, longitude は必須です" });

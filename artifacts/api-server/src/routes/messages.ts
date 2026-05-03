@@ -2,7 +2,7 @@ import { Router, type Response } from "express";
 import webpush from "web-push";
 import { db, messagesTable, pushSubscriptionsTable, employeesTable } from "@workspace/db";
 import { eq, and, desc, asc, isNull, sql } from "drizzle-orm";
-import { requireAdmin } from "../lib/auth-middleware";
+import { requireAdmin, requireOwnerOrAdmin } from "../lib/auth-middleware";
 
 const router = Router();
 
@@ -39,14 +39,35 @@ router.get("/messages/vapid-public-key", (_req, res) => {
 });
 
 // ── SSEストリーム ──────────────────────────────────────
+// admin: ?employeeId=0（事務所用）または任意の employeeId を購読可
+// driver: 自分の session.employeeId のみ購読可（query は無視 or 一致時のみ可）
 router.get("/messages/stream", (req, res) => {
+  if (!req.session?.userId) {
+    return res.status(401).json({ error: "ログインが必要です" });
+  }
+
+  const requestedEmployeeId = parseInt((req.query["employeeId"] as string) ?? "0", 10);
+  let employeeId: number;
+
+  if (req.session.role === "admin") {
+    employeeId = Number.isNaN(requestedEmployeeId) ? 0 : requestedEmployeeId;
+  } else {
+    const sessionEmployeeId = req.session.employeeId;
+    if (sessionEmployeeId === null || sessionEmployeeId === undefined) {
+      return res.status(403).json({ error: "権限がありません" });
+    }
+    if (!Number.isNaN(requestedEmployeeId) && requestedEmployeeId !== 0 && requestedEmployeeId !== Number(sessionEmployeeId)) {
+      return res.status(403).json({ error: "他の従業員のストリームにはアクセスできません" });
+    }
+    employeeId = Number(sessionEmployeeId);
+  }
+
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
 
-  const employeeId = parseInt((req.query["employeeId"] as string) ?? "0", 10);
   addSse(employeeId, res);
 
   const heartbeat = setInterval(() => res.write(": ping\n\n"), 30000);
@@ -54,6 +75,7 @@ router.get("/messages/stream", (req, res) => {
     clearInterval(heartbeat);
     removeSse(employeeId, res);
   });
+  return;
 });
 
 // ── 事務所全体の未読件数 ─────────────────────────────
@@ -110,7 +132,7 @@ router.get("/messages/conversations", requireAdmin, async (_req, res) => {
 });
 
 // ── ドライバーの未読件数（事務所→ドライバー） ─────────
-router.get("/messages/:employeeId/unread-count", async (req, res) => {
+router.get("/messages/:employeeId/unread-count", requireOwnerOrAdmin(req => parseInt(req.params["employeeId"], 10)), async (req, res) => {
   const employeeId = parseInt(req.params["employeeId"], 10);
   if (isNaN(employeeId)) return res.status(400).json({ error: "Invalid employeeId" });
   const rows = await db
@@ -125,7 +147,7 @@ router.get("/messages/:employeeId/unread-count", async (req, res) => {
 });
 
 // ── メッセージ取得 ─────────────────────────────────────
-router.get("/messages/:employeeId", async (req, res) => {
+router.get("/messages/:employeeId", requireOwnerOrAdmin(req => parseInt(req.params["employeeId"], 10)), async (req, res) => {
   const employeeId = parseInt(req.params["employeeId"], 10);
   if (isNaN(employeeId)) return res.status(400).json({ error: "Invalid employeeId" });
   const messages = await db
@@ -139,7 +161,7 @@ router.get("/messages/:employeeId", async (req, res) => {
 // ── 既読処理 ───────────────────────────────────────────
 // reader='office' → employeeからのメッセージを既読
 // reader='employee' → officeからのメッセージを既読
-router.post("/messages/:employeeId/read", async (req, res) => {
+router.post("/messages/:employeeId/read", requireOwnerOrAdmin(req => parseInt(req.params["employeeId"], 10)), async (req, res) => {
   const employeeId = parseInt(req.params["employeeId"], 10);
   if (isNaN(employeeId)) return res.status(400).json({ error: "Invalid employeeId" });
   const { reader } = req.body as { reader: "office" | "employee" };
@@ -171,15 +193,44 @@ router.post("/messages/:employeeId/read", async (req, res) => {
 });
 
 // ── メッセージ送信 ─────────────────────────────────────
+// admin → sender は強制的に "office"、employeeId は body 通り（任意のドライバーへ）
+// driver → sender は強制的に "employee"、employeeId は session.employeeId を強制使用
+//          （body の employeeId が他人IDならその時点で 403、sender も信用しない）
 router.post("/messages", async (req, res) => {
-  const { employeeId, sender, content } = req.body as {
-    employeeId: number;
-    sender: "office" | "employee";
-    content: string;
+  if (!req.session?.userId) {
+    return res.status(401).json({ error: "ログインが必要です" });
+  }
+
+  const { employeeId: bodyEmployeeId, content } = req.body as {
+    employeeId?: number;
+    sender?: "office" | "employee";
+    content?: string;
   };
 
-  if (!employeeId || !sender || !content?.trim()) {
-    return res.status(400).json({ error: "必須パラメータが不足しています" });
+  if (!content?.trim()) {
+    return res.status(400).json({ error: "メッセージ内容が必要です" });
+  }
+
+  let employeeId: number;
+  let sender: "office" | "employee";
+
+  if (req.session.role === "admin") {
+    if (!bodyEmployeeId || Number.isNaN(Number(bodyEmployeeId))) {
+      return res.status(400).json({ error: "送信先の employeeId が必要です" });
+    }
+    employeeId = Number(bodyEmployeeId);
+    sender = "office";
+  } else {
+    const sessionEmployeeId = req.session.employeeId;
+    if (sessionEmployeeId === null || sessionEmployeeId === undefined) {
+      return res.status(403).json({ error: "権限がありません" });
+    }
+    // driver は body の employeeId を信用しない。指定されていれば本人IDと一致するかチェック。
+    if (bodyEmployeeId !== undefined && bodyEmployeeId !== null && Number(bodyEmployeeId) !== Number(sessionEmployeeId)) {
+      return res.status(403).json({ error: "他の従業員として送信することはできません" });
+    }
+    employeeId = Number(sessionEmployeeId);
+    sender = "employee";
   }
 
   const [message] = await db.insert(messagesTable).values({
@@ -297,17 +348,44 @@ router.post("/messages/broadcast", requireAdmin, async (req, res) => {
 });
 
 // ── プッシュ購読登録 ───────────────────────────────────
+// admin → role を任意指定可能、employeeId も自由
+// driver → role は強制的に "employee"、employeeId は session.employeeId を強制使用
 router.post("/push/subscribe", async (req, res) => {
-  const { employeeId, role, endpoint, p256dh, auth } = req.body as {
+  if (!req.session?.userId) {
+    return res.status(401).json({ error: "ログインが必要です" });
+  }
+
+  const { employeeId: bodyEmployeeId, role: bodyRole, endpoint, p256dh, auth } = req.body as {
     employeeId?: number | null;
-    role: "office" | "employee";
-    endpoint: string;
-    p256dh: string;
-    auth: string;
+    role?: "office" | "employee";
+    endpoint?: string;
+    p256dh?: string;
+    auth?: string;
   };
 
-  if (!endpoint || !p256dh || !auth || !role) {
+  if (!endpoint || !p256dh || !auth) {
     return res.status(400).json({ error: "購読情報が不足しています" });
+  }
+
+  let employeeId: number | null;
+  let role: "office" | "employee";
+
+  if (req.session.role === "admin") {
+    if (!bodyRole || (bodyRole !== "office" && bodyRole !== "employee")) {
+      return res.status(400).json({ error: "role は 'office' または 'employee' を指定してください" });
+    }
+    role = bodyRole;
+    employeeId = bodyEmployeeId ?? null;
+  } else {
+    const sessionEmployeeId = req.session.employeeId;
+    if (sessionEmployeeId === null || sessionEmployeeId === undefined) {
+      return res.status(403).json({ error: "権限がありません" });
+    }
+    if (bodyEmployeeId !== undefined && bodyEmployeeId !== null && Number(bodyEmployeeId) !== Number(sessionEmployeeId)) {
+      return res.status(403).json({ error: "他の従業員として購読することはできません" });
+    }
+    role = "employee";
+    employeeId = Number(sessionEmployeeId);
   }
 
   const existing = await db.select({ id: pushSubscriptionsTable.id })
@@ -317,11 +395,11 @@ router.post("/push/subscribe", async (req, res) => {
 
   if (existing.length > 0) {
     await db.update(pushSubscriptionsTable)
-      .set({ p256dh, auth, active: true, employeeId: employeeId ?? null })
+      .set({ p256dh, auth, active: true, employeeId, role })
       .where(eq(pushSubscriptionsTable.id, existing[0]!.id));
   } else {
     await db.insert(pushSubscriptionsTable).values({
-      employeeId: employeeId ?? null,
+      employeeId,
       role,
       endpoint,
       p256dh,
