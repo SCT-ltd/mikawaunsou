@@ -1,4 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
+import { db, attendanceRecordsTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 
 /**
  * 管理者専用ガード。
@@ -75,4 +77,61 @@ export function requireOwnerOrAdmin(
 
     return next();
   };
+}
+
+/**
+ * 打刻レコード（attendance_records）の所有者チェック専用ガード。
+ *
+ * URL に employeeId が含まれず recordId だけしか取れない PATCH/DELETE 用。
+ * - 未ログイン → 401
+ * - レコード未存在 → 404
+ * - admin → 通過
+ * - driver で session.employeeId === record.employeeId → 通過
+ * - driver で不一致 → 403
+ *
+ * ヒットしたレコードを `(req as any).attendanceRecord` に格納するので、
+ * ハンドラ側で再フェッチせずに参照できる。
+ */
+export async function requireAttendanceRecordOwnerOrAdmin(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  if (!req.session?.userId) {
+    return res.status(401).json({ error: "ログインが必要です" });
+  }
+
+  const id = parseInt(req.params["id"] ?? "", 10);
+  if (Number.isNaN(id)) {
+    return res.status(400).json({ error: "id が不正です" });
+  }
+
+  const [record] = await db
+    .select()
+    .from(attendanceRecordsTable)
+    .where(eq(attendanceRecordsTable.id, id))
+    .limit(1);
+
+  if (!record) {
+    return res.status(404).json({ error: "レコードが見つかりません" });
+  }
+
+  if (req.session.role === "admin") {
+    (req as Request & { attendanceRecord?: typeof record }).attendanceRecord = record;
+    return next();
+  }
+
+  const sessionEmployeeId = req.session.employeeId;
+  if (
+    sessionEmployeeId === null ||
+    sessionEmployeeId === undefined ||
+    Number(sessionEmployeeId) !== Number(record.employeeId)
+  ) {
+    return res
+      .status(403)
+      .json({ error: "他の従業員のレコードにはアクセスできません" });
+  }
+
+  (req as Request & { attendanceRecord?: typeof record }).attendanceRecord = record;
+  return next();
 }

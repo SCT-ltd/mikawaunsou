@@ -1,0 +1,157 @@
+ownerチェック第2段階の実装ありがとうございます。
+messages / attendance一部 / absences に本人確認が入ったことは確認しました。
+
+次は、残っている認可リスクのうち、勤怠打刻系APIを最優先で保護してください。
+
+目的：
+ドライバーが他人の出勤・退勤・勤怠記録を作成、編集、削除できないようにすることです。
+
+前回報告で残リスクとして挙がっていた以下を対応してください。
+
+====================================
+今回の対象
+====================================
+
+最優先で対応：
+
+1. POST /api/attendance/record
+- driver が body.employeeId に他人IDを入れても登録できないようにする
+- driver の場合は session.employeeId を強制使用する
+- admin の場合のみ任意の employeeId を許可する
+
+2. PATCH /api/attendance/records/:id
+- 対象 attendance_records.id の employeeId をDBから取得する
+- admin は編集可能
+- driver は自分の employeeId のレコードのみ編集可能
+- 他人のレコードなら403
+
+3. DELETE /api/attendance/records/:id
+- 対象 attendance_records.id の employeeId をDBから取得する
+- admin は削除可能
+- driver は自分の employeeId のレコードのみ削除可能
+- 他人のレコードなら403
+
+次に対応：
+
+4. GET /api/attendance/checklist/:employeeId
+- admin は全員OK
+- driver は自分のみOK
+- 他人なら403
+
+5. PATCH /api/attendance/checklist/:employeeId
+- admin は全員OK
+- driver は自分のみOK
+- 他人なら403
+
+6. GET /api/attendance/today
+- admin は全社員の今日の勤怠を見られる
+- driver は自分の勤怠だけ返す
+- もし現在全社員分を返しているなら、driver時は session.employeeId で絞る
+
+7. GET /api/attendance/stream
+- admin は全社員のstreamを見られる
+- driver は自分の employeeId に関するイベントだけ受信
+- driver が他人のemployeeIdを指定した場合は403
+
+====================================
+実装方針
+====================================
+
+requireOwnerOrAdmin を使える箇所は使ってください。
+
+ただし、PATCH / DELETE /api/attendance/records/:id のように、URLに employeeId がなく recordId しかない場合は、以下のようにしてください。
+
+1. recordId から attendance_records をDB検索
+2. 見つからなければ404
+3. adminなら通す
+4. driverなら record.employeeId と req.session.employeeId を比較
+5. 一致すれば通す
+6. 不一致なら403
+
+専用ミドルウェアを作ってもOKです。
+
+例：
+requireAttendanceRecordOwnerOrAdmin
+
+====================================
+POST /api/attendance/record の重要ルール
+====================================
+
+driver の body は信用しないでください。
+
+driver の場合：
+- employeeId は req.session.employeeId を強制使用
+- body.employeeId が他人IDなら403、または無視して session.employeeId に置換
+- senderやroleのような値も信用しない
+
+admin の場合：
+- body.employeeId を許可
+
+ログ例：
+
+console.log("[ATTENDANCE_RECORD_AUTH_CHECK]", {
+  role: req.session.role,
+  sessionEmployeeId: req.session.employeeId,
+  requestedEmployeeId: req.body.employeeId,
+  finalEmployeeIdUsed,
+  allowed
+});
+
+====================================
+確認テスト
+====================================
+
+一時的に admin と driver テストユーザーを作成して構いません。
+検証後は必ず削除してください。
+
+テスト1：admin
+- POST /api/attendance/record で任意社員を登録できる
+- PATCH /api/attendance/records/:id で任意社員を編集できる
+- DELETE /api/attendance/records/:id で任意社員を削除できる
+- GET /api/attendance/today で全社員分を見られる
+
+テスト2：driver本人
+- 自分の POST /api/attendance/record は成功
+- 自分の attendance record の PATCH は成功
+- 自分の attendance record の DELETE は成功
+- 自分の checklist は見られる/更新できる
+- GET /api/attendance/today は自分の分だけ返る
+
+テスト3：driverが他人IDを指定
+- POST /api/attendance/record で他人employeeId指定 → 403
+- PATCH /api/attendance/records/:id で他人レコード指定 → 403
+- DELETE /api/attendance/records/:id で他人レコード指定 → 403
+- GET /api/attendance/checklist/他人ID → 403
+- PATCH /api/attendance/checklist/他人ID → 403
+- GET /api/attendance/stream?employeeId=他人ID → 403
+
+テスト4：未ログイン
+- すべて401
+
+====================================
+注意
+====================================
+
+今回も以下は触らないでください。
+
+- パスワードハッシュ移行
+- CSRF対応
+- 給与計算ロジック
+- 所得税テーブル
+- 子ども・子育て支援金
+- Bluewing仕様
+- メッセージUI大改修
+
+====================================
+最終報告で出してほしいこと
+====================================
+
+- 修正したファイル名
+- 追加したミドルウェア名
+- ownerチェックを追加したAPI一覧
+- adminテスト結果
+- driver本人テスト結果
+- driver他人指定403テスト結果
+- 未ログイン401テスト結果
+- 作成・削除したテストデータ
+- まだ残っている認可リスク

@@ -2,12 +2,15 @@ import { Router, type Response } from "express";
 import { db, attendanceRecordsTable, employeesTable, absenceRecordsTable, liveLocationsTable, attendanceDraftsTable } from "@workspace/db";
 import { asc, eq, and, gte, lte, sql } from "drizzle-orm";
 import { ABSENCE_DAYS } from "./absences";
-import { requireAdmin, requireOwnerOrAdmin } from "../lib/auth-middleware";
+import { requireAdmin, requireOwnerOrAdmin, requireAttendanceRecordOwnerOrAdmin } from "../lib/auth-middleware";
 
 const router = Router();
 
 // ── SSEクライアント管理 ────────────────────────────────
-const sseClients = new Set<Response>();
+// クライアントごとに「自分が見るべき employeeId」を保持する。
+//   null  → admin（全社員のスナップショットをそのまま受け取る）
+//   number → driver（自分の employeeId のみにフィルタしたスナップショットを受け取る）
+const sseClients = new Map<Response, number | null>();
 
 function flush(res: Response) {
   if (typeof (res as unknown as { flush?: () => void }).flush === "function") {
@@ -15,10 +18,18 @@ function flush(res: Response) {
   }
 }
 
-function broadcast(data: unknown) {
-  const payload = `data: ${JSON.stringify(data)}\n\n`;
-  for (const client of sseClients) {
-    client.write(payload);
+type Snapshot = Awaited<ReturnType<typeof buildSnapshot>>;
+
+function filterSnapshotForDriver(snapshot: Snapshot, employeeId: number): Snapshot {
+  return snapshot.filter(item => item.employee.id === employeeId);
+}
+
+function broadcast(snapshot: Snapshot) {
+  for (const [client, ownerEmployeeId] of sseClients) {
+    const data = ownerEmployeeId === null
+      ? snapshot
+      : filterSnapshotForDriver(snapshot, ownerEmployeeId);
+    client.write(`data: ${JSON.stringify(data)}\n\n`);
     flush(client);
   }
 }
@@ -83,22 +94,51 @@ async function buildSnapshot(date?: string) {
 
 // ── SSEストリーム ─────────────────────────────────────
 router.get("/attendance/stream", async (req, res) => {
+  if (!req.session?.userId) {
+    return res.status(401).json({ error: "ログインが必要です" });
+  }
+
+  // ── 接続時の認可判定 ─────────────────────────────────
+  // admin: ownerEmployeeId = null（全社員データ受信）
+  // driver: ownerEmployeeId = session.employeeId（自分の分のみ受信）
+  //         driver が ?employeeId=他人 を指定した場合は 403
+  let ownerEmployeeId: number | null;
+  if (req.session.role === "admin") {
+    ownerEmployeeId = null;
+  } else {
+    const sessionEmployeeId = req.session.employeeId;
+    if (sessionEmployeeId === null || sessionEmployeeId === undefined) {
+      return res.status(403).json({ error: "権限がありません" });
+    }
+    const requestedRaw = req.query["employeeId"];
+    if (requestedRaw !== undefined && requestedRaw !== "") {
+      const requested = parseInt(String(requestedRaw), 10);
+      if (!Number.isNaN(requested) && requested !== Number(sessionEmployeeId)) {
+        return res.status(403).json({ error: "他の従業員のストリームにはアクセスできません" });
+      }
+    }
+    ownerEmployeeId = Number(sessionEmployeeId);
+  }
+
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
 
-  // 接続直後に現在の状態を送信
+  // 接続直後に現在の状態を送信（driverならフィルタ済みのもの）
   try {
     const snapshot = await buildSnapshot();
-    res.write(`data: ${JSON.stringify(snapshot)}\n\n`);
+    const initial = ownerEmployeeId === null
+      ? snapshot
+      : filterSnapshotForDriver(snapshot, ownerEmployeeId);
+    res.write(`data: ${JSON.stringify(initial)}\n\n`);
     flush(res);
   } catch {
     // 初回送信失敗は無視
   }
 
-  sseClients.add(res);
+  sseClients.set(res, ownerEmployeeId);
 
   // 接続維持用ハートビート（15秒ごと）
   const heartbeat = setInterval(() => {
@@ -110,13 +150,28 @@ router.get("/attendance/stream", async (req, res) => {
     clearInterval(heartbeat);
     sseClients.delete(res);
   });
+  return;
 });
 
 // ── 全社員の勤怠状況（日付指定可、デフォルト今日） ──
+// admin: 全社員のスナップショット
+// driver: 自分の employeeId に絞り込んだスナップショット
 router.get("/attendance/today", async (req, res) => {
+  if (!req.session?.userId) {
+    return res.status(401).json({ error: "ログインが必要です" });
+  }
   const date = req.query.date as string | undefined;
   const snapshot = await buildSnapshot(date);
-  return res.json(snapshot);
+
+  if (req.session.role === "admin") {
+    return res.json(snapshot);
+  }
+
+  const sessionEmployeeId = req.session.employeeId;
+  if (sessionEmployeeId === null || sessionEmployeeId === undefined) {
+    return res.status(403).json({ error: "権限がありません" });
+  }
+  return res.json(filterSnapshotForDriver(snapshot, Number(sessionEmployeeId)));
 });
 
 // ── 社員の今日の打刻一覧 ─────────────────────────────
@@ -137,9 +192,15 @@ router.get("/attendance/employee/:employeeId/today", requireOwnerOrAdmin(req => 
 });
 
 // ── 打刻記録（POST → SSEブロードキャスト） ──────────
+// admin: body.employeeId をそのまま使用（任意の社員の打刻が可能）
+// driver: session.employeeId を強制使用（body.employeeId が他人IDなら 403）
 router.post("/attendance/record", async (req, res) => {
-  const { employeeId, eventType, note, startOdometer, endOdometer, recordedAt: recordedAtStr, latitude, longitude, checklistNgItems } = req.body as {
-    employeeId: number;
+  if (!req.session?.userId) {
+    return res.status(401).json({ error: "ログインが必要です" });
+  }
+
+  const { employeeId: bodyEmployeeId, eventType, note, startOdometer, endOdometer, recordedAt: recordedAtStr, latitude, longitude, checklistNgItems } = req.body as {
+    employeeId?: number;
     eventType: "clock_in" | "clock_out" | "break_start" | "break_end";
     note?: string;
     startOdometer?: number | null;
@@ -150,8 +211,46 @@ router.post("/attendance/record", async (req, res) => {
     checklistNgItems?: string | null;
   };
 
-  if (!employeeId || !eventType) {
-    return res.status(400).json({ error: "employeeId と eventType は必須です" });
+  if (!eventType) {
+    return res.status(400).json({ error: "eventType は必須です" });
+  }
+
+  let employeeId: number;
+  if (req.session.role === "admin") {
+    if (!bodyEmployeeId || Number.isNaN(Number(bodyEmployeeId))) {
+      return res.status(400).json({ error: "employeeId は必須です" });
+    }
+    employeeId = Number(bodyEmployeeId);
+  } else {
+    const sessionEmployeeId = req.session.employeeId;
+    if (sessionEmployeeId === null || sessionEmployeeId === undefined) {
+      console.log("[ATTENDANCE_RECORD_AUTH_CHECK]", {
+        role: req.session.role,
+        sessionEmployeeId,
+        requestedEmployeeId: bodyEmployeeId,
+        finalEmployeeIdUsed: null,
+        allowed: false,
+      });
+      return res.status(403).json({ error: "権限がありません" });
+    }
+    if (bodyEmployeeId !== undefined && bodyEmployeeId !== null && Number(bodyEmployeeId) !== Number(sessionEmployeeId)) {
+      console.log("[ATTENDANCE_RECORD_AUTH_CHECK]", {
+        role: req.session.role,
+        sessionEmployeeId,
+        requestedEmployeeId: bodyEmployeeId,
+        finalEmployeeIdUsed: null,
+        allowed: false,
+      });
+      return res.status(403).json({ error: "他の従業員として打刻することはできません" });
+    }
+    employeeId = Number(sessionEmployeeId);
+    console.log("[ATTENDANCE_RECORD_AUTH_CHECK]", {
+      role: req.session.role,
+      sessionEmployeeId,
+      requestedEmployeeId: bodyEmployeeId,
+      finalEmployeeIdUsed: employeeId,
+      allowed: true,
+    });
   }
 
   // クライアントからrecordedAtが送られた場合はそのタイムスタンプを使用し、
@@ -228,7 +327,9 @@ router.post("/attendance/record", async (req, res) => {
 });
 
 // ── 打刻レコード修正 ─────────────────────────────────
-router.patch("/attendance/records/:id", async (req, res) => {
+// admin: 任意レコードを編集可
+// driver: 自分のレコードのみ編集可（他人なら 403、未存在なら 404）
+router.patch("/attendance/records/:id", requireAttendanceRecordOwnerOrAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { eventType, recordedAt, workDate } = req.body as {
     eventType?: "clock_in" | "clock_out" | "break_start" | "break_end";
@@ -286,7 +387,9 @@ router.patch("/attendance/records/:id", async (req, res) => {
 });
 
 // ── 打刻レコード削除 ─────────────────────────────────
-router.delete("/attendance/records/:id", async (req, res) => {
+// admin: 任意レコードを削除可
+// driver: 自分のレコードのみ削除可（他人なら 403、未存在なら 404）
+router.delete("/attendance/records/:id", requireAttendanceRecordOwnerOrAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10);
 
   const [deleted] = await db
@@ -303,7 +406,7 @@ router.delete("/attendance/records/:id", async (req, res) => {
 });
 
 // ── 本日のチェックリスト取得（復元用） ────────────────
-router.get("/attendance/checklist/:employeeId", async (req, res) => {
+router.get("/attendance/checklist/:employeeId", requireOwnerOrAdmin(req => parseInt(req.params.employeeId, 10)), async (req, res) => {
   const employeeId = parseInt(req.params.employeeId, 10);
   const today = todayJST();
 
@@ -323,7 +426,7 @@ router.get("/attendance/checklist/:employeeId", async (req, res) => {
 });
 
 // ── チェックリスト結果のリアルタイム保存 ────────────────
-router.patch("/attendance/checklist/:employeeId", async (req, res) => {
+router.patch("/attendance/checklist/:employeeId", requireOwnerOrAdmin(req => parseInt(req.params.employeeId, 10)), async (req, res) => {
   const employeeId = parseInt(req.params.employeeId, 10);
   const { checklistNgItems } = req.body as { checklistNgItems: string };
 
