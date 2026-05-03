@@ -1,9 +1,14 @@
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
 import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
 import pinoHttp from "pino-http";
+import { pool } from "@workspace/db";
 import router from "./routes";
 import { logger } from "./lib/logger";
+
+// connect-pg-simple は session() を一度ラップして factory を返す
+const PgSessionStore = connectPgSimple(session);
 
 // セッションデータの型拡張
 declare module "express-session" {
@@ -47,8 +52,20 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // セッションミドルウェア
+// 保存先を PostgreSQL の `session` テーブルに変更（旧: メモリ）。
+// API サーバー再起動後もログイン状態が維持される。
+// Cookie 設定（httpOnly / secure / maxAge 8h / sameSite）と
+// req.session.* の API は従来通り変更なし。
 app.use(
   session({
+    store: new PgSessionStore({
+      pool,
+      tableName: "session",
+      // テーブルは drizzle migration で事前作成しているのでランタイム自動作成は無効化
+      createTableIfMissing: false,
+      // 期限切れセッションを 1 時間ごとに削除
+      pruneSessionInterval: 60 * 60,
+    }),
     secret: process.env.SESSION_SECRET ?? "mikawa-dev-secret-change-in-prod",
     resave: false,
     saveUninitialized: false,
