@@ -9,6 +9,10 @@ router.get("/dashboard/summary", async (req, res) => {
   const year = parseInt(req.query.year as string, 10);
   const month = parseInt(req.query.month as string, 10);
 
+  if (Number.isNaN(year) || Number.isNaN(month)) {
+    return res.status(400).json({ error: "year と month のクエリパラメータが必要です（例: ?year=2026&month=3）" });
+  }
+
   const [empCount] = await db.select({ count: sql<number>`count(*)::int` }).from(employeesTable).where(eq(employeesTable.isActive, true));
   const totalEmployees = empCount?.count ?? 0;
 
@@ -73,6 +77,10 @@ router.get("/dashboard/monthly-trend", async (req, res) => {
 router.get("/dashboard/pending-employees", async (req, res) => {
   const year = parseInt(req.query.year as string, 10);
   const month = parseInt(req.query.month as string, 10);
+
+  if (Number.isNaN(year) || Number.isNaN(month)) {
+    return res.status(400).json({ error: "year と month のクエリパラメータが必要です（例: ?year=2026&month=3）" });
+  }
 
   const employees = await db.select().from(employeesTable).where(eq(employeesTable.isActive, true));
   const records = await db.select().from(monthlyRecordsTable)

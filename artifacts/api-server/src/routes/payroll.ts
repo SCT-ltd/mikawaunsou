@@ -53,6 +53,10 @@ router.get("/payroll", async (req, res) => {
   const month = parseInt(req.query.month as string, 10);
   const status = req.query.status as string | undefined;
 
+  if (Number.isNaN(year) || Number.isNaN(month)) {
+    return res.status(400).json({ error: "year と month のクエリパラメータが必要です（例: ?year=2026&month=3）" });
+  }
+
   const conditions = [eq(payrollsTable.year, year), eq(payrollsTable.month, month)];
   if (status) conditions.push(eq(payrollsTable.status, status));
 

@@ -7,6 +7,11 @@ const router = Router();
 router.get("/journal-entries", async (req, res) => {
   const year = parseInt(req.query.year as string, 10);
   const month = parseInt(req.query.month as string, 10);
+
+  if (Number.isNaN(year) || Number.isNaN(month)) {
+    return res.status(400).json({ error: "year と month のクエリパラメータが必要です（例: ?year=2026&month=3）" });
+  }
+
   const rows = await db.select().from(journalEntriesTable)
     .where(and(eq(journalEntriesTable.year, year), eq(journalEntriesTable.month, month)));
   return res.json(rows);
