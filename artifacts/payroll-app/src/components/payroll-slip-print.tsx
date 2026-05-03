@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { formatCurrency, formatMonth } from "@/lib/format";
-import { calculateInsuranceByGrade } from "@/lib/tax-tables-reiwa8";
+
+/**
+ * 印刷時は DB 保存値のみを使用し、社会保険料・所得税・住民税などの再計算は一切行わない。
+ * 健保・厚年は payrolls.socialInsurance に合算保存されているため、
+ * 「社会保険料（健保・厚年）」として一本表示し、子ども・子育て支援金のみ別行で表示する。
+ * これにより payslip-print-classic.tsx と完全に同じデータソース・同じ控除一覧になる。
+ */
 
 interface PayrollData {
   year: number;
@@ -180,17 +186,9 @@ function TotalRow({ label, value }: { label: string; value: number }) {
   );
 }
 
-function PrintContent({ payroll, companyName, employeeAllowances, employeeDeductions, employee, company }: Props) {
+function PrintContent({ payroll, companyName, employeeAllowances, employeeDeductions, employee: _employee, company: _company }: Props) {
   const isBW = !!(payroll.useBluewingLogic as boolean);
   const childcare = payroll.childcareSupportContribution ?? 0;
-
-  const stdRemun = employee?.standardRemuneration ?? 0;
-  const healthRate = (company?.healthInsuranceEmployeeRate as number | undefined) ?? 0.04925;
-  const pensionRate = (company?.pensionEmployeeRate as number | undefined) ?? 0.0915;
-  const { healthInsurance: computedHealth, pension: computedPension } =
-    stdRemun > 0
-      ? calculateInsuranceByGrade(stdRemun, healthRate, pensionRate)
-      : { healthInsurance: 0, pension: 0 };
 
   const payItemsFixed: Array<{ label: string; value: number; nonTaxable?: boolean }> = [];
   if (isBW) {
@@ -224,22 +222,35 @@ function PrintContent({ payroll, companyName, employeeAllowances, employeeDeduct
 
   const allPayItems = [...payItemsFixed, ...payItemsCustom];
 
+  // 控除項目: DB 保存値のみを使用（再計算しない）
   const deductionItems: Array<{ label: string; value: number; indent?: boolean }> = [];
-  if (stdRemun > 0) {
-    if (computedHealth > 0) deductionItems.push({ label: "健康保険料", value: computedHealth });
-    if (childcare > 0) deductionItems.push({ label: "子ども・子育て支援金", value: childcare });
-    if (computedPension > 0) deductionItems.push({ label: "厚生年金保険料", value: computedPension });
-  } else {
-    const socialBase = (payroll.socialInsurance ?? 0) - childcare;
-    if (socialBase > 0) deductionItems.push({ label: "社会保険料（健保・厚年）", value: socialBase });
-    if (childcare > 0) deductionItems.push({ label: "　うち 子ども・子育て支援金", value: childcare, indent: true });
-  }
+  const socialBase = (payroll.socialInsurance ?? 0) - childcare;
+  if (socialBase > 0) deductionItems.push({ label: "社会保険料（健保・厚年）", value: socialBase });
+  if (childcare > 0) deductionItems.push({ label: "子ども・子育て支援金", value: childcare });
   if ((payroll.employmentInsurance ?? 0) > 0) deductionItems.push({ label: "雇用保険料", value: payroll.employmentInsurance });
   if ((payroll.incomeTax ?? 0) > 0) deductionItems.push({ label: "源泉所得税", value: payroll.incomeTax });
   if ((payroll.residentTax ?? 0) > 0) deductionItems.push({ label: "市町村民税", value: payroll.residentTax });
   if ((payroll.absenceDeduction ?? 0) > 0) deductionItems.push({ label: "欠勤控除", value: payroll.absenceDeduction });
   (employeeDeductions ?? []).filter(d => d.amount !== 0).forEach(d => {
     deductionItems.push({ label: d.deductionName, value: d.amount });
+  });
+
+  const customDeductionsTotal = (employeeDeductions ?? []).reduce((s, d) => s + (d.amount ?? 0), 0);
+
+  console.log("[PRINT_VALUES_SOURCE_CHECK]", {
+    componentName: "PayrollSlipPrint",
+    payrollId: (payroll as { id?: number }).id,
+    grossSalary: payroll.grossSalary,
+    healthInsurance: socialBase,
+    childcareSupportContribution: childcare,
+    pension: 0,
+    employmentInsurance: payroll.employmentInsurance,
+    incomeTax: payroll.incomeTax,
+    residentTax: payroll.residentTax,
+    customDeductionsTotal,
+    totalDeductions: payroll.totalDeductions,
+    netSalary: payroll.netSalary,
+    source: "DB_SAVED_VALUES",
   });
 
   console.log("[PRINT_PAYSLIP_DATA]", {
@@ -251,15 +262,6 @@ function PrintContent({ payroll, companyName, employeeAllowances, employeeDeduct
     grossSalary: payroll.grossSalary,
     totalDeductions: payroll.totalDeductions,
     netSalary: payroll.netSalary,
-    _debug: {
-      stdRemun,
-      computedHealth,
-      computedPension,
-      childcare,
-      socialInsurance: payroll.socialInsurance,
-      rawAllowances: employeeAllowances,
-      rawDeductions: employeeDeductions,
-    },
   });
 
   const today = new Date();

@@ -43,6 +43,7 @@ import {
 import { AttendanceCalendarDialog } from "@/components/attendance-calendar-dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useNavigationGuard } from "@/context/navigation-guard-context";
+import { calculateIncomeTaxReiwa8 } from "@/lib/tax-tables-reiwa8";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -82,20 +83,24 @@ function resolvePensionApplied(
   return age < 70;
 }
 
-function calculateIncomeTax(afterInsuranceSalary: number, dependentCount: number): number {
-  const X = afterInsuranceSalary;
-  let tax0 = 0;
-  if (X < 88_000) tax0 = 0;
-  else if (X < 257_700) tax0 = X * 0.05 - 4_273;
-  else if (X < 429_460) tax0 = X * 0.10 - 17_158;
-  else if (X < 695_000) tax0 = X * 0.20 - 60_104;
-  else if (X < 900_000) tax0 = X * 0.23 - 80_954;
-  else if (X < 1_800_000) tax0 = X * 0.33 - 170_954;
-  else if (X < 4_000_000) tax0 = X * 0.40 - 296_954;
-  else tax0 = X * 0.45 - 496_954;
-
-  const taxB = Math.max(0, tax0 - dependentCount * 3_750);
-  return roundJapanese(Math.max(0, taxB * 1.021));
+/**
+ * フロント独自の旧式所得税近似式は廃止（バックエンドと差異が出るため）。
+ * 代わりに @/lib/tax-tables-reiwa8 の公式月額表（甲欄）を直接参照する共有関数を使用。
+ *
+ * @param afterInsuranceSalary  社会保険料控除後の課税対象給与
+ * @param dependentCount        扶養親族数（emp.dependentCount）
+ * @param hasSpouse             控除対象配偶者の有無（emp.hasSpouse）
+ *
+ * 注: 公式表は「扶養親族等の数」(配偶者を含む) を引数に取るため、
+ *     本関数内で hasSpouse を加算した上で公式表を引く。
+ */
+function calculateIncomeTaxFromOfficialTable(
+  afterInsuranceSalary: number,
+  dependentCount: number,
+  hasSpouse: boolean,
+): number {
+  const dependentEquivCount = (dependentCount ?? 0) + (hasSpouse ? 1 : 0);
+  return calculateIncomeTaxReiwa8(afterInsuranceSalary, dependentEquivCount);
 }
 
 // ── ドラッグハンドル ──────────────────────────────────────────────────────
@@ -370,12 +375,40 @@ function AllowanceSidebar({
       : 0;
   const totalInsurance = healthInsurance + pensionInsurance + employmentInsurance;
 
-  const afterInsuranceSalary = Math.max(0, grandTotal - totalInsurance);
-  const incomeTax = calculateIncomeTax(afterInsuranceSalary, employee?.dependentCount ?? 0);
+  const afterInsuranceSalary = Math.max(0, grandTotal - totalInsurance - nonTaxableAllowancesTotal);
+  const incomeTax = calculateIncomeTaxFromOfficialTable(
+    afterInsuranceSalary,
+    employee?.dependentCount ?? 0,
+    employee?.hasSpouse ?? false,
+  );
   const residentTax = employee?.residentTax ?? 0;
   const customDeductionsTotal = deductionRows.reduce((s, r) => s + (r.amount || 0), 0);
   const totalDeductions = roundJapanese(totalInsurance + incomeTax + residentTax + customDeductionsTotal);
   const netSalary = roundJapanese(grandTotal - totalDeductions);
+
+  console.log("[FRONT_INCOME_TAX_SOURCE_CHECK]", {
+    page: "monthly-input/AllowanceSidebar",
+    employeeId,
+    payrollId: null,
+    incomeTaxDisplayed: incomeTax,
+    source: "calculateIncomeTaxReiwa8（公式月額表・甲欄）",
+    usesLegacyFormula: false,
+  });
+
+  console.log("[CUSTOM_DEDUCTIONS_TOTAL_CHECK]", {
+    employeeId,
+    payrollId: null,
+    deductionItems: deductionRows
+      .filter(r => r.defId !== null)
+      .map(r => ({
+        defId: r.defId,
+        name: deductionDefinitions.find(d => d.id === r.defId)?.name ?? "(未選択)",
+        amount: r.amount,
+      })),
+    customDeductionsTotal,
+    totalDeductions,
+    netSalary,
+  });
 
   const fmt = (v: number) =>
     v > 0 ? `¥${v.toLocaleString("ja-JP")}` : v === 0 ? "¥0" : "—";
@@ -688,7 +721,11 @@ function computeQuickEstimate(
         (emp.employmentInsuranceApplied !== false ? grossEstimate * eiRate : 0)
     );
     const afterInsurance = Math.max(0, grossEstimate - totalInsurance);
-    const incomeTax = calculateIncomeTax(afterInsurance, emp.dependentCount ?? 0);
+    const incomeTax = calculateIncomeTaxFromOfficialTable(
+      afterInsurance,
+      emp.dependentCount ?? 0,
+      emp.hasSpouse ?? false,
+    );
     const residentTax = emp.residentTax ?? 0;
     net = roundJapanese(grossEstimate - totalInsurance - incomeTax - residentTax);
   }

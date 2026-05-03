@@ -338,6 +338,24 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
   const issuedDate = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日`;
   const payrollMonthStr = formatMonth(payroll.year, payroll.month);
 
+  const customDeductionsTotal = (employeeDeductions ?? []).reduce((s, d) => s + (d.amount ?? 0), 0);
+
+  console.log("[PRINT_VALUES_SOURCE_CHECK]", {
+    componentName: "PayslipPrintClassic",
+    payrollId: (payroll as { id?: number }).id,
+    grossSalary: payroll.grossSalary,
+    healthInsurance: socialBase,
+    childcareSupportContribution: childcare,
+    pension: 0,
+    employmentInsurance: payroll.employmentInsurance,
+    incomeTax: payroll.incomeTax,
+    residentTax: payroll.residentTax,
+    customDeductionsTotal,
+    totalDeductions: payroll.totalDeductions,
+    netSalary: payroll.netSalary,
+    source: "DB_SAVED_VALUES",
+  });
+
   console.log("[CLASSIC_PAYSLIP_PRINT_DATA]", {
     employeeName: payroll.employeeName,
     employeeCode: payroll.employeeCode,
