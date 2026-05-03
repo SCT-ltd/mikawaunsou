@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { db, companyTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { requireAdmin } from "../lib/auth-middleware";
 
 const router = Router();
 
@@ -12,7 +13,7 @@ router.get("/company", async (req, res) => {
   return res.json(rows[0]);
 });
 
-router.put("/company", async (req, res) => {
+router.put("/company", requireAdmin, async (req, res) => {
   const rows = await db.select().from(companyTable).limit(1);
   const body = req.body;
 

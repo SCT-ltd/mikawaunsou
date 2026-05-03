@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { db, allowanceDefinitionsTable, employeeAllowancesTable, deductionDefinitionsTable, employeeDeductionsTable } from "@workspace/db";
 import { eq, and, ne } from "drizzle-orm";
+import { requireAdmin } from "../lib/auth-middleware";
 
 const router = Router();
 
@@ -13,7 +14,7 @@ router.get("/allowance-definitions", async (req, res) => {
   return res.json(rows);
 });
 
-router.post("/allowance-definitions", async (req, res) => {
+router.post("/allowance-definitions", requireAdmin, async (req, res) => {
   const body = req.body;
   const existing = await db.select().from(allowanceDefinitionsTable).orderBy(allowanceDefinitionsTable.sortOrder);
   const maxSort = existing.length > 0 ? Math.max(0, ...existing.map(e => e.sortOrder)) : 0;
@@ -29,7 +30,7 @@ router.post("/allowance-definitions", async (req, res) => {
   return res.status(201).json(created);
 });
 
-router.put("/allowance-definitions/:id", async (req, res) => {
+router.put("/allowance-definitions/:id", requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const body = req.body;
 
@@ -64,7 +65,7 @@ router.put("/allowance-definitions/:id", async (req, res) => {
   return res.json(updated);
 });
 
-router.delete("/allowance-definitions/:id", async (req, res) => {
+router.delete("/allowance-definitions/:id", requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   // 関連する社員手当レコードも削除してから定義を完全削除
   await db.delete(employeeAllowancesTable).where(eq(employeeAllowancesTable.allowanceDefinitionId, id));
@@ -102,7 +103,7 @@ router.get("/employees/:id/allowances", async (req, res) => {
   return res.json(result);
 });
 
-router.put("/employees/:id/allowances", async (req, res) => {
+router.put("/employees/:id/allowances", requireAdmin, async (req, res) => {
   const employeeId = parseInt(req.params.id, 10);
   const { allowances } = req.body as { allowances: Array<{ allowanceDefinitionId: number; amount: number }> };
 
@@ -156,7 +157,7 @@ router.get("/deduction-definitions", async (req, res) => {
   return res.json(rows);
 });
 
-router.post("/deduction-definitions", async (req, res) => {
+router.post("/deduction-definitions", requireAdmin, async (req, res) => {
   const body = req.body;
   const existing = await db.select().from(deductionDefinitionsTable).orderBy(deductionDefinitionsTable.sortOrder);
   const maxSort = existing.length > 0 ? Math.max(0, ...existing.map(e => e.sortOrder)) : 0;
@@ -171,7 +172,7 @@ router.post("/deduction-definitions", async (req, res) => {
   return res.status(201).json(created);
 });
 
-router.put("/deduction-definitions/:id", async (req, res) => {
+router.put("/deduction-definitions/:id", requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const body = req.body;
 
@@ -205,7 +206,7 @@ router.put("/deduction-definitions/:id", async (req, res) => {
   return res.json(updated);
 });
 
-router.delete("/deduction-definitions/:id", async (req, res) => {
+router.delete("/deduction-definitions/:id", requireAdmin, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   // 関連する社員差引レコードも削除してから定義を完全削除
   await db.delete(employeeDeductionsTable).where(eq(employeeDeductionsTable.deductionDefinitionId, id));
@@ -242,7 +243,7 @@ router.get("/employees/:id/deductions", async (req, res) => {
   return res.json(result);
 });
 
-router.put("/employees/:id/deductions", async (req, res) => {
+router.put("/employees/:id/deductions", requireAdmin, async (req, res) => {
   const employeeId = parseInt(req.params.id, 10);
   const { deductions } = req.body as { deductions: Array<{ deductionDefinitionId: number; amount: number }> };
 

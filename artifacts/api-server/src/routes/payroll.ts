@@ -12,13 +12,18 @@ const router = Router();
  * - emp.pensionApplied が true/false の場合: その値をそのまま使用（手動オーバーライド）
  */
 /**
- * 子ども・子育て支援金は2026年5月給与（4月分）から徴収開始。
- * システム上の month が 2026/05 より前の場合は 0 とする。
+ * 子ども・子育て支援金の徴収開始月。
+ * 三川運送の正式給与明細に合わせる方針：
+ *   玉川さん2026年3月分で 506円 が徴収済（クライアント正式資料で確定）。
+ * よって 2026年3月分以降を徴収対象とする。
+ *   - year > 2026                       → 徴収
+ *   - year === 2026 && month >= 3       → 徴収
+ *   - それ以前                          → 0
  */
 function isChildcareSupportApplicable(year: number, month: number): boolean {
-  if (year < 2026) return false;
-  if (year === 2026 && month <= 4) return false;
-  return true;
+  if (year > 2026) return true;
+  if (year === 2026 && month >= 3) return true;
+  return false;
 }
 
 function resolvePensionApplied(emp: typeof employeesTable.$inferSelect, year: number, month: number): boolean {

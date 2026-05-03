@@ -2,6 +2,7 @@ import { Router, type Response } from "express";
 import { db, attendanceRecordsTable, employeesTable, absenceRecordsTable, liveLocationsTable, attendanceDraftsTable } from "@workspace/db";
 import { asc, eq, and, gte, lte, sql } from "drizzle-orm";
 import { ABSENCE_DAYS } from "./absences";
+import { requireAdmin } from "../lib/auth-middleware";
 
 const router = Router();
 
@@ -456,7 +457,7 @@ router.get("/attendance/employee/:employeeId/month", async (req, res) => {
 });
 
 // ── 全社員の月間勤怠集計（月次実績入力への取り込み用） ──
-router.get("/attendance/monthly-summary", async (req, res) => {
+router.get("/attendance/monthly-summary", requireAdmin, async (req, res) => {
   const year  = parseInt(req.query.year  as string, 10) || new Date().getFullYear();
   const month = parseInt(req.query.month as string, 10) || (new Date().getMonth() + 1);
 
@@ -626,7 +627,7 @@ router.post("/attendance/location/live", async (req, res) => {
 });
 
 // ── ライブ位置情報 全社員取得（マップ表示用） ─────────────
-router.get("/attendance/location/live", async (req, res) => {
+router.get("/attendance/location/live", requireAdmin, async (req, res) => {
   const today = todayJST();
 
   const [employees, liveRows, todayRecords] = await Promise.all([
@@ -689,7 +690,7 @@ router.get("/attendance/location/live", async (req, res) => {
 });
 
 // ── 全社員の最新GPS位置情報（リアルタイムマップ用） ────────
-router.get("/attendance/gps-locations", async (req, res) => {
+router.get("/attendance/gps-locations", requireAdmin, async (req, res) => {
   const today = todayJST();
 
   const employees = await db

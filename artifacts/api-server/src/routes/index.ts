@@ -14,6 +14,7 @@ import absencesRouter from "./absences";
 import messagesRouter from "./messages";
 import usersRouter from "./users";
 import authRouter from "./auth";
+import { requireAdmin } from "../lib/auth-middleware";
 
 const router: IRouter = Router();
 
@@ -42,16 +43,31 @@ router.use(async (req: Request, res: Response, next: NextFunction) => {
 });
 // ──────────────────────────────────────────────────────────────────────────
 
-router.use(companyRouter);
-router.use(employeesRouter);
-router.use(monthlyRecordsRouter);
-router.use(payrollRouter);
-router.use(journalEntriesRouter);
-router.use(dashboardRouter);
-router.use(allowancesRouter);
-router.use(attendanceRouter);
-router.use(absencesRouter);
-router.use(messagesRouter);
-router.use(usersRouter);
+// ── 認可：第1段階 ─────────────────────────────────────────────────────
+// パスプレフィックスごとに requireAdmin を適用する。
+// （Express の router.use("/path", mw) は URL が /path で始まる全リクエストで mw を実行）
+//
+// 注意: router.use(mw, subRouter) と書くと subRouter がパスなしマウントの場合
+//        全リクエストで mw が走り、別のルーターの処理まで巻き込んでしまうため使わない。
+router.use("/payroll", requireAdmin);
+router.use("/employees", requireAdmin);          // /employees/:id/allowances, /employees/:id/deductions も含む
+router.use("/users", requireAdmin);
+router.use("/monthly-records", requireAdmin);
+router.use("/dashboard", requireAdmin);
+router.use("/journal-entries", requireAdmin);
 
+// 全ルーターを通常マウント（個別エンドポイントの requireAdmin は各ファイル側で対応）
+router.use(companyRouter);     // PUT /company のみ admin（ファイル側）
+router.use(employeesRouter);
+router.use(payrollRouter);
+router.use(monthlyRecordsRouter);
+router.use(dashboardRouter);
+router.use(usersRouter);
+router.use(journalEntriesRouter);
+router.use(allowancesRouter);  // /*-definitions の POST/PUT/DELETE は admin（ファイル側）。/employees/:id/{allowances,deductions} は上の "/employees" プレフィックスで admin
+router.use(attendanceRouter);  // monthly-summary, gps-locations, location/live GET は admin（ファイル側）
+router.use(absencesRouter);    // 現状認証のみ（owner設計後に強化）
+router.use(messagesRouter);    // conversations, broadcast は admin（ファイル側）
+
+export { requireAdmin };
 export default router;

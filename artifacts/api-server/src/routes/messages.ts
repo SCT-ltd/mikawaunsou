@@ -2,6 +2,7 @@ import { Router, type Response } from "express";
 import webpush from "web-push";
 import { db, messagesTable, pushSubscriptionsTable, employeesTable } from "@workspace/db";
 import { eq, and, desc, asc, isNull, sql } from "drizzle-orm";
+import { requireAdmin } from "../lib/auth-middleware";
 
 const router = Router();
 
@@ -69,7 +70,7 @@ router.get("/messages/unread-count", async (_req, res) => {
 });
 
 // ── 会話一覧（事務所用） ──────────────────────────────
-router.get("/messages/conversations", async (_req, res) => {
+router.get("/messages/conversations", requireAdmin, async (_req, res) => {
   const employees = await db
     .select()
     .from(employeesTable)
@@ -234,7 +235,7 @@ router.post("/messages", async (req, res) => {
 });
 
 // ── 一斉送信 ───────────────────────────────────────────
-router.post("/messages/broadcast", async (req, res) => {
+router.post("/messages/broadcast", requireAdmin, async (req, res) => {
   const { content, employeeIds } = req.body as { content: string; employeeIds?: number[] };
   if (!content?.trim()) {
     return res.status(400).json({ error: "メッセージ内容が必要です" });
