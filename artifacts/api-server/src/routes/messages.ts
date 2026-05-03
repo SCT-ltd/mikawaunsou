@@ -78,17 +78,62 @@ router.get("/messages/stream", (req, res) => {
   return;
 });
 
-// ── 事務所全体の未読件数 ─────────────────────────────
+// ── 未読件数（ロール別スコープ） ─────────────────────
 // ※ /messages/:employeeId より前に定義（パスマッチ優先のため）
-router.get("/messages/unread-count", async (_req, res) => {
+//
+// admin  : 事務所が見るべき全社員→事務所宛の未読件数（従来通り）
+// driver : 自分宛（事務所→自分の employeeId）の未読件数のみ
+//          driver で session.employeeId が無ければ 403
+router.get("/messages/unread-count", async (req, res) => {
+  if (!req.session?.userId) {
+    return res.status(401).json({ error: "ログインが必要です" });
+  }
+
+  if (req.session.role === "admin") {
+    const rows = await db
+      .select({ id: messagesTable.id })
+      .from(messagesTable)
+      .where(and(
+        eq(messagesTable.sender, "employee"),
+        isNull(messagesTable.readAt),
+      ));
+    const unreadCount = rows.length;
+    console.log("[MESSAGES_UNREAD_COUNT_AUTH_CHECK]", {
+      role: req.session.role,
+      sessionEmployeeId: req.session.employeeId,
+      targetScope: "office_all",
+      unreadCount,
+    });
+    return res.json({ totalUnreadCount: unreadCount });
+  }
+
+  // driver
+  const sessionEmployeeId = req.session.employeeId;
+  if (sessionEmployeeId === null || sessionEmployeeId === undefined) {
+    console.log("[MESSAGES_UNREAD_COUNT_AUTH_CHECK]", {
+      role: req.session.role,
+      sessionEmployeeId,
+      targetScope: "employee_self",
+      unreadCount: null,
+    });
+    return res.status(403).json({ error: "権限がありません" });
+  }
   const rows = await db
     .select({ id: messagesTable.id })
     .from(messagesTable)
     .where(and(
-      eq(messagesTable.sender, "employee"),
+      eq(messagesTable.employeeId, Number(sessionEmployeeId)),
+      eq(messagesTable.sender, "office"),
       isNull(messagesTable.readAt),
     ));
-  return res.json({ totalUnreadCount: rows.length });
+  const unreadCount = rows.length;
+  console.log("[MESSAGES_UNREAD_COUNT_AUTH_CHECK]", {
+    role: req.session.role,
+    sessionEmployeeId,
+    targetScope: "employee_self",
+    unreadCount,
+  });
+  return res.json({ unreadCount });
 });
 
 // ── 会話一覧（事務所用） ──────────────────────────────
