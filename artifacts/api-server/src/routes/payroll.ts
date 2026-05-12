@@ -13,16 +13,15 @@ const router = Router();
  */
 /**
  * 子ども・子育て支援金の徴収開始月。
- * 三川運送の正式給与明細に合わせる方針：
- *   玉川さん2026年3月分で 506円 が徴収済（クライアント正式資料で確定）。
- * よって 2026年3月分以降を徴収対象とする。
+ * 三川運送の方針：
+ *   2026年4月給料明細（= 3月分の労働）から徴収開始。
  *   - year > 2026                       → 徴収
- *   - year === 2026 && month >= 3       → 徴収
+ *   - year === 2026 && month >= 4       → 徴収
  *   - それ以前                          → 0
  */
 function isChildcareSupportApplicable(year: number, month: number): boolean {
   if (year > 2026) return true;
-  if (year === 2026 && month >= 3) return true;
+  if (year === 2026 && month >= 4) return true;
   return false;
 }
 
