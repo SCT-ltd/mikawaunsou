@@ -677,7 +677,7 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
   const totalInsurance = healthInsurance + childcareSupportContribution + pensionInsurance + employmentInsurance;
 
   const incomeTaxBase = Math.max(0,
-    grandTotal - nonTaxableAllowancesTotal - healthInsurance - pensionInsurance - employmentInsurance
+    grandTotal - nonTaxableAllowancesTotal - healthInsurance - childcareSupportContribution - pensionInsurance - employmentInsurance
   );
   const afterInsuranceSalary = Math.max(0,
     grandTotal - healthInsurance - childcareSupportContribution - pensionInsurance - employmentInsurance

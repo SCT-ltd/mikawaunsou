@@ -468,8 +468,9 @@ export function calculateInsuranceAndTax(input: InsuranceTaxInput): InsuranceTax
     - pension
     - employmentInsurance;
 
-  // 子育て支援金は源泉所得税の計算基礎から除外（国税庁公式月額表の定義に従う）
-  const afterInsuranceSalary = taxableSalaryForIncomeTaxExcludingChildcareSupport;
+  // 子育て支援金は社会保険料等の一部として源泉所得税の計算基礎から控除する
+  // （令和8年運用：CSCも社会保険料控除の対象として「社会保険料等控除後の給与等の金額」に含める）
+  const afterInsuranceSalary = taxableSalaryForIncomeTaxIncludingChildcareSupport;
 
   // 源泉所得税：令和8年月額表甲欄テーブル参照（@workspace/tax-tables-reiwa8 使用）
   // 扶養親族等の数 = dependentCount + (hasSpouse ? 1 : 0)
