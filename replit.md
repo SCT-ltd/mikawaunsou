@@ -73,13 +73,30 @@ Supports: 弥生会計, freee, マネーフォワード, generic
 ## Authentication
 
 - セッションベース認証（express-session）
+- **セッションストア: PostgreSQL（`session` テーブル, `connect-pg-simple`）** — APIサーバー再起動でログアウトされない
 - パスワードハッシュ: `sha256(password + "mikawa_salt")`
-- セッション有効期間: 8時間
+- セッション有効期間: 8時間（cookie maxAge = 8h、期限切れ削除を1時間ごとに実施）
 - `system_users` テーブルでアカウント管理（ユーザー管理画面から追加・変更可能）
 - ユーザーが0件の場合、認証なしで全ルートにアクセス可能（初回セットアップ用バイパス）
 - フロントエンド: `AuthProvider` → `useAuth()` hook → ProtectedRoutes ラッパー
 - バックエンド: `artifacts/api-server/src/routes/auth.ts`（login/logout/me）
 - パスワードリセット: ユーザー管理画面（/users）から「編集」で変更可能
+
+### 公開ルート（ログイン不要）
+
+QRコード読み取りで遷移する打刻ページは公開フロー：
+- フロント: `/driver/:id`, `/office/:id` は `ProtectedRoutes` の外側
+- バックエンド: `routes/index.ts` の `isPublicDriverFlowRequest()` で以下を無認証通過
+  - `GET /employees/:id`, `GET /employees/:id/pin/status`, `POST /employees/:id/pin/verify`
+  - `POST /attendance/record`, `POST /attendance/location/live`
+  - `GET /attendance/employee/:id/today`, `GET /attendance/employee/:id/month`
+  - `GET|PATCH /attendance/checklist/:id`, `GET|PATCH /attendance/draft/:id`
+  - SSE: `GET /attendance/stream`, `GET /messages/stream`
+  - Push: `GET /messages/vapid-public-key`, `POST /push/subscribe`
+  - `GET /messages/:id`, `GET /messages/:id/unread-count`, `POST /messages/:id/read`, `POST /messages`
+- 注意: 未ログイン公開エンドポイントは body/URL の employeeId をそのまま採用するため、ID推測で他人の打刻・メッセージ操作が可能（元仕様）。本格的な本人性担保は既存の PIN 検証フロー（`POST /employees/:id/pin/verify`）または将来のフェーズで強化予定
+- 管理機能（`/payroll`, `/employees`一覧, `/users`, `/monthly-records`, `/dashboard`, `/journal-entries` 等）は引き続き 401/403 で防御
+- `requireOwnerOrAdmin` / `requireAttendanceRecordOwnerOrAdmin` は **未ログインは通過、ログイン中ドライバーは本人のみ通過** という挙動。これによりログイン中ドライバーが他人になりすますことは引き続き防止される
 
 ## Mobile Responsive Implementation
 

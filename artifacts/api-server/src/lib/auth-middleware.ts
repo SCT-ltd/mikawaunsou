@@ -48,8 +48,12 @@ export function requireOwnerOrAdmin(
   getEmployeeIdFromReq: (req: Request) => number | null | undefined,
 ) {
   return (req: Request, res: Response, next: NextFunction) => {
+    // 未ログインは公開フロー（QR打刻など）として通過させる。
+    // 既存の打刻フローは元々ログイン不要だったため、後方互換のためここで通す。
+    // 「ログイン中のドライバーが他人になりすますのを防ぐ」owner チェックの本来の役割は
+    // ログイン状態のときに引き続き機能する。
     if (!req.session?.userId) {
-      return res.status(401).json({ error: "ログインが必要です" });
+      return next();
     }
 
     if (req.session.role === "admin") {
@@ -97,8 +101,10 @@ export async function requireAttendanceRecordOwnerOrAdmin(
   res: Response,
   next: NextFunction,
 ) {
+  // 未ログインは公開フロー（QR打刻からの編集など）として通過。
+  // ログイン中のドライバーには引き続き owner チェックが効く。
   if (!req.session?.userId) {
-    return res.status(401).json({ error: "ログインが必要です" });
+    return next();
   }
 
   const id = parseInt(req.params["id"] ?? "", 10);

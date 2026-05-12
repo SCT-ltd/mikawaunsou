@@ -195,10 +195,8 @@ router.get("/attendance/employee/:employeeId/today", requireOwnerOrAdmin(req => 
 // admin: body.employeeId をそのまま使用（任意の社員の打刻が可能）
 // driver: session.employeeId を強制使用（body.employeeId が他人IDなら 403）
 router.post("/attendance/record", async (req, res) => {
-  if (!req.session?.userId) {
-    return res.status(401).json({ error: "ログインが必要です" });
-  }
-
+  // 未ログイン（QR打刻ページからの公開フロー）は body.employeeId をそのまま使う元仕様を維持。
+  // ログイン中は admin / driver それぞれの owner チェックを行う（後続ロジック）。
   const { employeeId: bodyEmployeeId, eventType, note, startOdometer, endOdometer, recordedAt: recordedAtStr, latitude, longitude, checklistNgItems } = req.body as {
     employeeId?: number;
     eventType: "clock_in" | "clock_out" | "break_start" | "break_end";
@@ -216,7 +214,13 @@ router.post("/attendance/record", async (req, res) => {
   }
 
   let employeeId: number;
-  if (req.session.role === "admin") {
+  if (!req.session?.userId) {
+    // 未ログイン公開フロー（QRページ）：body.employeeId を必須・そのまま採用
+    if (!bodyEmployeeId || Number.isNaN(Number(bodyEmployeeId))) {
+      return res.status(400).json({ error: "employeeId は必須です" });
+    }
+    employeeId = Number(bodyEmployeeId);
+  } else if (req.session.role === "admin") {
     if (!bodyEmployeeId || Number.isNaN(Number(bodyEmployeeId))) {
       return res.status(400).json({ error: "employeeId は必須です" });
     }

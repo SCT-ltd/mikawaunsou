@@ -62,8 +62,6 @@ function ProtectedRoutes() {
       <Route path="/attendance" component={AttendancePage} />
       <Route path="/realtime-map" component={RealtimeMapPage} />
       <Route path="/messages" component={MessagesPage} />
-      <Route path="/driver/:id" component={DriverPage} />
-      <Route path="/office/:id" component={OfficePage} />
       <Route path="/users" component={UserManagement} />
       <Route component={NotFound} />
     </Switch>
@@ -74,6 +72,9 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={LoginPage} />
+      {/* QR読み取りで遷移する打刻ページ・事務所ページは公開ルート（ログイン不要） */}
+      <Route path="/driver/:id" component={DriverPage} />
+      <Route path="/office/:id" component={OfficePage} />
       <Route component={ProtectedRoutes} />
     </Switch>
   );

@@ -242,10 +242,8 @@ router.post("/messages/:employeeId/read", requireOwnerOrAdmin(req => parseInt(re
 // driver → sender は強制的に "employee"、employeeId は session.employeeId を強制使用
 //          （body の employeeId が他人IDならその時点で 403、sender も信用しない）
 router.post("/messages", async (req, res) => {
-  if (!req.session?.userId) {
-    return res.status(401).json({ error: "ログインが必要です" });
-  }
-
+  // 未ログイン（QR打刻ページからのドライバー → 事務所 メッセージ）は元仕様通り公開で受ける。
+  // ログイン中は admin/driver それぞれの owner チェックを後続で実施。
   const { employeeId: bodyEmployeeId, content } = req.body as {
     employeeId?: number;
     sender?: "office" | "employee";
@@ -259,7 +257,14 @@ router.post("/messages", async (req, res) => {
   let employeeId: number;
   let sender: "office" | "employee";
 
-  if (req.session.role === "admin") {
+  if (!req.session?.userId) {
+    // 未ログイン公開フロー（QRページ）：ドライバーから事務所へのメッセージ扱い
+    if (!bodyEmployeeId || Number.isNaN(Number(bodyEmployeeId))) {
+      return res.status(400).json({ error: "送信元の employeeId が必要です" });
+    }
+    employeeId = Number(bodyEmployeeId);
+    sender = "employee";
+  } else if (req.session.role === "admin") {
     if (!bodyEmployeeId || Number.isNaN(Number(bodyEmployeeId))) {
       return res.status(400).json({ error: "送信先の employeeId が必要です" });
     }
