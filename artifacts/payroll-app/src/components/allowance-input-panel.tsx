@@ -548,16 +548,14 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
   }, [employeeDeductions, employeeId, isDeductionsFetching, deductionsUpdatedAt, markClean]);
 
   const isDaily = employee.salaryType === "daily";
+  // 土曜出勤手当・日曜出勤手当は別項目で計上されるため、基本給プレビューには平日分のみ
   const computedDailyBaseSalary = isDaily && company
-    ? Math.round(
-        (monthlyData?.workDays ?? 0) * (company.dailyWageWeekday ?? 9808) +
-        (monthlyData?.saturdayWorkDays ?? 0) * (company.dailyWageSaturday ?? 12260) +
-        (monthlyData?.sundayWorkDays ?? 0) * (company.dailyWageWeekday ?? 9808) * 1.35
-      )
+    ? Math.round((monthlyData?.workDays ?? 0) * (company.dailyWageWeekday ?? 9808))
     : null;
 
   useEffect(() => {
-    if (isDaily && computedDailyBaseSalary !== null && (employee.baseSalary ?? 0) === 0) {
+    // 日給制は当月の月次実績から常に再計算（マスター employee.baseSalary は無視）
+    if (isDaily && computedDailyBaseSalary !== null) {
       setBaseSalaryInput(computedDailyBaseSalary);
     } else {
       setBaseSalaryInput(employee.baseSalary ?? 0);
