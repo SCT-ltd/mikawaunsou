@@ -587,7 +587,6 @@ const empFullSchema = z.object({
   taxExempt: z.boolean().default(false),
   scheduledWorkStart: z.string().optional().default(""),
   scheduledWorkEnd: z.string().optional().default(""),
-  dailyRateOverride: z.coerce.number().min(0).default(0),
   dailyRateWeekday: z.coerce.number().min(0).default(0),
   dailyRateSaturday: z.coerce.number().min(0).default(0),
   overtimeHourlyRate: z.coerce.number().min(0).default(0),
@@ -793,46 +792,61 @@ function EmpFormFields({
                   </FormControl><FormMessage /></FormItem>
               )} />
             )}
-            {salaryType === "daily" && (
-              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 space-y-3">
-                <p className="text-xs font-medium text-amber-800">日給制・個人単価設定（省略時は会社共通単価を使用）</p>
-                <FormField control={f.control} name="dailyRateOverride" render={({ field }) => (
-                  <FormItem><FormLabel className="text-xs">個人日当単価（円/日）</FormLabel>
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 space-y-3">
+              <p className="text-xs font-medium text-amber-800">個人単価設定（0=会社共通単価を使用）</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <FormField control={f.control} name="dailyRateWeekday" render={({ field }) => (
+                  <FormItem><FormLabel className="text-xs">㊥ 平日日当（円/日）</FormLabel>
                     <FormControl>
-                      <div className="flex items-center gap-2">
-                        <Input type="number" min={0} step={100} placeholder="0（会社共通単価）" {...field} className="text-right bg-white" />
+                      <div className="flex items-center gap-1">
+                        <Input type="number" min={0} step={1} placeholder="0" {...field} className="text-right bg-white" />
                         <span className="text-xs text-muted-foreground shrink-0">円/日</span>
                       </div>
                     </FormControl>
-                    <p className="text-xs text-muted-foreground">0 の場合は会社設定の平日日当を使用</p>
                     <FormMessage /></FormItem>
                 )} />
-                <div className="grid grid-cols-2 gap-3">
+                <FormField control={f.control} name="dailyRateSaturday" render={({ field }) => (
+                  <FormItem><FormLabel className="text-xs">㊡ 休日日当（円/日）</FormLabel>
+                    <FormControl>
+                      <div className="flex items-center gap-1">
+                        <Input type="number" min={0} step={1} placeholder="0" {...field} className="text-right bg-white" />
+                        <span className="text-xs text-muted-foreground shrink-0">円/日</span>
+                      </div>
+                    </FormControl>
+                    <FormMessage /></FormItem>
+                )} />
+                <FormField control={f.control} name="overtimeHourlyRate" render={({ field }) => (
+                  <FormItem><FormLabel className="text-xs">㊨ 残業時給（円/時）</FormLabel>
+                    <FormControl>
+                      <div className="flex items-center gap-1">
+                        <Input type="number" min={0} step={1} placeholder="0" {...field} className="text-right bg-white" />
+                        <span className="text-xs text-muted-foreground shrink-0">円/時</span>
+                      </div>
+                    </FormControl>
+                    <p className="text-xs text-muted-foreground">残業時間×単価（1.25倍なし）</p>
+                    <FormMessage /></FormItem>
+                )} />
+              </div>
+              <details className="text-xs text-muted-foreground">
+                <summary className="cursor-pointer">高度な設定（残業の分単位切り上げ）</summary>
+                <div className="grid grid-cols-2 gap-3 mt-2">
                   <FormField control={f.control} name="overtimeUnitMinutes" render={({ field }) => (
                     <FormItem><FormLabel className="text-xs">残業切り上げ単位（分）</FormLabel>
                       <FormControl>
-                        <div className="flex items-center gap-1">
-                          <Input type="number" min={0} step={1} placeholder="0（標準計算）" {...field} className="text-right bg-white" />
-                          <span className="text-xs text-muted-foreground shrink-0">分</span>
-                        </div>
+                        <Input type="number" min={0} step={1} placeholder="0" {...field} className="text-right bg-white" />
                       </FormControl>
-                      <p className="text-xs text-muted-foreground">例: 10 → 10分単位切り上げ</p>
                       <FormMessage /></FormItem>
                   )} />
                   <FormField control={f.control} name="overtimeUnitRate" render={({ field }) => (
                     <FormItem><FormLabel className="text-xs">残業単位あたり加算額（円）</FormLabel>
                       <FormControl>
-                        <div className="flex items-center gap-1">
-                          <Input type="number" min={0} step={1} placeholder="0" {...field} className="text-right bg-white" />
-                          <span className="text-xs text-muted-foreground shrink-0">円/単位</span>
-                        </div>
+                        <Input type="number" min={0} step={1} placeholder="0" {...field} className="text-right bg-white" />
                       </FormControl>
-                      <p className="text-xs text-muted-foreground">切り上げ単位ごとの加算額</p>
                       <FormMessage /></FormItem>
                   )} />
                 </div>
-              </div>
-            )}
+              </details>
+            </div>
             <FormField control={f.control} name="residentTax" render={({ field }) => (
               <FormItem><FormLabel>市町村民税（月額・円）</FormLabel>
                 <FormControl>
@@ -1151,7 +1165,8 @@ function EmployeeMasterTab() {
       dependentCount: 0, hasSpouse: false, standardRemuneration: 0,
       careInsuranceApplied: false, employmentInsuranceApplied: true, pensionAppliedMode: "auto", taxExempt: false,
       scheduledWorkStart: "", scheduledWorkEnd: "",
-      dailyRateOverride: 0, overtimeUnitMinutes: 0, overtimeUnitRate: 0,
+      dailyRateWeekday: 0, dailyRateSaturday: 0, overtimeHourlyRate: 0,
+      overtimeUnitMinutes: 0, overtimeUnitRate: 0,
     },
   });
   const createForm = useForm<EmpFullValues>({
@@ -1168,7 +1183,8 @@ function EmployeeMasterTab() {
       dependentCount: 0, hasSpouse: false, standardRemuneration: 0,
       careInsuranceApplied: false, employmentInsuranceApplied: true, pensionAppliedMode: "auto", taxExempt: false,
       scheduledWorkStart: "", scheduledWorkEnd: "",
-      dailyRateOverride: 0, overtimeUnitMinutes: 0, overtimeUnitRate: 0,
+      dailyRateWeekday: 0, dailyRateSaturday: 0, overtimeHourlyRate: 0,
+      overtimeUnitMinutes: 0, overtimeUnitRate: 0,
     },
   });
 
@@ -1214,7 +1230,9 @@ function EmployeeMasterTab() {
       taxExempt: (emp as unknown as { taxExempt?: boolean }).taxExempt ?? false,
       scheduledWorkStart: (emp as unknown as { scheduledWorkStart?: string | null }).scheduledWorkStart ?? "",
       scheduledWorkEnd: (emp as unknown as { scheduledWorkEnd?: string | null }).scheduledWorkEnd ?? "",
-      dailyRateOverride: (emp as unknown as { dailyRateOverride?: number }).dailyRateOverride ?? 0,
+      dailyRateWeekday: (emp as unknown as { dailyRateWeekday?: number }).dailyRateWeekday ?? 0,
+      dailyRateSaturday: (emp as unknown as { dailyRateSaturday?: number }).dailyRateSaturday ?? 0,
+      overtimeHourlyRate: (emp as unknown as { overtimeHourlyRate?: number }).overtimeHourlyRate ?? 0,
       overtimeUnitMinutes: (emp as unknown as { overtimeUnitMinutes?: number | null }).overtimeUnitMinutes ?? 0,
       overtimeUnitRate: (emp as unknown as { overtimeUnitRate?: number }).overtimeUnitRate ?? 0,
     });

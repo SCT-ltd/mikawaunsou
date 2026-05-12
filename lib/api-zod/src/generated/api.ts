@@ -162,7 +162,23 @@ export const ListEmployeesResponseItem = zod.object({
   dailyRateOverride: zod
     .number()
     .optional()
-    .describe("日給制社員の個人日当単価（>0 の場合は会社共通単価を上書き）"),
+    .describe(
+      "@deprecated 旧仕様の個人日当オーバーライド。新規は dailyRateWeekday\/dailyRateSaturday を使用",
+    ),
+  dailyRateWeekday: zod
+    .number()
+    .optional()
+    .describe("個人 平日日当（>0 の場合は会社共通単価を上書き）"),
+  dailyRateSaturday: zod
+    .number()
+    .optional()
+    .describe("個人 休日(土曜)日当（>0 の場合は会社共通単価を上書き）"),
+  overtimeHourlyRate: zod
+    .number()
+    .optional()
+    .describe(
+      "個人 残業時給（>0 の場合は採用、残業時間×単価で計算、1.25倍はかけない）",
+    ),
   overtimeUnitMinutes: zod
     .number()
     .nullish()
@@ -200,6 +216,27 @@ export const CreateEmployeeBody = zod.object({
   commissionRatePerCase: zod.number().optional(),
   dependentCount: zod.number(),
   residentTax: zod.number().optional(),
+  salaryType: zod.enum(["fixed", "daily", "hourly"]).optional(),
+  dailyRateWeekday: zod
+    .number()
+    .optional()
+    .describe("個人 平日日当（>0 で会社共通単価を上書き）"),
+  dailyRateSaturday: zod
+    .number()
+    .optional()
+    .describe("個人 休日(土曜)日当（>0 で会社共通単価を上書き）"),
+  overtimeHourlyRate: zod
+    .number()
+    .optional()
+    .describe("個人 残業時給（>0 で採用、残業時間×単価で計算）"),
+  overtimeUnitMinutes: zod
+    .number()
+    .nullish()
+    .describe("残業切り上げ単位（分）"),
+  overtimeUnitRate: zod
+    .number()
+    .optional()
+    .describe("残業単位あたり加算額（円）"),
   hireDate: zod.coerce.date(),
 });
 
@@ -258,7 +295,23 @@ export const GetEmployeeResponse = zod.object({
   dailyRateOverride: zod
     .number()
     .optional()
-    .describe("日給制社員の個人日当単価（>0 の場合は会社共通単価を上書き）"),
+    .describe(
+      "@deprecated 旧仕様の個人日当オーバーライド。新規は dailyRateWeekday\/dailyRateSaturday を使用",
+    ),
+  dailyRateWeekday: zod
+    .number()
+    .optional()
+    .describe("個人 平日日当（>0 の場合は会社共通単価を上書き）"),
+  dailyRateSaturday: zod
+    .number()
+    .optional()
+    .describe("個人 休日(土曜)日当（>0 の場合は会社共通単価を上書き）"),
+  overtimeHourlyRate: zod
+    .number()
+    .optional()
+    .describe(
+      "個人 残業時給（>0 の場合は採用、残業時間×単価で計算、1.25倍はかけない）",
+    ),
   overtimeUnitMinutes: zod
     .number()
     .nullish()
@@ -328,7 +381,23 @@ export const UpdateEmployeeBody = zod.object({
   dailyRateOverride: zod
     .number()
     .optional()
-    .describe("日給制社員の個人日当単価（>0 の場合は会社共通単価を上書き）"),
+    .describe(
+      "@deprecated 旧仕様。新規は dailyRateWeekday\/dailyRateSaturday を使用",
+    ),
+  dailyRateWeekday: zod
+    .number()
+    .optional()
+    .describe("個人 平日日当（>0 の場合は会社共通単価を上書き）"),
+  dailyRateSaturday: zod
+    .number()
+    .optional()
+    .describe("個人 休日(土曜)日当（>0 の場合は会社共通単価を上書き）"),
+  overtimeHourlyRate: zod
+    .number()
+    .optional()
+    .describe(
+      "個人 残業時給（>0 の場合は採用、残業時間×単価で計算、1.25倍はかけない）",
+    ),
   overtimeUnitMinutes: zod
     .number()
     .nullish()
@@ -389,7 +458,23 @@ export const UpdateEmployeeResponse = zod.object({
   dailyRateOverride: zod
     .number()
     .optional()
-    .describe("日給制社員の個人日当単価（>0 の場合は会社共通単価を上書き）"),
+    .describe(
+      "@deprecated 旧仕様の個人日当オーバーライド。新規は dailyRateWeekday\/dailyRateSaturday を使用",
+    ),
+  dailyRateWeekday: zod
+    .number()
+    .optional()
+    .describe("個人 平日日当（>0 の場合は会社共通単価を上書き）"),
+  dailyRateSaturday: zod
+    .number()
+    .optional()
+    .describe("個人 休日(土曜)日当（>0 の場合は会社共通単価を上書き）"),
+  overtimeHourlyRate: zod
+    .number()
+    .optional()
+    .describe(
+      "個人 残業時給（>0 の場合は採用、残業時間×単価で計算、1.25倍はかけない）",
+    ),
   overtimeUnitMinutes: zod
     .number()
     .nullish()

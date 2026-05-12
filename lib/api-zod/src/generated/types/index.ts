@@ -15,6 +15,7 @@ export * from "./createAllowanceDefinitionBodyCalculationType";
 export * from "./createDeductionDefinitionBody";
 export * from "./createDeductionDefinitionBodyCalculationType";
 export * from "./createEmployeeBody";
+export * from "./createEmployeeBodySalaryType";
 export * from "./createMonthlyRecordBody";
 export * from "./dashboardSummary";
 export * from "./deductionDefinition";

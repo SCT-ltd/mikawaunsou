@@ -5,6 +5,7 @@
  * 給与明細・バックオフィス効率化システム API
  * OpenAPI spec version: 0.1.0
  */
+import type { CreateEmployeeBodySalaryType } from "./createEmployeeBodySalaryType";
 
 export interface CreateEmployeeBody {
   employeeCode: string;
@@ -23,5 +24,16 @@ export interface CreateEmployeeBody {
   commissionRatePerCase?: number;
   dependentCount: number;
   residentTax?: number;
+  salaryType?: CreateEmployeeBodySalaryType;
+  /** 個人 平日日当（>0 で会社共通単価を上書き） */
+  dailyRateWeekday?: number;
+  /** 個人 休日(土曜)日当（>0 で会社共通単価を上書き） */
+  dailyRateSaturday?: number;
+  /** 個人 残業時給（>0 で採用、残業時間×単価で計算） */
+  overtimeHourlyRate?: number;
+  /** 残業切り上げ単位（分） */
+  overtimeUnitMinutes?: number | null;
+  /** 残業単位あたり加算額（円） */
+  overtimeUnitRate?: number;
   hireDate: Date;
 }

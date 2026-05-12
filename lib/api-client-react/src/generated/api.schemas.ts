@@ -126,8 +126,14 @@ export interface Employee {
   salaryType: EmployeeSalaryType;
   /** 事務員フラグ（true=事務員用打刻画面, false=ドライバー用打刻画面） */
   isOfficeStaff: boolean;
-  /** 日給制社員の個人日当単価（>0 の場合は会社共通単価を上書き） */
+  /** @deprecated 旧仕様の個人日当オーバーライド。新規は dailyRateWeekday/dailyRateSaturday を使用 */
   dailyRateOverride?: number;
+  /** 個人 平日日当（>0 の場合は会社共通単価を上書き） */
+  dailyRateWeekday?: number;
+  /** 個人 休日(土曜)日当（>0 の場合は会社共通単価を上書き） */
+  dailyRateSaturday?: number;
+  /** 個人 残業時給（>0 の場合は採用、残業時間×単価で計算、1.25倍はかけない） */
+  overtimeHourlyRate?: number;
   /** 残業切り上げ単位（分）。例：10分単位なら10。null=標準計算 */
   overtimeUnitMinutes?: number | null;
   /** 残業単位あたり加算額（円）。overtimeUnitMinutes が設定されている場合のみ有効 */
@@ -137,6 +143,15 @@ export interface Employee {
   createdAt: string;
   updatedAt: string;
 }
+
+export type CreateEmployeeBodySalaryType =
+  (typeof CreateEmployeeBodySalaryType)[keyof typeof CreateEmployeeBodySalaryType];
+
+export const CreateEmployeeBodySalaryType = {
+  fixed: "fixed",
+  daily: "daily",
+  hourly: "hourly",
+} as const;
 
 export interface CreateEmployeeBody {
   employeeCode: string;
@@ -155,6 +170,17 @@ export interface CreateEmployeeBody {
   commissionRatePerCase?: number;
   dependentCount: number;
   residentTax?: number;
+  salaryType?: CreateEmployeeBodySalaryType;
+  /** 個人 平日日当（>0 で会社共通単価を上書き） */
+  dailyRateWeekday?: number;
+  /** 個人 休日(土曜)日当（>0 で会社共通単価を上書き） */
+  dailyRateSaturday?: number;
+  /** 個人 残業時給（>0 で採用、残業時間×単価で計算） */
+  overtimeHourlyRate?: number;
+  /** 残業切り上げ単位（分） */
+  overtimeUnitMinutes?: number | null;
+  /** 残業単位あたり加算額（円） */
+  overtimeUnitRate?: number;
   hireDate: string;
 }
 
@@ -200,8 +226,14 @@ export interface UpdateEmployeeBody {
   residentTax?: number;
   /** 給与形態（fixed=固定給, daily=日給制） */
   salaryType?: UpdateEmployeeBodySalaryType;
-  /** 日給制社員の個人日当単価（>0 の場合は会社共通単価を上書き） */
+  /** @deprecated 旧仕様。新規は dailyRateWeekday/dailyRateSaturday を使用 */
   dailyRateOverride?: number;
+  /** 個人 平日日当（>0 の場合は会社共通単価を上書き） */
+  dailyRateWeekday?: number;
+  /** 個人 休日(土曜)日当（>0 の場合は会社共通単価を上書き） */
+  dailyRateSaturday?: number;
+  /** 個人 残業時給（>0 の場合は採用、残業時間×単価で計算、1.25倍はかけない） */
+  overtimeHourlyRate?: number;
   /** 残業切り上げ単位（分）。null=標準計算 */
   overtimeUnitMinutes?: number | null;
   /** 残業単位あたり加算額（円） */

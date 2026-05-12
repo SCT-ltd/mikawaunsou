@@ -646,7 +646,6 @@ router.post("/payroll/calculate", async (req, res) => {
     deliveryCases: record.deliveryCases,
     absenceDays: record.absenceDays,
     actualWorkHours: record.actualWorkHours ?? 0,
-    dailyRateOverride: emp.dailyRateOverride ?? 0,
     empDailyRateWeekday: emp.dailyRateWeekday ?? 0,
     empDailyRateSaturday: emp.dailyRateSaturday ?? 0,
     empOvertimeHourlyRate: emp.overtimeHourlyRate ?? 0,

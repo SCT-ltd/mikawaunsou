@@ -31,6 +31,8 @@
   - 新フィールド: healthInsuranceEmployeeRate, healthInsuranceEmployerRate, pensionEmployeeRate, pensionEmployerRate, employmentInsuranceEmployerRate, overtimeRate, lateNightAdditionalRate, holidayRate
 - `employees` — 社員マスタ（基本給、各手当、扶養人数、住民税、歩合単価等）
   - 新フィールド: hasSpouse（配偶者の有無）, healthInsuranceMonthly（健保月額固定）, pensionMonthly（厚年月額固定）, employmentInsuranceApplied（雇保適用）
+  - 個人単価3項目: `dailyRateWeekday`（㊥ 平日日当）/ `dailyRateSaturday`（㊡ 休日日当）/ `overtimeHourlyRate`（㊨ 残業時給）。0=会社共通単価を使用。
+  - `dailyRateOverride` は廃止（カラムは互換のため残置、コードでは未参照）
 - `monthly_records` — 月次実績（出勤日数、残業時間、深夜時間、走行距離、配送件数等）
   - 新フィールド: `actualWorkHours`（時給制事務員用：30分切り上げ後の月間実働時間）
 - `payrolls` — 給与計算結果（各支給項目・控除項目・差引支給額・カスタム手当合計）

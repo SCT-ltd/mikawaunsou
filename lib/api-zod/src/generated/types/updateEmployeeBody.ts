@@ -38,8 +38,14 @@ export interface UpdateEmployeeBody {
   residentTax?: number;
   /** 給与形態（fixed=固定給, daily=日給制） */
   salaryType?: UpdateEmployeeBodySalaryType;
-  /** 日給制社員の個人日当単価（>0 の場合は会社共通単価を上書き） */
+  /** @deprecated 旧仕様。新規は dailyRateWeekday/dailyRateSaturday を使用 */
   dailyRateOverride?: number;
+  /** 個人 平日日当（>0 の場合は会社共通単価を上書き） */
+  dailyRateWeekday?: number;
+  /** 個人 休日(土曜)日当（>0 の場合は会社共通単価を上書き） */
+  dailyRateSaturday?: number;
+  /** 個人 残業時給（>0 の場合は採用、残業時間×単価で計算、1.25倍はかけない） */
+  overtimeHourlyRate?: number;
   /** 残業切り上げ単位（分）。null=標準計算 */
   overtimeUnitMinutes?: number | null;
   /** 残業単位あたり加算額（円） */
