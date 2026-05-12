@@ -174,6 +174,7 @@ router.post("/payroll/calculate", async (req, res) => {
 
     const manualPayrollData = {
       baseSalary: manualBaseSalary,
+      saturdayPay: 0,
       overtimePay: 0,
       lateNightPay: 0,
       holidayPay: 0,
@@ -282,6 +283,7 @@ router.post("/payroll/calculate", async (req, res) => {
 
     const mikawaPayrollData = {
       baseSalary: mikawaResult.minimumSalary,
+      saturdayPay: 0,
       commissionPay: mikawaResult.salesSalary,
       overtimePay: mikawaResult.overtimePay,
       lateNightPay: 0,
@@ -353,10 +355,9 @@ router.post("/payroll/calculate", async (req, res) => {
 
     const dailyWage    = company.dailyWageWeekday ?? 9808;
     const dailySaturday = company.dailyWageSaturday ?? 12260;
-    const baseSalaryCalc = Math.floor(
-      (record.workDays ?? 0) * dailyWage +
-      (record.saturdayWorkDays ?? 0) * dailySaturday
-    );
+    // 基本給は平日分のみ。土曜分は saturdayPay として別出し（grossSalary には saturdayPay として加算）
+    const baseSalaryCalc = Math.floor((record.workDays ?? 0) * dailyWage);
+    const saturdayPay = Math.floor((record.saturdayWorkDays ?? 0) * dailySaturday);
 
     const masterFixedAllowances =
       (emp.transportationAllowance ?? 0) +
@@ -379,7 +380,8 @@ router.post("/payroll/calculate", async (req, res) => {
       fixedOvertimeHours: emp.bluewingFixedOvertimeHours ?? 0,
       overtimeHours: record.overtimeHours ?? 0,
       overtimeUnitPrice: record.overtimeUnitPrice ?? 2111,
-      baseSalary: baseSalaryCalc,
+      // BW業績計算上は土曜分も基礎賃金に含めるため saturdayPay を加算して渡す
+      baseSalary: baseSalaryCalc + saturdayPay,
       fixedAllowancesTotal,
       holidayPay,
       fixedOvertimeAmount: emp.bluewingFixedOvertimeAmount ?? 0,
@@ -548,6 +550,7 @@ router.post("/payroll/calculate", async (req, res) => {
 
     const bwPayrollData = {
       baseSalary: baseSalaryCalc,
+      saturdayPay,
       commissionPay: 0,
       overtimePay: bwResult.actualOvertimePay,
       lateNightPay: bwLateNightPay,
@@ -677,6 +680,7 @@ router.post("/payroll/calculate", async (req, res) => {
   if (existing.length > 0) {
     [payroll] = await db.update(payrollsTable).set({
       baseSalary: result.baseSalary,
+      saturdayPay: result.saturdayPay,
       overtimePay: result.overtimePay,
       lateNightPay: result.lateNightPay,
       holidayPay: result.holidayPay,
@@ -713,6 +717,7 @@ router.post("/payroll/calculate", async (req, res) => {
       month,
       status: "draft",
       baseSalary: result.baseSalary,
+      saturdayPay: result.saturdayPay,
       overtimePay: result.overtimePay,
       lateNightPay: result.lateNightPay,
       holidayPay: result.holidayPay,
@@ -805,6 +810,7 @@ router.get("/payroll/:id/csv", async (req, res) => {
     [""],
     ["【支給】", ""].join(","),
     ["基本給", p.baseSalary].join(","),
+    ["土曜出勤手当", (p as Record<string, unknown>).saturdayPay ?? 0].join(","),
     ["時間外手当", p.overtimePay].join(","),
     ["深夜手当", p.lateNightPay].join(","),
     ["休日手当", p.holidayPay].join(","),

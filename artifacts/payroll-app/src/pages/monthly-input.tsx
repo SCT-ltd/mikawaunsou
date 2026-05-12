@@ -664,10 +664,8 @@ function computeQuickEstimate(
         hasRateOverride
           // 個人単価あり: 平日・土曜・日曜/祝日 すべて一律同単価
           ? ((Number(editData.workDays) || 0) + (Number(editData.saturdayWorkDays) || 0) + (Number(editData.sundayWorkDays) || 0)) * overrideRate
-          // 会社標準: 平日=companyDailyRate / 土曜=companySaturdayRate / 日曜祝日=companyDailyRate×1.35
-          : (Number(editData.workDays) || 0) * companyDailyRate +
-            (Number(editData.saturdayWorkDays) || 0) * companySaturdayRate +
-            (Number(editData.sundayWorkDays) || 0) * companyDailyRate * 1.35
+          // 会社標準: 平日=companyDailyRate のみ（土曜・日曜祝日は別出し）
+          : (Number(editData.workDays) || 0) * companyDailyRate
       )
     : isHourly
     ? Math.round((emp.baseSalary ?? 0) * actualWorkHours)
@@ -703,7 +701,12 @@ function computeQuickEstimate(
     holidayPay = roundJapanese(hourlyRate * (company?.holidayRate ?? 1.35) * holidayWorkDays * 8);
   }
 
-  const grossEstimate = baseSalary + overtimePay + lateNightPay + holidayPay;
+  // 土曜出勤分（基本給は平日のみ／土曜は別出し）
+  const saturdayPayPreview = isDaily && company && !hasRateOverride
+    ? Math.round((Number(editData.saturdayWorkDays) || 0) * companySaturdayRate)
+    : 0;
+
+  const grossEstimate = baseSalary + saturdayPayPreview + overtimePay + lateNightPay + holidayPay;
 
   // 全額非課税社員は控除なし（手取り=総支給）
   const isExempt = emp.taxExempt === true;

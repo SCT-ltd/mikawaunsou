@@ -531,6 +531,13 @@ export default function PayrollList() {
                               <td className="py-1.5 text-right">{formatCurrency(Number(selectedPayroll.baseSalary))}</td>
                             </tr>
                           )}
+                          {/* 土曜出勤手当 */}
+                          {Number((selectedPayroll as any).saturdayPay ?? 0) !== 0 && (
+                            <tr className="border-b border-dotted border-gray-300">
+                              <td className="py-1.5 text-gray-700">土曜出勤手当</td>
+                              <td className="py-1.5 text-right">{formatCurrency(Number((selectedPayroll as any).saturdayPay ?? 0))}</td>
+                            </tr>
+                          )}
                           {/* 残業・深夜・休日手当 */}
                           {Number(selectedPayroll.overtimePay) !== 0 && (
                             <tr className="border-b border-dotted border-gray-300">

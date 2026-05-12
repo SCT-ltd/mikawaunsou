@@ -293,6 +293,8 @@ export interface Payroll {
   status: PayrollStatus;
   /** 基本給 */
   baseSalary: number;
+  /** 土曜出勤手当 */
+  saturdayPay?: number;
   /** 時間外手当 */
   overtimePay: number;
   /** 深夜手当 */

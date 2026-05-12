@@ -1252,6 +1252,9 @@ components:
         baseSalary:
           type: number
           description: 基本給
+        saturdayPay:
+          type: number
+          description: 土曜出勤手当
         overtimePay:
           type: number
           description: 時間外手当

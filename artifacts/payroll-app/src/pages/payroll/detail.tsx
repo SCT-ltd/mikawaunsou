@@ -119,6 +119,14 @@ export default function PayrollDetail() {
                     <td className="py-2">基本給</td>
                     <td className="py-2 text-right">{formatCurrency(payroll.baseSalary)}</td>
                   </tr>
+                  {/* @ts-expect-error saturdayPay は新規列。古い型では未定義の場合あり */}
+                  {Number(payroll.saturdayPay ?? 0) > 0 && (
+                    <tr className="border-b border-dotted border-gray-300">
+                      <td className="py-2">土曜出勤手当</td>
+                      {/* @ts-expect-error */}
+                      <td className="py-2 text-right">{formatCurrency(Number(payroll.saturdayPay ?? 0))}</td>
+                    </tr>
+                  )}
                   <tr className="border-b border-dotted border-gray-300">
                     <td className="py-2">時間外手当</td>
                     <td className="py-2 text-right">{formatCurrency(payroll.overtimePay)}</td>

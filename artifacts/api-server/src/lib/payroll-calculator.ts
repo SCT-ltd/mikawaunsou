@@ -103,6 +103,8 @@ export interface PayrollCalculationInput {
 
 export interface PayrollCalculationResult {
   baseSalary: number;
+  /** 土曜出勤分（日給制標準: 土曜出勤日数×土曜日当）。基本給からは別出し。*/
+  saturdayPay: number;
   overtimePay: number;
   lateNightPay: number;
   holidayPay: number;
@@ -183,11 +185,8 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
         (workDays + saturdayWorkDays + sundayWorkDays + holidayWorkDays) * overrideRate
       );
     } else {
-      // 会社標準: 平日=dailyRateWeekday / 土曜=dailyRateSaturday
-      baseSalary = roundJapanese(
-        workDays * input.dailyRateWeekday +
-        saturdayWorkDays * dailyRateSaturday
-      );
+      // 会社標準: 基本給は平日のみ（土曜分は saturdayPay として別出し）
+      baseSalary = roundJapanese(workDays * input.dailyRateWeekday);
     }
     hourlyRate = (hasRateOverride ? overrideRate : input.dailyRateWeekday) / 8;
   } else if (salaryType === "hourly") {
@@ -219,13 +218,18 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
   //   会社標準        → 会社平日日当 × 1.35 × 日数
   let holidayPay: number;
   let sundayPay: number;
+  let saturdayPay: number;
   if (salaryType === "daily" && hasRateOverride) {
-    holidayPay = 0;
-    sundayPay  = 0;
+    holidayPay  = 0;
+    sundayPay   = 0;
+    saturdayPay = 0;
   } else {
     const standardDailyRate = salaryType === "daily" ? input.dailyRateWeekday : hourlyRate * 8;
-    holidayPay = roundJapanese(standardDailyRate * 1.35 * holidayWorkDays);
-    sundayPay  = roundJapanese(standardDailyRate * 1.35 * sundayWorkDays);
+    holidayPay  = roundJapanese(standardDailyRate * 1.35 * holidayWorkDays);
+    sundayPay   = roundJapanese(standardDailyRate * 1.35 * sundayWorkDays);
+    saturdayPay = salaryType === "daily"
+      ? roundJapanese(saturdayWorkDays * dailyRateSaturday)
+      : 0;
   }
 
   // 歩合給
@@ -250,6 +254,7 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
   // 支給合計
   const grossSalary = roundJapanese(
     baseSalary +
+    saturdayPay +
     overtimePay +
     lateNightPay +
     holidayPay +
@@ -313,6 +318,7 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
 
   return {
     baseSalary,
+    saturdayPay,
     overtimePay,
     lateNightPay,
     holidayPay,

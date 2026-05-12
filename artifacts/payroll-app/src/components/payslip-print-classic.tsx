@@ -275,8 +275,10 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
   const isTaxExempt = !!(employee as Record<string, unknown> | undefined)?.taxExempt;
 
   const payItemsFixed: Array<{ label: string; value: number; nonTaxable?: boolean }> = [];
+  const saturdayPayValue = Number((payroll as Record<string, unknown>).saturdayPay ?? 0);
   if (isBW) {
     if ((payroll.baseSalary ?? 0) > 0) payItemsFixed.push({ label: "基本給", value: payroll.baseSalary });
+    if (saturdayPayValue > 0) payItemsFixed.push({ label: "土曜出勤手当", value: saturdayPayValue });
     if ((payroll.overtimePay ?? 0) > 0) payItemsFixed.push({ label: "早出残業手当", value: payroll.overtimePay });
     if ((payroll.earlyOvertimeAllowance ?? 0) > 0) payItemsFixed.push({ label: "職務手当", value: payroll.earlyOvertimeAllowance ?? 0 });
     if ((payroll.holidayPay ?? 0) > 0) payItemsFixed.push({ label: "休日出勤手当", value: payroll.holidayPay });
@@ -288,6 +290,7 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
     if ((payroll.lateNightPay ?? 0) > 0) payItemsFixed.push({ label: "深夜手当", value: payroll.lateNightPay });
   } else {
     if ((payroll.baseSalary ?? 0) > 0) payItemsFixed.push({ label: "基本給", value: payroll.baseSalary });
+    if (saturdayPayValue > 0) payItemsFixed.push({ label: "土曜出勤手当", value: saturdayPayValue });
     if ((payroll.overtimePay ?? 0) > 0) payItemsFixed.push({ label: "時間外手当", value: payroll.overtimePay });
     if ((payroll.lateNightPay ?? 0) > 0) payItemsFixed.push({ label: "深夜手当", value: payroll.lateNightPay });
     if ((payroll.holidayPay ?? 0) > 0) payItemsFixed.push({ label: "休日出勤手当", value: payroll.holidayPay });

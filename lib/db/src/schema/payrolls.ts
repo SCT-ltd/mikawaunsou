@@ -13,6 +13,7 @@ export const payrollsTable = pgTable("payrolls", {
   overtimePay: doublePrecision("overtime_pay").notNull().default(0),
   lateNightPay: doublePrecision("late_night_pay").notNull().default(0),
   holidayPay: doublePrecision("holiday_pay").notNull().default(0),
+  saturdayPay: doublePrecision("saturday_pay").notNull().default(0),
   commissionPay: doublePrecision("commission_pay").notNull().default(0),
   transportationAllowance: doublePrecision("transportation_allowance").notNull().default(0),
   safetyDrivingAllowance: doublePrecision("safety_driving_allowance").notNull().default(0),
