@@ -660,7 +660,7 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
   const isTaxExemptEmployee = employee.taxExempt === true;
 
   const healthInsurance = isTaxExemptEmployee ? 0 : round50sen(insBase * appliedHealthRate);
-  const childcareSupportApplicable = !(year !== undefined && month !== undefined && (year < 2026 || (year === 2026 && month <= 4)));
+  const childcareSupportApplicable = !(year !== undefined && month !== undefined && (year < 2026 || (year === 2026 && month <= 3)));
   const childcareSupportContribution = (isTaxExemptEmployee || !childcareSupportApplicable) ? 0 : round50sen(insBase * CHILDCARE_RATE);
   const isPensionApplied = resolvePensionApplied(employee, year, month);
   const pensionInsurance = (isTaxExemptEmployee || !isPensionApplied) ? 0 : round50sen(Math.min(insBase, 650_000) * pensionRate);
@@ -869,7 +869,7 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
         <div className="mt-1 px-3 py-2 bg-muted/40 border rounded text-xs text-muted-foreground">
           適用料率：健保 {(appliedHealthRate * 100).toFixed(3)}%
           {employee.careInsuranceApplied && <span className="text-amber-600">（介護込）</span>}
-          {childcareSupportApplicable ? "・子育て支援金 0.115%" : "・子育て支援金 0%（4月以前）"}・厚年 {(pensionRate * 100).toFixed(2)}%・雇保 {(empInsRate * 100).toFixed(1)}%
+          {childcareSupportApplicable ? "・子育て支援金 0.115%" : "・子育て支援金 0%（3月以前）"}・厚年 {(pensionRate * 100).toFixed(2)}%・雇保 {(empInsRate * 100).toFixed(1)}%
           {empSR > 0 && (
             <span className="ml-2 text-blue-600">（健保・厚年{childcareSupportApplicable ? "・支援金" : ""}は標準報酬月額 {empSR.toLocaleString("ja-JP")} 円ベース）</span>
           )}
