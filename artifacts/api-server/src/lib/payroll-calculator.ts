@@ -79,10 +79,19 @@ export interface PayrollCalculationInput {
   /** 時給制（hourly）の場合の月間実働時間（30分切り上げ済み）*/
   actualWorkHours?: number;
   /**
-   * 日給制社員の個人日当単価オーバーライド（> 0 の場合は dailyRateWeekday を上書き）
-   * 例: 清水さん固有の 13,000 円/日
+   * @deprecated 後方互換のために残置。新しいコードでは empDailyRateWeekday / empDailyRateSaturday を使用すること。
+   * 値が >0 の場合は平日・土曜・日曜・祝日すべてに同単価を適用する旧仕様。
    */
   dailyRateOverride?: number;
+  /** 個人 平日日当（>0 の場合は dailyRateWeekday を上書き） */
+  empDailyRateWeekday?: number;
+  /** 個人 休日(土曜)日当（>0 の場合は dailyRateSaturday を上書き） */
+  empDailyRateSaturday?: number;
+  /**
+   * 個人 残業時給（>0 の場合に採用）
+   * overtimePay = overtimeHours × empOvertimeHourlyRate （1.25倍はかけず単価そのもの）
+   */
+  empOvertimeHourlyRate?: number;
   /**
    * 残業を n 分単位で切り上げ計算する場合の単位（分）
    * 例: 10 → 10分未満でも 1 単位として計上
@@ -168,9 +177,19 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     customAllowances = [],
   } = input;
 
-  // 個人日当単価オーバーライドの有無
-  const hasRateOverride = (input.dailyRateOverride ?? 0) > 0;
-  const overrideRate    = hasRateOverride ? input.dailyRateOverride! : 0;
+  // 個人単価（>0 の場合は会社共通単価を上書き）
+  const effectiveWeekdayRate = (input.empDailyRateWeekday ?? 0) > 0
+    ? input.empDailyRateWeekday!
+    : input.dailyRateWeekday;
+  const effectiveSaturdayRate = (input.empDailyRateSaturday ?? 0) > 0
+    ? input.empDailyRateSaturday!
+    : dailyRateSaturday;
+
+  // 旧 dailyRateOverride（後方互換）: 個人単価未設定の社員のみ参照
+  const hasLegacyOverride = (input.dailyRateOverride ?? 0) > 0
+    && (input.empDailyRateWeekday ?? 0) === 0
+    && (input.empDailyRateSaturday ?? 0) === 0;
+  const legacyOverrideRate = hasLegacyOverride ? input.dailyRateOverride! : 0;
 
   // ────────────────────────────────────────────────────────────────
   // 基本給・時給単価の決定
@@ -179,16 +198,16 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
   let hourlyRate: number;
 
   if (salaryType === "daily") {
-    if (hasRateOverride) {
-      // 個人単価設定あり: 平日・土曜・日曜/祝日 すべて一律同単価
+    if (hasLegacyOverride) {
+      // 旧仕様: 平日・土曜・日曜/祝日 すべて一律同単価
       baseSalary = roundJapanese(
-        (workDays + saturdayWorkDays + sundayWorkDays + holidayWorkDays) * overrideRate
+        (workDays + saturdayWorkDays + sundayWorkDays + holidayWorkDays) * legacyOverrideRate
       );
     } else {
-      // 会社標準: 基本給は平日のみ（土曜分は saturdayPay として別出し）
-      baseSalary = roundJapanese(workDays * input.dailyRateWeekday);
+      // 基本給は平日のみ（土曜分は saturdayPay として別出し）
+      baseSalary = roundJapanese(workDays * effectiveWeekdayRate);
     }
-    hourlyRate = (hasRateOverride ? overrideRate : input.dailyRateWeekday) / 8;
+    hourlyRate = (hasLegacyOverride ? legacyOverrideRate : effectiveWeekdayRate) / 8;
   } else if (salaryType === "hourly") {
     // 時給制: baseSalary = 時給単価。実働時間（30分切り上げ済み）× 時給 で基本給を算出
     hourlyRate = input.baseSalary;
@@ -202,7 +221,10 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
   // 時間外手当・深夜手当・休日手当・日曜出勤手当
   // ────────────────────────────────────────────────────────────────
   let overtimePay: number;
-  if ((input.overtimeUnitMinutes ?? 0) > 0 && (input.overtimeUnitRate ?? 0) > 0) {
+  if ((input.empOvertimeHourlyRate ?? 0) > 0) {
+    // 個人残業時給: 残業時間 × 単価 （1.25倍はかけず単価そのもの）
+    overtimePay = roundJapanese(overtimeHours * input.empOvertimeHourlyRate!);
+  } else if ((input.overtimeUnitMinutes ?? 0) > 0 && (input.overtimeUnitRate ?? 0) > 0) {
     // 単位切り上げ計算: 例）10分単位で2031円
     const unitMins = input.overtimeUnitMinutes!;
     const unitRate = input.overtimeUnitRate!;
@@ -219,16 +241,16 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
   let holidayPay: number;
   let sundayPay: number;
   let saturdayPay: number;
-  if (salaryType === "daily" && hasRateOverride) {
+  if (salaryType === "daily" && hasLegacyOverride) {
     holidayPay  = 0;
     sundayPay   = 0;
     saturdayPay = 0;
   } else {
-    const standardDailyRate = salaryType === "daily" ? input.dailyRateWeekday : hourlyRate * 8;
+    const standardDailyRate = salaryType === "daily" ? effectiveWeekdayRate : hourlyRate * 8;
     holidayPay  = roundJapanese(standardDailyRate * 1.35 * holidayWorkDays);
     sundayPay   = roundJapanese(standardDailyRate * 1.35 * sundayWorkDays);
     saturdayPay = salaryType === "daily"
-      ? roundJapanese(saturdayWorkDays * dailyRateSaturday)
+      ? roundJapanese(saturdayWorkDays * effectiveSaturdayRate)
       : 0;
   }
 
@@ -237,10 +259,10 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     drivingDistanceKm * commissionRatePerKm + deliveryCases * commissionRatePerCase
   );
 
-  // 欠勤控除（日給制: 個人単価あり→overrideRate / なし→会社標準平日日当）
+  // 欠勤控除
   let absenceDeduction: number;
   if (salaryType === "daily") {
-    const effectiveDailyRate = hasRateOverride ? overrideRate : input.dailyRateWeekday;
+    const effectiveDailyRate = hasLegacyOverride ? legacyOverrideRate : effectiveWeekdayRate;
     absenceDeduction = roundJapanese(effectiveDailyRate * absenceDays);
   } else {
     absenceDeduction = roundJapanese((baseSalary / 22) * absenceDays);

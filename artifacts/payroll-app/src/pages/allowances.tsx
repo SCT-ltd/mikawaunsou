@@ -588,6 +588,9 @@ const empFullSchema = z.object({
   scheduledWorkStart: z.string().optional().default(""),
   scheduledWorkEnd: z.string().optional().default(""),
   dailyRateOverride: z.coerce.number().min(0).default(0),
+  dailyRateWeekday: z.coerce.number().min(0).default(0),
+  dailyRateSaturday: z.coerce.number().min(0).default(0),
+  overtimeHourlyRate: z.coerce.number().min(0).default(0),
   overtimeUnitMinutes: z.coerce.number().int().min(0).default(0),
   overtimeUnitRate: z.coerce.number().min(0).default(0),
 });
