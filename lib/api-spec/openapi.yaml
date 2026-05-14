@@ -40,6 +40,68 @@ paths:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
 
+  # ── カレンダーオーバーライド ────────────────────────────────────────────────
+  /calendar/overrides:
+    get:
+      operationId: getCalendarOverrides
+      tags: [calendar]
+      summary: カレンダーオーバーライド一覧取得
+      responses:
+        "200":
+          description: オーバーライド一覧（日付→isRed）
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: boolean
+    delete:
+      operationId: deleteCalendarOverrides
+      tags: [calendar]
+      summary: 指定期間のオーバーライドを削除（年度リセット）
+      parameters:
+        - in: query
+          name: from
+          schema: { type: string }
+        - in: query
+          name: to
+          schema: { type: string }
+      responses:
+        "200":
+          description: 削除後のオーバーライド一覧
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: boolean
+
+  /calendar/overrides/{date}:
+    post:
+      operationId: setCalendarOverride
+      tags: [calendar]
+      summary: 日付のオーバーライドを設定・削除
+      parameters:
+        - in: path
+          name: date
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetCalendarOverrideBody"
+      responses:
+        "200":
+          description: 更新後のオーバーライド一覧
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: boolean
+
   # ── 会社マスタ ──────────────────────────────────────────────────────────────
   /company:
     get:
@@ -716,6 +778,14 @@ components:
         type: integer
 
   schemas:
+    SetCalendarOverrideBody:
+      type: object
+      properties:
+        isRed:
+          type: boolean
+          nullable: true
+      required: []
+
     HealthStatus:
       type: object
       properties:

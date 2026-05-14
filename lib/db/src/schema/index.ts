@@ -8,3 +8,4 @@ export * from "./attendance";
 export * from "./messages";
 export * from "./users";
 export * from "./sessions";
+export * from "./calendar";

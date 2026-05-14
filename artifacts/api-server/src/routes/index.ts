@@ -14,6 +14,7 @@ import absencesRouter from "./absences";
 import messagesRouter from "./messages";
 import usersRouter from "./users";
 import authRouter from "./auth";
+import calendarRouter from "./calendar";
 import { requireAdmin } from "../lib/auth-middleware";
 
 const router: IRouter = Router();
@@ -21,6 +22,7 @@ const router: IRouter = Router();
 // 認証不要なルート
 router.use(healthRouter);
 router.use(authRouter);
+router.use(calendarRouter); // カレンダー設定は全ユーザー参照・変更可能
 
 // ── 公開ルート判定 ─────────────────────────────────────────────────────
 // QR読み取りで遷移する /driver/:id ページが叩く API は、ログインなしで通す。

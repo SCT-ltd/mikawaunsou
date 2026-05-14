@@ -15,6 +15,43 @@ export const HealthCheckResponse = zod.object({
 });
 
 /**
+ * @summary カレンダーオーバーライド一覧取得
+ */
+export const GetCalendarOverridesResponse = zod.record(
+  zod.string(),
+  zod.boolean(),
+);
+
+/**
+ * @summary 指定期間のオーバーライドを削除（年度リセット）
+ */
+export const DeleteCalendarOverridesQueryParams = zod.object({
+  from: zod.coerce.string().optional(),
+  to: zod.coerce.string().optional(),
+});
+
+export const DeleteCalendarOverridesResponse = zod.record(
+  zod.string(),
+  zod.boolean(),
+);
+
+/**
+ * @summary 日付のオーバーライドを設定・削除
+ */
+export const SetCalendarOverrideParams = zod.object({
+  date: zod.coerce.string(),
+});
+
+export const SetCalendarOverrideBody = zod.object({
+  isRed: zod.boolean().nullish(),
+});
+
+export const SetCalendarOverrideResponse = zod.record(
+  zod.string(),
+  zod.boolean(),
+);
+
+/**
  * @summary 会社情報取得
  */
 export const GetCompanyResponse = zod.object({

@@ -26,11 +26,14 @@ import type {
   CreateMonthlyRecordBody,
   DashboardSummary,
   DeductionDefinition,
+  DeleteCalendarOverrides200,
+  DeleteCalendarOverridesParams,
   Employee,
   EmployeeAllowance,
   EmployeeDeduction,
   ExportJournalEntriesCsvParams,
   GenerateJournalEntriesBody,
+  GetCalendarOverrides200,
   GetDashboardSummaryParams,
   GetPendingEmployeesParams,
   HealthStatus,
@@ -45,6 +48,8 @@ import type {
   MonthlyTrendItem,
   Payroll,
   PendingEmployee,
+  SetCalendarOverride200,
+  SetCalendarOverrideBody,
   UpdateAllowanceDefinitionBody,
   UpdateCompanyBody,
   UpdateDeductionDefinitionBody,
@@ -138,6 +143,269 @@ export function useHealthCheck<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary カレンダーオーバーライド一覧取得
+ */
+export const getGetCalendarOverridesUrl = () => {
+  return `/api/calendar/overrides`;
+};
+
+export const getCalendarOverrides = async (
+  options?: RequestInit,
+): Promise<GetCalendarOverrides200> => {
+  return customFetch<GetCalendarOverrides200>(getGetCalendarOverridesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetCalendarOverridesQueryKey = () => {
+  return [`/api/calendar/overrides`] as const;
+};
+
+export const getGetCalendarOverridesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCalendarOverrides>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getCalendarOverrides>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetCalendarOverridesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getCalendarOverrides>>
+  > = ({ signal }) => getCalendarOverrides({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCalendarOverrides>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCalendarOverridesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCalendarOverrides>>
+>;
+export type GetCalendarOverridesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary カレンダーオーバーライド一覧取得
+ */
+
+export function useGetCalendarOverrides<
+  TData = Awaited<ReturnType<typeof getCalendarOverrides>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getCalendarOverrides>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCalendarOverridesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary 指定期間のオーバーライドを削除（年度リセット）
+ */
+export const getDeleteCalendarOverridesUrl = (
+  params?: DeleteCalendarOverridesParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/calendar/overrides?${stringifiedParams}`
+    : `/api/calendar/overrides`;
+};
+
+export const deleteCalendarOverrides = async (
+  params?: DeleteCalendarOverridesParams,
+  options?: RequestInit,
+): Promise<DeleteCalendarOverrides200> => {
+  return customFetch<DeleteCalendarOverrides200>(
+    getDeleteCalendarOverridesUrl(params),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getDeleteCalendarOverridesMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteCalendarOverrides>>,
+    TError,
+    { params?: DeleteCalendarOverridesParams },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteCalendarOverrides>>,
+  TError,
+  { params?: DeleteCalendarOverridesParams },
+  TContext
+> => {
+  const mutationKey = ["deleteCalendarOverrides"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteCalendarOverrides>>,
+    { params?: DeleteCalendarOverridesParams }
+  > = (props) => {
+    const { params } = props ?? {};
+
+    return deleteCalendarOverrides(params, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteCalendarOverridesMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteCalendarOverrides>>
+>;
+
+export type DeleteCalendarOverridesMutationError = ErrorType<unknown>;
+
+/**
+ * @summary 指定期間のオーバーライドを削除（年度リセット）
+ */
+export const useDeleteCalendarOverrides = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteCalendarOverrides>>,
+    TError,
+    { params?: DeleteCalendarOverridesParams },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteCalendarOverrides>>,
+  TError,
+  { params?: DeleteCalendarOverridesParams },
+  TContext
+> => {
+  return useMutation(getDeleteCalendarOverridesMutationOptions(options));
+};
+
+/**
+ * @summary 日付のオーバーライドを設定・削除
+ */
+export const getSetCalendarOverrideUrl = (date: string) => {
+  return `/api/calendar/overrides/${date}`;
+};
+
+export const setCalendarOverride = async (
+  date: string,
+  setCalendarOverrideBody: SetCalendarOverrideBody,
+  options?: RequestInit,
+): Promise<SetCalendarOverride200> => {
+  return customFetch<SetCalendarOverride200>(getSetCalendarOverrideUrl(date), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(setCalendarOverrideBody),
+  });
+};
+
+export const getSetCalendarOverrideMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setCalendarOverride>>,
+    TError,
+    { date: string; data: BodyType<SetCalendarOverrideBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setCalendarOverride>>,
+  TError,
+  { date: string; data: BodyType<SetCalendarOverrideBody> },
+  TContext
+> => {
+  const mutationKey = ["setCalendarOverride"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setCalendarOverride>>,
+    { date: string; data: BodyType<SetCalendarOverrideBody> }
+  > = (props) => {
+    const { date, data } = props ?? {};
+
+    return setCalendarOverride(date, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SetCalendarOverrideMutationResult = NonNullable<
+  Awaited<ReturnType<typeof setCalendarOverride>>
+>;
+export type SetCalendarOverrideMutationBody = BodyType<SetCalendarOverrideBody>;
+export type SetCalendarOverrideMutationError = ErrorType<unknown>;
+
+/**
+ * @summary 日付のオーバーライドを設定・削除
+ */
+export const useSetCalendarOverride = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setCalendarOverride>>,
+    TError,
+    { date: string; data: BodyType<SetCalendarOverrideBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof setCalendarOverride>>,
+  TError,
+  { date: string; data: BodyType<SetCalendarOverrideBody> },
+  TContext
+> => {
+  return useMutation(getSetCalendarOverrideMutationOptions(options));
+};
 
 /**
  * @summary 会社情報取得

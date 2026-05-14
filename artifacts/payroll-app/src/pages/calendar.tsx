@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { AppLayout } from "@/components/layout/app-layout";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, Calendar, RotateCcw, Printer } from "lucide-react";
@@ -64,19 +64,6 @@ function fmtDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-const STORAGE_KEY = "calendar_overrides";
-
-function loadOverrides(): Record<string, boolean> {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"); }
-  catch { return {}; }
-}
-function saveOverrides(overrides: Record<string, boolean>) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides));
-}
-
-const MONTH_NAMES = ["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"];
-const DAY_HEADERS = ["日","月","火","水","木","金","土"];
-
 function isRedDay(dateStr: string, overrides: Record<string, boolean>, holidays: Map<string, string>): boolean {
   if (dateStr in overrides) return overrides[dateStr];
   const dt = new Date(dateStr);
@@ -84,6 +71,10 @@ function isRedDay(dateStr: string, overrides: Record<string, boolean>, holidays:
   return dow === 0 || dow === 6 || holidays.has(dateStr);
 }
 
+const MONTH_NAMES = ["1月","2月","3月","4月","5月","6月","7月","8月","9月","10月","11月","12月"];
+const DAY_HEADERS = ["日","月","火","水","木","金","土"];
+
+// ── MonthCalendar コンポーネント ─────────────────────────────────────
 function MonthCalendar({
   year, month, holidays, overrides, onToggle,
 }: {
@@ -93,16 +84,14 @@ function MonthCalendar({
   overrides: Record<string, boolean>;
   onToggle: (dateStr: string) => void;
 }) {
-  const firstDay = new Date(year, month - 1, 1);
-  const startDow = firstDay.getDay();
+  const today = fmtDate(new Date());
   const daysInMonth = new Date(year, month, 0).getDate();
+  const startDow = new Date(year, month - 1, 1).getDay();
 
   const cells: (number | null)[] = [];
   for (let i = 0; i < startDow; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
   while (cells.length % 7 !== 0) cells.push(null);
-
-  const today = fmtDate(new Date());
 
   let workDays = 0;
   for (let d = 1; d <= daysInMonth; d++) {
@@ -111,18 +100,18 @@ function MonthCalendar({
   }
 
   return (
-    <div className="border rounded-lg overflow-hidden bg-card shadow-sm month-calendar-cell">
-      <div className="bg-muted/50 px-3 py-2 flex items-center justify-between border-b">
+    <div className="border rounded-lg overflow-hidden bg-card">
+      <div className="bg-muted/50 px-3 py-2 flex justify-between items-center border-b">
         <span className="font-semibold text-sm">{year}年 {MONTH_NAMES[month - 1]}</span>
-        <span className="text-xs tabular-nums flex items-center gap-2">
-          <span className="text-muted-foreground">出勤 <span className="font-semibold text-foreground">{workDays}</span>日</span>
-          <span className="text-red-400">休 <span className="font-semibold">{daysInMonth - workDays}</span>日</span>
+        <span className="text-xs text-muted-foreground">
+          出勤 <strong className="text-foreground">{workDays}</strong>日
+          <span className="text-red-500 ml-1">休 <strong>{daysInMonth - workDays}</strong>日</span>
         </span>
       </div>
       <div className="p-2">
-        <div className="grid grid-cols-7 mb-1">
+        <div className="grid grid-cols-7 gap-px mb-1">
           {DAY_HEADERS.map((h, i) => (
-            <div key={h} className={`text-center text-xs font-medium py-0.5 ${i === 0 || i === 6 ? "text-red-500" : "text-muted-foreground"}`}>
+            <div key={h} className={`text-center text-xs font-semibold py-0.5 ${i === 0 || i === 6 ? "text-red-500" : "text-muted-foreground"}`}>
               {h}
             </div>
           ))}
@@ -184,13 +173,39 @@ function isInFiscalYear(dateStr: string, fiscalYear: number): boolean {
   return false;
 }
 
+const API_BASE = "/api";
+
 export default function CalendarPage() {
   const now = new Date();
   const currentMonth = now.getMonth() + 1;
   const currentYear  = now.getFullYear();
   const defaultFiscalYear = currentMonth >= 4 ? currentYear : currentYear - 1;
   const [fiscalYear, setFiscalYear] = useState(defaultFiscalYear);
-  const [overrides, setOverrides]   = useState<Record<string, boolean>>(loadOverrides);
+  const [overrides, setOverrides]   = useState<Record<string, boolean>>({});
+  const [syncing, setSyncing] = useState(false);
+  const esRef = useRef<EventSource | null>(null);
+
+  // ── SSE でリアルタイム受信 ────────────────────────────────────────
+  useEffect(() => {
+    const es = new EventSource(`${API_BASE}/calendar/stream`);
+    esRef.current = es;
+
+    es.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data) as Record<string, boolean>;
+        setOverrides(data);
+      } catch { /* ignore */ }
+    };
+
+    es.onerror = () => {
+      // 再接続はブラウザが自動で行う
+    };
+
+    return () => {
+      es.close();
+      esRef.current = null;
+    };
+  }, []);
 
   // 年度の月リスト
   const fiscalMonths = getFiscalMonths(fiscalYear);
@@ -201,35 +216,48 @@ export default function CalendarPage() {
     ...getJapaneseHolidays(fiscalYear + 1),
   ]);
 
+  // ── 日付クリック → API へ POST ──────────────────────────────────
   const handleToggle = useCallback((dateStr: string) => {
+    const dt = new Date(dateStr);
+    const dow = dt.getDay();
+    const y = dt.getFullYear();
+    const hols = new Map([...getJapaneseHolidays(y)]);
+    const isNaturallyRed = dow === 0 || dow === 6 || hols.has(dateStr);
+
     setOverrides(prev => {
-      const dt = new Date(dateStr);
-      const dow = dt.getDay();
-      // 当日時点の祝日マップで判定（年をまたぐため両年マージ済み holidays を使えないのでその場で判定）
-      const y = dt.getFullYear();
-      const hols = new Map([...getJapaneseHolidays(y)]);
-      const isNaturallyRed = dow === 0 || dow === 6 || hols.has(dateStr);
       const currentlyRed = dateStr in prev ? prev[dateStr] : isNaturallyRed;
-      const next = { ...prev };
-      if (currentlyRed === isNaturallyRed) {
-        next[dateStr] = !currentlyRed;
-      } else {
+      const newIsRed = !currentlyRed;
+      // 自然な状態に戻る場合は override を削除
+      const isRed = newIsRed === isNaturallyRed ? null : newIsRed;
+
+      setSyncing(true);
+      fetch(`${API_BASE}/calendar/overrides/${dateStr}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isRed }),
+      }).finally(() => setSyncing(false));
+
+      // 楽観的更新（SSE で正式な状態を受け取るまでの間）
+      if (isRed === null) {
+        const next = { ...prev };
         delete next[dateStr];
+        return next;
       }
-      saveOverrides(next);
-      return next;
+      return { ...prev, [dateStr]: isRed };
     });
   }, []);
 
+  // ── 年度リセット → API へ DELETE ────────────────────────────────
   const handleReset = () => {
-    setOverrides(prev => {
-      const next = { ...prev };
-      Object.keys(next).forEach(k => {
-        if (isInFiscalYear(k, fiscalYear)) delete next[k];
-      });
-      saveOverrides(next);
-      return next;
-    });
+    const from = `${fiscalYear}-04-01`;
+    const to   = `${fiscalYear + 1}-03-31`;
+    setSyncing(true);
+    fetch(`${API_BASE}/calendar/overrides?from=${from}&to=${to}`, {
+      method: "DELETE",
+    })
+      .then(r => r.json())
+      .then((data: Record<string, boolean>) => setOverrides(data))
+      .finally(() => setSyncing(false));
   };
 
   const handlePrint = () => {
@@ -347,6 +375,7 @@ export default function CalendarPage() {
               <h2 className="text-2xl font-bold tracking-tight">カレンダー</h2>
               <p className="text-sm text-muted-foreground">
                 祝日・土日は<span className="text-red-600 font-medium">赤</span>、平日（出勤日）は<span className="font-medium">黒</span>。日付クリックで切り替え。
+                {syncing && <span className="ml-2 text-blue-500 text-xs">同期中…</span>}
               </p>
             </div>
           </div>

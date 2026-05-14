@@ -5,6 +5,10 @@
  * 給与明細・バックオフィス効率化システム API
  * OpenAPI spec version: 0.1.0
  */
+export interface SetCalendarOverrideBody {
+  isRed?: boolean | null;
+}
+
 export interface HealthStatus {
   status: string;
 }
@@ -598,6 +602,17 @@ export type UpdateEmployeeDeductionsBodyDeductionsItem = {
 export interface UpdateEmployeeDeductionsBody {
   deductions: UpdateEmployeeDeductionsBodyDeductionsItem[];
 }
+
+export type GetCalendarOverrides200 = { [key: string]: boolean };
+
+export type DeleteCalendarOverridesParams = {
+  from?: string;
+  to?: string;
+};
+
+export type DeleteCalendarOverrides200 = { [key: string]: boolean };
+
+export type SetCalendarOverride200 = { [key: string]: boolean };
 
 export type ListEmployeesParams = {
   active?: boolean;
