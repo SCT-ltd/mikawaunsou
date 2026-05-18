@@ -204,8 +204,8 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
   // ────────────────────────────────────────────────────────────────
   let overtimePay: number;
   if ((input.empOvertimeHourlyRate ?? 0) > 0) {
-    // 個人残業時給: 残業時間 × 単価 （1.25倍はかけず単価そのもの）
-    overtimePay = roundJapanese(overtimeHours * input.empOvertimeHourlyRate!);
+    // 個人通常時給: 残業時間 × 通常時給 × 1.25
+    overtimePay = roundJapanese(overtimeHours * input.empOvertimeHourlyRate! * 1.25);
   } else if ((input.overtimeUnitMinutes ?? 0) > 0 && (input.overtimeUnitRate ?? 0) > 0) {
     // 単位切り上げ計算: 例）10分単位で2031円
     const unitMins = input.overtimeUnitMinutes!;

@@ -816,14 +816,14 @@ function EmpFormFields({
                     <FormMessage /></FormItem>
                 )} />
                 <FormField control={f.control} name="overtimeHourlyRate" render={({ field }) => (
-                  <FormItem><FormLabel className="text-xs">㊨ 残業時給（円/時）</FormLabel>
+                  <FormItem><FormLabel className="text-xs">㊨ 通常時給（円/時）</FormLabel>
                     <FormControl>
                       <div className="flex items-center gap-1">
                         <Input type="number" min={0} step={1} placeholder="0" {...field} className="text-right bg-white" />
                         <span className="text-xs text-muted-foreground shrink-0">円/時</span>
                       </div>
                     </FormControl>
-                    <p className="text-xs text-muted-foreground">残業時間×単価（1.25倍なし）</p>
+                    <p className="text-xs text-muted-foreground">残業手当 = 通常時給 × 1.25 × 残業時間</p>
                     <FormMessage /></FormItem>
                 )} />
               </div>
