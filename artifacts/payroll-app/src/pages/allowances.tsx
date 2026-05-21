@@ -830,14 +830,14 @@ function EmpFormFields({
                     <FormMessage /></FormItem>
                 )} />
                 <FormField control={f.control} name="overtimeHourlyRate" render={({ field }) => (
-                  <FormItem><FormLabel className="text-xs">㊨ 通常時給（円/時）</FormLabel>
+                  <FormItem><FormLabel className="text-xs">㊨ 残業時給（円/時）</FormLabel>
                     <FormControl>
                       <div className="flex items-center gap-1">
-                        <TipInput type="number" min={0} step={1} placeholder="0" tip={"残業計算の基礎となる通常時給。\n残業手当 = 通常時給 × 1.25 × 残業時間\n0の場合は基本給 ÷ 月平均労働時間で自動計算"} {...field} className="text-right bg-white" />
+                        <TipInput type="number" min={0} step={1} placeholder="0" tip={"割増後の残業時給単価（入力値がそのまま残業時給）。\n残業手当 = この単価 × 残業時間\n60時間超は ×1.20 追加割増\n0の場合は基本給 ÷ 月平均労働時間 × 1.25 で自動計算"} {...field} className="text-right bg-white" />
                         <span className="text-xs text-muted-foreground shrink-0">円/時</span>
                       </div>
                     </FormControl>
-                    <p className="text-xs text-muted-foreground">残業手当 = 通常時給 × 1.25 × 残業時間</p>
+                    <p className="text-xs text-muted-foreground">残業手当 = この単価 × 残業時間（60h超は×1.20追加）</p>
                     <FormMessage /></FormItem>
                 )} />
               </div>

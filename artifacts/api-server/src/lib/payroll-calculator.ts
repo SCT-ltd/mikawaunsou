@@ -206,14 +206,15 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
   const OT_THRESHOLD = 60; // 時間
   let overtimePay: number;
   if ((input.empOvertimeHourlyRate ?? 0) > 0) {
-    // 個人通常時給ベース: 60h以内×1.25、60h超×1.50
+    // 個人残業時給: 入力値がそのまま残業時給（割増込み）
+    // 60h超部分は ×(1.50/1.25)=1.20 を追加乗算
     const baseRate = input.empOvertimeHourlyRate!;
     if (overtimeHours <= OT_THRESHOLD) {
-      overtimePay = roundJapanese(baseRate * 1.25 * overtimeHours);
+      overtimePay = roundJapanese(baseRate * overtimeHours);
     } else {
       overtimePay =
-        roundJapanese(baseRate * 1.25 * OT_THRESHOLD) +
-        roundJapanese(baseRate * 1.50 * (overtimeHours - OT_THRESHOLD));
+        roundJapanese(baseRate * OT_THRESHOLD) +
+        roundJapanese(baseRate * 1.20 * (overtimeHours - OT_THRESHOLD));
     }
   } else if ((input.overtimeUnitMinutes ?? 0) > 0 && (input.overtimeUnitRate ?? 0) > 0) {
     // 単位切り上げ計算: 例）10分単位で2031円

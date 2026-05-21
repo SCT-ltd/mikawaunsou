@@ -682,21 +682,54 @@ function computeQuickEstimate(
   let overtimePay: number;
   let lateNightPay: number;
   let holidayPay: number;
+  // 個人残業時給（残業時給単価マスタ）
+  const empOtRate = (emp as unknown as { overtimeHourlyRate?: number }).overtimeHourlyRate ?? 0;
+  const OT_THRESHOLD = 60;
+
   if (isDaily && unitMinutes > 0 && unitRate > 0) {
     const overtimeMinutes = overtimeHours * 60;
-    overtimePay = overtimeMinutes > 0 ? Math.ceil(overtimeMinutes / unitMinutes) * unitRate : 0;
+    if (overtimeHours <= OT_THRESHOLD) {
+      overtimePay = overtimeMinutes > 0 ? Math.ceil(overtimeMinutes / unitMinutes) * unitRate : 0;
+    } else {
+      const unitsNormal = Math.ceil((OT_THRESHOLD * 60) / unitMinutes);
+      const overMins = overtimeMinutes - OT_THRESHOLD * 60;
+      const unitsOver = overMins > 0 ? Math.ceil(overMins / unitMinutes) : 0;
+      overtimePay = unitsNormal * unitRate + Math.round(unitsOver * unitRate * 1.20);
+    }
     const lateNightMinutes = lateNightHours * 60;
     lateNightPay = lateNightMinutes > 0 ? Math.ceil(lateNightMinutes / unitMinutes) * unitRate : 0;
-    // 祝日/休日手当は会社標準日当×1.35で計算（個人オーバーライドは使わない）
     holidayPay = roundJapanese(companyDailyRate * 1.35 * holidayWorkDays);
-  } else {
-    // 日給制: 出勤日数が0でも正しい時間単価を得るため日当÷8hで算出
+  } else if (empOtRate > 0) {
+    // 個人残業時給が設定されている場合はそれを直接使用（割増込み単価）
+    // 60h超部分は ×1.20（= 1.50/1.25）追加
+    if (overtimeHours <= OT_THRESHOLD) {
+      overtimePay = roundJapanese(empOtRate * overtimeHours);
+    } else {
+      overtimePay =
+        roundJapanese(empOtRate * OT_THRESHOLD) +
+        roundJapanese(empOtRate * 1.20 * (overtimeHours - OT_THRESHOLD));
+    }
     const hourlyRate = isHourly
       ? (emp.baseSalary ?? 0)
       : isDaily
       ? (hasRateOverride ? overrideRate : companyDailyRate) / 8
       : monthlyHours > 0 ? baseSalary / monthlyHours : 0;
-    overtimePay = roundJapanese(hourlyRate * (company?.overtimeRate ?? 1.25) * overtimeHours);
+    lateNightPay = roundJapanese(hourlyRate * (company?.lateNightAdditionalRate ?? 0.25) * lateNightHours);
+    holidayPay = roundJapanese(hourlyRate * (company?.holidayRate ?? 1.35) * holidayWorkDays * 8);
+  } else {
+    // 標準計算: 日給÷8 or 月給÷月平均 × 割増率
+    const hourlyRate = isHourly
+      ? (emp.baseSalary ?? 0)
+      : isDaily
+      ? (hasRateOverride ? overrideRate : companyDailyRate) / 8
+      : monthlyHours > 0 ? baseSalary / monthlyHours : 0;
+    if (overtimeHours <= OT_THRESHOLD) {
+      overtimePay = roundJapanese(hourlyRate * (company?.overtimeRate ?? 1.25) * overtimeHours);
+    } else {
+      overtimePay =
+        roundJapanese(hourlyRate * (company?.overtimeRate ?? 1.25) * OT_THRESHOLD) +
+        roundJapanese(hourlyRate * 1.50 * (overtimeHours - OT_THRESHOLD));
+    }
     lateNightPay = roundJapanese(hourlyRate * (company?.lateNightAdditionalRate ?? 0.25) * lateNightHours);
     holidayPay = roundJapanese(hourlyRate * (company?.holidayRate ?? 1.35) * holidayWorkDays * 8);
   }
