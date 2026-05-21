@@ -201,20 +201,46 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
 
   // ────────────────────────────────────────────────────────────────
   // 時間外手当・深夜手当・休日手当・日曜出勤手当
+  // 労基法37条3項: 月60時間超の時間外は×1.50（60時間以内は×1.25）
   // ────────────────────────────────────────────────────────────────
+  const OT_THRESHOLD = 60; // 時間
   let overtimePay: number;
   if ((input.empOvertimeHourlyRate ?? 0) > 0) {
-    // 個人通常時給: 残業時間 × 通常時給 × 1.25
-    overtimePay = roundJapanese(overtimeHours * input.empOvertimeHourlyRate! * 1.25);
+    // 個人通常時給ベース: 60h以内×1.25、60h超×1.50
+    const baseRate = input.empOvertimeHourlyRate!;
+    if (overtimeHours <= OT_THRESHOLD) {
+      overtimePay = roundJapanese(baseRate * 1.25 * overtimeHours);
+    } else {
+      overtimePay =
+        roundJapanese(baseRate * 1.25 * OT_THRESHOLD) +
+        roundJapanese(baseRate * 1.50 * (overtimeHours - OT_THRESHOLD));
+    }
   } else if ((input.overtimeUnitMinutes ?? 0) > 0 && (input.overtimeUnitRate ?? 0) > 0) {
     // 単位切り上げ計算: 例）10分単位で2031円
+    // 60h超部分のユニットには割増係数(1.50/1.25=1.20)を乗じる
     const unitMins = input.overtimeUnitMinutes!;
     const unitRate = input.overtimeUnitRate!;
     const overtimeMins = overtimeHours * 60;
-    const units = overtimeMins > 0 ? Math.ceil(overtimeMins / unitMins) : 0;
-    overtimePay = roundJapanese(units * unitRate);
+    if (overtimeHours <= OT_THRESHOLD) {
+      const units = overtimeMins > 0 ? Math.ceil(overtimeMins / unitMins) : 0;
+      overtimePay = roundJapanese(units * unitRate);
+    } else {
+      const unitsNormal = Math.ceil((OT_THRESHOLD * 60) / unitMins);
+      const overMins = overtimeMins - OT_THRESHOLD * 60;
+      const unitsOver = overMins > 0 ? Math.ceil(overMins / unitMins) : 0;
+      overtimePay =
+        roundJapanese(unitsNormal * unitRate) +
+        roundJapanese(unitsOver * unitRate * 1.20);
+    }
   } else {
-    overtimePay = roundJapanese(hourlyRate * 1.25 * overtimeHours);
+    // 標準計算: 60h以内×1.25、60h超×1.50
+    if (overtimeHours <= OT_THRESHOLD) {
+      overtimePay = roundJapanese(hourlyRate * 1.25 * overtimeHours);
+    } else {
+      overtimePay =
+        roundJapanese(hourlyRate * 1.25 * OT_THRESHOLD) +
+        roundJapanese(hourlyRate * 1.50 * (overtimeHours - OT_THRESHOLD));
+    }
   }
   const lateNightPay = roundJapanese(hourlyRate * 0.25 * lateNightHours);
   // 日曜/祝日手当:
