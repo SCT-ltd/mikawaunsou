@@ -34,6 +34,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -595,6 +596,19 @@ const empFullSchema = z.object({
 });
 type EmpFullValues = z.infer<typeof empFullSchema>;
 
+function TipInput({ tip, ...props }: React.ComponentProps<typeof Input> & { tip: string }) {
+  return (
+    <Tooltip delayDuration={300}>
+      <TooltipTrigger asChild>
+        <Input {...props} />
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-[260px] text-xs leading-relaxed whitespace-pre-line">
+        {tip}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 function EmpFormFields({
   form: f,
   salaryType,
@@ -635,7 +649,7 @@ function EmpFormFields({
         <div className="grid grid-cols-2 gap-3">
           <FormField control={f.control} name="employeeCode" render={({ field }) => (
             <FormItem><FormLabel>社員番号 <span className="text-destructive">*</span></FormLabel>
-              <FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+              <FormControl><TipInput tip="社員を一意に識別する番号（例：EMP001）" {...field} /></FormControl><FormMessage /></FormItem>
           )} />
           <FormField control={f.control} name="hireDate" render={({ field }) => (
             <FormItem><FormLabel>入社日 <span className="text-destructive">*</span></FormLabel>
@@ -644,11 +658,11 @@ function EmpFormFields({
           )} />
           <FormField control={f.control} name="name" render={({ field }) => (
             <FormItem><FormLabel>氏名 <span className="text-destructive">*</span></FormLabel>
-              <FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+              <FormControl><TipInput tip="フルネームを入力（例：山田 太郎）" {...field} /></FormControl><FormMessage /></FormItem>
           )} />
           <FormField control={f.control} name="nameKana" render={({ field }) => (
             <FormItem><FormLabel>フリガナ <span className="text-destructive">*</span></FormLabel>
-              <FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+              <FormControl><TipInput tip="カタカナで入力（例：ヤマダ タロウ）" {...field} /></FormControl><FormMessage /></FormItem>
           )} />
           <FormField control={f.control} name="dateOfBirth" render={({ field }) => (
             <FormItem>
@@ -666,11 +680,11 @@ function EmpFormFields({
           )} />
           <FormField control={f.control} name="department" render={({ field }) => (
             <FormItem><FormLabel>部署 <span className="text-destructive">*</span></FormLabel>
-              <FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+              <FormControl><TipInput tip="所属する部署名（例：運転部、事務部）" {...field} /></FormControl><FormMessage /></FormItem>
           )} />
           <FormField control={f.control} name="position" render={({ field }) => (
             <FormItem><FormLabel>役職</FormLabel>
-              <FormControl><Input {...field} value={field.value || ""} /></FormControl></FormItem>
+              <FormControl><TipInput tip="役職名（例：課長）。未入力でも可" {...field} value={field.value || ""} /></FormControl></FormItem>
           )} />
         </div>
 
@@ -734,7 +748,7 @@ function EmpFormFields({
                     <FormField control={f.control} name="scheduledWorkStart" render={({ field }) => (
                       <FormItem className="flex-1">
                         <FormLabel>開始時刻</FormLabel>
-                        <FormControl><Input type="time" {...field} value={field.value ?? ""} /></FormControl>
+                        <FormControl><TipInput type="time" tip="定時開始時刻。打刻画面の遅刻・早退判定に使用" {...field} value={field.value ?? ""} /></FormControl>
                         <FormMessage />
                       </FormItem>
                     )} />
@@ -742,7 +756,7 @@ function EmpFormFields({
                     <FormField control={f.control} name="scheduledWorkEnd" render={({ field }) => (
                       <FormItem className="flex-1">
                         <FormLabel>終了時刻</FormLabel>
-                        <FormControl><Input type="time" {...field} value={field.value ?? ""} /></FormControl>
+                        <FormControl><TipInput type="time" tip="定時終了時刻。打刻画面の残業判定に使用" {...field} value={field.value ?? ""} /></FormControl>
                         <FormMessage />
                       </FormItem>
                     )} />
@@ -775,7 +789,7 @@ function EmpFormFields({
                 <FormItem><FormLabel>月額固定給（円）</FormLabel>
                   <FormControl>
                     <div className="flex items-center gap-2">
-                      <Input type="number" min={0} step={1000} placeholder="700000" {...field} className="text-right" />
+                      <TipInput type="number" min={0} step={1000} placeholder="700000" tip="毎月固定で支払う基本給。残業・深夜等の割増は別途加算されます" {...field} className="text-right" />
                       <span className="text-sm text-muted-foreground shrink-0">円</span>
                     </div>
                   </FormControl><FormMessage /></FormItem>
@@ -786,7 +800,7 @@ function EmpFormFields({
                 <FormItem><FormLabel>時給単価（円）</FormLabel>
                   <FormControl>
                     <div className="flex items-center gap-2">
-                      <Input type="number" min={0} step={10} placeholder="1200" {...field} className="text-right" />
+                      <TipInput type="number" min={0} step={10} placeholder="1200" tip="1時間あたりの基本賃金。月の基本給＝時給×実働時間（30分単位切り上げ）" {...field} className="text-right" />
                       <span className="text-sm text-muted-foreground shrink-0">円/時</span>
                     </div>
                   </FormControl><FormMessage /></FormItem>
@@ -799,7 +813,7 @@ function EmpFormFields({
                   <FormItem><FormLabel className="text-xs">㊥ 平日日当（円/日）</FormLabel>
                     <FormControl>
                       <div className="flex items-center gap-1">
-                        <Input type="number" min={0} step={1} placeholder="0" {...field} className="text-right bg-white" />
+                        <TipInput type="number" min={0} step={1} placeholder="0" tip={"平日1日あたりの個人日当。\n0の場合は会社共通単価（9,808円）を使用"} {...field} className="text-right bg-white" />
                         <span className="text-xs text-muted-foreground shrink-0">円/日</span>
                       </div>
                     </FormControl>
@@ -809,7 +823,7 @@ function EmpFormFields({
                   <FormItem><FormLabel className="text-xs">㊡ 休日日当（円/日）</FormLabel>
                     <FormControl>
                       <div className="flex items-center gap-1">
-                        <Input type="number" min={0} step={1} placeholder="0" {...field} className="text-right bg-white" />
+                        <TipInput type="number" min={0} step={1} placeholder="0" tip={"土曜・休日1日あたりの個人日当。\n0の場合は会社共通単価（12,260円）を使用"} {...field} className="text-right bg-white" />
                         <span className="text-xs text-muted-foreground shrink-0">円/日</span>
                       </div>
                     </FormControl>
@@ -819,7 +833,7 @@ function EmpFormFields({
                   <FormItem><FormLabel className="text-xs">㊨ 通常時給（円/時）</FormLabel>
                     <FormControl>
                       <div className="flex items-center gap-1">
-                        <Input type="number" min={0} step={1} placeholder="0" {...field} className="text-right bg-white" />
+                        <TipInput type="number" min={0} step={1} placeholder="0" tip={"残業計算の基礎となる通常時給。\n残業手当 = 通常時給 × 1.25 × 残業時間\n0の場合は基本給 ÷ 月平均労働時間で自動計算"} {...field} className="text-right bg-white" />
                         <span className="text-xs text-muted-foreground shrink-0">円/時</span>
                       </div>
                     </FormControl>
@@ -833,14 +847,14 @@ function EmpFormFields({
                   <FormField control={f.control} name="overtimeUnitMinutes" render={({ field }) => (
                     <FormItem><FormLabel className="text-xs">残業切り上げ単位（分）</FormLabel>
                       <FormControl>
-                        <Input type="number" min={0} step={1} placeholder="0" {...field} className="text-right bg-white" />
+                        <TipInput type="number" min={0} step={1} placeholder="0" tip={"残業時間をこの分数単位で切り上げ。\n例：10分設定→残業13分は20分に切り上げ。\n0の場合は標準計算（分単位）"} {...field} className="text-right bg-white" />
                       </FormControl>
                       <FormMessage /></FormItem>
                   )} />
                   <FormField control={f.control} name="overtimeUnitRate" render={({ field }) => (
                     <FormItem><FormLabel className="text-xs">残業単位あたり加算額（円）</FormLabel>
                       <FormControl>
-                        <Input type="number" min={0} step={1} placeholder="0" {...field} className="text-right bg-white" />
+                        <TipInput type="number" min={0} step={1} placeholder="0" tip={"切り上げ1単位あたりの加算額。\n例：10分単位で2,031円→残業20分＝4,062円"} {...field} className="text-right bg-white" />
                       </FormControl>
                       <FormMessage /></FormItem>
                   )} />
@@ -851,7 +865,7 @@ function EmpFormFields({
               <FormItem><FormLabel>市町村民税（月額・円）</FormLabel>
                 <FormControl>
                   <div className="flex items-center gap-2">
-                    <Input type="number" min={0} step={100} placeholder="0" {...field} className="text-right" />
+                    <TipInput type="number" min={0} step={100} placeholder="0" tip={"毎月差し引く住民税（特別徴収）の月額。\n市区町村から届く「税額決定通知書」に記載の金額を入力。\n6月改定が多いため毎年確認してください"} {...field} className="text-right" />
                     <span className="text-sm text-muted-foreground shrink-0">円</span>
                   </div>
                 </FormControl>
@@ -863,7 +877,7 @@ function EmpFormFields({
                 <FormItem><FormLabel>健康保険料（月額・円）</FormLabel>
                   <FormControl>
                     <div className="flex items-center gap-1">
-                      <Input type="number" min={0} step={1} placeholder="0" {...field} className="text-right" />
+                      <TipInput type="number" min={0} step={1} placeholder="0" tip={"健康保険料の月額（被保険者負担分）。\n0の場合は標準報酬月額×料率（9.85%の折半）で自動計算。\n手動設定は自動計算より優先されます"} {...field} className="text-right" />
                       <span className="text-sm text-muted-foreground shrink-0">円</span>
                     </div>
                   </FormControl>
@@ -874,7 +888,7 @@ function EmpFormFields({
                 <FormItem><FormLabel>厚生年金（月額・円）</FormLabel>
                   <FormControl>
                     <div className="flex items-center gap-1">
-                      <Input type="number" min={0} step={1} placeholder="0" {...field} className="text-right" />
+                      <TipInput type="number" min={0} step={1} placeholder="0" tip={"厚生年金保険料の月額（被保険者負担分）。\n0の場合は標準報酬月額×料率（18.3%の折半）で自動計算。\n手動設定は自動計算より優先されます"} {...field} className="text-right" />
                       <span className="text-sm text-muted-foreground shrink-0">円</span>
                     </div>
                   </FormControl>
@@ -887,7 +901,7 @@ function EmpFormFields({
                 <FormItem><FormLabel>源泉所得税（月額・円）</FormLabel>
                   <FormControl>
                     <div className="flex items-center gap-1">
-                      <Input type="number" min={0} step={1} placeholder="0" {...field} className="text-right" />
+                      <TipInput type="number" min={0} step={1} placeholder="0" tip={"源泉所得税の月額。\n0の場合は令和8年国税庁月額表（甲欄）で自動計算。\n扶養人数・配偶者の有無が計算に影響します"} {...field} className="text-right" />
                       <span className="text-sm text-muted-foreground shrink-0">円</span>
                     </div>
                   </FormControl>
@@ -898,7 +912,7 @@ function EmpFormFields({
                 <FormItem><FormLabel>その他控除（月額・円）</FormLabel>
                   <FormControl>
                     <div className="flex items-center gap-1">
-                      <Input type="number" min={0} step={100} placeholder="0" {...field} className="text-right" />
+                      <TipInput type="number" min={0} step={100} placeholder="0" tip={"積立金・組合費など毎月定額で差し引くその他の控除額。\n複数ある場合は合計額を入力"} {...field} className="text-right" />
                       <span className="text-sm text-muted-foreground shrink-0">円</span>
                     </div>
                   </FormControl>
@@ -920,7 +934,7 @@ function EmpFormFields({
                   <FormControl>
                     <div className="flex items-center gap-1">
                       <span className="text-muted-foreground text-sm">¥</span>
-                      <Input type="number" step="0.1" {...field} />
+                      <TipInput type="number" step="0.1" tip={"走行距離1kmあたりの歩合単価。\n歩合給（距離）＝走行km × この単価\n0の場合は距離歩合なし"} {...field} />
                     </div>
                   </FormControl></FormItem>
               )} />
@@ -929,7 +943,7 @@ function EmpFormFields({
                   <FormControl>
                     <div className="flex items-center gap-1">
                       <span className="text-muted-foreground text-sm">¥</span>
-                      <Input type="number" {...field} />
+                      <TipInput type="number" tip={"配送1件あたりの歩合単価。\n歩合給（件数）＝配送件数 × この単価\n0の場合は件数歩合なし"} {...field} />
                     </div>
                   </FormControl></FormItem>
               )} />
@@ -939,7 +953,7 @@ function EmpFormFields({
                 <FormLabel>三川歩合率（%）</FormLabel>
                 <FormControl>
                   <div className="flex items-center gap-2">
-                    <Input type="number" min={0} max={100} step={0.1} placeholder="例: 37.5" {...field}
+                    <TipInput type="number" min={0} max={100} step={0.1} placeholder="例: 37.5" tip={"三川ロジック計算時に使用する個人の歩合率（%）。\n例：37.5 と入力 → 37.5%\n月次実績の売上金額×この率＝歩合給"} {...field}
                       className="text-right max-w-[160px]" />
                     <span className="text-sm text-muted-foreground shrink-0">%</span>
                   </div>
@@ -970,7 +984,7 @@ function EmpFormFields({
                 <FormLabel>ブルーウィング歩合率（%）</FormLabel>
                 <FormControl>
                   <div className="flex items-center gap-2">
-                    <Input type="number" min={0} max={100} step={0.1} placeholder="例: 37.5" {...field}
+                    <TipInput type="number" min={0} max={100} step={0.1} placeholder="例: 37.5" tip={"ブルーウィングロジック計算時の個人歩合率（%）。\n岡田: 37.5 / 古田・平澤・横井・中村: 37\n玉川・土田・鴨志田: 36.8"} {...field}
                       className="text-right max-w-[160px]" />
                     <span className="text-sm text-muted-foreground shrink-0">%</span>
                   </div>
@@ -984,7 +998,7 @@ function EmpFormFields({
                 <FormItem>
                   <FormLabel>固定残業みなし時間（h）</FormLabel>
                   <FormControl>
-                    <Input type="number" min={0} step={0.5} placeholder="例: 25" {...field} className="text-right" />
+                    <TipInput type="number" min={0} step={0.5} placeholder="例: 25" tip={"固定残業代に含まれるみなし残業時間数。\n実際の残業がこの時間を超えた分だけ追加支払い。\n岡田・横井他: 25h / 平澤・玉川: 40h"} {...field} className="text-right" />
                   </FormControl>
                   <p className="text-xs text-muted-foreground">岡田・横井他: 25 / 平澤・玉川: 40</p>
                   <FormMessage />
@@ -994,7 +1008,7 @@ function EmpFormFields({
                 <FormItem>
                   <FormLabel>固定残業代（職務手当）（円）</FormLabel>
                   <FormControl>
-                    <Input type="number" min={0} step={1000} placeholder="例: 50000" {...field} className="text-right" />
+                    <TipInput type="number" min={0} step={1000} placeholder="例: 50000" tip={"毎月支払う固定残業代（職務手当）の金額。\nみなし残業時間分が含まれています。\n岡田・横井他: 50,000 / 古田: 40,000 / 平澤・玉川: 120,000"} {...field} className="text-right" />
                   </FormControl>
                   <p className="text-xs text-muted-foreground">岡田・横井他: 50,000 / 古田: 40,000 / 平澤・玉川: 120,000</p>
                   <FormMessage />
@@ -1012,7 +1026,7 @@ function EmpFormFields({
           <div className="space-y-3">
             <FormField control={f.control} name="dependentCount" render={({ field }) => (
               <FormItem><FormLabel>扶養親族数（人）</FormLabel>
-                <FormControl><Input type="number" min={0} placeholder="0" {...field} /></FormControl>
+                <FormControl><TipInput type="number" min={0} placeholder="0" tip={"配偶者以外の扶養親族の人数。\n源泉所得税の計算（甲欄の扶養人数）に影響。\n配偶者は下の「配偶者の有無」スイッチで設定"} {...field} /></FormControl>
                 <FormMessage /></FormItem>
             )} />
             <FormField control={f.control} name="hasSpouse" render={({ field }) => (
@@ -1035,7 +1049,7 @@ function EmpFormFields({
               <FormItem><FormLabel>標準報酬月額（円）</FormLabel>
                 <FormControl>
                   <div className="flex items-center gap-2">
-                    <Input type="number" min={0} step={1000} placeholder="470000" {...field} className="text-right" />
+                    <TipInput type="number" min={0} step={1000} placeholder="470000" tip={"健保・厚年の計算基礎となる標準報酬月額。\n4〜6月の平均給与を基に決定し、9月から翌8月まで固定。\n健康保険料 = この額 × 9.85% の折半\n厚生年金 = この額 × 18.3% の折半"} {...field} className="text-right" />
                     <span className="text-sm text-muted-foreground shrink-0">円</span>
                   </div>
                 </FormControl>
