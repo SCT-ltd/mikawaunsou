@@ -443,10 +443,11 @@ export function calculateInsuranceAndTax(input: InsuranceTaxInput): InsuranceTax
     ? round50sen(pensionBase * PENSION_EMPLOYEE_RATE_R8)
     : 0;
 
-  // 雇用保険料：総支給額 × 雇用保険率
-  // ※通勤手当等の非課税手当も雇用保険の賃金ベースに含める（所得税非課税とは別）
+  // 雇用保険料：（総支給額 − 非課税手当）× 雇用保険率
+  // 携帯代・通勤手当等の非課税手当は雇用保険の賃金ベースから除外
+  const eiBase = Math.max(0, grossSalary - nonTaxableAllowances);
   const employmentInsurance = employmentInsuranceApplied
-    ? round50sen(grossSalary * employmentInsuranceRate)
+    ? round50sen(eiBase * employmentInsuranceRate)
     : 0;
 
   // 社会保険料等合計
