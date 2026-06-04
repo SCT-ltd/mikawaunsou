@@ -652,21 +652,19 @@ function computeQuickEstimate(
   const isHourly = emp.salaryType === "hourly";
   const actualWorkHours = Number(editData.actualWorkHours) || 0;
 
-  // 個人日当単価オーバーライドの有無
-  const overrideRate    = isDaily ? ((emp.dailyRateOverride ?? 0) > 0 ? (emp.dailyRateOverride ?? 0) : 0) : 0;
-  const hasRateOverride = overrideRate > 0;
-  // 会社標準日当（オーバーライドなし社員用）
+  // 個人日当単価（dailyRateWeekday/dailyRateSaturday優先、0なら会社標準）
+  const empWeekdayRate   = isDaily ? ((emp as unknown as { dailyRateWeekday?: number }).dailyRateWeekday ?? 0) : 0;
+  const empSaturdayRate  = isDaily ? ((emp as unknown as { dailyRateSaturday?: number }).dailyRateSaturday ?? 0) : 0;
+  // 会社標準日当
   const companyDailyRate    = company?.dailyWageWeekday ?? 9808;
   const companySaturdayRate = company?.dailyWageSaturday ?? 12260;
+  // 実効単価（個人設定>0なら優先）
+  const effectiveWeekdayRate   = empWeekdayRate   > 0 ? empWeekdayRate   : companyDailyRate;
+  const effectiveSaturdayRate  = empSaturdayRate  > 0 ? empSaturdayRate  : companySaturdayRate;
+  const hasRateOverride = empWeekdayRate > 0 || empSaturdayRate > 0;
 
   const baseSalary = isDaily && company
-    ? Math.round(
-        hasRateOverride
-          // 個人単価あり: 平日・土曜・日曜/祝日 すべて一律同単価
-          ? ((Number(editData.workDays) || 0) + (Number(editData.saturdayWorkDays) || 0) + (Number(editData.sundayWorkDays) || 0)) * overrideRate
-          // 会社標準: 平日=companyDailyRate のみ（土曜・日曜祝日は別出し）
-          : (Number(editData.workDays) || 0) * companyDailyRate
-      )
+    ? Math.round((Number(editData.workDays) || 0) * effectiveWeekdayRate)
     : isHourly
     ? Math.round((emp.baseSalary ?? 0) * actualWorkHours)
     : emp.baseSalary ?? 0;
@@ -712,7 +710,7 @@ function computeQuickEstimate(
     const hourlyRate = isHourly
       ? (emp.baseSalary ?? 0)
       : isDaily
-      ? (hasRateOverride ? overrideRate : companyDailyRate) / 8
+      ? effectiveWeekdayRate / 8
       : monthlyHours > 0 ? baseSalary / monthlyHours : 0;
     lateNightPay = roundJapanese(hourlyRate * (company?.lateNightAdditionalRate ?? 0.25) * lateNightHours);
     holidayPay = roundJapanese(hourlyRate * (company?.holidayRate ?? 1.35) * holidayWorkDays * 8);
@@ -721,7 +719,7 @@ function computeQuickEstimate(
     const hourlyRate = isHourly
       ? (emp.baseSalary ?? 0)
       : isDaily
-      ? (hasRateOverride ? overrideRate : companyDailyRate) / 8
+      ? effectiveWeekdayRate / 8
       : monthlyHours > 0 ? baseSalary / monthlyHours : 0;
     if (overtimeHours <= OT_THRESHOLD) {
       overtimePay = roundJapanese(hourlyRate * (company?.overtimeRate ?? 1.25) * overtimeHours);
@@ -734,9 +732,9 @@ function computeQuickEstimate(
     holidayPay = roundJapanese(hourlyRate * (company?.holidayRate ?? 1.35) * holidayWorkDays * 8);
   }
 
-  // 土曜出勤分（基本給は平日のみ／土曜は別出し）
-  const saturdayPayPreview = isDaily && company && !hasRateOverride
-    ? Math.round((Number(editData.saturdayWorkDays) || 0) * companySaturdayRate)
+  // 土曜出勤分（基本給は平日のみ／土曜は別出し、個人単価がある場合もそれを使用）
+  const saturdayPayPreview = isDaily && company
+    ? Math.round((Number(editData.saturdayWorkDays) || 0) * effectiveSaturdayRate)
     : 0;
 
   const grossEstimate = baseSalary + saturdayPayPreview + overtimePay + lateNightPay + holidayPay;
