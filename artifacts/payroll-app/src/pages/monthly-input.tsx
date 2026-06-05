@@ -363,15 +363,15 @@ function AllowanceSidebar({
 
   const healthRate = company?.healthInsuranceEmployeeRate ?? 0.05;
   const pensionRate = company?.pensionEmployeeRate ?? 0.0915;
-  const eiRate = company?.employmentInsuranceRate ?? 0.005;
+  const eiRate = company?.employmentInsuranceRate ?? 0.0005;
 
   const isPensionApplied = employee ? resolvePensionApplied(employee) : true;
   const healthInsurance = roundJapanese(grandTotal * healthRate);
   const pensionInsurance = isPensionApplied ? roundJapanese(grandTotal * pensionRate) : 0;
-  // 雇用保険: 総支給額から非課税手当を除いた金額 × 料率
+  // 雇用保険: 総支給額（全額）× 料率（非課税手当も含めて計算）
   const employmentInsurance =
     employee?.employmentInsuranceApplied !== false
-      ? roundJapanese((grandTotal - nonTaxableAllowancesTotal) * eiRate)
+      ? roundJapanese(grandTotal * eiRate)
       : 0;
   const totalInsurance = healthInsurance + pensionInsurance + employmentInsurance;
 
@@ -747,15 +747,12 @@ function computeQuickEstimate(
   } else {
     const healthRate = company?.healthInsuranceEmployeeRate ?? 0.05;
     const pensionRate = company?.pensionEmployeeRate ?? 0.0915;
-    const eiRate = company?.employmentInsuranceRate ?? 0.005;
+    const eiRate = company?.employmentInsuranceRate ?? 0.0005;
     const isPensionApplied = resolvePensionApplied(emp);
-    // 雇用保険料は非課税手当（携帯代・通勤費等）を除いた額に掛ける
-    // 概算時は土曜払い分のみ除外（詳細な非課税手当情報は概算では未取得のため近似）
-    const eiBase = grossEstimate - saturdayPayPreview;
     const totalInsurance = roundJapanese(
       grossEstimate * healthRate +
         (isPensionApplied ? grossEstimate * pensionRate : 0) +
-        (emp.employmentInsuranceApplied !== false ? Math.max(0, eiBase) * eiRate : 0)
+        (emp.employmentInsuranceApplied !== false ? grossEstimate * eiRate : 0)
     );
     const afterInsurance = Math.max(0, grossEstimate - totalInsurance);
     const incomeTax = calculateIncomeTaxFromOfficialTable(

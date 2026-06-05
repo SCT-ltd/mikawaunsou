@@ -1625,7 +1625,7 @@ function CalcTableMasterTab() {
       healthInsuranceEmployeeRate: 0.04925, healthInsuranceEmployerRate: 0.04925,
       careInsuranceRate: 0.0091,
       pensionEmployeeRate: 0.0915, pensionEmployerRate: 0.0915,
-      employmentInsuranceRate: 0.005, employmentInsuranceEmployerRate: 0.0085,
+      employmentInsuranceRate: 0.0005, employmentInsuranceEmployerRate: 0.0085,
       overtimeRate: 1.25, lateNightAdditionalRate: 0.25, holidayRate: 1.35,
       monthlyAverageWorkHours: 160,
     },
@@ -1767,7 +1767,7 @@ function CalcTableMasterTab() {
                       <FormLabel>本人負担率</FormLabel>
                       <FormControl>
                         <div className="flex items-center gap-2">
-                          <Input type="number" step="0.0001" placeholder="0.005" {...field} />
+                          <Input type="number" step="0.0001" placeholder="0.0005" {...field} />
                           <span className="text-sm text-muted-foreground w-14">{pct(field.value || 0)}</span>
                         </div>
                       </FormControl>
