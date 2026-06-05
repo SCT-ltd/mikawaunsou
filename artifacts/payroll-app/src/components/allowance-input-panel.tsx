@@ -642,7 +642,7 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
   const pensionRate = company?.pensionEmployeeRate ?? 0.0915;
   const empInsRate = (company?.employmentInsuranceRate ?? 0) > 0
     ? company!.employmentInsuranceRate
-    : 0.005;
+    : 0.0005;
 
   const HEALTH_RATE_NO_CARE  = 0.04925;
   const HEALTH_RATE_WITH_CARE = 0.05735;
