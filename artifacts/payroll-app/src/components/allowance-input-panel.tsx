@@ -549,8 +549,12 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
 
   const isDaily = employee.salaryType === "daily";
   // 土曜出勤手当・日曜出勤手当は別項目で計上されるため、基本給プレビューには平日分のみ
+  // 個人単価（dailyRateWeekday > 0）があればそれを優先、なければ会社共通単価を使用
+  const effectiveDailyRate = (employee.dailyRateWeekday ?? 0) > 0
+    ? employee.dailyRateWeekday!
+    : (company?.dailyWageWeekday ?? 9808);
   const computedDailyBaseSalary = isDaily && company
-    ? Math.round((monthlyData?.workDays ?? 0) * (company.dailyWageWeekday ?? 9808))
+    ? Math.round((monthlyData?.workDays ?? 0) * effectiveDailyRate)
     : null;
 
   useEffect(() => {
