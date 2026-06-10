@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Link } from "wouter";
 import { AppLayout } from "@/components/layout/app-layout";
 import { 
@@ -23,7 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AllowanceInputPanel } from "@/components/allowance-input-panel";
+import { AllowanceInputPanel, PayrollLivePreview } from "@/components/allowance-input-panel";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency } from "@/lib/format";
@@ -58,6 +58,9 @@ export default function PayrollList() {
   // 未保存変更ガード
   const [isDirty, setIsDirty] = useState(false);
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
+
+  // 明細入力タブのリアルタイム計算プレビュー
+  const [livePreview, setLivePreview] = useState<PayrollLivePreview | null>(null);
   const pendingActionRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -84,6 +87,7 @@ export default function PayrollList() {
     requestAction(() => {
       setSelectedPayrollId(null);
       setIsDirty(false);
+      setLivePreview(null);
     });
   }, [requestAction]);
 
@@ -93,6 +97,7 @@ export default function PayrollList() {
       setSelectedPayrollId(id);
       setActiveTab("allowance");
       setIsDirty(false);
+      setLivePreview(null);
     });
   }, [requestAction, selectedPayrollId]);
 
@@ -113,6 +118,43 @@ export default function PayrollList() {
   });
   const selectedEmployee = employees?.find(e => e.id === selectedEmployeeId);
   const isTaxExempt = selectedEmployee?.taxExempt === true;
+
+  // 給与明細タブのリアルタイムプレビュー用マージデータ
+  const slipData = useMemo(() => {
+    if (!selectedPayroll || !isDirty || !livePreview) return selectedPayroll ?? null;
+    const isBwPayroll = !!(selectedPayroll as any).useBluewingLogic;
+    const bwExtra = isBwPayroll
+      ? Number((selectedPayroll as any).saturdayPay ?? 0)
+        + Number(selectedPayroll.overtimePay ?? 0)
+        + Number(selectedPayroll.lateNightPay ?? 0)
+        + Number(selectedPayroll.holidayPay ?? 0)
+        + Number(selectedPayroll.commissionPay ?? 0)
+        + Number((selectedPayroll as any).bluewingPerformanceAllowance ?? 0)
+      : 0;
+    const liveGross = livePreview.grossSalary + bwExtra;
+    return {
+      ...selectedPayroll,
+      baseSalary: livePreview.baseSalary,
+      grossSalary: liveGross,
+      socialInsurance: livePreview.socialInsurance,
+      childcareSupportContribution: livePreview.childcareSupportContribution,
+      employmentInsurance: livePreview.employmentInsurance,
+      incomeTax: livePreview.incomeTax,
+      residentTax: livePreview.residentTax,
+      totalDeductions: livePreview.totalDeductions,
+      netSalary: liveGross - livePreview.totalDeductions,
+    };
+  }, [selectedPayroll, isDirty, livePreview]);
+
+  const slip = (slipData ?? selectedPayroll)!;
+
+  const slipAllowances = (isDirty && livePreview)
+    ? livePreview.allowanceRows.map((r, i) => ({ id: i, allowanceName: r.name, amount: r.amount }))
+    : printEmployeeAllowances;
+
+  const slipDeductions = (isDirty && livePreview)
+    ? livePreview.deductionRows.map((r, i) => ({ id: i, deductionName: r.name, amount: r.amount }))
+    : printEmployeeDeductions;
 
   const handleConfirm = async () => {
     if (!selectedPayrollId) return;
@@ -490,7 +532,15 @@ export default function PayrollList() {
             <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
               <TabsList className="w-full print:hidden">
                 <TabsTrigger value="allowance" className="flex-1">明細入力</TabsTrigger>
-                <TabsTrigger value="slip" className="flex-1">給与明細</TabsTrigger>
+                <TabsTrigger value="slip" className="flex-1 relative">
+                  給与明細
+                  {isDirty && livePreview && (
+                    <span className="ml-1.5 inline-flex items-center gap-0.5 text-[10px] bg-amber-100 text-amber-700 border border-amber-300 px-1 py-0.5 rounded-full font-medium leading-none print:hidden">
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                      プレビュー
+                    </span>
+                  )}
+                </TabsTrigger>
               </TabsList>
 
               {/* ── 給与明細タブ ── */}
@@ -514,7 +564,7 @@ export default function PayrollList() {
                     </div>
                     <div className="border-2 border-black p-3 rounded text-right">
                       <p className="text-xs text-gray-500 mb-0.5">差引支給額</p>
-                      <p className="text-xl font-bold">{formatCurrency(selectedPayroll.netSalary)}</p>
+                      <p className="text-xl font-bold">{formatCurrency(slip.netSalary)}</p>
                     </div>
                   </div>
 
@@ -525,10 +575,10 @@ export default function PayrollList() {
                       <table className="w-full text-sm">
                         <tbody>
                           {/* 基本給 */}
-                          {Number(selectedPayroll.baseSalary) !== 0 && (
+                          {Number(slip.baseSalary) !== 0 && (
                             <tr className="border-b border-dotted border-gray-300">
                               <td className="py-1.5 text-gray-700">基本給</td>
-                              <td className="py-1.5 text-right">{formatCurrency(Number(selectedPayroll.baseSalary))}</td>
+                              <td className="py-1.5 text-right">{formatCurrency(Number(slip.baseSalary))}</td>
                             </tr>
                           )}
                           {/* 土曜出勤手当 */}
@@ -571,8 +621,8 @@ export default function PayrollList() {
                             </tr>
                           )}
                           {/* カスタム手当（個別表示） */}
-                          {printEmployeeAllowances && printEmployeeAllowances.length > 0
-                            ? printEmployeeAllowances.map((a) => (
+                          {slipAllowances && slipAllowances.length > 0
+                            ? slipAllowances.map((a) => (
                                 <tr key={a.id} className="border-b border-dotted border-gray-300">
                                   <td className="py-1.5 text-gray-700">{a.allowanceName}</td>
                                   <td className="py-1.5 text-right">{formatCurrency(a.amount)}</td>
@@ -622,13 +672,12 @@ export default function PayrollList() {
                           )}
                           <tr className="border-t-2 border-black font-bold bg-gray-50">
                             <td className="py-1.5 pl-1">総支給額 (A)</td>
-                            <td className="py-1.5 text-right">{formatCurrency(selectedPayroll.grossSalary)}</td>
+                            <td className="py-1.5 text-right">{formatCurrency(slip.grossSalary)}</td>
                           </tr>
                         </tbody>
                       </table>
 
                       {/* ブルーウィング計算内訳 */}
-                      {/* @ts-expect-error */}
                       {(selectedPayroll as any).useBluewingLogic && (
                         <>
                           <h3 className="font-bold border-l-4 border-blue-600 pl-2 bg-blue-50 py-1 text-sm mt-4 mb-2 text-blue-900">BW業績手当 計算内訳</h3>
@@ -636,12 +685,10 @@ export default function PayrollList() {
                             <tbody>
                               <tr className="border-b border-dotted border-blue-200">
                                 <td className="py-1 pl-2">売上（BW）</td>
-                                {/* @ts-expect-error */}
                                 <td className="py-1 text-right pr-2">{formatCurrency((selectedPayroll as any).bluewingSalesAmount ?? 0)}</td>
                               </tr>
                               <tr className="border-b border-dotted border-blue-200">
                                 <td className="py-1 pl-2 text-blue-700 font-medium">業績手当</td>
-                                {/* @ts-expect-error */}
                                 <td className="py-1 text-right pr-2 text-blue-700 font-medium">{formatCurrency((selectedPayroll as any).bluewingPerformanceAllowance ?? 0)}</td>
                               </tr>
                             </tbody>
@@ -676,15 +723,15 @@ export default function PayrollList() {
                           <tr className="border-b border-dotted border-gray-300">
                             <td className="py-1.5 text-gray-700">社会保険料（健保・子育て支援金・厚年）</td>
                             <td className="py-1.5 text-right">
-                              {isTaxExempt ? <span className="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">非課税</span> : formatCurrency(Number(selectedPayroll.socialInsurance))}
+                              {isTaxExempt ? <span className="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">非課税</span> : formatCurrency(Number(slip.socialInsurance))}
                             </td>
                           </tr>
                           {/* うち子育て支援金 */}
-                          {(selectedPayroll.childcareSupportContribution ?? 0) > 0 && (
+                          {((slip as any).childcareSupportContribution ?? 0) > 0 && (
                             <tr className="border-b border-dotted border-gray-300">
                               <td className="py-1.5 text-gray-700">　うち 子ども・子育て支援金</td>
                               <td className="py-1.5 text-right">
-                                {isTaxExempt ? <span className="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">非課税</span> : formatCurrency(Number(selectedPayroll.childcareSupportContribution))}
+                                {isTaxExempt ? <span className="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">非課税</span> : formatCurrency(Number((slip as any).childcareSupportContribution))}
                               </td>
                             </tr>
                           )}
@@ -692,20 +739,20 @@ export default function PayrollList() {
                           <tr className="border-b border-dotted border-gray-300">
                             <td className="py-1.5 text-gray-700">雇用保険料</td>
                             <td className="py-1.5 text-right">
-                              {isTaxExempt ? <span className="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">非課税</span> : formatCurrency(Number(selectedPayroll.employmentInsurance))}
+                              {isTaxExempt ? <span className="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">非課税</span> : formatCurrency(Number(slip.employmentInsurance))}
                             </td>
                           </tr>
                           {/* 源泉所得税 */}
                           <tr className="border-b border-dotted border-gray-300">
                             <td className="py-1.5 text-gray-700">源泉所得税</td>
                             <td className="py-1.5 text-right">
-                              {isTaxExempt ? <span className="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">非課税</span> : formatCurrency(Number(selectedPayroll.incomeTax))}
+                              {isTaxExempt ? <span className="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">非課税</span> : formatCurrency(Number(slip.incomeTax))}
                             </td>
                           </tr>
                           {/* 市県民税（住民税）は非課税でも金額表示 */}
                           <tr className="border-b border-dotted border-gray-300">
                             <td className="py-1.5 text-gray-700">市県民税</td>
-                            <td className="py-1.5 text-right">{formatCurrency(Number(selectedPayroll.residentTax))}</td>
+                            <td className="py-1.5 text-right">{formatCurrency(Number(slip.residentTax))}</td>
                           </tr>
                           {/* 欠勤控除 */}
                           {Number(selectedPayroll.absenceDeduction) > 0 && (
@@ -715,15 +762,15 @@ export default function PayrollList() {
                             </tr>
                           )}
                           {/* 積立金・カスタム控除（個別表示） */}
-                          {printEmployeeDeductions && printEmployeeDeductions.length > 0
-                            ? printEmployeeDeductions.map((d) => (
+                          {slipDeductions && slipDeductions.length > 0
+                            ? slipDeductions.map((d) => (
                                 <tr key={d.id} className="border-b border-dotted border-gray-300">
                                   <td className="py-1.5 text-gray-700">{d.deductionName}</td>
                                   <td className="py-1.5 text-right">{formatCurrency(d.amount)}</td>
                                 </tr>
                               ))
                             : (() => {
-                                const customDed = (selectedPayroll as any).customDeductionsTotal ?? 0;
+                                const customDed = (slip as any).customDeductionsTotal ?? livePreview?.customDeductionsTotal ?? 0;
                                 return customDed > 0 ? (
                                   <tr className="border-b border-dotted border-gray-300">
                                     <td className="py-1.5 text-gray-700">積立金・その他</td>
@@ -734,14 +781,14 @@ export default function PayrollList() {
                           }
                           <tr className="border-t-2 border-black font-bold bg-gray-50">
                             <td className="py-1.5 pl-1">控除合計 (B)</td>
-                            <td className="py-1.5 text-right">{formatCurrency(selectedPayroll.totalDeductions)}</td>
+                            <td className="py-1.5 text-right">{formatCurrency(slip.totalDeductions)}</td>
                           </tr>
                         </tbody>
                       </table>
 
                       <div className="mt-4 border-2 border-black p-3 bg-gray-50 flex justify-between items-center rounded">
                         <span className="font-bold text-sm">差引支給額 (A - B)</span>
-                        <span className="text-lg font-bold">{formatCurrency(selectedPayroll.netSalary)}</span>
+                        <span className="text-lg font-bold">{formatCurrency(slip.netSalary)}</span>
                       </div>
 
                       {selectedPayroll.status !== "confirmed" && (
@@ -768,6 +815,7 @@ export default function PayrollList() {
                       };
                     })()}
                     onDirtyChange={setIsDirty}
+                    onPreviewChange={setLivePreview}
                     year={year}
                     month={month}
                   />

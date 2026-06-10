@@ -55,10 +55,26 @@ function newUid() {
   return `row-${Date.now()}-${++uidCounter}`;
 }
 
+export interface PayrollLivePreview {
+  baseSalary: number;
+  grossSalary: number;
+  allowanceRows: { name: string; amount: number; isTaxable: boolean }[];
+  socialInsurance: number;
+  childcareSupportContribution: number;
+  employmentInsurance: number;
+  incomeTax: number;
+  residentTax: number;
+  customDeductionsTotal: number;
+  deductionRows: { name: string; amount: number }[];
+  totalDeductions: number;
+  netSalary: number;
+}
+
 interface Props {
   employee: Employee;
   monthlyData?: { workDays: number; saturdayWorkDays: number; sundayWorkDays: number };
   onDirtyChange?: (isDirty: boolean) => void;
+  onPreviewChange?: (preview: PayrollLivePreview) => void;
   year?: number;
   month?: number;
 }
@@ -435,7 +451,7 @@ function DisplayRow({
   );
 }
 
-export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year, month }: Props) {
+export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, onPreviewChange, year, month }: Props) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const employeeId = employee.id;
@@ -506,6 +522,8 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
   const [isDirty, setIsDirty] = useState(false);
   const onDirtyChangeRef = useRef(onDirtyChange);
   useEffect(() => { onDirtyChangeRef.current = onDirtyChange; });
+  const onPreviewChangeRef = useRef(onPreviewChange);
+  useEffect(() => { onPreviewChangeRef.current = onPreviewChange; });
 
   const markDirty = useCallback(() => {
     setIsDirty(true);
@@ -715,6 +733,44 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
 
   const isBwEmployee = !!(employee as unknown as { useBluewingLogic?: boolean }).useBluewingLogic;
   const fmt = (v: number) => v >= 0 ? v.toLocaleString("ja-JP") : "—";
+
+  useEffect(() => {
+    if (!onPreviewChangeRef.current) return;
+    const mappedAllowanceRows = rows
+      .filter(r => r.defId !== null)
+      .map(r => {
+        const def = (allowanceDefinitions as { id: number; name: string; isTaxable: boolean }[] | undefined)
+          ?.find(d => d.id === r.defId);
+        return { name: def?.name ?? "", amount: r.amount || 0, isTaxable: def?.isTaxable ?? true };
+      });
+    const mappedDeductionRows = deductionRows
+      .filter(r => r.defId !== null)
+      .map(r => {
+        const def = (deductionDefinitions as { id: number; name: string }[] | undefined)
+          ?.find(d => d.id === r.defId);
+        return { name: def?.name ?? "", amount: r.amount || 0 };
+      });
+    onPreviewChangeRef.current({
+      baseSalary: baseSalaryInput,
+      grossSalary: grandTotal,
+      allowanceRows: mappedAllowanceRows,
+      socialInsurance: healthInsurance + childcareSupportContribution + pensionInsurance,
+      childcareSupportContribution,
+      employmentInsurance,
+      incomeTax,
+      residentTax,
+      customDeductionsTotal,
+      deductionRows: mappedDeductionRows,
+      totalDeductions,
+      netSalary,
+    });
+  }, [
+    baseSalaryInput, grandTotal,
+    healthInsurance, childcareSupportContribution, pensionInsurance,
+    employmentInsurance, incomeTax, residentTax,
+    customDeductionsTotal, totalDeductions, netSalary,
+    rows, deductionRows, allowanceDefinitions, deductionDefinitions,
+  ]);
 
   return (
     <div className="flex flex-col gap-0 select-none">
