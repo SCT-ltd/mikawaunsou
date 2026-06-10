@@ -122,27 +122,30 @@ export default function PayrollList() {
   // 給与明細タブのリアルタイムプレビュー用マージデータ
   const slipData = useMemo(() => {
     if (!selectedPayroll || !isDirty || !livePreview) return selectedPayroll ?? null;
-    const isBwPayroll = !!(selectedPayroll as any).useBluewingLogic;
-    const bwExtra = isBwPayroll
-      ? Number((selectedPayroll as any).saturdayPay ?? 0)
-        + Number(selectedPayroll.overtimePay ?? 0)
-        + Number(selectedPayroll.lateNightPay ?? 0)
-        + Number(selectedPayroll.holidayPay ?? 0)
-        + Number(selectedPayroll.commissionPay ?? 0)
-        + Number((selectedPayroll as any).bluewingPerformanceAllowance ?? 0)
-      : 0;
-    const liveGross = livePreview.grossSalary + bwExtra;
+
+    // パネルで編集できる項目: baseSalary + customAllowances（employee_allowances）
+    // サーバー計算項目（残業・深夜・固定手当等）は selectedPayroll から引継ぎ
+    const selectedBaseSalary = Number(selectedPayroll.baseSalary) || 0;
+    const selectedCustomAllowances = Number((selectedPayroll as any).customAllowancesTotal) || 0;
+    const serverItems = Math.max(
+      0,
+      Number(selectedPayroll.grossSalary) - selectedBaseSalary - selectedCustomAllowances,
+    );
+    // livePreview.grossSalary = baseSalaryInput + allowancesTotal（パネル分のみ）
+    const liveGross = livePreview.grossSalary + serverItems;
+
+    // 控除: 保険料・所得税は savedPayroll の値を維持（サーバー計算ベース）
+    // カスタム控除のみリアルタイム差分を反映
+    const savedCustomDeductions = Number((selectedPayroll as any).customDeductionsTotal) || 0;
+    const liveTotalDeductions =
+      Number(selectedPayroll.totalDeductions) - savedCustomDeductions + livePreview.customDeductionsTotal;
+
     return {
       ...selectedPayroll,
       baseSalary: livePreview.baseSalary,
       grossSalary: liveGross,
-      socialInsurance: livePreview.socialInsurance,
-      childcareSupportContribution: livePreview.childcareSupportContribution,
-      employmentInsurance: livePreview.employmentInsurance,
-      incomeTax: livePreview.incomeTax,
-      residentTax: livePreview.residentTax,
-      totalDeductions: livePreview.totalDeductions,
-      netSalary: liveGross - livePreview.totalDeductions,
+      totalDeductions: liveTotalDeductions,
+      netSalary: liveGross - liveTotalDeductions,
     };
   }, [selectedPayroll, isDirty, livePreview]);
 
