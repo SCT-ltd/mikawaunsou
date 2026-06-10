@@ -382,10 +382,19 @@ export interface UpdatePayrollBody {
   notes?: string;
 }
 
+export type CalculatePayrollBodyCalculationMode =
+  (typeof CalculatePayrollBodyCalculationMode)[keyof typeof CalculatePayrollBodyCalculationMode];
+
+export const CalculatePayrollBodyCalculationMode = {
+  auto: "auto",
+  manual: "manual",
+} as const;
+
 export interface CalculatePayrollBody {
   employeeId: number;
   year: number;
   month: number;
+  calculationMode?: CalculatePayrollBodyCalculationMode;
 }
 
 export interface JournalEntry {

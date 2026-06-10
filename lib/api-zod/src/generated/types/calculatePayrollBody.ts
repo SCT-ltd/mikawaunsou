@@ -5,9 +5,11 @@
  * 給与明細・バックオフィス効率化システム API
  * OpenAPI spec version: 0.1.0
  */
+import type { CalculatePayrollBodyCalculationMode } from "./calculatePayrollBodyCalculationMode";
 
 export interface CalculatePayrollBody {
   employeeId: number;
   year: number;
   month: number;
+  calculationMode?: CalculatePayrollBodyCalculationMode;
 }

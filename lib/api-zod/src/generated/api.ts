@@ -740,6 +740,7 @@ export const CalculatePayrollBody = zod.object({
   employeeId: zod.number(),
   year: zod.number(),
   month: zod.number(),
+  calculationMode: zod.enum(["auto", "manual"]).optional(),
 });
 
 export const CalculatePayrollResponse = zod.object({

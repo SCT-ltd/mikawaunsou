@@ -1483,6 +1483,9 @@ components:
           type: integer
         month:
           type: integer
+        calculationMode:
+          type: string
+          enum: [auto, manual]
       required:
         - employeeId
         - year

@@ -11,6 +11,8 @@ import {
   useUpdateEmployee,
   useGetCompany,
   getListEmployeesQueryKey,
+  getListPayrollsQueryKey,
+  useCalculatePayroll,
   Employee,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -456,6 +458,7 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
   const updateAllowances = useUpdateEmployeeAllowances();
   const updateDeductions = useUpdateEmployeeDeductions();
   const updateEmployee = useUpdateEmployee();
+  const calculatePayroll = useCalculatePayroll();
 
   const [rows, setRows] = useState<AllowanceRow[]>([{ uid: newUid(), defId: null, amount: 0 }]);
   const [baseSalaryInput, setBaseSalaryInput] = useState<number>(0);
@@ -612,7 +615,23 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
 
       queryClient.invalidateQueries({ queryKey: getListEmployeesQueryKey({ active: true }) });
 
-      toast({ title: "保存しました", description: `${employee.name}の基本給・手当・差引を更新しました。` });
+      // 保存後に給与を自動再計算して payrolls テーブルを最新化
+      // → 給与明細タブが明細入力タブと一致するようになる
+      if (year != null && month != null) {
+        try {
+          await calculatePayroll.mutateAsync({
+            data: { employeeId, year, month, calculationMode: "manual" },
+          });
+          queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) });
+        } catch {
+          // 給与再計算失敗は警告のみ（手当保存自体は成功しているため）
+          toast({ title: "警告", description: "手当は保存しましたが給与の再計算に失敗しました。", variant: "destructive" });
+          markClean();
+          return;
+        }
+      }
+
+      toast({ title: "保存・再計算しました", description: `${employee.name}の明細を更新しました。` });
       markClean();
     } catch {
       toast({ title: "エラー", description: "保存に失敗しました。", variant: "destructive" });

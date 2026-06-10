@@ -9,6 +9,7 @@
 export * from "./allowanceDefinition";
 export * from "./allowanceDefinitionCalculationType";
 export * from "./calculatePayrollBody";
+export * from "./calculatePayrollBodyCalculationMode";
 export * from "./company";
 export * from "./createAllowanceDefinitionBody";
 export * from "./createAllowanceDefinitionBodyCalculationType";
