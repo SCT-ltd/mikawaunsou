@@ -781,7 +781,8 @@ type BWCalcResult = {
 function computeBWCalc(
   emp: Employee,
   rowData: Record<string, number | string>,
-  company: ReturnType<typeof useGetCompany>["data"]
+  company: ReturnType<typeof useGetCompany>["data"],
+  customAllowancesTotal: number
 ): BWCalcResult | null {
   const sales = Number(rowData.bluewingSalesAmount) || 0;
   if (sales <= 0) return null;
@@ -789,7 +790,8 @@ function computeBWCalc(
   const bwEmp = emp as unknown as {
     bluewingCommissionRate?: number;
     bluewingFixedOvertimeHours?: number;
-    bluewingFixedOvertimeAmount?: number;
+    earlyOvertimeAllowance?: number;
+    familyAllowance?: number;
   };
 
   const commissionRate  = bwEmp.bluewingCommissionRate    ?? 0;
@@ -801,8 +803,8 @@ function computeBWCalc(
   const holidayDays     = Number(rowData.holidayWorkDays)  || 0;
   const otUnitPrice     = Number(rowData.overtimeUnitPrice) || 2111;
 
-  const dailyWage     = company?.dailyWageWeekday  ?? 9808;
-  const dailySaturday = company?.dailyWageSaturday ?? 12260;
+  const dailyWage     = (company as unknown as { dailyWageWeekday?: number })?.dailyWageWeekday  ?? 9808;
+  const dailySaturday = (company as unknown as { dailyWageSaturday?: number })?.dailyWageSaturday ?? 12260;
 
   // 超過残業代
   const actualOTHours = Math.max(0, overtimeHours - fixedOTHours);
@@ -812,7 +814,7 @@ function computeBWCalc(
   const hourlyRate    = dailyWage / 8;
   const lateNightPay  = Math.round(hourlyRate * 0.25 * lateNightHours);
 
-  // 休日出勤
+  // 休日出勤（土日割増 × 休日出勤日数）
   const holidayPay    = Math.floor(dailySaturday * holidayDays);
 
   // 公式A: 調整済み歩合率 × 売上
@@ -820,21 +822,66 @@ function computeBWCalc(
   const adjustedRate = Math.max(0, commissionRate - otRatio);
   const solutionA    = Math.floor(sales * adjustedRate);
 
-  // 公式B: 基本給（平日+土曜）+ マスター手当 + 休日 + 深夜（固定残業・超過残業は除く）
+  // 公式B: 基本給（平日+土曜）+ マスター手当 + カスタム手当合計 + 休日 + 深夜
+  // ※ サーバー側の fixedAllowancesTotal = masterFixed + customAllowancesTotal と一致させる
   const masterAllowances =
-    (emp.transportationAllowance ?? 0) +
-    (emp.safetyDrivingAllowance  ?? 0) +
-    (emp.longDistanceAllowance   ?? 0) +
-    (emp.positionAllowance       ?? 0) +
-    ((emp as unknown as { familyAllowance?: number }).familyAllowance ?? 0);
-  const basePay    = Math.floor(workDays * dailyWage + saturdayDays * dailySaturday);
-  const solutionB  = Math.floor(basePay + masterAllowances + holidayPay + lateNightPay);
+    (emp.transportationAllowance        ?? 0) +
+    (emp.safetyDrivingAllowance         ?? 0) +
+    (emp.longDistanceAllowance          ?? 0) +
+    (emp.positionAllowance              ?? 0) +
+    (bwEmp.familyAllowance              ?? 0) +
+    (bwEmp.earlyOvertimeAllowance       ?? 0);
+  const basePay   = Math.floor(workDays * dailyWage + saturdayDays * dailySaturday);
+  const solutionB = Math.floor(basePay + masterAllowances + customAllowancesTotal + holidayPay + lateNightPay);
 
   // 解答C → 業績手当
   const solutionC      = solutionA - solutionB;
   const perfAllowance  = Math.max(0, solutionC);
 
   return { solutionA, solutionB, solutionC, perfAllowance, actualOTPay, otRatio, adjustedRate };
+}
+
+// ── BW Preview コンポーネント（カスタム手当を自動ロードして A/B/C 表示） ──
+function BWCalcPreview({
+  emp,
+  rowData,
+  company,
+}: {
+  emp: Employee;
+  rowData: Record<string, number | string>;
+  company: ReturnType<typeof useGetCompany>["data"];
+}) {
+  const { data: customAllowances = [] } = useGetEmployeeAllowances(emp.id, {
+    query: {
+      queryKey: getGetEmployeeAllowancesQueryKey(emp.id),
+      staleTime: 30_000,
+    },
+  });
+
+  const customTotal = customAllowances.reduce((s, a) => s + (a.amount ?? 0), 0);
+  const bw = computeBWCalc(emp, rowData, company, customTotal);
+
+  if (!bw) {
+    return <div className="text-[9px] text-muted-foreground/40 text-center leading-none">A/B/C —</div>;
+  }
+
+  const isPlus = bw.solutionC >= 0;
+  return (
+    <div className="text-[9px] leading-snug space-y-0.5 px-0.5 border-t border-violet-100 pt-0.5">
+      <div className="flex justify-between gap-1 text-muted-foreground">
+        <span className="font-semibold text-violet-500">A</span>
+        <span className="tabular-nums">¥{bw.solutionA.toLocaleString("ja-JP")}</span>
+      </div>
+      <div className="flex justify-between gap-1 text-muted-foreground">
+        <span className="font-semibold text-violet-500">B</span>
+        <span className="tabular-nums">¥{bw.solutionB.toLocaleString("ja-JP")}</span>
+      </div>
+      <div className={`flex justify-between gap-1 font-bold border-t border-violet-100 pt-0.5 ${isPlus ? "text-green-700" : "text-red-500"}`}>
+        <span>業績</span>
+        <span className="tabular-nums">{isPlus ? `+¥${bw.perfAllowance.toLocaleString("ja-JP")}` : "なし"}</span>
+      </div>
+    </div>
+  );
 }
 
 // ── メイン画面 ────────────────────────────────────────────────────────────
@@ -1620,29 +1667,7 @@ export default function MonthlyInput() {
                           {isBW ? (
                             <div className="flex flex-col gap-1">
                               {numInput("bluewingSalesAmount", { step: "1" })}
-                              {(() => {
-                                const bw = computeBWCalc(emp, rowData, company);
-                                if (!bw) return (
-                                  <div className="text-[9px] text-muted-foreground/40 text-center leading-none">A/B/C —</div>
-                                );
-                                const isPlus = bw.solutionC >= 0;
-                                return (
-                                  <div className="text-[9px] leading-snug space-y-0.5 px-0.5 border-t border-violet-100 pt-0.5">
-                                    <div className="flex justify-between gap-1 text-muted-foreground">
-                                      <span className="font-semibold text-violet-500">A</span>
-                                      <span className="tabular-nums">¥{bw.solutionA.toLocaleString("ja-JP")}</span>
-                                    </div>
-                                    <div className="flex justify-between gap-1 text-muted-foreground">
-                                      <span className="font-semibold text-violet-500">B</span>
-                                      <span className="tabular-nums">¥{bw.solutionB.toLocaleString("ja-JP")}</span>
-                                    </div>
-                                    <div className={`flex justify-between gap-1 font-bold border-t border-violet-100 pt-0.5 ${isPlus ? "text-green-700" : "text-red-500"}`}>
-                                      <span>業績</span>
-                                      <span className="tabular-nums">{isPlus ? `+¥${bw.perfAllowance.toLocaleString("ja-JP")}` : "なし"}</span>
-                                    </div>
-                                  </div>
-                                );
-                              })()}
+                              <BWCalcPreview emp={emp} rowData={rowData} company={company} />
                             </div>
                           ) : (
                             <div className="h-7 flex items-center justify-center text-muted-foreground/40">—</div>
