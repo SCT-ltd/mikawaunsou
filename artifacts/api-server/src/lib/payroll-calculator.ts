@@ -437,8 +437,12 @@ export interface BluewingPayrollInput {
 export interface BluewingPayrollResult {
   actualOvertimeHours: number;
   actualOvertimePay: number;
-  targetAmount: number;
-  baseTotal: number;
+  /** 公式A: 売上 × (歩合率 - 超過残業代/売上) */
+  solutionA: number;
+  /** 公式B: 基本給 + 各手当 + 休日出勤 + 深夜手当（固定残業代・超過残業代は含まない） */
+  solutionB: number;
+  /** 解答C = A - B（マイナスなら業績手当なし） */
+  solutionC: number;
   performanceAllowance: number;
   grossSalary: number;
 }
@@ -457,19 +461,33 @@ export function calculateBluewingPayroll(input: BluewingPayrollInput): BluewingP
     lateNightPay,
   } = input;
 
-  const actualOvertimeHours  = Math.max(0, overtimeHours - fixedOvertimeHours);
-  const actualOvertimePay    = Math.round(actualOvertimeHours * overtimeUnitPrice);
-  const targetAmount         = Math.floor(bluewingSalesAmount * commissionRate);
-  const baseTotal            = Math.floor(baseSalary + fixedOvertimeAmount + holidayPay);
-  const rawPerformance       = Math.max(0, targetAmount - baseTotal);
-  const performanceAllowance = Math.round(rawPerformance / 1000) * 1000;
-  const grossSalary          = Math.floor(baseTotal + actualOvertimePay + fixedAllowancesTotal + lateNightPay + performanceAllowance);
+  // 超過残業（固定時間を超えた分）
+  const actualOvertimeHours = Math.max(0, overtimeHours - fixedOvertimeHours);
+  const actualOvertimePay   = Math.round(actualOvertimeHours * overtimeUnitPrice);
+
+  // 公式A: 超過残業代の売上比率を歩合率から差し引いた実効歩合率 × 売上
+  const otRatio      = bluewingSalesAmount > 0
+    ? Math.round((actualOvertimePay / bluewingSalesAmount) * 1000) / 1000  // 小数第3位まで
+    : 0;
+  const adjustedRate = Math.max(0, commissionRate - otRatio);
+  const solutionA    = Math.floor(bluewingSalesAmount * adjustedRate);
+
+  // 公式B: 基本給 + 各手当 + 休日出勤 + 深夜手当（固定残業代・超過残業代は含まない）
+  const solutionB = Math.floor(baseSalary + fixedAllowancesTotal + holidayPay + lateNightPay);
+
+  // 解答C = A - B → プラスのときのみ業績手当
+  const solutionC            = solutionA - solutionB;
+  const performanceAllowance = Math.max(0, solutionC);
+
+  // 総支給 = 固定残業代 + 超過残業代 + 解答B + 業績手当
+  const grossSalary = Math.floor(fixedOvertimeAmount + actualOvertimePay + solutionB + performanceAllowance);
 
   return {
     actualOvertimeHours,
     actualOvertimePay,
-    targetAmount,
-    baseTotal,
+    solutionA,
+    solutionB,
+    solutionC,
     performanceAllowance,
     grossSalary,
   };
