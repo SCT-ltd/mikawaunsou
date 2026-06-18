@@ -767,6 +767,76 @@ function computeQuickEstimate(
   return { gross: grossEstimate, net };
 }
 
+// ── BW公式A/B/C リアルタイム計算 ────────────────────────────────────────
+type BWCalcResult = {
+  solutionA: number;
+  solutionB: number;
+  solutionC: number;
+  perfAllowance: number;
+  actualOTPay: number;
+  otRatio: number;
+  adjustedRate: number;
+};
+
+function computeBWCalc(
+  emp: Employee,
+  rowData: Record<string, number | string>,
+  company: ReturnType<typeof useGetCompany>["data"]
+): BWCalcResult | null {
+  const sales = Number(rowData.bluewingSalesAmount) || 0;
+  if (sales <= 0) return null;
+
+  const bwEmp = emp as unknown as {
+    bluewingCommissionRate?: number;
+    bluewingFixedOvertimeHours?: number;
+    bluewingFixedOvertimeAmount?: number;
+  };
+
+  const commissionRate  = bwEmp.bluewingCommissionRate    ?? 0;
+  const fixedOTHours    = bwEmp.bluewingFixedOvertimeHours ?? 0;
+  const overtimeHours   = Number(rowData.overtimeHours)   || 0;
+  const lateNightHours  = Number(rowData.lateNightHours)  || 0;
+  const workDays        = Number(rowData.workDays)         || 0;
+  const saturdayDays    = Number(rowData.saturdayWorkDays) || 0;
+  const holidayDays     = Number(rowData.holidayWorkDays)  || 0;
+  const otUnitPrice     = Number(rowData.overtimeUnitPrice) || 2111;
+
+  const dailyWage     = company?.dailyWageWeekday  ?? 9808;
+  const dailySaturday = company?.dailyWageSaturday ?? 12260;
+
+  // 超過残業代
+  const actualOTHours = Math.max(0, overtimeHours - fixedOTHours);
+  const actualOTPay   = Math.round(actualOTHours * otUnitPrice);
+
+  // 深夜手当
+  const hourlyRate    = dailyWage / 8;
+  const lateNightPay  = Math.round(hourlyRate * 0.25 * lateNightHours);
+
+  // 休日出勤
+  const holidayPay    = Math.floor(dailySaturday * holidayDays);
+
+  // 公式A: 調整済み歩合率 × 売上
+  const otRatio      = sales > 0 ? Math.round((actualOTPay / sales) * 1000) / 1000 : 0;
+  const adjustedRate = Math.max(0, commissionRate - otRatio);
+  const solutionA    = Math.floor(sales * adjustedRate);
+
+  // 公式B: 基本給（平日+土曜）+ マスター手当 + 休日 + 深夜（固定残業・超過残業は除く）
+  const masterAllowances =
+    (emp.transportationAllowance ?? 0) +
+    (emp.safetyDrivingAllowance  ?? 0) +
+    (emp.longDistanceAllowance   ?? 0) +
+    (emp.positionAllowance       ?? 0) +
+    ((emp as unknown as { familyAllowance?: number }).familyAllowance ?? 0);
+  const basePay    = Math.floor(workDays * dailyWage + saturdayDays * dailySaturday);
+  const solutionB  = Math.floor(basePay + masterAllowances + holidayPay + lateNightPay);
+
+  // 解答C → 業績手当
+  const solutionC      = solutionA - solutionB;
+  const perfAllowance  = Math.max(0, solutionC);
+
+  return { solutionA, solutionB, solutionC, perfAllowance, actualOTPay, otRatio, adjustedRate };
+}
+
 // ── メイン画面 ────────────────────────────────────────────────────────────
 export default function MonthlyInput() {
   const currentDate = new Date();
@@ -1546,9 +1616,34 @@ export default function MonthlyInput() {
                         <td className="p-1 border-x border-amber-100/60">{numInput("drivingDistanceKm", { step: "0.1" })}</td>
 
                         {/* 給与基礎1列 */}
-                        <td className="p-1 border-x border-violet-100/60">
+                        <td className="p-1 border-x border-violet-100/60 align-top">
                           {isBW ? (
-                            numInput("bluewingSalesAmount", { step: "1" })
+                            <div className="flex flex-col gap-1">
+                              {numInput("bluewingSalesAmount", { step: "1" })}
+                              {(() => {
+                                const bw = computeBWCalc(emp, rowData, company);
+                                if (!bw) return (
+                                  <div className="text-[9px] text-muted-foreground/40 text-center leading-none">A/B/C —</div>
+                                );
+                                const isPlus = bw.solutionC >= 0;
+                                return (
+                                  <div className="text-[9px] leading-snug space-y-0.5 px-0.5 border-t border-violet-100 pt-0.5">
+                                    <div className="flex justify-between gap-1 text-muted-foreground">
+                                      <span className="font-semibold text-violet-500">A</span>
+                                      <span className="tabular-nums">¥{bw.solutionA.toLocaleString("ja-JP")}</span>
+                                    </div>
+                                    <div className="flex justify-between gap-1 text-muted-foreground">
+                                      <span className="font-semibold text-violet-500">B</span>
+                                      <span className="tabular-nums">¥{bw.solutionB.toLocaleString("ja-JP")}</span>
+                                    </div>
+                                    <div className={`flex justify-between gap-1 font-bold border-t border-violet-100 pt-0.5 ${isPlus ? "text-green-700" : "text-red-500"}`}>
+                                      <span>業績</span>
+                                      <span className="tabular-nums">{isPlus ? `+¥${bw.perfAllowance.toLocaleString("ja-JP")}` : "なし"}</span>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                            </div>
                           ) : (
                             <div className="h-7 flex items-center justify-center text-muted-foreground/40">—</div>
                           )}
