@@ -841,7 +841,9 @@ function computeBWCalc(
   return { solutionA, solutionB, solutionC, perfAllowance, actualOTPay, otRatio, adjustedRate };
 }
 
-// ── BW Preview コンポーネント（カスタム手当を自動ロードして A/B/C 表示） ──
+// ── BW Preview コンポーネント（A/B/C リアルタイム表示） ──
+// B にはマスター手当のみ含む。皆勤・無事故・愛車等カスタム手当は
+// 手当サイドバーで設定・保存後、一括計算で確定値に反映される。
 function BWCalcPreview({
   emp,
   rowData,
@@ -851,15 +853,7 @@ function BWCalcPreview({
   rowData: Record<string, number | string>;
   company: ReturnType<typeof useGetCompany>["data"];
 }) {
-  const { data: customAllowances = [] } = useGetEmployeeAllowances(emp.id, {
-    query: {
-      queryKey: getGetEmployeeAllowancesQueryKey(emp.id),
-      staleTime: 30_000,
-    },
-  });
-
-  const customTotal = customAllowances.reduce((s, a) => s + (a.amount ?? 0), 0);
-  const bw = computeBWCalc(emp, rowData, company, customTotal);
+  const bw = computeBWCalc(emp, rowData, company, 0);
 
   if (!bw) {
     return <div className="text-[9px] text-muted-foreground/40 text-center leading-none">A/B/C —</div>;
