@@ -800,7 +800,6 @@ function computeBWCalc(
   const lateNightHours  = Number(rowData.lateNightHours)  || 0;
   const workDays        = Number(rowData.workDays)         || 0;
   const saturdayDays    = Number(rowData.saturdayWorkDays) || 0;
-  const holidayDays     = Number(rowData.holidayWorkDays)  || 0;
   const otUnitPrice     = Number(rowData.overtimeUnitPrice) || 2111;
 
   const dailyWage     = (company as unknown as { dailyWageWeekday?: number })?.dailyWageWeekday  ?? 9808;
@@ -810,12 +809,15 @@ function computeBWCalc(
   const actualOTHours = Math.max(0, overtimeHours - fixedOTHours);
   const actualOTPay   = Math.round(actualOTHours * otUnitPrice);
 
-  // 深夜手当
-  const hourlyRate    = dailyWage / 8;
-  const lateNightPay  = Math.round(hourlyRate * 0.25 * lateNightHours);
+  // BW深夜手当: 時給 = round(残業単価 / 1.25) → 例 round(2111/1.25)=1689
+  // 深夜割増 per h = floor(1689×0.25)=422、4.5h×422=1899
+  const bwBaseHourlyRate         = Math.round(otUnitPrice / 1.25);
+  const lateNightPremiumPerHour  = Math.floor(bwBaseHourlyRate * 0.25);
+  const lateNightPay             = Math.floor(lateNightPremiumPerHour * lateNightHours);
 
-  // 休日出勤（土日割増 × 休日出勤日数）
-  const holidayPay    = Math.floor(dailySaturday * holidayDays);
+  // 休日出勤: テーブルの「日曜/祝日」列 = sundayWorkDays を使用
+  const holidayDays2 = Number(rowData.sundayWorkDays) || 0;
+  const holidayPay   = Math.floor(dailySaturday * holidayDays2);
 
   // 公式A: 調整済み歩合率 × 売上
   const otRatio      = sales > 0 ? Math.round((actualOTPay / sales) * 1000) / 1000 : 0;

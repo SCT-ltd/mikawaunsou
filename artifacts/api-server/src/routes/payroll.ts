@@ -369,10 +369,15 @@ router.post("/payroll/calculate", async (req, res) => {
     const customAllowancesFixedTotal = customAllowances.reduce((s, a) => s + a.amount, 0);
     const fixedAllowancesTotal = masterFixedAllowances + customAllowancesFixedTotal;
 
-    const holidayPay = Math.floor((company.dailyWageSaturday ?? 12260) * (record.holidayWorkDays ?? 0));
+    // 休日出勤: テーブルの「日曜/祝日」列 = sundayWorkDays に入力される
+    const holidayPay = Math.floor((company.dailyWageSaturday ?? 12260) * (record.sundayWorkDays ?? 0));
 
-    const hourlyRate = dailyWage / 8;
-    const bwLateNightPay = roundJapanese(hourlyRate * 0.25 * (record.lateNightHours ?? 0));
+    // BW深夜手当: 時給 = round(残業単価 / 1.25)  例) round(2111/1.25) = 1689
+    // 深夜割増 per h = floor(1689 × 0.25) = 422、4.5h × 422 = 1899
+    const bwOtUnitPrice = record.overtimeUnitPrice ?? 2111;
+    const bwBaseHourlyRate = Math.round(bwOtUnitPrice / 1.25);
+    const bwLateNightPremiumPerHour = Math.floor(bwBaseHourlyRate * 0.25);
+    const bwLateNightPay = Math.floor(bwLateNightPremiumPerHour * (record.lateNightHours ?? 0));
 
     const bwResult = calculateBluewingPayroll({
       bluewingSalesAmount: record.bluewingSalesAmount,
