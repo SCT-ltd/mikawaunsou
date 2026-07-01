@@ -6,7 +6,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Link } from "wouter";
 import { Badge } from "@/components/ui/badge";
 
 export default function Dashboard() {
@@ -155,9 +154,7 @@ export default function Dashboard() {
                       pendingEmployees.map(emp => (
                         <TableRow key={emp.id}>
                           <TableCell className="font-medium">
-                            <Link href={`/employees/${emp.id}`} className="hover:underline">
-                              {emp.name}
-                            </Link>
+                            <span>{emp.name}</span>
                           </TableCell>
                           <TableCell>
                             {!emp.hasMonthlyRecord ? (

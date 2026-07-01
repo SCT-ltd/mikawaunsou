@@ -23,16 +23,10 @@ export { getInsuranceGrade, PENSION_MAX_STD };
 // 令和8年度 保険料率定数（協会けんぽ東京支部）
 // ────────────────────────────────────────────────────────────────────────────
 
-/** 健康保険料率（折半前）: 9.85% */
-export const HEALTH_RATE_R8 = 0.0985;
 /** 健康保険料率（従業員折半）: 4.925% */
 export const HEALTH_EMPLOYEE_RATE_R8 = 0.04925;
-/** 介護保険料率（折半前）: 1.62% */
-export const CARE_RATE_R8 = 0.0162;
 /** 健康保険＋介護保険料率（従業員折半）: (9.85+1.62)/2 = 5.735% */
 export const HEALTH_WITH_CARE_EMPLOYEE_RATE_R8 = 0.05735;
-/** 子ども・子育て支援金率（折半前）: 0.23% */
-export const CHILDCARE_SUPPORT_RATE_R8 = 0.0023;
 /** 子ども・子育て支援金率（従業員折半）: 0.115% */
 export const CHILDCARE_SUPPORT_EMPLOYEE_RATE_R8 = 0.00115;
 /** 厚生年金保険料率（従業員折半）: 9.15% */
@@ -45,34 +39,6 @@ export const EMP_INS_RATE_R8 = 0.005;
 //    ※ calculateInsuranceAndTax では standardRemuneration を直接使用するため、
 //      このテーブルは getInsuranceGrade / calculateSocialInsurance で引き続き参照
 // ────────────────────────────────────────────────────────────────────────────
-
-const HEALTH_RATE_HALF = 0.04925;
-const PENSION_RATE_HALF = 0.09150;
-
-
-/**
- * 報酬月額から社会保険料（健保折半＋厚年折半）を計算する
- * ※ calculateInsuranceAndTax を使う場合はこの関数不要。
- *    既存コードとの後方互換維持のため残置。
- */
-export function calculateSocialInsurance(
-  monthlySalary: number,
-  options?: { healthRate?: number; pensionRate?: number },
-): {
-  healthInsurance: number;
-  pension: number;
-  total: number;
-} {
-  const { stdMonthly, hasPension } = getInsuranceGrade(monthlySalary);
-  const healthRate = options?.healthRate ?? HEALTH_RATE_HALF;
-  const pensionRate = options?.pensionRate ?? PENSION_RATE_HALF;
-  const healthInsurance = round50sen(stdMonthly * healthRate);
-  const pension = hasPension
-    ? round50sen(Math.min(stdMonthly, PENSION_MAX_STD) * pensionRate)
-    : 0;
-
-  return { healthInsurance, pension, total: healthInsurance + pension };
-}
 
 // ────────────────────────────────────────────────────────────────────────────
 // 2. 給与所得控除・累進税率（内部ユーティリティ）
