@@ -169,6 +169,7 @@ router.post("/payroll/calculate", async (req, res) => {
     const manualResidentTax = emp.residentTax ?? 0;
     const manualTotalDeductions = roundJapanese(
       manualSocialInsurance + manualEmpIns + manualIncomeTax + manualResidentTax + customDeductionsTotal
+      + (emp.otherDeductionMonthly ?? 0) // その他控除（積立金等）: フロント/仕様書に合わせ控除合計へ算入
     );
     const manualNetSalary = roundJapanese(manualGrossSalary - manualTotalDeductions);
 
@@ -278,6 +279,7 @@ router.post("/payroll/calculate", async (req, res) => {
     const socialInsurance = ins.healthInsurance + ins.childcareSupportContribution + ins.pension;
     const totalDeductions = roundJapanese(
       socialInsurance + ins.employmentInsurance + ins.incomeTax + (emp.residentTax ?? 0) + customDeductionsTotal
+      + (emp.otherDeductionMonthly ?? 0) // その他控除（積立金等）: フロント/仕様書に合わせ控除合計へ算入
     );
     const netSalary = roundJapanese(grossSalary - totalDeductions);
 
@@ -423,6 +425,7 @@ router.post("/payroll/calculate", async (req, res) => {
     const socialInsurance = bwIns.healthInsurance + bwIns.childcareSupportContribution + bwIns.pension;
     const totalDeductions = roundJapanese(
       socialInsurance + bwIns.employmentInsurance + bwIns.incomeTax + (emp.residentTax ?? 0) + customDeductionsTotal
+      + (emp.otherDeductionMonthly ?? 0) // その他控除（積立金等）: フロント/仕様書に合わせ控除合計へ算入
     );
     const netSalary = roundJapanese(grossSalary - totalDeductions);
 
@@ -673,7 +676,10 @@ router.post("/payroll/calculate", async (req, res) => {
   }
 
   // カスタム控除（積立金等）を totalDeductions / netSalary に反映
-  const stdTotalDeductions = roundJapanese(result.totalDeductions + customDeductionsTotal);
+  const stdTotalDeductions = roundJapanese(
+    result.totalDeductions + customDeductionsTotal
+    + (emp.otherDeductionMonthly ?? 0) // その他控除（積立金等）: フロント/仕様書に合わせ控除合計へ算入
+  );
   const stdNetSalary = roundJapanese(result.grossSalary - stdTotalDeductions);
 
   // Upsert payroll
