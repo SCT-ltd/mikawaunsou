@@ -8,7 +8,16 @@
  *   - 令和8年版（@workspace/tax-tables-reiwa8 共有ライブラリ参照）
  */
 
-import { calculateIncomeTaxReiwa8MonthlyKou } from "@workspace/tax-tables-reiwa8";
+import {
+  calculateIncomeTaxReiwa8MonthlyKou,
+  round50sen,
+  getInsuranceGrade,
+  PENSION_MAX_STD,
+} from "@workspace/tax-tables-reiwa8";
+
+// 社会保険の等級表・端数処理は共有ライブラリに集約。従来この module が公開していた
+// getInsuranceGrade / PENSION_MAX_STD は後方互換のため再エクスポートする。
+export { getInsuranceGrade, PENSION_MAX_STD };
 
 // ────────────────────────────────────────────────────────────────────────────
 // 令和8年度 保険料率定数（協会けんぽ東京支部）
@@ -28,8 +37,6 @@ export const CHILDCARE_SUPPORT_RATE_R8 = 0.0023;
 export const CHILDCARE_SUPPORT_EMPLOYEE_RATE_R8 = 0.00115;
 /** 厚生年金保険料率（従業員折半）: 9.15% */
 export const PENSION_EMPLOYEE_RATE_R8 = 0.0915;
-/** 厚生年金標準報酬月額の上限 */
-export const PENSION_MAX_STD = 650_000;
 /** 雇用保険料率（労働者負担）令和8年度 一般の事業: 0.5% */
 export const EMP_INS_RATE_R8 = 0.005;
 
@@ -42,77 +49,6 @@ export const EMP_INS_RATE_R8 = 0.005;
 const HEALTH_RATE_HALF = 0.04925;
 const PENSION_RATE_HALF = 0.09150;
 
-/**
- * 標準報酬月額等級テーブル
- * [報酬月額以上, 報酬月額未満, 標準報酬月額, 厚生年金適用]
- */
-const INSURANCE_GRADES: [number, number, number, boolean][] = [
-  [          0,  63_000,  58_000, false],
-  [ 63_000,  73_000,  68_000, false],
-  [ 73_000,  83_000,  78_000, false],
-  [ 83_000,  93_000,  88_000,  true],
-  [ 93_000, 101_000,  98_000,  true],
-  [101_000, 107_000, 104_000,  true],
-  [107_000, 114_000, 110_000,  true],
-  [114_000, 122_000, 118_000,  true],
-  [122_000, 130_000, 126_000,  true],
-  [130_000, 138_000, 134_000,  true],
-  [138_000, 146_000, 142_000,  true],
-  [146_000, 155_000, 150_000,  true],
-  [155_000, 165_000, 160_000,  true],
-  [165_000, 175_000, 170_000,  true],
-  [175_000, 185_000, 180_000,  true],
-  [185_000, 195_000, 190_000,  true],
-  [195_000, 210_000, 200_000,  true],
-  [210_000, 230_000, 220_000,  true],
-  [230_000, 250_000, 240_000,  true],
-  [250_000, 270_000, 260_000,  true],
-  [270_000, 290_000, 280_000,  true],
-  [290_000, 310_000, 300_000,  true],
-  [310_000, 330_000, 320_000,  true],
-  [330_000, 350_000, 340_000,  true],
-  [350_000, 370_000, 360_000,  true],
-  [370_000, 395_000, 380_000,  true],
-  [395_000, 425_000, 410_000,  true],
-  [425_000, 455_000, 440_000,  true],
-  [455_000, 485_000, 470_000,  true],
-  [485_000, 515_000, 500_000,  true],
-  [515_000, 545_000, 530_000,  true],
-  [545_000, 575_000, 560_000,  true],
-  [575_000, 605_000, 590_000,  true],
-  [605_000, 635_000, 620_000,  true],
-  [635_000, 665_000, 650_000,  true],
-  [665_000, 695_000, 680_000, false],
-  [695_000, 730_000, 710_000, false],
-  [730_000, 770_000, 750_000, false],
-  [770_000, 810_000, 790_000, false],
-  [810_000, 855_000, 830_000, false],
-  [855_000, 905_000, 880_000, false],
-  [905_000, 955_000, 930_000, false],
-  [955_000, 1_005_000, 980_000, false],
-  [1_005_000, 1_055_000, 1_030_000, false],
-  [1_055_000, 1_115_000, 1_090_000, false],
-  [1_115_000, 1_175_000, 1_150_000, false],
-  [1_175_000, 1_235_000, 1_210_000, false],
-  [1_235_000, 1_295_000, 1_270_000, false],
-  [1_295_000, 1_355_000, 1_330_000, false],
-  [1_355_000, Infinity,  1_390_000, false],
-];
-
-function round50sen(x: number): number {
-  const frac = x - Math.floor(x);
-  return frac < 0.5 ? Math.floor(x) : Math.ceil(x);
-}
-
-/**
- * 報酬月額から標準報酬月額等級を取得する
- */
-export function getInsuranceGrade(monthlySalary: number): { stdMonthly: number; hasPension: boolean } {
-  const grade = INSURANCE_GRADES.find(
-    ([min, max]) => monthlySalary >= min && monthlySalary < max
-  ) ?? INSURANCE_GRADES[INSURANCE_GRADES.length - 1];
-  return { stdMonthly: grade[2], hasPension: grade[3] };
-}
 
 /**
  * 報酬月額から社会保険料（健保折半＋厚年折半）を計算する
