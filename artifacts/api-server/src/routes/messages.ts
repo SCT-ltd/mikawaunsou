@@ -1,5 +1,6 @@
 import { Router, type Response } from "express";
 import webpush from "web-push";
+import { paramStr } from "../lib/params";
 import { db, messagesTable, pushSubscriptionsTable, employeesTable } from "@workspace/db";
 import { eq, and, desc, asc, isNull, sql } from "drizzle-orm";
 import { requireAdmin, requireOwnerOrAdmin } from "../lib/auth-middleware";
@@ -177,8 +178,8 @@ router.get("/messages/conversations", requireAdmin, async (_req, res) => {
 });
 
 // ── ドライバーの未読件数（事務所→ドライバー） ─────────
-router.get("/messages/:employeeId/unread-count", requireOwnerOrAdmin(req => parseInt(req.params["employeeId"], 10)), async (req, res) => {
-  const employeeId = parseInt(req.params["employeeId"], 10);
+router.get("/messages/:employeeId/unread-count", requireOwnerOrAdmin(req => parseInt(paramStr(req.params["employeeId"]), 10)), async (req, res) => {
+  const employeeId = parseInt(paramStr(req.params["employeeId"]), 10);
   if (isNaN(employeeId)) return res.status(400).json({ error: "Invalid employeeId" });
   const rows = await db
     .select({ id: messagesTable.id })
@@ -192,8 +193,8 @@ router.get("/messages/:employeeId/unread-count", requireOwnerOrAdmin(req => pars
 });
 
 // ── メッセージ取得 ─────────────────────────────────────
-router.get("/messages/:employeeId", requireOwnerOrAdmin(req => parseInt(req.params["employeeId"], 10)), async (req, res) => {
-  const employeeId = parseInt(req.params["employeeId"], 10);
+router.get("/messages/:employeeId", requireOwnerOrAdmin(req => parseInt(paramStr(req.params["employeeId"]), 10)), async (req, res) => {
+  const employeeId = parseInt(paramStr(req.params["employeeId"]), 10);
   if (isNaN(employeeId)) return res.status(400).json({ error: "Invalid employeeId" });
   const messages = await db
     .select()
@@ -206,8 +207,8 @@ router.get("/messages/:employeeId", requireOwnerOrAdmin(req => parseInt(req.para
 // ── 既読処理 ───────────────────────────────────────────
 // reader='office' → employeeからのメッセージを既読
 // reader='employee' → officeからのメッセージを既読
-router.post("/messages/:employeeId/read", requireOwnerOrAdmin(req => parseInt(req.params["employeeId"], 10)), async (req, res) => {
-  const employeeId = parseInt(req.params["employeeId"], 10);
+router.post("/messages/:employeeId/read", requireOwnerOrAdmin(req => parseInt(paramStr(req.params["employeeId"]), 10)), async (req, res) => {
+  const employeeId = parseInt(paramStr(req.params["employeeId"]), 10);
   if (isNaN(employeeId)) return res.status(400).json({ error: "Invalid employeeId" });
   const { reader } = req.body as { reader: "office" | "employee" };
 

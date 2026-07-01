@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import { db, attendanceRecordsTable } from "@workspace/db";
+import { paramStr } from "./params";
 import { eq } from "drizzle-orm";
 
 /**
@@ -107,7 +108,7 @@ export async function requireAttendanceRecordOwnerOrAdmin(
     return next();
   }
 
-  const id = parseInt(req.params["id"] ?? "", 10);
+  const id = parseInt(paramStr(req.params["id"]), 10);
   if (Number.isNaN(id)) {
     return res.status(400).json({ error: "id が不正です" });
   }

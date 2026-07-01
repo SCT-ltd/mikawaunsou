@@ -1,5 +1,6 @@
 import { Router, type Response } from "express";
 import { db, attendanceRecordsTable, employeesTable, absenceRecordsTable, liveLocationsTable, attendanceDraftsTable } from "@workspace/db";
+import { paramStr } from "../lib/params";
 import { asc, eq, and, gte, lte, sql } from "drizzle-orm";
 import { ABSENCE_DAYS } from "./absences";
 import { requireAdmin, requireOwnerOrAdmin, requireAttendanceRecordOwnerOrAdmin } from "../lib/auth-middleware";
@@ -175,8 +176,8 @@ router.get("/attendance/today", async (req, res) => {
 });
 
 // ── 社員の今日の打刻一覧 ─────────────────────────────
-router.get("/attendance/employee/:employeeId/today", requireOwnerOrAdmin(req => parseInt(req.params.employeeId, 10)), async (req, res) => {
-  const employeeId = parseInt(req.params.employeeId, 10);
+router.get("/attendance/employee/:employeeId/today", requireOwnerOrAdmin(req => parseInt(paramStr(req.params.employeeId), 10)), async (req, res) => {
+  const employeeId = parseInt(paramStr(req.params.employeeId), 10);
   const today = todayJST();
 
   const records = await db
@@ -334,7 +335,7 @@ router.post("/attendance/record", async (req, res) => {
 // admin: 任意レコードを編集可
 // driver: 自分のレコードのみ編集可（他人なら 403、未存在なら 404）
 router.patch("/attendance/records/:id", requireAttendanceRecordOwnerOrAdmin, async (req, res) => {
-  const id = parseInt(req.params.id, 10);
+  const id = parseInt(paramStr(req.params.id), 10);
   const { eventType, recordedAt, workDate } = req.body as {
     eventType?: "clock_in" | "clock_out" | "break_start" | "break_end";
     recordedAt?: string;
@@ -394,7 +395,7 @@ router.patch("/attendance/records/:id", requireAttendanceRecordOwnerOrAdmin, asy
 // admin: 任意レコードを削除可
 // driver: 自分のレコードのみ削除可（他人なら 403、未存在なら 404）
 router.delete("/attendance/records/:id", requireAttendanceRecordOwnerOrAdmin, async (req, res) => {
-  const id = parseInt(req.params.id, 10);
+  const id = parseInt(paramStr(req.params.id), 10);
 
   const [deleted] = await db
     .delete(attendanceRecordsTable)
@@ -410,8 +411,8 @@ router.delete("/attendance/records/:id", requireAttendanceRecordOwnerOrAdmin, as
 });
 
 // ── 本日のチェックリスト取得（復元用） ────────────────
-router.get("/attendance/checklist/:employeeId", requireOwnerOrAdmin(req => parseInt(req.params.employeeId, 10)), async (req, res) => {
-  const employeeId = parseInt(req.params.employeeId, 10);
+router.get("/attendance/checklist/:employeeId", requireOwnerOrAdmin(req => parseInt(paramStr(req.params.employeeId), 10)), async (req, res) => {
+  const employeeId = parseInt(paramStr(req.params.employeeId), 10);
   const today = todayJST();
 
   const [clockInRec] = await db
@@ -430,8 +431,8 @@ router.get("/attendance/checklist/:employeeId", requireOwnerOrAdmin(req => parse
 });
 
 // ── チェックリスト結果のリアルタイム保存 ────────────────
-router.patch("/attendance/checklist/:employeeId", requireOwnerOrAdmin(req => parseInt(req.params.employeeId, 10)), async (req, res) => {
-  const employeeId = parseInt(req.params.employeeId, 10);
+router.patch("/attendance/checklist/:employeeId", requireOwnerOrAdmin(req => parseInt(paramStr(req.params.employeeId), 10)), async (req, res) => {
+  const employeeId = parseInt(paramStr(req.params.employeeId), 10);
   const { checklistNgItems } = req.body as { checklistNgItems: string };
 
   if (!checklistNgItems) {
@@ -466,8 +467,8 @@ router.patch("/attendance/checklist/:employeeId", requireOwnerOrAdmin(req => par
 });
 
 // ── 入力ドラフト 取得 ─────────────────────────────────
-router.get("/attendance/draft/:employeeId", requireOwnerOrAdmin(req => parseInt(req.params.employeeId, 10)), async (req, res) => {
-  const employeeId = parseInt(req.params.employeeId, 10);
+router.get("/attendance/draft/:employeeId", requireOwnerOrAdmin(req => parseInt(paramStr(req.params.employeeId), 10)), async (req, res) => {
+  const employeeId = parseInt(paramStr(req.params.employeeId), 10);
   const today = todayJST();
 
   const [draft] = await db
@@ -483,8 +484,8 @@ router.get("/attendance/draft/:employeeId", requireOwnerOrAdmin(req => parseInt(
 });
 
 // ── 入力ドラフト 保存（upsert） ───────────────────────
-router.patch("/attendance/draft/:employeeId", requireOwnerOrAdmin(req => parseInt(req.params.employeeId, 10)), async (req, res) => {
-  const employeeId = parseInt(req.params.employeeId, 10);
+router.patch("/attendance/draft/:employeeId", requireOwnerOrAdmin(req => parseInt(paramStr(req.params.employeeId), 10)), async (req, res) => {
+  const employeeId = parseInt(paramStr(req.params.employeeId), 10);
   const { departure, arrival, startOdometer, endOdometer } = req.body as {
     departure?: string | null;
     arrival?: string | null;
@@ -522,8 +523,8 @@ router.patch("/attendance/draft/:employeeId", requireOwnerOrAdmin(req => parseIn
 });
 
 // ── 社員の打刻履歴（日付指定） ───────────────────────
-router.get("/attendance/employee/:employeeId", requireOwnerOrAdmin(req => parseInt(req.params.employeeId, 10)), async (req, res) => {
-  const employeeId = parseInt(req.params.employeeId, 10);
+router.get("/attendance/employee/:employeeId", requireOwnerOrAdmin(req => parseInt(paramStr(req.params.employeeId), 10)), async (req, res) => {
+  const employeeId = parseInt(paramStr(req.params.employeeId), 10);
   const { date } = req.query;
   const targetDate = (date as string) ?? todayJST();
 
@@ -540,8 +541,8 @@ router.get("/attendance/employee/:employeeId", requireOwnerOrAdmin(req => parseI
 });
 
 // ── 社員の月間打刻履歴 ───────────────────────────────
-router.get("/attendance/employee/:employeeId/month", requireOwnerOrAdmin(req => parseInt(req.params.employeeId, 10)), async (req, res) => {
-  const employeeId = parseInt(req.params.employeeId, 10);
+router.get("/attendance/employee/:employeeId/month", requireOwnerOrAdmin(req => parseInt(paramStr(req.params.employeeId), 10)), async (req, res) => {
+  const employeeId = parseInt(paramStr(req.params.employeeId), 10);
   const year = parseInt(req.query.year as string, 10) || new Date().getFullYear();
   const month = parseInt(req.query.month as string, 10) || (new Date().getMonth() + 1);
 
