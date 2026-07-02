@@ -11,6 +11,10 @@ out-tsc
 # dependencies
 node_modules
 
+# local env (no dotenv loader; consumed by scripts/dev.ps1)
+.env.local
+.env*.local
+
 # IDEs and editors
 /.idea
 .project

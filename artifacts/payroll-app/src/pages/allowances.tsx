@@ -40,10 +40,17 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { Plus, Edit2, Trash2, Settings2, Users, Wallet, Calculator, Minus, Search, KeyRound, RotateCcw, UserPlus } from "lucide-react";
+import { Plus, Edit2, Trash2, Settings2, Users, Wallet, Calculator, Minus, Search, KeyRound, RotateCcw, UserPlus, Pin } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { DatePartsInput } from "@/components/ui/date-parts-input";
+import {
+  HEALTH_EMPLOYEE_RATE_R8,
+  CARE_EMPLOYEE_RATE_R8,
+  PENSION_EMPLOYEE_RATE_R8,
+  CHILDCARE_SUPPORT_EMPLOYEE_RATE_R8,
+  EMP_INS_EMPLOYEE_RATE_R8,
+} from "@/lib/tax-tables-reiwa8";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -61,6 +68,7 @@ const allowanceSchema = z.object({
   isTaxable: z.boolean().default(true),
   calculationType: z.enum(["fixed", "variable", "unit_time"]).default("variable"),
   isActive: z.boolean().default(true).optional(),
+  pinned: z.boolean().default(false),
   sortOrder: z.number().int().min(1, "1以上の整数を入力してください").optional(),
 });
 type AllowanceFormValues = z.infer<typeof allowanceSchema>;
@@ -79,12 +87,12 @@ function AllowanceMasterTab() {
 
   const form = useForm<AllowanceFormValues>({
     resolver: zodResolver(allowanceSchema),
-    defaultValues: { name: "", description: "", isTaxable: true, calculationType: "variable", isActive: true },
+    defaultValues: { name: "", description: "", isTaxable: true, calculationType: "variable", isActive: true, pinned: false },
   });
 
   const handleOpenCreate = () => {
     setEditingAllowance(null);
-    form.reset({ name: "", description: "", isTaxable: true, calculationType: "variable", isActive: true });
+    form.reset({ name: "", description: "", isTaxable: true, calculationType: "variable", isActive: true, pinned: false });
     setIsDialogOpen(true);
   };
 
@@ -96,6 +104,7 @@ function AllowanceMasterTab() {
       isTaxable: allowance.isTaxable,
       calculationType: (allowance.calculationType as "fixed" | "variable" | "unit_time") ?? "variable",
       isActive: allowance.isActive,
+      pinned: allowance.pinned ?? false,
       sortOrder: Math.max(1, allowance.sortOrder),
     });
     setIsDialogOpen(true);
@@ -106,12 +115,12 @@ function AllowanceMasterTab() {
       if (editingAllowance) {
         await updateAllowance.mutateAsync({
           id: editingAllowance.id,
-          data: { name: data.name, description: data.description || undefined, isTaxable: data.isTaxable, calculationType: data.calculationType, isActive: data.isActive ?? true, sortOrder: data.sortOrder },
+          data: { name: data.name, description: data.description || undefined, isTaxable: data.isTaxable, calculationType: data.calculationType, isActive: data.isActive ?? true, sortOrder: data.sortOrder, pinned: data.pinned },
         });
         toast({ title: "保存しました", description: "手当マスタを更新しました。" });
       } else {
         await createAllowance.mutateAsync({
-          data: { name: data.name, description: data.description || undefined, isTaxable: data.isTaxable, calculationType: data.calculationType },
+          data: { name: data.name, description: data.description || undefined, isTaxable: data.isTaxable, calculationType: data.calculationType, pinned: data.pinned },
         });
         toast({ title: "追加しました", description: "新しい手当を登録しました。" });
       }
@@ -179,13 +188,20 @@ function AllowanceMasterTab() {
                           <Badge variant="outline" className={ct.color}>{ct.label}</Badge>
                         </TableCell>
                         <TableCell>
-                          {a.isTaxable ? (
-                            <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">課税</Badge>
-                          ) : (
-                            <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">非課税</Badge>
-                          )}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {a.isTaxable ? (
+                              <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200 dark:bg-red-500/15 dark:text-red-300 dark:border-red-500/30">課税</Badge>
+                            ) : (
+                              <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30">非課税</Badge>
+                            )}
+                            {a.pinned && (
+                              <Badge variant="outline" className="gap-1 bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30">
+                                <Pin className="h-3 w-3" />固定
+                              </Badge>
+                            )}
+                          </div>
                         </TableCell>
-                        <TableCell>{Math.max(0, a.sortOrder)}</TableCell>
+                        <TableCell>{Math.max(1, a.sortOrder)}</TableCell>
                         <TableCell>
                           {a.isActive ? <Badge variant="secondary">有効</Badge> : <Badge variant="outline" className="text-muted-foreground">無効</Badge>}
                         </TableCell>
@@ -247,6 +263,15 @@ function AllowanceMasterTab() {
                   <div>
                     <FormLabel className="text-base">課税対象</FormLabel>
                     <p className="text-sm text-muted-foreground">所得税の計算対象に含める場合はオン</p>
+                  </div>
+                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="pinned" render={({ field }) => (
+                <FormItem className="flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50/50 dark:bg-amber-500/10 dark:border-amber-500/25 p-4">
+                  <div>
+                    <FormLabel className="text-base flex items-center gap-1.5"><Pin className="h-4 w-4 text-amber-600" />リストに固定</FormLabel>
+                    <p className="text-sm text-muted-foreground">オンにすると全社員の手当リストに常時表示され、毎回追加する手間が省けます</p>
                   </div>
                   <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
                 </FormItem>
@@ -432,7 +457,7 @@ function DeductionMasterTab() {
                         <TableCell>
                           <Badge variant="outline" className={ct.color}>{ct.label}</Badge>
                         </TableCell>
-                        <TableCell>{Math.max(0, d.sortOrder)}</TableCell>
+                        <TableCell>{Math.max(1, d.sortOrder)}</TableCell>
                         <TableCell>
                           {d.isActive ? <Badge variant="secondary">有効</Badge> : <Badge variant="outline" className="text-muted-foreground">無効</Badge>}
                         </TableCell>
@@ -568,13 +593,7 @@ const empFullSchema = z.object({
   salaryType: z.enum(["fixed", "daily", "hourly"]).default("daily"),
   baseSalary: z.coerce.number().min(0).default(0),
   residentTax: z.coerce.number().min(0).default(0),
-  healthInsuranceMonthly: z.coerce.number().min(0).default(0),
-  pensionMonthly: z.coerce.number().min(0).default(0),
-  incomeTaxMonthly: z.coerce.number().min(0).default(0),
   otherDeductionMonthly: z.coerce.number().min(0).default(0),
-  commissionRatePerKm: z.coerce.number().min(0).default(0),
-  commissionRatePerCase: z.coerce.number().min(0).default(0),
-  mikawaCommissionRate: z.coerce.number().min(0).max(100).default(0),
   useBluewingLogic: z.boolean().default(false),
   bluewingCommissionRate: z.coerce.number().min(0).max(100).default(0),
   bluewingFixedOvertimeHours: z.coerce.number().min(0).default(0),
@@ -620,6 +639,21 @@ function EmpFormFields({
 }) {
   const dobValue = f.watch("dateOfBirth");
   const age = calcAge(dobValue);
+  const watchUseBluewing = f.watch("useBluewingLogic");
+
+  // 会社設定の共通日給レートを参照（キャッシュ読み取り）。給与タイプの説明ラベルや
+  // 個人単価上書き欄のヒントを、固定値ではなく会社設定の実値から動的生成する。
+  const { data: company } = useGetCompany();
+  const cs = company as { dailyWageWeekday?: number; dailyWageSaturday?: number; hourlyWageSunday?: number } | undefined;
+  const wageWeekday  = cs?.dailyWageWeekday  ?? 9808;
+  const wageSaturday = cs?.dailyWageSaturday ?? 12260;
+  const wageSundayHr = cs?.hourlyWageSunday  ?? 1655;
+  const dailyTypeLabel = `日給制（平日${wageWeekday.toLocaleString()}円 / 土曜${wageSaturday.toLocaleString()}円 / 日曜${wageSundayHr.toLocaleString()}円/h）`;
+
+  // 個人単価の入力値を監視し「→ 適用: ◯◯円」の実値表示に使う
+  const ovrWeekday  = Number(f.watch("dailyRateWeekday"))   || 0;
+  const ovrSaturday = Number(f.watch("dailyRateSaturday"))  || 0;
+  const ovrOtRate   = Number(f.watch("overtimeHourlyRate")) || 0;
 
   useEffect(() => {
     if (!dobValue) return;
@@ -644,6 +678,8 @@ function EmpFormFields({
         ))}
       </TabsList>
 
+      {/* タブ切替で高さがずれないよう、内容を固定高さ＋内部スクロールで包む */}
+      <div className="h-[56vh] overflow-y-auto overflow-x-hidden pr-1 mt-1">
       {/* ── 基本情報タブ ── */}
       <TabsContent value="basic" className="space-y-4 pt-4">
         <div className="grid grid-cols-2 gap-3">
@@ -778,7 +814,7 @@ function EmpFormFields({
                 <Select onValueChange={field.onChange} value={field.value}>
                   <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                   <SelectContent>
-                    <SelectItem value="daily">日給制（平日9,808円 / 土曜12,260円 / 日曜1,655円/h）</SelectItem>
+                    <SelectItem value="daily">{dailyTypeLabel}</SelectItem>
                     <SelectItem value="fixed">固定給（毎月固定額）</SelectItem>
                     <SelectItem value="hourly">時給制（時給単価を入力）</SelectItem>
                   </SelectContent>
@@ -806,61 +842,99 @@ function EmpFormFields({
                   </FormControl><FormMessage /></FormItem>
               )} />
             )}
-            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 space-y-3">
-              <p className="text-xs font-medium text-amber-800">個人単価設定（0=会社共通単価を使用）</p>
+            {salaryType === "daily" && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-500/10 dark:border-amber-500/25 p-3.5 space-y-3">
+              <div>
+                <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">個人単価（この社員だけの特別単価）</p>
+                <p className="text-xs text-amber-700 dark:text-amber-300/80 mt-0.5">
+                  空欄なら会社共通単価が自動で使われます。単価が違う社員だけ入力してください。
+                </p>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <FormField control={f.control} name="dailyRateWeekday" render={({ field }) => (
-                  <FormItem><FormLabel className="text-xs">㊥ 平日日当（円/日）</FormLabel>
+                  <FormItem><FormLabel className="text-xs font-medium">平日 日当（円/日）</FormLabel>
                     <FormControl>
                       <div className="flex items-center gap-1">
-                        <TipInput type="number" min={0} step={1} placeholder="0" tip={"平日1日あたりの個人日当。\n0の場合は会社共通単価（9,808円）を使用"} {...field} className="text-right bg-white" />
+                        <TipInput type="number" min={0} step={1} placeholder={wageWeekday.toLocaleString()}
+                          tip={`平日1日あたりの個人日当。空欄なら会社共通単価（${wageWeekday.toLocaleString()}円）を使用`}
+                          {...field} value={field.value ? field.value : ""}
+                          onChange={(e) => field.onChange(e.target.value === "" ? 0 : Number(e.target.value))}
+                          className="text-right bg-white dark:bg-slate-900/40" />
                         <span className="text-xs text-muted-foreground shrink-0">円/日</span>
                       </div>
                     </FormControl>
+                    <p className={`text-[11px] mt-1 ${ovrWeekday > 0 ? "text-amber-800 dark:text-amber-300 font-semibold" : "text-muted-foreground"}`}>
+                      → 適用: {ovrWeekday > 0 ? `個人 ${ovrWeekday.toLocaleString()}円` : `会社共通 ${wageWeekday.toLocaleString()}円`}
+                    </p>
                     <FormMessage /></FormItem>
                 )} />
                 <FormField control={f.control} name="dailyRateSaturday" render={({ field }) => (
-                  <FormItem><FormLabel className="text-xs">㊡ 休日日当（円/日）</FormLabel>
+                  <FormItem><FormLabel className="text-xs font-medium">土曜・休日 日当（円/日）</FormLabel>
                     <FormControl>
                       <div className="flex items-center gap-1">
-                        <TipInput type="number" min={0} step={1} placeholder="0" tip={"土曜・休日1日あたりの個人日当。\n0の場合は会社共通単価（12,260円）を使用"} {...field} className="text-right bg-white" />
+                        <TipInput type="number" min={0} step={1} placeholder={wageSaturday.toLocaleString()}
+                          tip={`土曜・休日1日あたりの個人日当。空欄なら会社共通単価（${wageSaturday.toLocaleString()}円）を使用`}
+                          {...field} value={field.value ? field.value : ""}
+                          onChange={(e) => field.onChange(e.target.value === "" ? 0 : Number(e.target.value))}
+                          className="text-right bg-white dark:bg-slate-900/40" />
                         <span className="text-xs text-muted-foreground shrink-0">円/日</span>
                       </div>
                     </FormControl>
+                    <p className={`text-[11px] mt-1 ${ovrSaturday > 0 ? "text-amber-800 dark:text-amber-300 font-semibold" : "text-muted-foreground"}`}>
+                      → 適用: {ovrSaturday > 0 ? `個人 ${ovrSaturday.toLocaleString()}円` : `会社共通 ${wageSaturday.toLocaleString()}円`}
+                    </p>
                     <FormMessage /></FormItem>
                 )} />
                 <FormField control={f.control} name="overtimeHourlyRate" render={({ field }) => (
-                  <FormItem><FormLabel className="text-xs">㊨ 残業時給（円/時）</FormLabel>
+                  <FormItem><FormLabel className="text-xs font-medium">残業 時給（円/時）</FormLabel>
                     <FormControl>
                       <div className="flex items-center gap-1">
-                        <TipInput type="number" min={0} step={1} placeholder="0" tip={"割増後の残業時給単価（入力値がそのまま残業時給）。\n残業手当 = この単価 × 残業時間\n60時間超は ×1.20 追加割増\n0の場合は基本給 ÷ 月平均労働時間 × 1.25 で自動計算"} {...field} className="text-right bg-white" />
+                        <TipInput type="number" min={0} step={1} placeholder="自動計算"
+                          tip={"割増後の残業時給単価（入力値がそのまま残業時給）。\n残業手当 = この単価 × 残業時間\n60時間超は ×1.20 追加割増\n空欄なら 基本給 ÷ 月平均労働時間 × 1.25 で自動計算"}
+                          {...field} value={field.value ? field.value : ""}
+                          onChange={(e) => field.onChange(e.target.value === "" ? 0 : Number(e.target.value))}
+                          className="text-right bg-white dark:bg-slate-900/40" />
                         <span className="text-xs text-muted-foreground shrink-0">円/時</span>
                       </div>
                     </FormControl>
-                    <p className="text-xs text-muted-foreground">残業手当 = この単価 × 残業時間（60h超は×1.20追加）</p>
+                    <p className={`text-[11px] mt-1 ${ovrOtRate > 0 ? "text-amber-800 dark:text-amber-300 font-semibold" : "text-muted-foreground"}`}>
+                      → 適用: {ovrOtRate > 0 ? `個人 ${ovrOtRate.toLocaleString()}円/時` : "自動計算（基本給÷月平均×1.25）"}
+                    </p>
                     <FormMessage /></FormItem>
                 )} />
               </div>
               <details className="text-xs text-muted-foreground">
-                <summary className="cursor-pointer">高度な設定（残業の分単位切り上げ）</summary>
+                <summary className="cursor-pointer select-none hover:text-foreground">残業を「分単位」で計算する（任意・上級者向け）</summary>
+                <p className="text-[11px] text-muted-foreground mt-1.5">
+                  残業時間を指定の分数で切り上げ、1単位あたりの加算額で計算します（例：10分単位 × 2,031円）。両方入力したときだけ有効です。
+                </p>
                 <div className="grid grid-cols-2 gap-3 mt-2">
                   <FormField control={f.control} name="overtimeUnitMinutes" render={({ field }) => (
-                    <FormItem><FormLabel className="text-xs">残業切り上げ単位（分）</FormLabel>
+                    <FormItem><FormLabel className="text-xs">切り上げ単位（分）</FormLabel>
                       <FormControl>
-                        <TipInput type="number" min={0} step={1} placeholder="0" tip={"残業時間をこの分数単位で切り上げ。\n例：10分設定→残業13分は20分に切り上げ。\n0の場合は標準計算（分単位）"} {...field} className="text-right bg-white" />
+                        <TipInput type="number" min={0} step={1} placeholder="例: 10"
+                          tip={"残業時間をこの分数単位で切り上げ。\n例：10分設定→残業13分は20分に切り上げ。\n空欄なら標準計算（分単位）"}
+                          {...field} value={field.value ? field.value : ""}
+                          onChange={(e) => field.onChange(e.target.value === "" ? 0 : Number(e.target.value))}
+                          className="text-right bg-white dark:bg-slate-900/40" />
                       </FormControl>
                       <FormMessage /></FormItem>
                   )} />
                   <FormField control={f.control} name="overtimeUnitRate" render={({ field }) => (
-                    <FormItem><FormLabel className="text-xs">残業単位あたり加算額（円）</FormLabel>
+                    <FormItem><FormLabel className="text-xs">1単位あたり加算額（円）</FormLabel>
                       <FormControl>
-                        <TipInput type="number" min={0} step={1} placeholder="0" tip={"切り上げ1単位あたりの加算額。\n例：10分単位で2,031円→残業20分＝4,062円"} {...field} className="text-right bg-white" />
+                        <TipInput type="number" min={0} step={1} placeholder="例: 2,031"
+                          tip={"切り上げ1単位あたりの加算額。\n例：10分単位で2,031円→残業20分＝4,062円"}
+                          {...field} value={field.value ? field.value : ""}
+                          onChange={(e) => field.onChange(e.target.value === "" ? 0 : Number(e.target.value))}
+                          className="text-right bg-white dark:bg-slate-900/40" />
                       </FormControl>
                       <FormMessage /></FormItem>
                   )} />
                 </div>
               </details>
             </div>
+            )}
             <FormField control={f.control} name="residentTax" render={({ field }) => (
               <FormItem><FormLabel>市町村民税（月額・円）</FormLabel>
                 <FormControl>
@@ -872,95 +946,22 @@ function EmpFormFields({
                 <p className="text-xs text-muted-foreground">毎月差し引く住民税（特別徴収）の月額</p>
                 <FormMessage /></FormItem>
             )} />
-            <div className="grid grid-cols-2 gap-3">
-              <FormField control={f.control} name="healthInsuranceMonthly" render={({ field }) => (
-                <FormItem><FormLabel>健康保険料（月額・円）</FormLabel>
-                  <FormControl>
-                    <div className="flex items-center gap-1">
-                      <TipInput type="number" min={0} step={1} placeholder="0" tip={"健康保険料の月額（被保険者負担分）。\n0の場合は標準報酬月額×料率（9.85%の折半）で自動計算。\n手動設定は自動計算より優先されます"} {...field} className="text-right" />
-                      <span className="text-sm text-muted-foreground shrink-0">円</span>
-                    </div>
-                  </FormControl>
-                  <p className="text-xs text-muted-foreground">0の場合は自動計算</p>
-                  <FormMessage /></FormItem>
-              )} />
-              <FormField control={f.control} name="pensionMonthly" render={({ field }) => (
-                <FormItem><FormLabel>厚生年金（月額・円）</FormLabel>
-                  <FormControl>
-                    <div className="flex items-center gap-1">
-                      <TipInput type="number" min={0} step={1} placeholder="0" tip={"厚生年金保険料の月額（被保険者負担分）。\n0の場合は標準報酬月額×料率（18.3%の折半）で自動計算。\n手動設定は自動計算より優先されます"} {...field} className="text-right" />
-                      <span className="text-sm text-muted-foreground shrink-0">円</span>
-                    </div>
-                  </FormControl>
-                  <p className="text-xs text-muted-foreground">0の場合は自動計算</p>
-                  <FormMessage /></FormItem>
-              )} />
+            <div className="rounded-md border border-dashed border-muted-foreground/30 bg-muted/20 p-3">
+              <p className="text-xs text-muted-foreground">
+                健康保険料・厚生年金・源泉所得税は、標準報酬月額と令和8年公式テーブルから
+                <span className="font-medium text-foreground">自動計算</span>されます（個別の月額手動設定は廃止）。
+              </p>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <FormField control={f.control} name="incomeTaxMonthly" render={({ field }) => (
-                <FormItem><FormLabel>源泉所得税（月額・円）</FormLabel>
-                  <FormControl>
-                    <div className="flex items-center gap-1">
-                      <TipInput type="number" min={0} step={1} placeholder="0" tip={"源泉所得税の月額。\n0の場合は令和8年国税庁月額表（甲欄）で自動計算。\n扶養人数・配偶者の有無が計算に影響します"} {...field} className="text-right" />
-                      <span className="text-sm text-muted-foreground shrink-0">円</span>
-                    </div>
-                  </FormControl>
-                  <p className="text-xs text-muted-foreground">0の場合は自動計算</p>
-                  <FormMessage /></FormItem>
-              )} />
-              <FormField control={f.control} name="otherDeductionMonthly" render={({ field }) => (
-                <FormItem><FormLabel>その他控除（月額・円）</FormLabel>
-                  <FormControl>
-                    <div className="flex items-center gap-1">
-                      <TipInput type="number" min={0} step={100} placeholder="0" tip={"積立金・組合費など毎月定額で差し引くその他の控除額。\n複数ある場合は合計額を入力"} {...field} className="text-right" />
-                      <span className="text-sm text-muted-foreground shrink-0">円</span>
-                    </div>
-                  </FormControl>
-                  <p className="text-xs text-muted-foreground">積立金・組合費等</p>
-                  <FormMessage /></FormItem>
-              )} />
-            </div>
-          </div>
-        </div>
-
-        <Separator />
-
-        <div>
-          <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">歩合設定</h4>
-          <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <FormField control={f.control} name="commissionRatePerKm" render={({ field }) => (
-                <FormItem><FormLabel>歩合単価（円/km）</FormLabel>
-                  <FormControl>
-                    <div className="flex items-center gap-1">
-                      <span className="text-muted-foreground text-sm">¥</span>
-                      <TipInput type="number" step="0.1" tip={"走行距離1kmあたりの歩合単価。\n歩合給（距離）＝走行km × この単価\n0の場合は距離歩合なし"} {...field} />
-                    </div>
-                  </FormControl></FormItem>
-              )} />
-              <FormField control={f.control} name="commissionRatePerCase" render={({ field }) => (
-                <FormItem><FormLabel>歩合単価（円/件）</FormLabel>
-                  <FormControl>
-                    <div className="flex items-center gap-1">
-                      <span className="text-muted-foreground text-sm">¥</span>
-                      <TipInput type="number" tip={"配送1件あたりの歩合単価。\n歩合給（件数）＝配送件数 × この単価\n0の場合は件数歩合なし"} {...field} />
-                    </div>
-                  </FormControl></FormItem>
-              )} />
-            </div>
-            <FormField control={f.control} name="mikawaCommissionRate" render={({ field }) => (
-              <FormItem>
-                <FormLabel>三川歩合率（%）</FormLabel>
+            <FormField control={f.control} name="otherDeductionMonthly" render={({ field }) => (
+              <FormItem><FormLabel>その他控除（月額・円）</FormLabel>
                 <FormControl>
-                  <div className="flex items-center gap-2">
-                    <TipInput type="number" min={0} max={100} step={0.1} placeholder="例: 37.5" tip={"三川ロジック計算時に使用する個人の歩合率（%）。\n例：37.5 と入力 → 37.5%\n月次実績の売上金額×この率＝歩合給"} {...field}
-                      className="text-right max-w-[160px]" />
-                    <span className="text-sm text-muted-foreground shrink-0">%</span>
+                  <div className="flex items-center gap-1 max-w-[240px]">
+                    <TipInput type="number" min={0} step={100} placeholder="0" tip={"積立金・組合費など毎月定額で差し引くその他の控除額。\n複数ある場合は合計額を入力"} {...field} className="text-right" />
+                    <span className="text-sm text-muted-foreground shrink-0">円</span>
                   </div>
                 </FormControl>
-                <p className="text-xs text-muted-foreground">三川ロジック給与計算時に使用するデフォルト歩合率。</p>
-                <FormMessage />
-              </FormItem>
+                <p className="text-xs text-muted-foreground">積立金・組合費等</p>
+                <FormMessage /></FormItem>
             )} />
           </div>
         </div>
@@ -979,6 +980,8 @@ function EmpFormFields({
                 <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
               </FormItem>
             )} />
+            {watchUseBluewing && (
+            <>
             <FormField control={f.control} name="bluewingCommissionRate" render={({ field }) => (
               <FormItem>
                 <FormLabel>ブルーウィング歩合率（%）</FormLabel>
@@ -1015,6 +1018,8 @@ function EmpFormFields({
                 </FormItem>
               )} />
             </div>
+            </>
+            )}
           </div>
         </div>
       </TabsContent>
@@ -1102,6 +1107,7 @@ function EmpFormFields({
           {t.content}
         </TabsContent>
       ))}
+      </div>
     </Tabs>
   );
 }
@@ -1109,7 +1115,8 @@ function EmpFormFields({
 function EmployeeMasterTab() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { data: employees, isLoading } = useListEmployees({}, { query: { staleTime: 0, refetchOnMount: true } });
+  // 更新後は invalidateQueries で明示再取得するため、毎マウントの強制リフェッチは不要。
+  const { data: employees, isLoading } = useListEmployees({});
   const createEmployee = useCreateEmployee();
   const updateEmployee = useUpdateEmployee();
   const deleteEmployee = useDeleteEmployee();
@@ -1170,10 +1177,7 @@ function EmployeeMasterTab() {
     defaultValues: {
       employeeCode: "", name: "", nameKana: "", department: "", position: "",
       dateOfBirth: "", hireDate: "", isActive: true, isOfficeStaff: false, salaryType: "daily", baseSalary: 0,
-      residentTax: 0, healthInsuranceMonthly: 0, pensionMonthly: 0,
-      incomeTaxMonthly: 0, otherDeductionMonthly: 0,
-      commissionRatePerKm: 0, commissionRatePerCase: 0,
-      mikawaCommissionRate: 0,
+      residentTax: 0, otherDeductionMonthly: 0,
       useBluewingLogic: false, bluewingCommissionRate: 0,
       bluewingFixedOvertimeHours: 0, bluewingFixedOvertimeAmount: 0,
       dependentCount: 0, hasSpouse: false, standardRemuneration: 0,
@@ -1189,9 +1193,7 @@ function EmployeeMasterTab() {
       employeeCode: "", name: "", nameKana: "", department: "配送部", position: "",
       dateOfBirth: "", hireDate: new Date().toISOString().split("T")[0], isActive: true, isOfficeStaff: false,
       salaryType: "daily", baseSalary: 0, residentTax: 0,
-      healthInsuranceMonthly: 0, pensionMonthly: 0, incomeTaxMonthly: 0, otherDeductionMonthly: 0,
-      commissionRatePerKm: 0, commissionRatePerCase: 0,
-      mikawaCommissionRate: 0,
+      otherDeductionMonthly: 0,
       useBluewingLogic: false, bluewingCommissionRate: 0,
       bluewingFixedOvertimeHours: 0, bluewingFixedOvertimeAmount: 0,
       dependentCount: 0, hasSpouse: false, standardRemuneration: 0,
@@ -1220,13 +1222,7 @@ function EmployeeMasterTab() {
       salaryType: (emp.salaryType as "fixed" | "daily" | "hourly") ?? "daily",
       baseSalary: emp.baseSalary ?? 0,
       residentTax: emp.residentTax ?? 0,
-      healthInsuranceMonthly: (emp as unknown as { healthInsuranceMonthly?: number }).healthInsuranceMonthly ?? 0,
-      pensionMonthly: (emp as unknown as { pensionMonthly?: number }).pensionMonthly ?? 0,
-      incomeTaxMonthly: (emp as unknown as { incomeTaxMonthly?: number }).incomeTaxMonthly ?? 0,
       otherDeductionMonthly: (emp as unknown as { otherDeductionMonthly?: number }).otherDeductionMonthly ?? 0,
-      commissionRatePerKm: emp.commissionRatePerKm ?? 0,
-      commissionRatePerCase: emp.commissionRatePerCase ?? 0,
-      mikawaCommissionRate: ((emp as unknown as { mikawaCommissionRate?: number }).mikawaCommissionRate ?? 0) * 100,
       useBluewingLogic: (emp as unknown as { useBluewingLogic?: boolean }).useBluewingLogic ?? false,
       bluewingCommissionRate: ((emp as unknown as { bluewingCommissionRate?: number }).bluewingCommissionRate ?? 0) * 100,
       bluewingFixedOvertimeHours: (emp as unknown as { bluewingFixedOvertimeHours?: number }).bluewingFixedOvertimeHours ?? 0,
@@ -1258,7 +1254,6 @@ function EmployeeMasterTab() {
       const { pensionAppliedMode, ...rest } = data;
       const saveData = {
         ...rest,
-        mikawaCommissionRate: (data.mikawaCommissionRate ?? 0) / 100,
         bluewingCommissionRate: (data.bluewingCommissionRate ?? 0) / 100,
         overtimeUnitMinutes: (data.overtimeUnitMinutes ?? 0) > 0 ? data.overtimeUnitMinutes : null,
         pensionApplied: pensionAppliedMode === "auto" ? null : pensionAppliedMode === "on",
@@ -1277,7 +1272,6 @@ function EmployeeMasterTab() {
       const { pensionAppliedMode, ...rest } = data;
       const saveData = {
         ...rest,
-        mikawaCommissionRate: (data.mikawaCommissionRate ?? 0) / 100,
         bluewingCommissionRate: (data.bluewingCommissionRate ?? 0) / 100,
         pensionApplied: pensionAppliedMode === "auto" ? null : pensionAppliedMode === "on",
       };
@@ -1581,37 +1575,25 @@ function EmployeeMasterTab() {
 
 // ─── 計算テーブルマスター Tab ──────────────────────────────────────
 
-const TAX_BRACKETS = [
-  { min: 0, max: 88_000, rates: ["0", "0", "0", "0", "0", "0", "0"] },
-  { min: 88_000, max: 89_000, rates: ["130", "0", "0", "0", "0", "0", "0"] },
-  { min: 89_000, max: 90_000, rates: ["180", "0", "0", "0", "0", "0", "0"] },
-  { min: 90_000, max: 91_000, rates: ["220", "0", "0", "0", "0", "0", "0"] },
-  { min: 95_000, max: 100_000, rates: ["320", "0", "0", "0", "0", "0", "0"] },
-  { min: 100_000, max: 110_000, rates: ["640", "0", "0", "0", "0", "0", "0"] },
-  { min: 110_000, max: 120_000, rates: ["1_020", "0", "0", "0", "0", "0", "0"] },
-  { min: 120_000, max: 130_000, rates: ["1_420", "0", "0", "0", "0", "0", "0"] },
-  { min: 150_000, max: 160_000, rates: ["3_150", "1_490", "0", "0", "0", "0", "0"] },
-  { min: 200_000, max: 210_000, rates: ["6_420", "4_750", "3_090", "1_440", "0", "0", "0"] },
-  { min: 250_000, max: 260_000, rates: ["10_500", "8_840", "7_180", "5_520", "3_860", "2_200", "540"] },
-  { min: 300_000, max: 310_000, rates: ["15_000", "13_300", "11_600", "9_940", "8_280", "6_620", "4_960"] },
-  { min: 400_000, max: 410_000, rates: ["25_800", "24_000", "22_200", "20_400", "18_600", "16_800", "15_000"] },
-  { min: 500_000, max: 510_000, rates: ["39_800", "37_900", "36_100", "34_300", "32_500", "30_700", "28_900"] },
-];
+// ① 令和8年度 基準の参照行（読み取り専用）
+function RefRow({ label, value, note }: { label: string; value: string; note?: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-1.5 border-b border-dotted border-border/60 last:border-0">
+      <div className="min-w-0">
+        <span className="text-sm">{label}</span>
+        {note && <span className="ml-2 text-xs text-muted-foreground">{note}</span>}
+      </div>
+      <span className="text-sm font-mono font-medium shrink-0 tabular-nums">{value}</span>
+    </div>
+  );
+}
 
-const companySchema = z.object({
-  healthInsuranceEmployeeRate: z.coerce.number().min(0).max(1),
-  healthInsuranceEmployerRate: z.coerce.number().min(0).max(1),
-  careInsuranceRate: z.coerce.number().min(0).max(1),
-  pensionEmployeeRate: z.coerce.number().min(0).max(1),
-  pensionEmployerRate: z.coerce.number().min(0).max(1),
-  employmentInsuranceRate: z.coerce.number().min(0).max(1),
-  employmentInsuranceEmployerRate: z.coerce.number().min(0).max(1),
-  overtimeRate: z.coerce.number().min(1),
-  lateNightAdditionalRate: z.coerce.number().min(0),
-  holidayRate: z.coerce.number().min(1),
+// ② 会社ごとに編集する運用パラメータのみ（日給単価は会社設定に集約）
+const companyParamsSchema = z.object({
   monthlyAverageWorkHours: z.coerce.number().min(1),
+  employmentInsuranceRate: z.coerce.number().min(0).max(1),
 });
-type CompanyFormValues = z.infer<typeof companySchema>;
+type CompanyParamsValues = z.infer<typeof companyParamsSchema>;
 
 function CalcTableMasterTab() {
   const { toast } = useToast();
@@ -1619,35 +1601,22 @@ function CalcTableMasterTab() {
   const { data: company, isLoading } = useGetCompany();
   const updateCompany = useUpdateCompany();
 
-  const form = useForm<CompanyFormValues>({
-    resolver: zodResolver(companySchema),
+  const form = useForm<CompanyParamsValues>({
+    resolver: zodResolver(companyParamsSchema),
     defaultValues: {
-      healthInsuranceEmployeeRate: 0.04925, healthInsuranceEmployerRate: 0.04925,
-      careInsuranceRate: 0.0091,
-      pensionEmployeeRate: 0.0915, pensionEmployerRate: 0.0915,
-      employmentInsuranceRate: 0.0005, employmentInsuranceEmployerRate: 0.0085,
-      overtimeRate: 1.25, lateNightAdditionalRate: 0.25, holidayRate: 1.35,
       monthlyAverageWorkHours: 160,
+      employmentInsuranceRate: EMP_INS_EMPLOYEE_RATE_R8,
     },
     values: company ? {
-      healthInsuranceEmployeeRate: company.healthInsuranceEmployeeRate,
-      healthInsuranceEmployerRate: company.healthInsuranceEmployerRate,
-      careInsuranceRate: company.careInsuranceRate,
-      pensionEmployeeRate: company.pensionEmployeeRate,
-      pensionEmployerRate: company.pensionEmployerRate,
-      employmentInsuranceRate: company.employmentInsuranceRate,
-      employmentInsuranceEmployerRate: company.employmentInsuranceEmployerRate,
-      overtimeRate: company.overtimeRate,
-      lateNightAdditionalRate: company.lateNightAdditionalRate,
-      holidayRate: company.holidayRate,
       monthlyAverageWorkHours: company.monthlyAverageWorkHours,
+      employmentInsuranceRate: company.employmentInsuranceRate,
     } : undefined,
   });
 
-  const onSubmit = async (data: CompanyFormValues) => {
+  const onSubmit = async (data: CompanyParamsValues) => {
     try {
       await updateCompany.mutateAsync({ data });
-      toast({ title: "保存しました", description: "計算テーブルマスタを更新しました。" });
+      toast({ title: "保存しました", description: "運用パラメータを更新しました。" });
       queryClient.invalidateQueries({ queryKey: getGetCompanyQueryKey() });
     } catch {
       toast({ title: "エラー", description: "保存に失敗しました。", variant: "destructive" });
@@ -1659,232 +1628,91 @@ function CalcTableMasterTab() {
   if (isLoading) return <div className="text-center py-8 text-muted-foreground">読み込み中...</div>;
 
   return (
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-        <div>
-          <h3 className="text-lg font-semibold">計算テーブルマスター</h3>
-          <p className="text-sm text-muted-foreground">社会保険料率・時間外割増率などの計算パラメータを管理します。</p>
-        </div>
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-lg font-semibold">計算テーブルマスター</h3>
+        <p className="text-sm text-muted-foreground">
+          令和8年度の税・保険基準（内蔵・自動適用）と、会社ごとに設定する運用パラメータを管理します。
+        </p>
+      </div>
 
-        {/* 社会保険料率 */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">社会保険料率マスタ</CardTitle>
-            <CardDescription>料率は小数で入力してください。例：5% → 0.05</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div>
-                <p className="text-sm font-medium mb-3 text-muted-foreground">健康保険</p>
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField control={form.control} name="healthInsuranceEmployeeRate" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>本人負担率</FormLabel>
-                      <FormControl>
-                        <div className="flex items-center gap-2">
-                          <Input type="number" step="0.0001" placeholder="0.0500" {...field} />
-                          <span className="text-sm text-muted-foreground w-14">{pct(field.value || 0)}</span>
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="healthInsuranceEmployerRate" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>会社負担率</FormLabel>
-                      <FormControl>
-                        <div className="flex items-center gap-2">
-                          <Input type="number" step="0.0001" placeholder="0.0500" {...field} />
-                          <span className="text-sm text-muted-foreground w-14">{pct(field.value || 0)}</span>
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                </div>
-              </div>
-              <Separator />
-              <div>
-                <p className="text-sm font-medium mb-3 text-muted-foreground">介護保険（40〜64歳対象者のみ適用）</p>
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField control={form.control} name="careInsuranceRate" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>本人負担率</FormLabel>
-                      <FormControl>
-                        <div className="flex items-center gap-2">
-                          <Input type="number" step="0.0001" placeholder="0.0091" {...field} />
-                          <span className="text-sm text-muted-foreground w-14">{pct(field.value || 0)}</span>
-                        </div>
-                      </FormControl>
-                      <p className="text-xs text-muted-foreground">協会けんぽ標準: 0.0091（1.82%÷2）</p>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <div className="flex items-end pb-6">
-                    <p className="text-xs text-muted-foreground">
-                      従業員マスタの「介護保険適用」フラグが ON の社員にのみ<br />
-                      この料率で計算されます。
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <Separator />
-              <div>
-                <p className="text-sm font-medium mb-3 text-muted-foreground">厚生年金保険</p>
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField control={form.control} name="pensionEmployeeRate" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>本人負担率</FormLabel>
-                      <FormControl>
-                        <div className="flex items-center gap-2">
-                          <Input type="number" step="0.0001" placeholder="0.0915" {...field} />
-                          <span className="text-sm text-muted-foreground w-14">{pct(field.value || 0)}</span>
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="pensionEmployerRate" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>会社負担率</FormLabel>
-                      <FormControl>
-                        <div className="flex items-center gap-2">
-                          <Input type="number" step="0.0001" placeholder="0.0915" {...field} />
-                          <span className="text-sm text-muted-foreground w-14">{pct(field.value || 0)}</span>
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                </div>
-              </div>
-              <Separator />
-              <div>
-                <p className="text-sm font-medium mb-3 text-muted-foreground">雇用保険</p>
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField control={form.control} name="employmentInsuranceRate" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>本人負担率</FormLabel>
-                      <FormControl>
-                        <div className="flex items-center gap-2">
-                          <Input type="number" step="0.0001" placeholder="0.0005" {...field} />
-                          <span className="text-sm text-muted-foreground w-14">{pct(field.value || 0)}</span>
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="employmentInsuranceEmployerRate" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>会社負担率</FormLabel>
-                      <FormControl>
-                        <div className="flex items-center gap-2">
-                          <Input type="number" step="0.0001" placeholder="0.0085" {...field} />
-                          <span className="text-sm text-muted-foreground w-14">{pct(field.value || 0)}</span>
-                        </div>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                </div>
-              </div>
+      {/* ── ① 適用中の税・保険基準（令和8年度）── 読み取り専用 */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">① 適用中の税・保険基準（令和8年度）</CardTitle>
+          <CardDescription>
+            国税庁・協会けんぽの公式値をシステムに内蔵し、給与計算とプレビューの<span className="font-medium">両方で自動適用</span>されます（1円単位一致のため編集不可）。
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-1">社会保険（本人負担・折半）</p>
+              <RefRow label="健康保険" value={pct(HEALTH_EMPLOYEE_RATE_R8)} note="9.85%" />
+              <RefRow label="介護保険" value={pct(CARE_EMPLOYEE_RATE_R8)} note="40〜64歳・1.62%" />
+              <RefRow label="厚生年金" value={pct(PENSION_EMPLOYEE_RATE_R8)} note="18.3%・上限65万" />
+              <RefRow label="子ども・子育て支援金" value={pct(CHILDCARE_SUPPORT_EMPLOYEE_RATE_R8)} note="0.23%" />
             </div>
-          </CardContent>
-        </Card>
-
-        {/* 時間外単価計算 */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">時間外単価計算ロジック</CardTitle>
-            <CardDescription>割増率は1.0基準で入力してください。例：25%増 → 1.25</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-6">
-              <FormField control={form.control} name="overtimeRate" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>残業割増率</FormLabel>
-                  <FormControl><Input type="number" step="0.01" placeholder="1.25" {...field} /></FormControl>
-                  <p className="text-xs text-muted-foreground">時給 × 残業時間 × この率</p>
-                  <FormMessage />
-                </FormItem>
-              )} />
-              <FormField control={form.control} name="lateNightAdditionalRate" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>深夜追加割増率</FormLabel>
-                  <FormControl><Input type="number" step="0.01" placeholder="0.25" {...field} /></FormControl>
-                  <p className="text-xs text-muted-foreground">深夜：残業率+この率（例：1.25+0.25=1.50）</p>
-                  <FormMessage />
-                </FormItem>
-              )} />
-              <FormField control={form.control} name="holidayRate" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>休日出勤割増率</FormLabel>
-                  <FormControl><Input type="number" step="0.01" placeholder="1.35" {...field} /></FormControl>
-                  <p className="text-xs text-muted-foreground">時給 × 8h × 休日日数 × この率</p>
-                  <FormMessage />
-                </FormItem>
-              )} />
-              <FormField control={form.control} name="monthlyAverageWorkHours" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>月平均労働時間（時間）</FormLabel>
-                  <FormControl><Input type="number" step="1" placeholder="160" {...field} /></FormControl>
-                  <p className="text-xs text-muted-foreground">時給単価 = 基本給 ÷ この時間数</p>
-                  <FormMessage />
-                </FormItem>
-              )} />
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-1 md:mt-0 mt-4">割増率・源泉所得税</p>
+              <RefRow label="時間外（残業）割増" value="×1.25" note="60h超は×1.50" />
+              <RefRow label="深夜追加割増" value="+0.25" />
+              <RefRow label="休日出勤割増" value="×1.35" />
+              <RefRow label="源泉所得税" value="月額表・甲欄" note="社保控除後×扶養人数で自動" />
             </div>
-          </CardContent>
-        </Card>
+          </div>
+          <p className="text-xs text-muted-foreground mt-3 pt-3 border-t">
+            健保・厚年は「標準報酬月額（社員ごとに設定）× 上記料率」で算出。料率の年度改定は内蔵テーブル（<span className="font-mono">lib/tax-tables-reiwa8</span>）の更新で行います。
+          </p>
+        </CardContent>
+      </Card>
 
-        {/* 源泉徴収税額表（参考表示） */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">源泉徴収税額表（月額表・甲欄）</CardTitle>
-            <CardDescription>
-              国税庁の月額源泉徴収税額表（甲欄）に基づく参考値です。復興特別所得税2.1%込み。
-              実際の計算はシステムが自動適用します。
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="rounded-md border overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="text-xs">課税給与所得（円）</TableHead>
-                    <TableHead className="text-xs text-right">扶養0人</TableHead>
-                    <TableHead className="text-xs text-right">扶養1人</TableHead>
-                    <TableHead className="text-xs text-right">扶養2人</TableHead>
-                    <TableHead className="text-xs text-right">扶養3人</TableHead>
-                    <TableHead className="text-xs text-right">扶養4人</TableHead>
-                    <TableHead className="text-xs text-right">扶養5人</TableHead>
-                    <TableHead className="text-xs text-right">扶養6人</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {TAX_BRACKETS.map((row, i) => (
-                    <TableRow key={i} className="text-xs">
-                      <TableCell className="font-mono text-muted-foreground">
-                        {row.min.toLocaleString()}〜{row.max.toLocaleString()}
-                      </TableCell>
-                      {row.rates.map((rate, j) => (
-                        <TableCell key={j} className="text-right font-mono">{rate.replace(/_/g, "")}</TableCell>
-                      ))}
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-            <p className="text-xs text-muted-foreground mt-2">※ 上記は代表的な区分の税額（円）の抜粋です。実際の計算には完全な税額表が使用されます。</p>
-          </CardContent>
-        </Card>
+      {/* ── ② 運用パラメータ ── 編集可 */}
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">② 運用パラメータ（会社ごとに設定）</CardTitle>
+              <CardDescription>実際に給与計算へ反映される、会社固有の設定です。</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <FormField control={form.control} name="monthlyAverageWorkHours" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>月平均労働時間（時間）</FormLabel>
+                    <FormControl><Input type="number" step="1" placeholder="160" {...field} /></FormControl>
+                    <p className="text-xs text-muted-foreground">固定給の時給換算：基本給 ÷ この時間数</p>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="employmentInsuranceRate" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>雇用保険料率（本人負担）</FormLabel>
+                    <FormControl>
+                      <div className="flex items-center gap-2">
+                        <Input type="number" step="0.0001" placeholder="0.005" {...field} />
+                        <span className="text-sm text-muted-foreground w-14">{pct(field.value || 0)}</span>
+                      </div>
+                    </FormControl>
+                    <p className="text-xs text-muted-foreground">令和8年度・一般事業=0.5%。年度・業種で変わるため編集可</p>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              </div>
+              <p className="text-xs text-muted-foreground mt-4 pt-3 border-t">
+                日給制の単価（平日・土曜・日曜/祝日）は <span className="font-medium">会社設定 → 日給レート設定</span> で管理します。
+              </p>
+            </CardContent>
+          </Card>
 
-        <div className="flex justify-end">
-          <Button type="submit" disabled={form.formState.isSubmitting}>
-            保存する
-          </Button>
-        </div>
-      </form>
-    </Form>
+          <div className="flex justify-end">
+            <Button type="submit" disabled={form.formState.isSubmitting}>
+              保存する
+            </Button>
+          </div>
+        </form>
+      </Form>
+    </div>
   );
 }
 

@@ -206,11 +206,12 @@ export default function Settings() {
             <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
               <Info className="h-4 w-4 mt-0.5 shrink-0 text-blue-600" />
               <div>
-                <p className="font-medium mb-1">保険料率・計算パラメータの設定について</p>
+                <p className="font-medium mb-1">保険料率・計算パラメータについて</p>
                 <p className="text-blue-700">
-                  健康保険料率・厚生年金料率・雇用保険料率・時間外割増率・月平均所定労働時間などの給与計算パラメータは、
-                  <strong>マスター管理 → 計算テーブルマスター</strong>で設定・管理してください。
-                  計算テーブルマスターの設定値がサイドバーの給与明細計算に直接反映されます。
+                  健康保険・厚生年金・時間外割増率などの税・保険基準は<strong>令和8年の公式値がシステムに内蔵</strong>されています
+                  （<strong>マスター管理 → 計算テーブルマスター</strong>で参照）。
+                  そこで会社ごとに編集できるのは<strong>月平均労働時間・雇用保険料率</strong>のみです。
+                  ここ（会社設定）では会社名・締め日・支払日・日給レートを管理します。
                 </p>
               </div>
             </div>

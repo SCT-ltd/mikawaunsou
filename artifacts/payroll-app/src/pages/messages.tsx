@@ -2,41 +2,13 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { AppLayout } from "@/components/layout/app-layout";
 import { useUnread } from "@/context/unread-context";
 import { playNotificationSound, unlockAudio } from "@/lib/notification-sound";
-import { Send, MessageSquare, Bell, BellOff, Megaphone, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { MessageSquare } from "lucide-react";
+import { Conversation, Message } from "@/components/messages/shared";
+import { ConversationList } from "@/components/messages/conversation-list";
+import { ChatView } from "@/components/messages/chat-view";
+import { BroadcastDialog } from "@/components/messages/broadcast-dialog";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-
-interface Employee {
-  id: number;
-  employeeCode: string;
-  name: string;
-  department: string;
-}
-
-interface Message {
-  id: number;
-  employeeId: number;
-  sender: "office" | "employee";
-  content: string;
-  readAt: string | null;
-  createdAt: string;
-}
-
-interface Conversation {
-  employee: Employee;
-  latestMessage: Message | null;
-  unreadCount: number;
-}
-
-function formatTime(str: string): string {
-  const d = new Date(str);
-  const now = new Date();
-  const diffDays = Math.floor((now.getTime() - d.getTime()) / 86400000);
-  if (diffDays === 0) return d.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
-  if (diffDays === 1) return "昨日";
-  return d.toLocaleDateString("ja-JP", { month: "numeric", day: "numeric" });
-}
 
 async function registerPush(employeeId: number | null, role: "office" | "employee") {
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
@@ -48,7 +20,7 @@ async function registerPush(employeeId: number | null, role: "office" | "employe
 
     const sub = await reg.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(publicKey),
+      applicationServerKey: urlBase64ToUint8Array(publicKey) as BufferSource,
     });
     const json = sub.toJSON();
     await fetch(`${BASE}/api/push/subscribe`, {
@@ -80,7 +52,7 @@ export default function MessagesPage() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [pushEnabled, setPushEnabled] = useState<boolean | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const [search, setSearch] = useState("");
   const selectedIdRef = useRef<number | null>(null);
   const { refreshUnread } = useUnread();
 
@@ -125,7 +97,6 @@ export default function MessagesPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reader: "office" }),
       });
-      // 会話一覧の unreadCount を即時更新
       setConversations(prev =>
         prev.map(c => c.employee.id === empId ? { ...c, unreadCount: 0 } : c)
       );
@@ -150,15 +121,12 @@ export default function MessagesPage() {
 
         // ── 通知音（社員からのメッセージのみ） ──
         if (msg.sender === "employee") {
-          playNotificationSound(msg.id, {
-            conversationId: msg.employeeId,
-          });
+          playNotificationSound(msg.id, { conversationId: msg.employeeId });
 
           // 該当会話を開いていれば即既読
           if (selectedIdRef.current === msg.employeeId) {
             markRead(msg.employeeId);
           } else {
-            // 未読カウントをインクリメント
             setConversations(prev =>
               prev.map(c =>
                 c.employee.id === msg.employeeId
@@ -187,11 +155,6 @@ export default function MessagesPage() {
       markRead(selectedId);
     }
   }, [selectedId, fetchMessages, markRead]);
-
-  // 自動スクロール
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
 
   // 通知許可状態チェック
   useEffect(() => {
@@ -270,7 +233,6 @@ export default function MessagesPage() {
       });
       if (res.ok) {
         const msg = await res.json() as Message;
-        // 即時表示（重複防止）
         setMessages(prev => prev.find(m => m.id === msg.id) ? prev : [...prev, msg]);
         await fetchConversations();
       } else {
@@ -287,289 +249,75 @@ export default function MessagesPage() {
 
   const selected = conversations.find(c => c.employee.id === selectedId);
 
-  // 未読のある会話を上に、なければ最新メッセージ順
-  const sortedConversations = [...conversations].sort((a, b) => {
-    if (a.unreadCount > 0 && b.unreadCount === 0) return -1;
-    if (a.unreadCount === 0 && b.unreadCount > 0) return 1;
-    const aTime = a.latestMessage?.createdAt ?? "";
-    const bTime = b.latestMessage?.createdAt ?? "";
-    return bTime.localeCompare(aTime);
-  });
-
   const handleSelectConversation = (empId: number) => {
     setSelectedId(empId);
     setMobileView("chat");
   };
 
+  const closeBroadcast = () => {
+    setBroadcastOpen(false);
+    setBroadcastText("");
+    setBroadcastDone(null);
+  };
+
   return (
-    <AppLayout>
-      <div className="flex h-[calc(100vh-3.5rem-56px)] md:h-[calc(100vh-3.5rem)] overflow-hidden -m-3 md:-m-6 lg:-m-8">
-
-        {/* 一斉送信モーダル */}
-        {broadcastOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden flex flex-col max-h-[90vh]">
-              <div className="px-5 py-4 border-b flex items-center justify-between shrink-0">
-                <div className="flex items-center gap-2">
-                  <Megaphone className="h-5 w-5 text-primary" />
-                  <h3 className="font-bold text-base">一斉送信</h3>
-                </div>
-                <button
-                  onClick={() => { setBroadcastOpen(false); setBroadcastText(""); setBroadcastDone(null); }}
-                  className="p-1.5 rounded-lg hover:bg-muted transition-colors"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="px-5 py-4 flex flex-col gap-4 overflow-y-auto">
-                {broadcastDone != null ? (
-                  <div className="text-center py-6">
-                    <div className="text-4xl mb-3">✅</div>
-                    <p className="font-bold text-green-700 text-lg">{broadcastDone}名に送信しました</p>
-                  </div>
-                ) : (
-                  <>
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="text-sm font-medium">送信先を選択</p>
-                        <button
-                          onClick={toggleBroadcastAll}
-                          className="text-xs text-primary hover:underline"
-                        >
-                          {broadcastSelected.size === conversations.length ? "全員解除" : "全員選択"}
-                        </button>
-                      </div>
-                      <div className="border rounded-xl overflow-hidden divide-y max-h-48 overflow-y-auto">
-                        {conversations.map(conv => (
-                          <label
-                            key={conv.employee.id}
-                            className="flex items-center gap-3 px-3.5 py-2.5 cursor-pointer hover:bg-muted/40 transition-colors"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={broadcastSelected.has(conv.employee.id)}
-                              onChange={() => toggleBroadcastEmployee(conv.employee.id)}
-                              className="h-4 w-4 rounded accent-primary"
-                            />
-                            <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs shrink-0">
-                              {conv.employee.name[0]}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium truncate">{conv.employee.name}</p>
-                              <p className="text-xs text-muted-foreground truncate">{conv.employee.department}</p>
-                            </div>
-                          </label>
-                        ))}
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-1.5">
-                        {broadcastSelected.size}名を選択中
-                      </p>
-                    </div>
-
-                    <textarea
-                      value={broadcastText}
-                      onChange={e => setBroadcastText(e.target.value)}
-                      onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendBroadcast(); } }}
-                      placeholder="送信するメッセージを入力..."
-                      rows={4}
-                      autoFocus
-                      className="w-full rounded-xl border bg-muted/30 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
-                    />
-                    <div className="flex justify-end gap-2">
-                      <button
-                        onClick={() => { setBroadcastOpen(false); setBroadcastText(""); }}
-                        className="px-4 py-2 rounded-lg text-sm text-muted-foreground hover:bg-muted transition-colors"
-                      >
-                        キャンセル
-                      </button>
-                      <Button
-                        onClick={sendBroadcast}
-                        disabled={!broadcastText.trim() || broadcasting || broadcastSelected.size === 0}
-                        className="flex items-center gap-2"
-                      >
-                        <Megaphone className="h-4 w-4" />
-                        {broadcasting ? "送信中..." : `${broadcastSelected.size}名に送信`}
-                      </Button>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* 左：会話一覧 */}
-        <div className={`
-          shrink-0 border-r bg-background flex flex-col
-          w-full md:w-72
-          ${mobileView === "chat" ? "hidden md:flex" : "flex"}
-        `}>
-          <div className="px-4 py-3 border-b flex items-center justify-between">
-            <h2 className="font-bold text-sm flex items-center gap-1.5">
-              <MessageSquare className="h-4 w-4" />メッセージ
-            </h2>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={openBroadcast}
-                className="p-1.5 rounded hover:bg-amber-50 hover:text-amber-600 transition-colors"
-                title="一斉送信"
-              >
-                <Megaphone className="h-4 w-4 text-amber-500" />
-              </button>
-              <button
-                onClick={handleEnablePush}
-                className="p-1.5 rounded hover:bg-muted transition-colors"
-                title={pushEnabled ? "通知ON" : "通知を有効にする"}
-              >
-                {pushEnabled
-                  ? <Bell className="h-4 w-4 text-primary" />
-                  : <BellOff className="h-4 w-4 text-muted-foreground" />}
-              </button>
-            </div>
+    <AppLayout fullWidth>
+      <div className="flex flex-col h-[calc(100dvh-9.5rem)] md:h-[calc(100dvh-5.5rem)]">
+        <div className="flex-1 min-h-0 flex md:gap-4">
+          {/* 左：会話一覧 */}
+          <div className={`${mobileView === "chat" ? "hidden md:flex" : "flex"} w-full md:w-72 lg:w-80 shrink-0 flex-col min-h-0 rounded-xl border bg-card overflow-hidden`}>
+            <ConversationList
+              conversations={conversations}
+              selectedId={selectedId}
+              onSelect={handleSelectConversation}
+              search={search}
+              onSearchChange={setSearch}
+              onOpenBroadcast={openBroadcast}
+              onEnablePush={handleEnablePush}
+              pushEnabled={pushEnabled}
+            />
           </div>
 
-          <div className="flex-1 overflow-y-auto">
-            {sortedConversations.map(conv => {
-              const hasUnread = conv.unreadCount > 0;
-              const isSelected = selectedId === conv.employee.id;
-              return (
-                <button
-                  key={conv.employee.id}
-                  className={`w-full text-left px-4 py-3.5 border-b flex items-start gap-3 hover:bg-muted/50 transition-colors
-                    ${isSelected ? "bg-primary/8 border-l-2 border-l-primary" : ""}
-                    ${hasUnread && !isSelected ? "bg-blue-50/60" : ""}`}
-                  onClick={() => handleSelectConversation(conv.employee.id)}
-                >
-                  <div className="relative shrink-0">
-                    <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-base">
-                      {conv.employee.name[0]}
-                    </div>
-                    {hasUnread && (
-                      <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
-                        {conv.unreadCount > 99 ? "99+" : conv.unreadCount}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-1">
-                      <span className={`text-sm truncate ${hasUnread ? "font-bold text-foreground" : "font-semibold"}`}>
-                        {conv.employee.name}
-                      </span>
-                      {conv.latestMessage && (
-                        <span className="text-xs text-muted-foreground shrink-0">
-                          {formatTime(conv.latestMessage.createdAt)}
-                        </span>
-                      )}
-                    </div>
-                    <p className={`text-xs truncate mt-0.5 ${hasUnread ? "font-semibold text-foreground/80" : "text-muted-foreground"}`}>
-                      {conv.latestMessage
-                        ? `${conv.latestMessage.sender === "office" ? "自分: " : ""}${conv.latestMessage.content}`
-                        : "メッセージなし"}
-                    </p>
-                  </div>
-                </button>
-              );
-            })}
+          {/* 右：チャット */}
+          <div className={`${mobileView === "list" ? "hidden md:flex" : "flex"} flex-1 min-w-0 flex-col min-h-0`}>
+            {selectedId == null ? (
+              <div className="flex-1 hidden md:flex flex-col items-center justify-center gap-2 rounded-xl border bg-card text-muted-foreground">
+                <MessageSquare className="h-10 w-10 opacity-20" />
+                <p className="font-medium text-sm">従業員を選択してください</p>
+                <p className="text-xs opacity-60">左のリストから会話を開始できます</p>
+              </div>
+            ) : (
+              <div className="flex flex-col h-full min-h-0 rounded-xl border bg-card overflow-hidden">
+                <ChatView
+                  conversation={selected}
+                  messages={messages}
+                  input={input}
+                  onInputChange={setInput}
+                  onSend={sendMessage}
+                  sending={sending}
+                  onBack={() => setMobileView("list")}
+                />
+              </div>
+            )}
           </div>
         </div>
-
-        {/* 右：チャット画面 */}
-        {selectedId == null ? (
-          <div className="hidden md:flex flex-1 items-center justify-center bg-muted/20">
-            <div className="text-center text-muted-foreground">
-              <MessageSquare className="h-12 w-12 mx-auto mb-3 opacity-20" />
-              <p className="font-medium">従業員を選択してください</p>
-              <p className="text-sm mt-1 opacity-60">左のリストから会話を開始できます</p>
-            </div>
-          </div>
-        ) : (
-          <div className={`flex-1 flex flex-col min-w-0 ${mobileView === "list" ? "hidden md:flex" : "flex"}`}>
-            {/* チャットヘッダー */}
-            <div className="px-4 py-3 border-b bg-white flex items-center gap-3 shrink-0">
-              {/* モバイル 戻るボタン */}
-              <button
-                type="button"
-                className="md:hidden p-1 -ml-1 rounded text-muted-foreground hover:text-foreground"
-                onClick={() => setMobileView("list")}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-                </svg>
-              </button>
-              <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold shrink-0">
-                {selected?.employee.name[0]}
-              </div>
-              <div>
-                <p className="font-bold text-sm leading-tight">{selected?.employee.name}</p>
-                <p className="text-xs text-muted-foreground">{selected?.employee.department} · {selected?.employee.employeeCode}</p>
-              </div>
-            </div>
-
-            {/* メッセージ一覧 */}
-            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 bg-slate-50">
-              {messages
-                .filter(m => m.employeeId === selectedId)
-                .map(msg => {
-                  const isOffice = msg.sender === "office";
-                  return (
-                    <div key={msg.id} className={`flex ${isOffice ? "justify-end" : "justify-start"}`}>
-                      {!isOffice && (
-                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm shrink-0 mr-2 mt-1">
-                          {selected?.employee.name[0]}
-                        </div>
-                      )}
-                      <div className="max-w-[70%] group">
-                        {!isOffice && (
-                          <p className="text-xs text-muted-foreground mb-1 ml-1">{selected?.employee.name}</p>
-                        )}
-                        {isOffice && (
-                          <p className="text-xs text-muted-foreground mb-1 text-right mr-1">事務所</p>
-                        )}
-                        <div className={`px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed
-                          ${isOffice
-                            ? "bg-primary text-primary-foreground rounded-tr-sm"
-                            : "bg-white border shadow-sm rounded-tl-sm text-foreground"
-                          }`}>
-                          {msg.content}
-                        </div>
-                        <p className={`text-xs text-muted-foreground mt-1 ${isOffice ? "text-right mr-1" : "ml-1"}`}>
-                          {formatTime(msg.createdAt)}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
-              <div ref={bottomRef} />
-            </div>
-
-            {/* 入力欄 */}
-            <div className="px-4 py-3 border-t bg-white shrink-0">
-              <div className="flex items-end gap-2">
-                <textarea
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-                  }}
-                  placeholder={`${selected?.employee.name}さんにメッセージを送る...`}
-                  rows={1}
-                  className="flex-1 resize-none rounded-xl border bg-muted/30 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 max-h-32 overflow-y-auto"
-                  style={{ minHeight: "42px" }}
-                />
-                <Button
-                  size="icon"
-                  className="h-[42px] w-[42px] rounded-xl shrink-0"
-                  onClick={sendMessage}
-                  disabled={!input.trim() || sending}
-                >
-                  <Send className="h-4 w-4" />
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground mt-1.5 ml-1">Enterで送信 · Shift+Enterで改行</p>
-            </div>
-          </div>
-        )}
       </div>
+
+      {/* 一斉送信ダイアログ */}
+      <BroadcastDialog
+        open={broadcastOpen}
+        onOpenChange={(o) => { if (!o) closeBroadcast(); else setBroadcastOpen(true); }}
+        conversations={conversations}
+        text={broadcastText}
+        onTextChange={setBroadcastText}
+        selected={broadcastSelected}
+        onToggleEmployee={toggleBroadcastEmployee}
+        onToggleAll={toggleBroadcastAll}
+        broadcasting={broadcasting}
+        done={broadcastDone}
+        onSend={sendBroadcast}
+        onCancel={closeBroadcast}
+      />
     </AppLayout>
   );
 }

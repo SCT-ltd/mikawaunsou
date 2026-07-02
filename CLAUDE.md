@@ -6,6 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 > **`replit.md` is the authoritative domain reference.** It documents the full DB schema, the payroll calculation engine (令和8年 税額表・社会保険料等級), the auth model, mobile-responsive rules, and accounting CSV formats in depth. Read it before touching payroll logic, tax tables, or the schema. This file covers the *big-picture wiring* that spans multiple packages and the non-obvious local-dev setup — it deliberately does not repeat `replit.md`.
 
+## 各階層の overview.md（作業前に読む / 作業後に更新する）
+
+このリポジトリは主要な階層ごとに `overview.md` を持ち、その領域の「これは何か・主要ファイル・現在のステータス・決定事項」を要約している。**その領域のコードを触る前に、対応する `overview.md` を読んで文脈を掴むこと。** また、**その領域に notable な変更（機能追加・設計変更・ステータス変化）を加えたら、作業後に該当 `overview.md` を更新すること**（現在のステータス／決定事項に日付＋理由を追記）。事実とコードに基づき、推測は「※推測」と明記する。
+
+- `docs/overview.md` — プロジェクト全体の概要
+- `artifacts/api-server/overview.md` / `artifacts/payroll-app/overview.md`
+- `lib/db/overview.md` / `lib/api-spec/overview.md` / `lib/api-client-react/overview.md` / `lib/api-zod/overview.md` / `lib/tax-tables-reiwa8/overview.md`
+
+新しい主要ディレクトリを作ったら、その階層にも `overview.md` を追加する。
+
 ## Monorepo layout
 
 pnpm workspaces (`pnpm-workspace.yaml`). Node 24, TypeScript 5.9, `zod/v4`.

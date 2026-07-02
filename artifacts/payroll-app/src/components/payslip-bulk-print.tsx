@@ -1,6 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { useGetEmployeeAllowances, useGetEmployeeDeductions } from "@workspace/api-client-react";
+import {
+  useGetEmployeeAllowances,
+  useGetEmployeeDeductions,
+  getGetEmployeeAllowancesQueryKey,
+  getGetEmployeeDeductionsQueryKey,
+} from "@workspace/api-client-react";
 import { ClassicContent } from "./payslip-print-classic";
 import type { ClassicPayslipProps } from "./payslip-print-classic";
 
@@ -29,10 +34,10 @@ function BulkItem({
 }) {
   const empId = (payroll.employeeId as number) ?? 0;
   const { data: allowances, isSuccess: aOk } = useGetEmployeeAllowances(empId, {
-    query: { enabled: empId > 0 },
+    query: { enabled: empId > 0, queryKey: getGetEmployeeAllowancesQueryKey(empId) },
   });
   const { data: deductions, isSuccess: dOk } = useGetEmployeeDeductions(empId, {
-    query: { enabled: empId > 0 },
+    query: { enabled: empId > 0, queryKey: getGetEmployeeDeductionsQueryKey(empId) },
   });
   const notifiedRef = useRef(false);
 

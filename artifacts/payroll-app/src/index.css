@@ -125,15 +125,88 @@
   --destructive-border: hsl(var(--destructive));
 }
 
+/* ── ダークモード（.dark を html に付与）──────────────────────────────
+   出力側の source トークンのみ上書き。*-border 等の派生変数は hsl(var(--x))
+   を遅延解決するため自動追従する。 */
+.dark {
+  --button-outline: rgba(255,255,255, .10);
+  --badge-outline: rgba(255,255,255, .08);
+  --opaque-button-border-intensity: 8;
+  --elevate-1: rgba(255,255,255, .04);
+  --elevate-2: rgba(255,255,255, .09);
+
+  --background: 222 47% 7%;   /* deep slate */
+  --foreground: 210 40% 96%;
+  --border: 215 27% 20%;
+
+  --card: 222 45% 10%;
+  --card-foreground: 210 40% 96%;
+  --card-border: 215 27% 20%;
+
+  --sidebar: 222 47% 8%;
+  --sidebar-foreground: 210 40% 96%;
+  --sidebar-border: 215 27% 18%;
+  --sidebar-primary: 210 40% 98%;
+  --sidebar-primary-foreground: 222 47% 11%;
+  --sidebar-accent: 217 33% 18%;
+  --sidebar-accent-foreground: 210 40% 96%;
+  --sidebar-ring: 215 27% 32%;
+
+  --popover: 222 45% 11%;
+  --popover-foreground: 210 40% 96%;
+  --popover-border: 215 27% 20%;
+
+  --primary: 210 40% 96%;
+  --primary-foreground: 222 47% 11%;
+
+  --secondary: 217 33% 17%;
+  --secondary-foreground: 210 40% 96%;
+
+  --muted: 217 33% 15%;
+  --muted-foreground: 216 20% 62%;
+
+  --accent: 217 33% 19%;
+  --accent-foreground: 210 40% 96%;
+
+  --destructive: 0 63% 46%;
+  --destructive-foreground: 210 40% 98%;
+
+  --input: 215 27% 22%;
+  --ring: 216 30% 55%;
+
+  --chart-1: 210 40% 96%;
+  --chart-2: 216 20% 62%;
+  --chart-3: 215 20% 50%;
+  --chart-4: 217 33% 27%;
+  --chart-5: 222 20% 40%;
+
+  color-scheme: dark;
+}
+
 @layer base {
   * {
     @apply border-border;
   }
   body {
     @apply font-sans antialiased bg-background text-foreground text-sm;
+    text-rendering: optimizeLegibility;
   }
   th {
     @apply font-semibold;
+  }
+}
+
+/* ── タイポグラフィ ユーティリティ ──────────────────────────────────────── */
+@layer utilities {
+  /* 日本語見出し: プロポーショナルメトリクス（palt）で仮名・約物の字間を最適化 */
+  .jp-tight {
+    font-feature-settings: "palt";
+    letter-spacing: 0.02em;
+  }
+  /* 金額・数値表示: 等幅数字で桁が揃い、字間をわずかに締めて視認性を上げる */
+  .amount {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.015em;
   }
 }
 

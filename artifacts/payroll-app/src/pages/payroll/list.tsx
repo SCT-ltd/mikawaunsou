@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Link } from "wouter";
 import { AppLayout } from "@/components/layout/app-layout";
-import { 
-  useListPayrolls, 
+import {
+  useListPayrolls,
   useCalculatePayroll,
   useListEmployees,
   getListPayrollsQueryKey,
@@ -12,22 +12,26 @@ import {
   useListMonthlyRecords,
   useGetCompany,
   useGetEmployeeAllowances,
+  getGetEmployeeAllowancesQueryKey,
   useGetEmployeeDeductions,
+  getGetEmployeeDeductionsQueryKey,
+  Payroll,
 } from "@workspace/api-client-react";
 import { PayslipPrintClassic } from "@/components/payslip-print-classic";
 import { PayslipBulkPrint } from "@/components/payslip-bulk-print";
 import { RichMonthPicker } from "@/components/rich-month-picker";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { AllowanceInputPanel } from "@/components/allowance-input-panel";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { formatCurrency } from "@/lib/format";
-import { Calculator, Download, AlertCircle, X, CheckCircle2, FileText, ChevronRight, Printer } from "lucide-react";
 import { formatMonth } from "@/lib/format";
+import {
+  Calculator, Download, AlertCircle, X, CheckCircle2, FileText, Printer, ArrowLeft, Wallet, Receipt,
+} from "lucide-react";
+import { PayrollSummaryStats } from "@/components/payroll/summary-stats";
+import { PayrollListPane, filterPayrolls } from "@/components/payroll/payroll-list-pane";
 
 interface CalcError {
   employeeCode: string;
@@ -42,16 +46,20 @@ export default function PayrollList() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: payrolls, isLoading: payrollsLoading } = useListPayrolls({ year, month }, { query: { staleTime: 0, refetchOnMount: "always" } });
-  const { data: employees } = useListEmployees({ active: true }, { query: { staleTime: 0, refetchOnMount: "always" } });
+  const { data: payrollsData, isLoading: payrollsLoading } = useListPayrolls({ year, month });
+  const { data: employees } = useListEmployees({ active: true });
   const { data: company } = useGetCompany();
   const calculatePayroll = useCalculatePayroll();
+
+  const payrolls: Payroll[] = useMemo(() => payrollsData ?? [], [payrollsData]);
 
   const [calculating, setCalculating] = useState(false);
   const [printPayroll, setPrintPayroll] = useState<NonNullable<ReturnType<typeof useGetPayroll>["data"]> | null>(null);
   const [bulkPrintActive, setBulkPrintActive] = useState(false);
   const [calcErrors, setCalcErrors] = useState<CalcError[]>([]);
   const [selectedPayrollId, setSelectedPayrollId] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
+
   // 未保存変更ガード
   const [isDirty, setIsDirty] = useState(false);
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
@@ -77,7 +85,7 @@ export default function PayrollList() {
     }
   }, [isDirty]);
 
-  const tryCloseSheet = useCallback(() => {
+  const tryClosePanel = useCallback(() => {
     requestAction(() => {
       setSelectedPayrollId(null);
       setIsDirty(false);
@@ -101,12 +109,26 @@ export default function PayrollList() {
   const confirmPayroll = useConfirmPayroll();
 
   const selectedEmployeeId = selectedPayroll?.employeeId ?? 0;
-  const { data: printEmployeeAllowances, isLoading: allowancesLoading } = useGetEmployeeAllowances(selectedEmployeeId, {
-    query: { enabled: !!selectedPayroll?.employeeId },
+  const { data: printEmployeeAllowances } = useGetEmployeeAllowances(selectedEmployeeId, {
+    query: { enabled: !!selectedPayroll?.employeeId, queryKey: getGetEmployeeAllowancesQueryKey(selectedEmployeeId) },
   });
-  const { data: printEmployeeDeductions, isLoading: deductionsLoading } = useGetEmployeeDeductions(selectedEmployeeId, {
-    query: { enabled: !!selectedPayroll?.employeeId },
+  const { data: printEmployeeDeductions } = useGetEmployeeDeductions(selectedEmployeeId, {
+    query: { enabled: !!selectedPayroll?.employeeId, queryKey: getGetEmployeeDeductionsQueryKey(selectedEmployeeId) },
   });
+
+  // 初回ロード時（デスクトップのみ）先頭給与を自動選択（一度きり。閉じるボタンを機能させる）
+  const didInitSelectRef = useRef(false);
+  const sortedPayrolls = useMemo(() => filterPayrolls(payrolls, ""), [payrolls]);
+  useEffect(() => {
+    if (didInitSelectRef.current || sortedPayrolls.length === 0) return;
+    didInitSelectRef.current = true;
+    if (selectedPayrollId === null && window.matchMedia("(min-width: 768px)").matches) {
+      setSelectedPayrollId(sortedPayrolls[0].id);
+    }
+  }, [sortedPayrolls, selectedPayrollId]);
+
+  const filtered = useMemo(() => filterPayrolls(payrolls, search), [payrolls, search]);
+
   const handleConfirm = async () => {
     if (!selectedPayrollId) return;
     try {
@@ -166,13 +188,11 @@ export default function PayrollList() {
 
     try {
       for (const emp of employees) {
-        const existing = payrolls?.find(p => p.employeeId === emp.id);
+        const existing = payrolls.find(p => p.employeeId === emp.id);
         if (existing?.status === "confirmed") continue;
 
         try {
-          await calculatePayroll.mutateAsync({
-            data: { employeeId: emp.id, year, month }
-          });
+          await calculatePayroll.mutateAsync({ data: { employeeId: emp.id, year, month } });
           success++;
         } catch (err: unknown) {
           let msg = "不明なエラー";
@@ -188,9 +208,9 @@ export default function PayrollList() {
           errorList.push({ employeeCode: emp.employeeCode, name: emp.name, message: msg });
         }
       }
-      
+
       queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) });
-      
+
       if (errorList.length > 0) {
         setCalcErrors(errorList);
         toast({
@@ -199,10 +219,7 @@ export default function PayrollList() {
           variant: "destructive",
         });
       } else {
-        toast({
-          title: "計算完了",
-          description: `${success}件の給与計算が完了しました。`,
-        });
+        toast({ title: "計算完了", description: `${success}件の給与計算が完了しました。` });
       }
     } finally {
       setCalculating(false);
@@ -210,7 +227,6 @@ export default function PayrollList() {
   };
 
   const handleExportCsv = async () => {
-    // We construct the URL and create a temporary link to download it
     const url = `/api/payrolls/export/csv?year=${year}&month=${month}`;
     const a = document.createElement("a");
     a.href = url;
@@ -218,301 +234,232 @@ export default function PayrollList() {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    
-    toast({
-      title: "CSVエクスポート",
-      description: "ダウンロードを開始しました。",
-    });
+    toast({ title: "CSVエクスポート", description: "ダウンロードを開始しました。" });
   };
 
+  // この社員のみ再計算（標準モード）
+  const recalcSelected = async () => {
+    if (!selectedPayroll) return;
+    try {
+      await calculatePayroll.mutateAsync({ data: { employeeId: selectedPayroll.employeeId, year, month } });
+      queryClient.invalidateQueries({ queryKey: getGetPayrollQueryKey(selectedPayroll.id) });
+      queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) });
+      toast({ title: "計算完了", description: `${selectedPayroll.employeeName}の給与計算が完了しました。` });
+    } catch {
+      toast({ title: "エラー", description: "計算に失敗しました。月次実績を確認してください。", variant: "destructive" });
+    }
+  };
+
+  // 手入力固定で計算（マスター基本給・手当設定で再計算）
+  const recalcManual = async () => {
+    if (!selectedPayroll) return;
+    try {
+      await calculatePayroll.mutateAsync({ data: { employeeId: selectedPayroll.employeeId, year, month, calculationMode: "manual" } });
+      queryClient.invalidateQueries({ queryKey: getGetPayrollQueryKey(selectedPayroll.id) });
+      queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) });
+      toast({ title: "手入力固定で計算完了", description: "マスター基本給と手当設定で給与を再計算しました。" });
+    } catch {
+      toast({ title: "エラー", description: "計算に失敗しました。", variant: "destructive" });
+    }
+  };
+
+  const selectedEmployee = employees?.find(e => e.id === selectedPayroll?.employeeId);
+
   return (
-    <AppLayout>
-      <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <h2 className="text-2xl font-bold tracking-tight">給与明細一覧</h2>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex gap-2">
+    <AppLayout fullWidth>
+      <div className="flex flex-col h-[calc(100dvh-9.5rem)] md:h-[calc(100dvh-5.5rem)]">
+        {/* ── ツールバー ── */}
+        <div className="shrink-0 pb-3 space-y-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="p-2 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 text-white shadow-md shrink-0">
+                <Wallet className="h-5 w-5" />
+              </div>
+              <h2 className="text-base md:text-lg font-bold jp-tight leading-tight">給与明細一覧</h2>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 ml-auto">
               <RichMonthPicker
                 year={year}
                 month={month}
-                onChange={(y, m) => { setYear(y); setMonth(m); }}
+                onChange={(y, m) => requestAction(() => {
+                  // 月切替時は選択をクリア（給与IDは社員×年月で一意なため、
+                  // 前月の選択が残ると確定/再計算/印刷が前月明細を対象にしてしまう）。
+                  // 未保存編集がある場合は requestAction が確認ダイアログを出す。
+                  setYear(y);
+                  setMonth(m);
+                  setSelectedPayrollId(null);
+                  setIsDirty(false);
+                })}
               />
+              <Button variant="secondary" size="sm" onClick={handleCalculateAll} disabled={calculating || !employees?.length}>
+                <Calculator className="mr-1.5 h-4 w-4" />
+                {calculating ? "計算中..." : "一括計算"}
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleExportCsv} disabled={payrolls.length === 0}>
+                <Download className="mr-1.5 h-4 w-4" />CSV出力
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setBulkPrintActive(true)} disabled={payrolls.length === 0 || bulkPrintActive}>
+                <Printer className="mr-1.5 h-4 w-4" />
+                {bulkPrintActive ? "印刷準備中..." : "一括印刷"}
+              </Button>
             </div>
-            <Button variant="secondary" onClick={handleCalculateAll} disabled={calculating || !employees?.length}>
-              <Calculator className="mr-2 h-4 w-4" />
-              {calculating ? "計算中..." : "月次実績から一括計算"}
-            </Button>
-            <Button variant="outline" onClick={handleExportCsv} disabled={!payrolls || payrolls.length === 0}>
-              <Download className="mr-2 h-4 w-4" />
-              CSV出力
-            </Button>
-            <Button variant="outline" onClick={() => setBulkPrintActive(true)} disabled={!payrolls || payrolls.length === 0 || bulkPrintActive}>
-              <Printer className="mr-2 h-4 w-4" />
-              {bulkPrintActive ? "印刷準備中..." : "給与明細一括印刷"}
-            </Button>
           </div>
+
+          {/* 集計サマリー */}
+          {payrolls.length > 0 && <PayrollSummaryStats payrolls={payrolls} />}
+
+          {/* 計算エラー通知 */}
+          {calcErrors.length > 0 && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-2 min-w-0">
+                  <AlertCircle className="h-5 w-5 text-red-500 mt-0.5 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="font-semibold text-red-700 text-sm mb-2">以下の社員の給与計算でエラーが発生しました</p>
+                    <ul className="space-y-1.5">
+                      {calcErrors.map((e) => (
+                        <li key={e.employeeCode} className="text-sm text-red-700">
+                          <span className="font-semibold">{e.employeeCode} {e.name}</span>
+                          <span className="text-red-500 mx-1">—</span>
+                          <span>{e.message}</span>
+                          {e.message.includes("月次実績") && (
+                            <Link href={`/monthly-input`} className="ml-2 inline-flex items-center text-xs font-semibold text-red-600 underline underline-offset-2 hover:text-red-800">
+                              月次実績入力へ →
+                            </Link>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+                <button onClick={() => setCalcErrors([])} className="shrink-0 text-red-400 hover:text-red-600 transition-colors" aria-label="閉じる">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
-        {calcErrors.length > 0 && (
-          <div className="rounded-md border border-red-200 bg-red-50 p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-start gap-2 min-w-0">
-                <AlertCircle className="h-5 w-5 text-red-500 mt-0.5 shrink-0" />
-                <div className="min-w-0">
-                  <p className="font-semibold text-red-700 text-sm mb-2">
-                    以下の社員の給与計算でエラーが発生しました
-                  </p>
-                  <ul className="space-y-1.5">
-                    {calcErrors.map((e) => (
-                      <li key={e.employeeCode} className="text-sm text-red-700">
-                        <span className="font-semibold">{e.employeeCode} {e.name}</span>
-                        <span className="text-red-500 mx-1">—</span>
-                        <span>{e.message}</span>
-                        {e.message.includes("月次実績") && (
-                          <Link
-                            href={`/monthly-input`}
-                            className="ml-2 inline-flex items-center text-xs font-semibold text-red-600 underline underline-offset-2 hover:text-red-800"
-                          >
-                            月次実績入力へ →
-                          </Link>
+        {/* ── 2ペイン本体（詳細ペインは一覧ローディングでアンマウントされないよう常設。
+             月切替の再取得中に AllowanceInputPanel が再マウントされ未保存編集が消えるのを防ぐ）── */}
+        <div className="flex-1 min-h-0 flex md:gap-4">
+          {/* 左ペイン: 給与リスト（ローディング/空はこのペイン内でのみ表示） */}
+          <div className={`${selectedPayrollId !== null ? "hidden md:flex" : "flex"} w-full md:w-80 lg:w-96 shrink-0 flex-col min-h-0 rounded-xl border bg-card overflow-hidden`}>
+            {payrollsLoading ? (
+              <div className="flex-1 flex items-center justify-center gap-2 text-muted-foreground text-sm">
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                読み込み中...
+              </div>
+            ) : payrolls.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center gap-2 text-muted-foreground text-sm text-center px-4">
+                <Receipt className="h-7 w-7 text-muted-foreground/40" />
+                <p>{formatMonth(year, month)}の<br />給与データはありません</p>
+              </div>
+            ) : (
+              <PayrollListPane
+                payrolls={payrolls}
+                filtered={filtered}
+                selectedId={selectedPayrollId}
+                onSelect={trySelectPayroll}
+                search={search}
+                onSearchChange={setSearch}
+              />
+            )}
+          </div>
+
+          {/* 右ペイン: 詳細 */}
+            <div className={`${selectedPayrollId === null ? "hidden md:flex" : "flex"} flex-1 min-w-0 flex-col min-h-0`}>
+              {selectedPayrollId !== null ? (
+                <div className="flex flex-col h-full min-h-0 rounded-xl border bg-card overflow-hidden">
+                  {/* 詳細ヘッダー */}
+                  <div className="px-3 md:px-4 py-2.5 border-b shrink-0 bg-muted/20 flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      className="md:hidden p-1.5 -ml-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent shrink-0"
+                      onClick={tryClosePanel}
+                      aria-label="給与リストへ戻る"
+                    >
+                      <ArrowLeft className="h-5 w-5" />
+                    </button>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-base jp-tight truncate">{selectedPayroll?.employeeName ?? "—"}</span>
+                        <span className="text-[11px] text-muted-foreground font-mono shrink-0">{selectedPayroll?.employeeCode}</span>
+                        {selectedPayroll && (
+                          selectedPayroll.status === "confirmed" ? (
+                            <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] px-1.5 py-0">確定済</Badge>
+                          ) : (
+                            <Badge variant="secondary" className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] px-1.5 py-0">未確定</Badge>
+                          )
                         )}
-                      </li>
-                    ))}
-                  </ul>
+                      </div>
+                    </div>
+                    {selectedPayroll && (
+                      <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                        <Button variant="outline" size="sm" className="h-7 px-2 text-xs" disabled={calculating} onClick={recalcSelected}>
+                          <Calculator className="h-3 w-3 mr-1" />再計算
+                        </Button>
+                        <Button variant="outline" size="sm" className="h-7 px-2 text-xs border-amber-300 text-amber-800 hover:bg-amber-50" onClick={recalcManual}>
+                          <Calculator className="h-3 w-3 mr-1" />手入力固定
+                        </Button>
+                        <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={handlePrint}>
+                          <FileText className="h-3.5 w-3.5 mr-1" />印刷
+                        </Button>
+                        {selectedPayroll.status !== "confirmed" && (
+                          <Button size="sm" className="h-7 px-2 text-xs bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleConfirm} disabled={confirmPayroll.isPending}>
+                            <CheckCircle2 className="h-3.5 w-3.5 mr-1" />確定
+                          </Button>
+                        )}
+                        <button onClick={tryClosePanel} className="hidden md:inline-flex p-1.5 rounded-lg hover:bg-slate-100 transition-colors text-slate-400 hover:text-slate-600 shrink-0" aria-label="閉じる">
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 詳細本体 */}
+                  <div className="flex-1 min-h-0 overflow-y-auto p-3 md:p-4">
+                    {detailLoading ? (
+                      <div className="flex items-center justify-center py-12 text-muted-foreground">読み込み中...</div>
+                    ) : !selectedPayroll ? (
+                      <div className="py-12 text-center text-muted-foreground">データが見つかりません</div>
+                    ) : selectedEmployee ? (
+                      <AllowanceInputPanel
+                        key={selectedPayroll.id}
+                        employee={selectedEmployee}
+                        monthlyData={(() => {
+                          const rec = monthlyRecords?.find(r => r.employeeId === selectedPayroll.employeeId);
+                          return {
+                            workDays: rec?.workDays ?? selectedPayroll.workDays ?? 0,
+                            saturdayWorkDays: (rec as { saturdayWorkDays?: number } | undefined)?.saturdayWorkDays ?? 0,
+                            sundayWorkDays: (rec as { sundayWorkDays?: number } | undefined)?.sundayWorkDays ?? 0,
+                          };
+                        })()}
+                        onDirtyChange={setIsDirty}
+                        year={year}
+                        month={month}
+                      />
+                    ) : (
+                      <div className="py-12 text-center text-muted-foreground">社員データが見つかりません</div>
+                    )}
+                  </div>
                 </div>
-              </div>
-              <button
-                onClick={() => setCalcErrors([])}
-                className="shrink-0 text-red-400 hover:text-red-600 transition-colors"
-                aria-label="閉じる"
-              >
-                <X className="h-4 w-4" />
-              </button>
+              ) : (
+                <div className="flex-1 hidden md:flex flex-col items-center justify-center gap-2 rounded-xl border bg-card text-muted-foreground">
+                  <Receipt className="h-8 w-8 text-muted-foreground/40" />
+                  <p className="text-sm">左のリストから給与明細を選択してください</p>
+                </div>
+              )}
             </div>
           </div>
-        )}
-
-        {/* ── モバイル：カードリスト ── */}
-        <div className="sm:hidden space-y-2">
-          {payrollsLoading ? (
-            <div className="text-center py-8 text-muted-foreground text-sm">読み込み中...</div>
-          ) : !payrolls || payrolls.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground text-sm">
-              {formatMonth(year, month)}の給与データはありません。
-            </div>
-          ) : (
-            [...payrolls].sort((a, b) => a.employeeCode.localeCompare(b.employeeCode)).map((payroll) => (
-              <div
-                key={payroll.id}
-                className={`rounded-lg border bg-card p-3 cursor-pointer transition-colors ${selectedPayrollId === payroll.id ? "border-primary/40 bg-primary/5" : "hover:bg-muted/40"}`}
-                onClick={() => trySelectPayroll(payroll.id)}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <div>
-                    <span className="font-semibold text-sm">{payroll.employeeName}</span>
-                    <span className="ml-2 text-xs text-muted-foreground">{payroll.employeeCode}</span>
-                  </div>
-                  {payroll.status === "confirmed" ? (
-                    <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-xs">確定済</Badge>
-                  ) : (
-                    <Badge variant="secondary" className="bg-amber-50 text-amber-700 border-amber-200 text-xs">未確定</Badge>
-                  )}
-                </div>
-                <div className="grid grid-cols-3 gap-1 text-xs">
-                  <div>
-                    <p className="text-muted-foreground">総支給</p>
-                    <p className="font-medium">{formatCurrency(payroll.grossSalary)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">控除</p>
-                    <p className="font-medium">{formatCurrency(payroll.totalDeductions)}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">差引</p>
-                    <p className="font-bold text-primary">{formatCurrency(payroll.netSalary)}</p>
-                  </div>
-                </div>
-                <div className="flex items-center justify-end mt-2">
-                  <span className="text-xs text-primary flex items-center gap-0.5">
-                    詳細 <ChevronRight className="h-3 w-3" />
-                  </span>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-
-        {/* ── デスクトップ：テーブル ── */}
-        <div className="hidden sm:block rounded-md border bg-card overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[100px]">社員番号</TableHead>
-                <TableHead>氏名</TableHead>
-                <TableHead className="text-right">総支給額</TableHead>
-                <TableHead className="text-right">控除合計</TableHead>
-                <TableHead className="text-right">差引支給額</TableHead>
-                <TableHead className="text-center">ステータス</TableHead>
-                <TableHead className="w-[200px]"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {payrollsLoading ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                    読み込み中...
-                  </TableCell>
-                </TableRow>
-              ) : !payrolls || payrolls.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                    {formatMonth(year, month)}の給与データはありません。「一括計算」を実行するか、実績データを入力してください。
-                  </TableCell>
-                </TableRow>
-              ) : (
-                [...payrolls].sort((a, b) => a.employeeCode.localeCompare(b.employeeCode)).map((payroll) => (
-                  <TableRow
-                    key={payroll.id}
-                    className={`cursor-pointer transition-colors ${selectedPayrollId === payroll.id ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-muted/50"}`}
-                    onClick={() => trySelectPayroll(payroll.id)}
-                  >
-                    <TableCell className="font-medium">{payroll.employeeCode}</TableCell>
-                    <TableCell>{payroll.employeeName}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(payroll.grossSalary)}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(payroll.totalDeductions)}</TableCell>
-                    <TableCell className="text-right font-bold">{formatCurrency(payroll.netSalary)}</TableCell>
-                    <TableCell className="text-center">
-                      {payroll.status === "confirmed" ? (
-                        <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">確定済</Badge>
-                      ) : (
-                        <Badge variant="secondary" className="bg-amber-50 text-amber-700 border-amber-200">計算中（未確定）</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 px-2 text-xs text-primary hover:text-primary/80"
-                          disabled={calculating}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            (async () => {
-                              try {
-                                await calculatePayroll.mutateAsync({ data: { employeeId: payroll.employeeId, year, month } });
-                                queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) });
-                                toast({ title: "計算完了", description: `${payroll.employeeName}の給与計算が完了しました。` });
-                              } catch {
-                                toast({ title: "エラー", description: "計算に失敗しました。月次実績を確認してください。", variant: "destructive" });
-                              }
-                            })();
-                          }}
-                        >
-                          <Calculator className="h-3 w-3 mr-1" />
-                          月次実績から計算
-                        </Button>
-                        <span className="inline-flex items-center text-sm text-muted-foreground gap-0.5">
-                          詳細 <ChevronRight className="h-3.5 w-3.5" />
-                        </span>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
       </div>
-
-      {/* 給与明細詳細シート */}
-      <Sheet open={!!selectedPayrollId} onOpenChange={(open) => { if (!open) tryCloseSheet(); }}>
-        <SheetContent className="w-full sm:max-w-2xl overflow-y-auto print:fixed print:inset-0 print:max-w-none">
-          <SheetHeader className="print:hidden">
-            <div className="flex items-center justify-between">
-              <SheetTitle>
-                給与明細詳細
-                {selectedPayroll && (
-                  <span className="ml-2 text-base font-normal text-muted-foreground">{selectedPayroll.employeeName}</span>
-                )}
-              </SheetTitle>
-              <div className="flex items-center gap-2 flex-wrap justify-end">
-                {selectedPayroll && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 px-2 text-xs border-amber-300 text-amber-800 hover:bg-amber-50"
-                    onClick={async () => {
-                      try {
-                        await calculatePayroll.mutateAsync({ data: { employeeId: selectedPayroll.employeeId, year, month, calculationMode: "manual" } });
-                        queryClient.invalidateQueries({ queryKey: getGetPayrollQueryKey(selectedPayroll.id) });
-                        queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) });
-                        toast({ title: "手入力固定で計算完了", description: "マスター基本給と手当設定で給与を再計算しました。" });
-                      } catch {
-                        toast({ title: "エラー", description: "計算に失敗しました。", variant: "destructive" });
-                      }
-                    }}
-                  >
-                    <Calculator className="h-3 w-3 mr-1" />
-                    手入力固定で計算
-                  </Button>
-                )}
-                <Button variant="outline" size="sm" onClick={handlePrint}>
-                  <FileText className="mr-1.5 h-3.5 w-3.5" />
-                  印刷
-                </Button>
-                {selectedPayroll && selectedPayroll.status !== "confirmed" && (
-                  <Button
-                    size="sm"
-                    onClick={handleConfirm}
-                    disabled={confirmPayroll.isPending}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                  >
-                    <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
-                    明細を確定
-                  </Button>
-                )}
-              </div>
-            </div>
-          </SheetHeader>
-
-          {detailLoading ? (
-            <div className="flex items-center justify-center py-12 text-muted-foreground">読み込み中...</div>
-          ) : !selectedPayroll ? (
-            <div className="py-12 text-center text-muted-foreground">データが見つかりません</div>
-          ) : (
-            <div className="mt-4">
-
-              {employees?.find(e => e.id === selectedPayroll.employeeId) ? (
-                <AllowanceInputPanel
-                  employee={employees.find(e => e.id === selectedPayroll.employeeId)!}
-                  monthlyData={(() => {
-                    const rec = monthlyRecords?.find(r => r.employeeId === selectedPayroll.employeeId);
-                    return {
-                      workDays: rec?.workDays ?? selectedPayroll.workDays ?? 0,
-                      saturdayWorkDays: (rec as { saturdayWorkDays?: number } | undefined)?.saturdayWorkDays ?? 0,
-                      sundayWorkDays: (rec as { sundayWorkDays?: number } | undefined)?.sundayWorkDays ?? 0,
-                    };
-                  })()}
-                  onDirtyChange={setIsDirty}
-                  year={year}
-                  month={month}
-                />
-              ) : (
-                <div className="py-12 text-center text-muted-foreground">社員データが見つかりません</div>
-              )}
-            </div>
-          )}
-        </SheetContent>
-      </Sheet>
 
       {/* 未保存変更確認ダイアログ */}
       <AlertDialog open={showUnsavedDialog} onOpenChange={setShowUnsavedDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>保存していません</AlertDialogTitle>
-            <AlertDialogDescription>
-              変更が保存されていません。このまま移動すると変更内容が失われます。
-            </AlertDialogDescription>
+            <AlertDialogDescription>変更が保存されていません。このまま移動すると変更内容が失われます。</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>キャンセル</AlertDialogCancel>
@@ -532,11 +479,11 @@ export default function PayrollList() {
       </AlertDialog>
 
       {/* ── 一括印刷ポータル ── */}
-      {bulkPrintActive && payrolls && payrolls.length > 0 && (
+      {bulkPrintActive && payrolls.length > 0 && (
         <PayslipBulkPrint
-          payrolls={[...payrolls].sort((a, b) => a.employeeCode.localeCompare(b.employeeCode)) as Parameters<typeof PayslipBulkPrint>[0]["payrolls"]}
+          payrolls={[...payrolls].sort((a, b) => (a.employeeCode ?? "").localeCompare(b.employeeCode ?? "")) as unknown as Parameters<typeof PayslipBulkPrint>[0]["payrolls"]}
           companyName={company?.name ?? "三川運送株式会社"}
-          employees={(employees ?? []) as Parameters<typeof PayslipBulkPrint>[0]["employees"]}
+          employees={(employees ?? []) as unknown as Parameters<typeof PayslipBulkPrint>[0]["employees"]}
           company={company as Parameters<typeof PayslipBulkPrint>[0]["company"]}
           onDone={() => setBulkPrintActive(false)}
           year={year}
@@ -544,14 +491,14 @@ export default function PayrollList() {
         />
       )}
 
-      {/* ── 印刷専用ポータル（@media print で表示、通常時は非表示） ── */}
+      {/* ── 印刷専用ポータル（@media print で表示） ── */}
       {printPayroll && (
         <PayslipPrintClassic
           payroll={printPayroll as Parameters<typeof PayslipPrintClassic>[0]["payroll"]}
           companyName={company?.name ?? "三川運送株式会社"}
           employeeAllowances={printEmployeeAllowances as Parameters<typeof PayslipPrintClassic>[0]["employeeAllowances"]}
           employeeDeductions={printEmployeeDeductions as Parameters<typeof PayslipPrintClassic>[0]["employeeDeductions"]}
-          employee={employees?.find(e => e.id === printPayroll.employeeId) as Parameters<typeof PayslipPrintClassic>[0]["employee"]}
+          employee={employees?.find(e => e.id === (printPayroll as Payroll).employeeId) as Parameters<typeof PayslipPrintClassic>[0]["employee"]}
           company={company as Parameters<typeof PayslipPrintClassic>[0]["company"]}
         />
       )}

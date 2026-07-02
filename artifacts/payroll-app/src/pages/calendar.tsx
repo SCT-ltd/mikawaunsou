@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { AppLayout } from "@/components/layout/app-layout";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, Calendar, RotateCcw, Printer } from "lucide-react";
+import { ChevronLeft, ChevronRight, Calendar, RotateCcw, Printer, Loader2 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 // ── 祝日データ（年 → Map<"YYYY-MM-DD", 祝日名>）───────────────────
@@ -100,12 +100,12 @@ function MonthCalendar({
   }
 
   return (
-    <div className="border rounded-lg overflow-hidden bg-card">
-      <div className="bg-muted/50 px-3 py-2 flex justify-between items-center border-b">
-        <span className="font-semibold text-sm">{year}年 {MONTH_NAMES[month - 1]}</span>
-        <span className="text-xs text-muted-foreground">
-          出勤 <strong className="text-foreground">{workDays}</strong>日
-          <span className="text-red-500 ml-1">休 <strong>{daysInMonth - workDays}</strong>日</span>
+    <div className="border rounded-xl overflow-hidden bg-card">
+      <div className="bg-muted/40 px-3 py-2 flex justify-between items-center border-b">
+        <span className="font-bold text-sm jp-tight">{MONTH_NAMES[month - 1]}<span className="text-[10px] font-normal text-muted-foreground ml-1 amount">{year}</span></span>
+        <span className="text-[11px] text-muted-foreground">
+          出勤 <strong className="text-foreground amount">{workDays}</strong>
+          <span className="text-red-500 ml-1.5">休 <strong className="amount">{daysInMonth - workDays}</strong></span>
         </span>
       </div>
       <div className="p-2">
@@ -175,6 +175,51 @@ function isInFiscalYear(dateStr: string, fiscalYear: number): boolean {
 
 const API_BASE = "/api";
 
+// ── ロード中スケルトン（シャドウウィンドウ）─────────────────────────
+function CalendarSkeleton() {
+  return (
+    <div className="space-y-4">
+      {/* ヘッダー */}
+      <div className="flex items-center gap-3">
+        <div className="p-2 bg-primary/10 rounded-lg text-primary">
+          <Calendar className="h-5 w-5" />
+        </div>
+        <div>
+          <h2 className="text-2xl font-bold jp-tight">カレンダー</h2>
+          <p className="text-sm text-muted-foreground flex items-center gap-2">
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />
+            読み込み中…
+          </p>
+        </div>
+      </div>
+
+      {/* 12ヶ月ぶんのスケルトングリッド */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <div key={i} className="border rounded-xl overflow-hidden bg-card animate-pulse">
+            <div className="bg-muted/40 px-3 py-2 flex justify-between items-center border-b">
+              <div className="h-4 w-16 bg-muted rounded" />
+              <div className="h-3 w-12 bg-muted rounded" />
+            </div>
+            <div className="p-2">
+              <div className="grid grid-cols-7 gap-px mb-1">
+                {Array.from({ length: 7 }).map((_, j) => (
+                  <div key={j} className="h-3 w-3 mx-auto bg-muted/70 rounded" />
+                ))}
+              </div>
+              <div className="grid grid-cols-7 gap-px">
+                {Array.from({ length: 42 }).map((_, j) => (
+                  <div key={j} className="h-7 bg-muted/40 rounded" />
+                ))}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function CalendarPage() {
   const now = new Date();
   const currentMonth = now.getMonth() + 1;
@@ -183,6 +228,7 @@ export default function CalendarPage() {
   const [fiscalYear, setFiscalYear] = useState(defaultFiscalYear);
   const [overrides, setOverrides]   = useState<Record<string, boolean>>({});
   const [syncing, setSyncing] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const esRef = useRef<EventSource | null>(null);
 
   // ── SSE でリアルタイム受信 ────────────────────────────────────────
@@ -194,6 +240,7 @@ export default function CalendarPage() {
       try {
         const data = JSON.parse(e.data) as Record<string, boolean>;
         setOverrides(data);
+        setLoaded(true); // 初回データ反映完了 → カレンダーを表示
       } catch { /* ignore */ }
     };
 
@@ -201,7 +248,11 @@ export default function CalendarPage() {
       // 再接続はブラウザが自動で行う
     };
 
+    // フォールバック: 初期データが届かない場合も 10 秒でスケルトンを解除
+    const fallback = setTimeout(() => setLoaded(true), 10_000);
+
     return () => {
+      clearTimeout(fallback);
       es.close();
       esRef.current = null;
     };
@@ -362,24 +413,41 @@ export default function CalendarPage() {
     return sum;
   }, 0);
 
+  // 初回データが反映されるまではスケルトン（シャドウウィンドウ）を表示
+  if (!loaded) {
+    return (
+      <AppLayout fullWidth>
+        <CalendarSkeleton />
+      </AppLayout>
+    );
+  }
+
+  const holidayCount = totalFiscalDays - totalWorkDays;
+
   return (
-    <AppLayout>
+    <AppLayout fullWidth>
       <div className="space-y-4">
         {/* ── ページヘッダー ── */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-primary/10 rounded-lg text-primary">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2 bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-xl text-white shadow-md shrink-0">
               <Calendar className="h-5 w-5" />
             </div>
-            <div>
-              <h2 className="text-2xl font-bold tracking-tight">カレンダー</h2>
-              <p className="text-sm text-muted-foreground">
-                祝日・土日は<span className="text-red-600 font-medium">赤</span>、平日（出勤日）は<span className="font-medium">黒</span>。日付クリックで切り替え。
+            <div className="min-w-0">
+              <h2 className="text-xl md:text-2xl font-bold jp-tight leading-tight">カレンダー</h2>
+              <p className="text-[13px] text-muted-foreground leading-tight">
+                {fiscalYear}年4月〜{fiscalYear + 1}年3月　祝日・土日は<span className="text-red-600 font-medium">赤</span>、平日は<span className="font-medium">黒</span>。日付クリックで切替
                 {syncing && <span className="ml-2 text-blue-500 text-xs">同期中…</span>}
               </p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {/* 年間集計チップ */}
+            <div className="flex items-center gap-2.5 rounded-lg border bg-muted/30 px-3 py-1.5 text-xs">
+              <span className="text-muted-foreground">出勤 <strong className="text-foreground text-sm amount">{totalWorkDays}</strong>日</span>
+              <span className="w-px h-4 bg-border" />
+              <span className="text-muted-foreground">休 <strong className="text-red-600 text-sm amount">{holidayCount}</strong>日</span>
+            </div>
             {overrideCount > 0 && (
               <Button variant="outline" size="sm" onClick={handleReset} className="gap-1.5 text-muted-foreground">
                 <RotateCcw className="h-3.5 w-3.5" />
@@ -390,27 +458,22 @@ export default function CalendarPage() {
               <Printer className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">印刷</span>
             </Button>
-            <div className="flex items-center gap-1 border rounded-md px-1">
-              <button onClick={() => setFiscalYear(y => y - 1)} className="p-1.5 hover:bg-muted rounded transition-colors" title="前年度">
+            <div className="flex items-center gap-1 border rounded-lg px-1 bg-card">
+              <button onClick={() => setFiscalYear(y => y - 1)} className="p-1.5 hover:bg-muted rounded-md transition-colors" title="前年度">
                 <ChevronLeft className="h-4 w-4" />
               </button>
-              <span className="px-2 text-sm font-semibold tabular-nums text-center whitespace-nowrap">
-                {fiscalYear}年度
+              <span className="px-2 text-sm font-semibold text-center whitespace-nowrap jp-tight">
+                <span className="amount">{fiscalYear}</span>年度
               </span>
-              <button onClick={() => setFiscalYear(y => y + 1)} className="p-1.5 hover:bg-muted rounded transition-colors" title="翌年度">
+              <button onClick={() => setFiscalYear(y => y + 1)} className="p-1.5 hover:bg-muted rounded-md transition-colors" title="翌年度">
                 <ChevronRight className="h-4 w-4" />
               </button>
             </div>
           </div>
         </div>
 
-        {/* ── 年度表示サブタイトル ── */}
-        <div className="text-xs text-muted-foreground -mt-3">
-          {fiscalYear}年4月〜{fiscalYear + 1}年3月
-        </div>
-
-        {/* ── カレンダーグリッド ── */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+        {/* ── カレンダーグリッド（全幅6列） ── */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3">
           {fiscalMonths.map(({ year, month }) => (
             <MonthCalendar
               key={`${year}-${month}`}
@@ -423,8 +486,8 @@ export default function CalendarPage() {
           ))}
         </div>
 
-        {/* ── 凡例・統計 ── */}
-        <div className="flex flex-wrap items-center gap-x-8 gap-y-2 border rounded-md px-4 py-3 bg-muted/30 text-xs text-muted-foreground">
+        {/* ── 凡例 ── */}
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border rounded-xl px-4 py-3 bg-muted/30 text-xs text-muted-foreground">
           <span className="flex items-center gap-1.5">
             <span className="inline-block w-4 h-4 rounded bg-red-100 border border-red-200" />
             祝日・土曜・日曜（クリックで出勤日に変更）
@@ -442,19 +505,6 @@ export default function CalendarPage() {
               <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-red-400" />
             </span>
             祝日（ホバーで名称表示）
-          </span>
-          <span className="ml-auto flex items-center gap-6">
-            <span className="flex items-center gap-1.5">
-              <span className="text-muted-foreground">{fiscalYear}年度 年間出勤日数</span>
-              <span className="text-lg font-bold text-foreground tabular-nums">{totalWorkDays}</span>
-              <span>日</span>
-            </span>
-            <span className="w-px h-5 bg-border" />
-            <span className="flex items-center gap-1.5">
-              <span className="text-muted-foreground">年間休日数</span>
-              <span className="text-lg font-bold text-red-600 tabular-nums">{totalFiscalDays - totalWorkDays}</span>
-              <span>日</span>
-            </span>
           </span>
         </div>
       </div>

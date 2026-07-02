@@ -372,52 +372,6 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// 三川運送専用給与計算ロジック
-// ────────────────────────────────────────────────────────────────────────────
-
-export interface MikawaPayrollInput {
-  salesAmount: number;
-  commissionRate: number;
-  workDays: number;
-  overtimeHours: number;
-  fixedOvertimeHours: number;
-  overtimeUnitPrice: number;
-}
-
-export interface MikawaPayrollResult {
-  salesSalary: number;
-  minimumSalary: number;
-  finalSalary: number;
-  overtimePay: number;
-  adjustedRate: number;
-  performanceAllowance: number;
-}
-
-const MIKAWA_DAILY_BASE = 9808;
-
-export function calculateMikawaPayroll(input: MikawaPayrollInput): MikawaPayrollResult {
-  const {
-    salesAmount,
-    commissionRate,
-    workDays,
-    overtimeHours,
-    fixedOvertimeHours,
-    overtimeUnitPrice,
-  } = input;
-
-  const actualOvertime   = Math.max(0, overtimeHours - fixedOvertimeHours);
-  const overtimePay      = actualOvertime * overtimeUnitPrice;
-  const overtimeRate     = salesAmount > 0 ? overtimePay / salesAmount : 0;
-  const adjustedRate     = commissionRate - overtimeRate;
-  const salesSalary      = Math.floor(salesAmount * adjustedRate);
-  const minimumSalary    = MIKAWA_DAILY_BASE * workDays + overtimePay;
-  const finalSalary      = Math.max(salesSalary, minimumSalary);
-  const performanceAllowance = finalSalary - minimumSalary;
-
-  return { salesSalary, minimumSalary, finalSalary, overtimePay, adjustedRate, performanceAllowance };
-}
-
-// ────────────────────────────────────────────────────────────────────────────
 // ブルーウィング給与計算ロジック
 // ────────────────────────────────────────────────────────────────────────────
 

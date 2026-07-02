@@ -11,6 +11,8 @@ export const allowanceDefinitionsTable = pgTable("allowance_definitions", {
   calculationType: text("calculation_type").notNull().default("variable"),
   sortOrder: integer("sort_order").notNull().default(0),
   isActive: boolean("is_active").notNull().default(true),
+  // ON にすると全社員の手当リストに常時表示される（毎回の手当追加を省く）
+  pinned: boolean("pinned").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

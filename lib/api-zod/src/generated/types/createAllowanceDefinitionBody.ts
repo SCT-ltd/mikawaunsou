@@ -13,4 +13,5 @@ export interface CreateAllowanceDefinitionBody {
   isTaxable: boolean;
   calculationType?: CreateAllowanceDefinitionBodyCalculationType;
   sortOrder?: number;
+  pinned?: boolean;
 }

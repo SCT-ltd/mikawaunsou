@@ -119,11 +119,9 @@ export default function PayrollDetail() {
                     <td className="py-2">基本給</td>
                     <td className="py-2 text-right">{formatCurrency(payroll.baseSalary)}</td>
                   </tr>
-                  {/* @ts-expect-error saturdayPay は新規列。古い型では未定義の場合あり */}
                   {Number(payroll.saturdayPay ?? 0) > 0 && (
                     <tr className="border-b border-dotted border-gray-300">
                       <td className="py-2">土曜出勤手当</td>
-                      {/* @ts-expect-error */}
                       <td className="py-2 text-right">{formatCurrency(Number(payroll.saturdayPay ?? 0))}</td>
                     </tr>
                   )}
@@ -143,28 +141,10 @@ export default function PayrollDetail() {
                     <td className="py-2">歩合給</td>
                     <td className="py-2 text-right">{formatCurrency(payroll.commissionPay)}</td>
                   </tr>
-                  <tr className="border-b border-dotted border-gray-300">
-                    <td className="py-2">通勤手当</td>
-                    <td className="py-2 text-right">{formatCurrency(payroll.transportationAllowance)}</td>
-                  </tr>
-                  <tr className="border-b border-dotted border-gray-300">
-                    <td className="py-2">無事故手当</td>
-                    <td className="py-2 text-right">{formatCurrency(payroll.safetyDrivingAllowance)}</td>
-                  </tr>
-                  <tr className="border-b border-dotted border-gray-300">
-                    <td className="py-2">長距離手当</td>
-                    <td className="py-2 text-right">{formatCurrency(payroll.longDistanceAllowance)}</td>
-                  </tr>
-                  <tr className="border-b border-dotted border-gray-300">
-                    <td className="py-2">役職手当</td>
-                    <td className="py-2 text-right">{formatCurrency(payroll.positionAllowance)}</td>
-                  </tr>
-                  {/* @ts-expect-error customAllowancesTotal might be injected */}
-                  {payroll.customAllowancesTotal > 0 && (
+                  {(payroll.customAllowancesTotal ?? 0) > 0 && (
                     <tr className="border-b border-dotted border-gray-300">
                       <td className="py-2">その他手当</td>
-                      {/* @ts-expect-error */}
-                      <td className="py-2 text-right">{formatCurrency(payroll.customAllowancesTotal)}</td>
+                      <td className="py-2 text-right">{formatCurrency(payroll.customAllowancesTotal ?? 0)}</td>
                     </tr>
                   )}
                   <tr className="border-b-2 border-black font-bold bg-gray-50">
@@ -190,8 +170,8 @@ export default function PayrollDetail() {
                     <td className="py-2 text-right">{payroll.lateNightHours} 時間</td>
                   </tr>
                   <tr className="border-b border-dotted border-gray-300">
-                    <td className="py-2">日曜/祝日出勤日数</td>
-                    <td className="py-2 text-right">{payroll.sundayWorkDays} 日</td>
+                    <td className="py-2">祝日/休日出勤日数</td>
+                    <td className="py-2 text-right">{payroll.holidayWorkDays} 日</td>
                   </tr>
                 </tbody>
               </table>

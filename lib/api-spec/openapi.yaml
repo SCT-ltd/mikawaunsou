@@ -843,6 +843,15 @@ components:
         holidayRate:
           type: number
           description: 休日出勤割増率（例：1.35）
+        dailyWageWeekday:
+          type: number
+          description: 平日日給（日給制の会社共通単価、円）
+        dailyWageSaturday:
+          type: number
+          description: 土曜日給（日給制の会社共通単価、円）
+        hourlyWageSunday:
+          type: number
+          description: 日曜・祝日時給（会社共通単価、円/時）
         createdAt:
           type: string
           format: date-time
@@ -866,6 +875,9 @@ components:
         - overtimeRate
         - lateNightAdditionalRate
         - holidayRate
+        - dailyWageWeekday
+        - dailyWageSaturday
+        - hourlyWageSunday
         - createdAt
         - updatedAt
 
@@ -902,6 +914,12 @@ components:
         lateNightAdditionalRate:
           type: number
         holidayRate:
+          type: number
+        dailyWageWeekday:
+          type: number
+        dailyWageSaturday:
+          type: number
+        hourlyWageSunday:
           type: number
 
     Employee:
@@ -982,8 +1000,8 @@ components:
           description: 住民税（月額）
         salaryType:
           type: string
-          description: 給与形態（fixed=固定給, daily=日給制）
-          enum: [fixed, daily]
+          description: 給与形態（fixed=固定給, daily=日給制, hourly=時給制）
+          enum: [fixed, daily, hourly]
         isOfficeStaff:
           type: boolean
           description: 事務員フラグ（true=事務員用打刻画面, false=ドライバー用打刻画面）
@@ -1172,8 +1190,8 @@ components:
           type: number
         salaryType:
           type: string
-          description: 給与形態（fixed=固定給, daily=日給制）
-          enum: [fixed, daily]
+          description: 給与形態（fixed=固定給, daily=日給制, hourly=時給制）
+          enum: [fixed, daily, hourly]
         dailyRateOverride:
           type: number
           description: '@deprecated 旧仕様。新規は dailyRateWeekday/dailyRateSaturday を使用'
@@ -1392,6 +1410,9 @@ components:
         earlyOvertimeAllowance:
           type: number
           description: 早出残業手当
+        customAllowancesTotal:
+          type: number
+          description: カスタム手当合計
         absenceDeduction:
           type: number
           description: 欠勤控除
@@ -1400,7 +1421,10 @@ components:
           description: 支給合計
         socialInsurance:
           type: number
-          description: 社会保険料
+          description: 社会保険料（健保＋子育て支援金＋厚年）
+        childcareSupportContribution:
+          type: number
+          description: 子ども・子育て支援金
         employmentInsurance:
           type: number
           description: 雇用保険料
@@ -1655,6 +1679,9 @@ components:
           description: 表示順
         isActive:
           type: boolean
+        pinned:
+          type: boolean
+          description: ONにすると全社員の手当リストに常時表示される
         createdAt:
           type: string
           format: date-time
@@ -1668,6 +1695,7 @@ components:
         - calculationType
         - sortOrder
         - isActive
+        - pinned
         - createdAt
         - updatedAt
 
@@ -1685,6 +1713,8 @@ components:
           enum: [fixed, variable, unit_time]
         sortOrder:
           type: integer
+        pinned:
+          type: boolean
       required:
         - name
         - isTaxable
@@ -1704,6 +1734,8 @@ components:
         sortOrder:
           type: integer
         isActive:
+          type: boolean
+        pinned:
           type: boolean
 
     EmployeeAllowance:

@@ -83,6 +83,15 @@ export const GetCompanyResponse = zod.object({
   overtimeRate: zod.number().describe("残業割増率（例：1.25）"),
   lateNightAdditionalRate: zod.number().describe("深夜追加割増率（例：0.25）"),
   holidayRate: zod.number().describe("休日出勤割増率（例：1.35）"),
+  dailyWageWeekday: zod
+    .number()
+    .describe("平日日給（日給制の会社共通単価、円）"),
+  dailyWageSaturday: zod
+    .number()
+    .describe("土曜日給（日給制の会社共通単価、円）"),
+  hourlyWageSunday: zod
+    .number()
+    .describe("日曜・祝日時給（会社共通単価、円\/時）"),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -109,6 +118,9 @@ export const UpdateCompanyBody = zod.object({
   overtimeRate: zod.number().optional(),
   lateNightAdditionalRate: zod.number().optional(),
   holidayRate: zod.number().optional(),
+  dailyWageWeekday: zod.number().optional(),
+  dailyWageSaturday: zod.number().optional(),
+  hourlyWageSunday: zod.number().optional(),
 });
 
 export const UpdateCompanyResponse = zod.object({
@@ -140,6 +152,15 @@ export const UpdateCompanyResponse = zod.object({
   overtimeRate: zod.number().describe("残業割増率（例：1.25）"),
   lateNightAdditionalRate: zod.number().describe("深夜追加割増率（例：0.25）"),
   holidayRate: zod.number().describe("休日出勤割増率（例：1.35）"),
+  dailyWageWeekday: zod
+    .number()
+    .describe("平日日給（日給制の会社共通単価、円）"),
+  dailyWageSaturday: zod
+    .number()
+    .describe("土曜日給（日給制の会社共通単価、円）"),
+  hourlyWageSunday: zod
+    .number()
+    .describe("日曜・祝日時給（会社共通単価、円\/時）"),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -189,8 +210,8 @@ export const ListEmployeesResponseItem = zod.object({
     ),
   residentTax: zod.number().describe("住民税（月額）"),
   salaryType: zod
-    .enum(["fixed", "daily"])
-    .describe("給与形態（fixed=固定給, daily=日給制）"),
+    .enum(["fixed", "daily", "hourly"])
+    .describe("給与形態（fixed=固定給, daily=日給制, hourly=時給制）"),
   isOfficeStaff: zod
     .boolean()
     .describe(
@@ -322,8 +343,8 @@ export const GetEmployeeResponse = zod.object({
     ),
   residentTax: zod.number().describe("住民税（月額）"),
   salaryType: zod
-    .enum(["fixed", "daily"])
-    .describe("給与形態（fixed=固定給, daily=日給制）"),
+    .enum(["fixed", "daily", "hourly"])
+    .describe("給与形態（fixed=固定給, daily=日給制, hourly=時給制）"),
   isOfficeStaff: zod
     .boolean()
     .describe(
@@ -412,9 +433,9 @@ export const UpdateEmployeeBody = zod.object({
     ),
   residentTax: zod.number().optional(),
   salaryType: zod
-    .enum(["fixed", "daily"])
+    .enum(["fixed", "daily", "hourly"])
     .optional()
-    .describe("給与形態（fixed=固定給, daily=日給制）"),
+    .describe("給与形態（fixed=固定給, daily=日給制, hourly=時給制）"),
   dailyRateOverride: zod
     .number()
     .optional()
@@ -485,8 +506,8 @@ export const UpdateEmployeeResponse = zod.object({
     ),
   residentTax: zod.number().describe("住民税（月額）"),
   salaryType: zod
-    .enum(["fixed", "daily"])
-    .describe("給与形態（fixed=固定給, daily=日給制）"),
+    .enum(["fixed", "daily", "hourly"])
+    .describe("給与形態（fixed=固定給, daily=日給制, hourly=時給制）"),
   isOfficeStaff: zod
     .boolean()
     .describe(
@@ -716,9 +737,16 @@ export const ListPayrollsResponseItem = zod.object({
   positionAllowance: zod.number().describe("役職手当"),
   familyAllowance: zod.number().describe("家族手当"),
   earlyOvertimeAllowance: zod.number().describe("早出残業手当"),
+  customAllowancesTotal: zod.number().optional().describe("カスタム手当合計"),
   absenceDeduction: zod.number().describe("欠勤控除"),
   grossSalary: zod.number().describe("支給合計"),
-  socialInsurance: zod.number().describe("社会保険料"),
+  socialInsurance: zod
+    .number()
+    .describe("社会保険料（健保＋子育て支援金＋厚年）"),
+  childcareSupportContribution: zod
+    .number()
+    .optional()
+    .describe("子ども・子育て支援金"),
   employmentInsurance: zod.number().describe("雇用保険料"),
   incomeTax: zod.number().describe("源泉所得税"),
   residentTax: zod.number().describe("住民税"),
@@ -763,9 +791,16 @@ export const CalculatePayrollResponse = zod.object({
   positionAllowance: zod.number().describe("役職手当"),
   familyAllowance: zod.number().describe("家族手当"),
   earlyOvertimeAllowance: zod.number().describe("早出残業手当"),
+  customAllowancesTotal: zod.number().optional().describe("カスタム手当合計"),
   absenceDeduction: zod.number().describe("欠勤控除"),
   grossSalary: zod.number().describe("支給合計"),
-  socialInsurance: zod.number().describe("社会保険料"),
+  socialInsurance: zod
+    .number()
+    .describe("社会保険料（健保＋子育て支援金＋厚年）"),
+  childcareSupportContribution: zod
+    .number()
+    .optional()
+    .describe("子ども・子育て支援金"),
   employmentInsurance: zod.number().describe("雇用保険料"),
   incomeTax: zod.number().describe("源泉所得税"),
   residentTax: zod.number().describe("住民税"),
@@ -806,9 +841,16 @@ export const GetPayrollResponse = zod.object({
   positionAllowance: zod.number().describe("役職手当"),
   familyAllowance: zod.number().describe("家族手当"),
   earlyOvertimeAllowance: zod.number().describe("早出残業手当"),
+  customAllowancesTotal: zod.number().optional().describe("カスタム手当合計"),
   absenceDeduction: zod.number().describe("欠勤控除"),
   grossSalary: zod.number().describe("支給合計"),
-  socialInsurance: zod.number().describe("社会保険料"),
+  socialInsurance: zod
+    .number()
+    .describe("社会保険料（健保＋子育て支援金＋厚年）"),
+  childcareSupportContribution: zod
+    .number()
+    .optional()
+    .describe("子ども・子育て支援金"),
   employmentInsurance: zod.number().describe("雇用保険料"),
   incomeTax: zod.number().describe("源泉所得税"),
   residentTax: zod.number().describe("住民税"),
@@ -856,9 +898,16 @@ export const UpdatePayrollResponse = zod.object({
   positionAllowance: zod.number().describe("役職手当"),
   familyAllowance: zod.number().describe("家族手当"),
   earlyOvertimeAllowance: zod.number().describe("早出残業手当"),
+  customAllowancesTotal: zod.number().optional().describe("カスタム手当合計"),
   absenceDeduction: zod.number().describe("欠勤控除"),
   grossSalary: zod.number().describe("支給合計"),
-  socialInsurance: zod.number().describe("社会保険料"),
+  socialInsurance: zod
+    .number()
+    .describe("社会保険料（健保＋子育て支援金＋厚年）"),
+  childcareSupportContribution: zod
+    .number()
+    .optional()
+    .describe("子ども・子育て支援金"),
   employmentInsurance: zod.number().describe("雇用保険料"),
   incomeTax: zod.number().describe("源泉所得税"),
   residentTax: zod.number().describe("住民税"),
@@ -899,9 +948,16 @@ export const ConfirmPayrollResponse = zod.object({
   positionAllowance: zod.number().describe("役職手当"),
   familyAllowance: zod.number().describe("家族手当"),
   earlyOvertimeAllowance: zod.number().describe("早出残業手当"),
+  customAllowancesTotal: zod.number().optional().describe("カスタム手当合計"),
   absenceDeduction: zod.number().describe("欠勤控除"),
   grossSalary: zod.number().describe("支給合計"),
-  socialInsurance: zod.number().describe("社会保険料"),
+  socialInsurance: zod
+    .number()
+    .describe("社会保険料（健保＋子育て支援金＋厚年）"),
+  childcareSupportContribution: zod
+    .number()
+    .optional()
+    .describe("子ども・子育て支援金"),
   employmentInsurance: zod.number().describe("雇用保険料"),
   incomeTax: zod.number().describe("源泉所得税"),
   residentTax: zod.number().describe("住民税"),
@@ -1056,6 +1112,9 @@ export const ListAllowanceDefinitionsResponseItem = zod.object({
     ),
   sortOrder: zod.number().describe("表示順"),
   isActive: zod.boolean(),
+  pinned: zod
+    .boolean()
+    .describe("ONにすると全社員の手当リストに常時表示される"),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -1072,6 +1131,7 @@ export const CreateAllowanceDefinitionBody = zod.object({
   isTaxable: zod.boolean(),
   calculationType: zod.enum(["fixed", "variable", "unit_time"]).optional(),
   sortOrder: zod.number().optional(),
+  pinned: zod.boolean().optional(),
 });
 
 /**
@@ -1088,6 +1148,7 @@ export const UpdateAllowanceDefinitionBody = zod.object({
   calculationType: zod.enum(["fixed", "variable", "unit_time"]).optional(),
   sortOrder: zod.number().optional(),
   isActive: zod.boolean().optional(),
+  pinned: zod.boolean().optional(),
 });
 
 export const UpdateAllowanceDefinitionResponse = zod.object({
@@ -1102,6 +1163,9 @@ export const UpdateAllowanceDefinitionResponse = zod.object({
     ),
   sortOrder: zod.number().describe("表示順"),
   isActive: zod.boolean(),
+  pinned: zod
+    .boolean()
+    .describe("ONにすると全社員の手当リストに常時表示される"),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });

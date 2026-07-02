@@ -19,6 +19,23 @@ import {
 export { round50sen, getInsuranceGrade };
 
 // ────────────────────────────────────────────────────────────────────────────
+// 令和8年度 料率定数（単一の源）
+// バックエンド artifacts/api-server/src/lib/tax-tables-reiwa8.ts と一致させること。
+// これらは給与計算の実体（バックエンド）で使われる公式値のミラーで、
+// フロントの概算プレビューと「適用中の計算基準」表示は必ずこの定数を参照する。
+// ────────────────────────────────────────────────────────────────────────────
+export const HEALTH_EMPLOYEE_RATE_R8 = 0.04925;            // 健康保険 9.85% の折半
+export const HEALTH_WITH_CARE_EMPLOYEE_RATE_R8 = 0.05735;  // 健保+介護 11.47% の折半
+export const CARE_EMPLOYEE_RATE_R8 = 0.0081;               // 介護保険 1.62% の折半（健保との差分）
+export const CHILDCARE_SUPPORT_EMPLOYEE_RATE_R8 = 0.00115; // 子ども・子育て支援金 0.23% の折半
+export const PENSION_EMPLOYEE_RATE_R8 = 0.0915;            // 厚生年金 18.3% の折半
+export const EMP_INS_EMPLOYEE_RATE_R8 = 0.005;             // 雇用保険 本人 0.5%（令和8年度・一般事業）
+export const OVERTIME_RATE_R8 = 1.25;                      // 時間外割増（60時間以内）
+export const OVERTIME_OVER60_RATE_R8 = 1.50;               // 時間外割増（60時間超）
+export const LATE_NIGHT_ADDITIONAL_RATE_R8 = 0.25;         // 深夜追加割増
+export const HOLIDAY_RATE_R8 = 1.35;                       // 法定休日割増
+
+// ────────────────────────────────────────────────────────────────────────────
 // 1. 社会保険料（健康保険・厚生年金）標準報酬月額等級テーブル
 // ────────────────────────────────────────────────────────────────────────────
 

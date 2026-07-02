@@ -440,17 +440,11 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
   const queryClient = useQueryClient();
   const employeeId = employee.id;
 
-  const { data: allowanceDefinitions } = useListAllowanceDefinitions(
-    { activeOnly: true },
-    { query: { staleTime: 0, refetchOnMount: true } }
-  );
+  const { data: allowanceDefinitions } = useListAllowanceDefinitions({ activeOnly: true });
   const { data: employeeAllowances, isFetching: isAllowancesFetching, dataUpdatedAt: allowancesUpdatedAt } = useGetEmployeeAllowances(employeeId, {
     query: { enabled: !!employeeId, queryKey: getGetEmployeeAllowancesQueryKey(employeeId), staleTime: 60_000, refetchOnMount: true }
   });
-  const { data: deductionDefinitions } = useListDeductionDefinitions(
-    { activeOnly: true },
-    { query: { staleTime: 60_000, refetchOnMount: true } }
-  );
+  const { data: deductionDefinitions } = useListDeductionDefinitions({ activeOnly: true });
   const { data: employeeDeductions, isFetching: isDeductionsFetching, dataUpdatedAt: deductionsUpdatedAt } = useGetEmployeeDeductions(employeeId, {
     query: { enabled: !!employeeId, queryKey: getGetEmployeeDeductionsQueryKey(employeeId), staleTime: 60_000, refetchOnMount: true }
   });
@@ -527,15 +521,22 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
 
   useEffect(() => {
     if (employeeAllowances === undefined) return;
+    if (allowanceDefinitions === undefined) return; // pinned 判定のため手当定義のロードを待つ
     if (allowancesInitializedRef.current === employeeId) return;
     if (employeeAllowances.length === 0 && isAllowancesFetching) return;
     allowancesInitializedRef.current = employeeId;
-    const initialRows = employeeAllowances.length > 0
+    const base = employeeAllowances.length > 0
       ? employeeAllowances.map(a => ({ uid: newUid(), defId: a.allowanceDefinitionId, amount: a.amount }))
-      : [{ uid: newUid(), defId: null, amount: 0 }];
-    setRows(initialRows);
+      : [];
+    // 「リストに固定」された手当で、まだ行に無いものを金額0で常時表示
+    const presentDefIds = new Set(base.map(r => r.defId));
+    const pinnedRows = (allowanceDefinitions as { id: number; pinned?: boolean }[])
+      .filter(d => d.pinned && !presentDefIds.has(d.id))
+      .map(d => ({ uid: newUid(), defId: d.id, amount: 0 }));
+    const merged = [...base, ...pinnedRows];
+    setRows(merged.length > 0 ? merged : [{ uid: newUid(), defId: null, amount: 0 }]);
     markClean();
-  }, [employeeAllowances, employeeId, isAllowancesFetching, allowancesUpdatedAt, markClean]);
+  }, [employeeAllowances, allowanceDefinitions, employeeId, isAllowancesFetching, allowancesUpdatedAt, markClean]);
 
   useEffect(() => {
     if (employeeDeductions === undefined) return;
@@ -572,7 +573,7 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
   const handleSave = async () => {
     try {
       const allowancePayload = rows
-        .filter(r => r.defId !== null)
+        .filter(r => r.defId !== null && r.amount > 0)
         .map(r => ({ allowanceDefinitionId: r.defId!, amount: r.amount }));
       const deductionPayload = deductionRows
         .filter(r => r.defId !== null)

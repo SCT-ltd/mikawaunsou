@@ -7,7 +7,7 @@
  */
 
 /**
- * 給与形態（fixed=固定給, daily=日給制）
+ * 給与形態（fixed=固定給, daily=日給制, hourly=時給制）
  */
 export type UpdateEmployeeBodySalaryType =
   (typeof UpdateEmployeeBodySalaryType)[keyof typeof UpdateEmployeeBodySalaryType];
@@ -15,4 +15,5 @@ export type UpdateEmployeeBodySalaryType =
 export const UpdateEmployeeBodySalaryType = {
   fixed: "fixed",
   daily: "daily",
+  hourly: "hourly",
 } as const;

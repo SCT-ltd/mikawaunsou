@@ -282,11 +282,6 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
     if ((payroll.overtimePay ?? 0) > 0) payItemsFixed.push({ label: "早出残業手当", value: payroll.overtimePay });
     if ((payroll.earlyOvertimeAllowance ?? 0) > 0) payItemsFixed.push({ label: "職務手当", value: payroll.earlyOvertimeAllowance ?? 0 });
     if ((payroll.holidayPay ?? 0) > 0) payItemsFixed.push({ label: "休日出勤手当", value: payroll.holidayPay });
-    if ((payroll.transportationAllowance ?? 0) > 0) payItemsFixed.push({ label: "交通費", value: payroll.transportationAllowance, nonTaxable: true });
-    if ((payroll.safetyDrivingAllowance ?? 0) > 0) payItemsFixed.push({ label: "無事故手当", value: payroll.safetyDrivingAllowance });
-    if ((payroll.longDistanceAllowance ?? 0) > 0) payItemsFixed.push({ label: "長距離手当", value: payroll.longDistanceAllowance });
-    if ((payroll.positionAllowance ?? 0) > 0) payItemsFixed.push({ label: "役職手当", value: payroll.positionAllowance });
-    if ((payroll.familyAllowance ?? 0) > 0) payItemsFixed.push({ label: "家族手当", value: payroll.familyAllowance ?? 0 });
     if ((payroll.lateNightPay ?? 0) > 0) payItemsFixed.push({ label: "深夜手当", value: payroll.lateNightPay });
   } else {
     if ((payroll.baseSalary ?? 0) > 0) payItemsFixed.push({ label: "基本給", value: payroll.baseSalary });
@@ -295,11 +290,6 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
     if ((payroll.lateNightPay ?? 0) > 0) payItemsFixed.push({ label: "深夜手当", value: payroll.lateNightPay });
     if ((payroll.holidayPay ?? 0) > 0) payItemsFixed.push({ label: "休日出勤手当", value: payroll.holidayPay });
     if ((payroll.commissionPay ?? 0) > 0) payItemsFixed.push({ label: "歩合給", value: payroll.commissionPay });
-    if ((payroll.transportationAllowance ?? 0) > 0) payItemsFixed.push({ label: "交通費", value: payroll.transportationAllowance, nonTaxable: true });
-    if ((payroll.safetyDrivingAllowance ?? 0) > 0) payItemsFixed.push({ label: "無事故手当", value: payroll.safetyDrivingAllowance });
-    if ((payroll.longDistanceAllowance ?? 0) > 0) payItemsFixed.push({ label: "長距離手当", value: payroll.longDistanceAllowance });
-    if ((payroll.positionAllowance ?? 0) > 0) payItemsFixed.push({ label: "役職手当", value: payroll.positionAllowance });
-    if ((payroll.familyAllowance ?? 0) > 0) payItemsFixed.push({ label: "家族手当", value: payroll.familyAllowance ?? 0 });
     if ((payroll.earlyOvertimeAllowance ?? 0) > 0) payItemsFixed.push({ label: "固定残業代", value: payroll.earlyOvertimeAllowance ?? 0 });
   }
 

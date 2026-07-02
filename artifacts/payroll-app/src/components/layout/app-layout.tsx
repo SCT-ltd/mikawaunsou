@@ -23,14 +23,23 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { LogOut, UserCircle, ChevronDown, Menu } from "lucide-react";
+import { LogOut, UserCircle, ChevronDown, Menu, Sun, Moon } from "lucide-react";
 import { useLocation } from "wouter";
+import { useTheme } from "@/context/theme-context";
 
-export function AppLayout({ children }: { children: React.ReactNode }) {
+export function AppLayout({
+  children,
+  fullWidth = false,
+}: {
+  children: React.ReactNode;
+  /** true で main の max-w-7xl 中央寄せを外し、全幅レイアウトにする（月次実績入力など2ペイン画面用） */
+  fullWidth?: boolean;
+}) {
   const { user, logout } = useAuth();
   const [, setLocation] = useLocation();
   const { pendingHref, cancelPending, confirmPending } = useNavigationGuard();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { theme, toggle: toggleTheme } = useTheme();
 
   const handleLogout = async () => {
     await logout();
@@ -80,6 +89,15 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <div className="text-sm font-medium text-muted-foreground hidden sm:block">
                 {new Date().getFullYear()}年{new Date().getMonth() + 1}月
               </div>
+              <button
+                type="button"
+                onClick={toggleTheme}
+                className="p-2 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                title={theme === "dark" ? "ライトモードに切替" : "ダークモードに切替"}
+                aria-label="テーマ切替"
+              >
+                {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </button>
               {user && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -113,8 +131,15 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </header>
 
           {/* ── メインコンテンツ ── */}
-          <main id="layout-main" className="flex-1 overflow-y-auto p-3 md:p-6 lg:p-8 pb-20 md:pb-6 lg:pb-8">
-            <div className="mx-auto max-w-7xl">
+          <main
+            id="layout-main"
+            className={
+              fullWidth
+                ? "flex-1 overflow-y-auto p-3 md:p-4 pb-20 md:pb-4"
+                : "flex-1 overflow-y-auto p-3 md:p-6 lg:p-8 pb-20 md:pb-6 lg:pb-8"
+            }
+          >
+            <div className={fullWidth ? "h-full" : "mx-auto max-w-7xl"}>
               {children}
             </div>
           </main>

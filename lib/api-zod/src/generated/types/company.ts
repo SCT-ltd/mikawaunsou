@@ -37,6 +37,12 @@ export interface Company {
   lateNightAdditionalRate: number;
   /** 休日出勤割増率（例：1.35） */
   holidayRate: number;
+  /** 平日日給（日給制の会社共通単価、円） */
+  dailyWageWeekday: number;
+  /** 土曜日給（日給制の会社共通単価、円） */
+  dailyWageSaturday: number;
+  /** 日曜・祝日時給（会社共通単価、円/時） */
+  hourlyWageSunday: number;
   createdAt: Date;
   updatedAt: Date;
 }

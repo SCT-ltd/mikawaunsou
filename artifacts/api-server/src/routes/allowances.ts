@@ -27,6 +27,7 @@ router.post("/allowance-definitions", requireAdmin, async (req, res) => {
     calculationType: body.calculationType ?? "variable",
     sortOrder: maxSort + 1,
     isActive: true,
+    pinned: body.pinned ?? false,
   }).returning();
   return res.status(201).json(created);
 });
@@ -60,6 +61,7 @@ router.put("/allowance-definitions/:id", requireAdmin, async (req, res) => {
     ...(body.calculationType !== undefined && { calculationType: body.calculationType }),
     ...(body.sortOrder !== undefined && { sortOrder: body.sortOrder }),
     ...(body.isActive !== undefined && { isActive: body.isActive }),
+    ...(body.pinned !== undefined && { pinned: body.pinned }),
     updatedAt: new Date(),
   }).where(eq(allowanceDefinitionsTable.id, id)).returning();
   if (!updated) return res.status(404).json({ error: "Not found" });

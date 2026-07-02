@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { db, payrollsTable, employeesTable, monthlyRecordsTable, companyTable, allowanceDefinitionsTable, employeeAllowancesTable, employeeDeductionsTable, deductionDefinitionsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
-import { calculatePayroll, calculateMikawaPayroll, calculateBluewingPayroll, roundJapanese } from "../lib/payroll-calculator";
-import { calculateInsuranceAndTax, calculateIncomeTaxReiwa7, calculateIncomeTaxReiwa8, EMP_INS_RATE_R8 } from "../lib/tax-tables-reiwa8";
+import { calculatePayroll, calculateBluewingPayroll, roundJapanese } from "../lib/payroll-calculator";
+import { calculateInsuranceAndTax, EMP_INS_RATE_R8 } from "../lib/tax-tables-reiwa8";
 
 const router = Router();
 
@@ -75,7 +75,6 @@ router.post("/payroll/calculate", async (req, res) => {
     employeeId,
     year,
     month,
-    useMikawaLogic = false,
     useBluewingLogic = false,
     calculationMode = "auto",
   } = req.body;
@@ -90,6 +89,17 @@ router.post("/payroll/calculate", async (req, res) => {
       eq(monthlyRecordsTable.month, month)
     ));
   if (!record) return res.status(404).json({ error: "Monthly record not found. Please enter monthly data first." });
+
+  // 確定済みの給与明細は再計算で上書きしない（全計算モード共通のガード）。
+  const [existingPayrollForGuard] = await db.select().from(payrollsTable)
+    .where(and(
+      eq(payrollsTable.employeeId, employeeId),
+      eq(payrollsTable.year, year),
+      eq(payrollsTable.month, month)
+    )).limit(1);
+  if (existingPayrollForGuard?.status === "confirmed") {
+    return res.status(409).json({ error: "確定済みの給与明細は再計算できません。" });
+  }
 
   const companyRows = await db.select().from(companyTable).limit(1);
   const company = companyRows[0] ?? {
@@ -203,7 +213,6 @@ router.post("/payroll/calculate", async (req, res) => {
       lateNightHours: record.lateNightHours ?? 0,
       holidayWorkDays: record.holidayWorkDays ?? 0,
       useBluewingLogic: false,
-      useMikawaLogic: false,
     };
 
     const existingManual = await db.select().from(payrollsTable)
@@ -231,118 +240,6 @@ router.post("/payroll/calculate", async (req, res) => {
     }
 
     return res.json(buildPayrollResponse(manualPayroll!, emp));
-  }
-
-  // ────────────────────────────────────────────────────────────────
-  // 三川ロジック分岐
-  // ────────────────────────────────────────────────────────────────
-  if (useMikawaLogic) {
-    if (record.salesAmount <= 0 || record.commissionRate <= 0) {
-      return res.status(400).json({
-        error: "月次実績に売上金額（salesAmount）と歩合率（commissionRate）を入力してください。",
-      });
-    }
-
-    const mikawaResult = calculateMikawaPayroll({
-      salesAmount: record.salesAmount,
-      commissionRate: record.commissionRate,
-      workDays: record.workDays,
-      overtimeHours: record.overtimeHours,
-      fixedOvertimeHours: record.fixedOvertimeHours,
-      overtimeUnitPrice: record.overtimeUnitPrice,
-    });
-
-    const grossSalary = mikawaResult.finalSalary;
-    const insBase = (emp.standardRemuneration ?? 0) > 0 ? emp.standardRemuneration : grossSalary;
-
-    // 非課税手当合計: 通勤手当 + isTaxable=false のカスタム手当
-    const mikawanonTaxableCustom = customAllowances
-      .filter(a => !a.isTaxable)
-      .reduce((sum, a) => sum + a.amount, 0);
-    const mikawaNonTaxableAllowances = (emp.transportationAllowance ?? 0) + mikawanonTaxableCustom;
-
-    const ins = calculateInsuranceAndTax({
-      standardRemuneration: insBase,
-      grossSalary,
-      nonTaxableAllowances: mikawaNonTaxableAllowances,
-      dependentCount: emp.dependentCount ?? 0,
-      hasSpouse: emp.hasSpouse ?? false,
-      careInsuranceApplied: emp.careInsuranceApplied ?? false,
-      pensionApplied: resolvePensionApplied(emp, year, month),
-      employmentInsuranceApplied: emp.employmentInsuranceApplied ?? true,
-      residentTax: emp.residentTax ?? 0,
-      customDeductionsTotal,
-      employmentInsuranceRate: empInsRate,
-    });
-
-    if (!isChildcareSupportApplicable(year, month)) ins.childcareSupportContribution = 0;
-    const socialInsurance = ins.healthInsurance + ins.childcareSupportContribution + ins.pension;
-    const totalDeductions = roundJapanese(
-      socialInsurance + ins.employmentInsurance + ins.incomeTax + (emp.residentTax ?? 0) + customDeductionsTotal
-      + (emp.otherDeductionMonthly ?? 0) // その他控除（積立金等）: フロント/仕様書に合わせ控除合計へ算入
-    );
-    const netSalary = roundJapanese(grossSalary - totalDeductions);
-
-    const mikawaPayrollData = {
-      baseSalary: mikawaResult.minimumSalary,
-      saturdayPay: 0,
-      commissionPay: mikawaResult.salesSalary,
-      overtimePay: mikawaResult.overtimePay,
-      lateNightPay: 0,
-      holidayPay: 0,
-      transportationAllowance: emp.transportationAllowance ?? 0,
-      safetyDrivingAllowance: emp.safetyDrivingAllowance ?? 0,
-      longDistanceAllowance: emp.longDistanceAllowance ?? 0,
-      positionAllowance: emp.positionAllowance ?? 0,
-      familyAllowance: emp.familyAllowance ?? 0,
-      earlyOvertimeAllowance: emp.earlyOvertimeAllowance ?? 0,
-      customAllowancesTotal: 0,
-      absenceDeduction: 0,
-      grossSalary,
-      socialInsurance,
-      childcareSupportContribution: ins.childcareSupportContribution,
-      employmentInsurance: ins.employmentInsurance,
-      incomeTax: ins.incomeTax,
-      residentTax: emp.residentTax ?? 0,
-      totalDeductions,
-      netSalary,
-      workDays: record.workDays,
-      overtimeHours: record.overtimeHours,
-      lateNightHours: 0,
-      holidayWorkDays: 0,
-      useMikawaLogic: true,
-      salesAmount: record.salesAmount,
-      commissionRate: record.commissionRate,
-      performanceAllowance: mikawaResult.performanceAllowance,
-      customDeductionsTotal,
-      calculationMode: "mikawa_auto",
-    };
-
-    const existingMikawa = await db.select().from(payrollsTable)
-      .where(and(
-        eq(payrollsTable.employeeId, employeeId),
-        eq(payrollsTable.year, year),
-        eq(payrollsTable.month, month)
-      )).limit(1);
-
-    let mikawaPayroll;
-    if (existingMikawa.length > 0) {
-      [mikawaPayroll] = await db.update(payrollsTable).set({
-        ...mikawaPayrollData,
-        status: "draft",
-        updatedAt: new Date(),
-      }).where(eq(payrollsTable.id, existingMikawa[0].id)).returning();
-    } else {
-      [mikawaPayroll] = await db.insert(payrollsTable).values({
-        employeeId,
-        year,
-        month,
-        status: "draft",
-        ...mikawaPayrollData,
-      }).returning();
-    }
-
-    return res.json(buildPayrollResponse(mikawaPayroll, emp));
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -398,7 +295,6 @@ router.post("/payroll/calculate", async (req, res) => {
     const grossSalary = bwResult.grossSalary;
     const bwInsBase = (emp.standardRemuneration ?? 0) > 0 ? emp.standardRemuneration : grossSalary;
 
-    const isBwTamagawa = emp.name?.includes("玉川");
     // 非課税手当合計: 通勤手当 + isTaxable=false のカスタム手当（例: 交通費）
     const bwNonTaxableCustom = customAllowances
       .filter(a => !a.isTaxable)
@@ -417,8 +313,6 @@ router.post("/payroll/calculate", async (req, res) => {
       residentTax: emp.residentTax ?? 0,
       customDeductionsTotal,
       employmentInsuranceRate: empInsRate,
-      enableTrace: isBwTamagawa,
-      traceExpectedIncomeTax: isBwTamagawa ? 10220 : undefined,
     });
 
     if (!isChildcareSupportApplicable(year, month)) bwIns.childcareSupportContribution = 0;
@@ -428,134 +322,6 @@ router.post("/payroll/calculate", async (req, res) => {
       + (emp.otherDeductionMonthly ?? 0) // その他控除（積立金等）: フロント/仕様書に合わせ控除合計へ算入
     );
     const netSalary = roundJapanese(grossSalary - totalDeductions);
-
-    // ── 玉川さん専用 デバッグログ ─────────────────────────────────
-    if (isBwTamagawa) {
-      // 支給項目一覧
-      const payItems = [
-        { name: "日給（出勤日分）",       amount: baseSalaryCalc,                isTaxable: true,  includedInGross: true,  source: "workDays×dailyWageWeekday" },
-        { name: "土曜出勤（出勤日分）",    amount: Math.floor((record.saturdayWorkDays ?? 0) * dailySaturday), isTaxable: true, includedInGross: true, source: "saturdayWorkDays×dailyWageSaturday" },
-        { name: "BW固定残業手当",         amount: emp.bluewingFixedOvertimeAmount ?? 0, isTaxable: true, includedInGross: true, source: "bluewingFixedOvertimeAmount" },
-        { name: "休日出勤手当（日給計算）", amount: holidayPay,                    isTaxable: true,  includedInGross: true,  source: "holidayWorkDays×dailyWageSaturday" },
-        { name: "時間外手当（実績）",       amount: bwResult.actualOvertimePay,    isTaxable: true,  includedInGross: true,  source: "actualOvertimeHours×overtimeUnitPrice" },
-        { name: "深夜手当",               amount: bwLateNightPay,               isTaxable: true,  includedInGross: true,  source: "lateNightHours×hourlyRate×0.25" },
-        { name: "BW業績手当",             amount: bwResult.performanceAllowance, isTaxable: true,  includedInGross: true,  source: `A(${bwResult.solutionA})-B(${bwResult.solutionB})=C(${bwResult.solutionC})→max(0,C)` },
-        ...customAllowances.map(a => ({
-          name: a.allowanceName,
-          amount: a.amount,
-          isTaxable: a.isTaxable,
-          includedInGross: true,
-          source: "employeeAllowances（固定設定）",
-        })),
-      ].filter(i => i.amount !== 0);
-
-      // nonTaxAllowancesTotal: 通勤手当 + isTaxable=false カスタム手当（交通費等）
-      const nonTaxAllowancesTotal = bwNonTaxableAllowances;
-      const taxableAllowancesTotal = fixedAllowancesTotal + bwResult.performanceAllowance - nonTaxAllowancesTotal;
-
-      console.log("[TAMAGAWA_PAY_ITEMS_DETAIL]", {
-        employeeId: emp.id,
-        employeeName: emp.name,
-        year,
-        month,
-        calculationType: "Bluewing",
-        isBluewing: true,
-        payItems,
-        baseSalary: baseSalaryCalc,
-        fixedAllowancesTotal,
-        bwPerformanceAllowance: bwResult.performanceAllowance,
-        bwSolutionA: bwResult.solutionA,
-        bwSolutionB: bwResult.solutionB,
-        bwSolutionC: bwResult.solutionC,
-        nonTaxableAllowancesTotal: nonTaxAllowancesTotal,
-        taxableAllowancesTotal,
-        grossSalary,
-      });
-
-      // 雇用保険詳細
-      const rawEmpIns = grossSalary * empInsRate;
-      console.log("[TAMAGAWA_EMPLOYMENT_INSURANCE_DETAIL]", {
-        grossSalary,
-        employmentInsuranceRate: empInsRate,
-        employmentInsuranceRaw: rawEmpIns,
-        employmentInsuranceRounded: bwIns.employmentInsurance,
-        companySettingsEmploymentInsuranceRate: company.employmentInsuranceRate,
-        employeeEmploymentInsuranceApplied: emp.employmentInsuranceApplied,
-      });
-
-      // 所得税差異分析（非課税手当を正しく反映）
-      const taxableSalaryExcludingChildcareSupport = grossSalary
-        - bwNonTaxableAllowances
-        - bwIns.healthInsurance
-        - bwIns.pension
-        - bwIns.employmentInsurance;
-      const taxableSalaryIncludingChildcareSupport = taxableSalaryExcludingChildcareSupport
-        - bwIns.childcareSupportContribution;
-      const depEquivCount = (emp.dependentCount ?? 0) + ((emp.hasSpouse ?? false) ? 1 : 0);
-
-      // R7/R8 × A(子育て支援金なし)/B(子育て支援金あり) の4パターン
-      const taxR7A = calculateIncomeTaxReiwa7(taxableSalaryExcludingChildcareSupport, depEquivCount);
-      const taxR7B = calculateIncomeTaxReiwa7(taxableSalaryIncludingChildcareSupport, depEquivCount);
-      const taxR8A = calculateIncomeTaxReiwa8(taxableSalaryExcludingChildcareSupport, depEquivCount);
-      const taxR8B = calculateIncomeTaxReiwa8(taxableSalaryIncludingChildcareSupport, depEquivCount);
-
-      console.log("[TAMAGAWA_INCOME_TAX_DIFF_ANALYSIS]", {
-        grossSalary,
-        nonTaxableAllowances: bwNonTaxableAllowances,
-        nonTaxableBreakdown: {
-          transportationAllowance: emp.transportationAllowance ?? 0,
-          nonTaxableCustomAllowances: bwNonTaxableCustom,
-          customNonTaxableItems: customAllowances.filter(a => !a.isTaxable).map(a => ({ name: a.allowanceName, amount: a.amount })),
-        },
-        healthInsurance: bwIns.healthInsurance,
-        pension: bwIns.pension,
-        employmentInsurance: bwIns.employmentInsurance,
-        childcareSupportContribution: bwIns.childcareSupportContribution,
-        taxableSalaryExcludingChildcareSupport,
-        taxableSalaryIncludingChildcareSupport,
-        dependentCount: emp.dependentCount ?? 0,
-        hasSpouse: emp.hasSpouse ?? false,
-        dependentEquivalentCount: depEquivCount,
-        incomeTaxTableYear: "R8（令和8年分公式月額表・甲欄）",
-        incomeTaxTableType: "甲欄",
-        incomeTaxAfterInsuranceSalary: bwIns.afterInsuranceSalary,
-        matchedIncomeTaxBracket: bwIns.afterInsuranceSalary,
-        calculatedIncomeTax: bwIns.incomeTax,
-        expectedIncomeTax: 10220,
-        isMatch: bwIns.incomeTax === 10220,
-      });
-
-      console.log("[TAMAGAWA_INCOME_TAX_TABLE_COMPARISON]", {
-        "A_taxableSalary（子育て支援金なし）": taxableSalaryExcludingChildcareSupport,
-        "B_taxableSalary（子育て支援金あり）": taxableSalaryIncludingChildcareSupport,
-        dependentEquivalentCount: depEquivCount,
-        "R7_A（子育て支援金なし）": taxR7A,
-        "R7_B（子育て支援金あり）": taxR7B,
-        "R8_A（子育て支援金なし）": taxR8A,
-        "R8_B（子育て支援金あり）": taxR8B,
-        clientOfficialTax: 10220,
-      });
-
-      const rawEmpInsFinal = grossSalary * empInsRate;
-      console.log("[TAMAGAWA_EMPLOYMENT_INSURANCE_FINAL_CHECK]", {
-        employeeName: emp.name,
-        grossSalary,
-        companySettingsEmploymentInsuranceRate: company.employmentInsuranceRate,
-        employmentInsuranceRateUsed: empInsRate,
-        rawEmploymentInsurance: rawEmpInsFinal,
-        roundedEmploymentInsurance: bwIns.employmentInsurance,
-        expectedEmploymentInsurance: 2414,
-      });
-
-      console.log("[TAMAGAWA_DEPENDENT_FINAL_CHECK]", {
-        employeeName: emp.name,
-        dependentCount: emp.dependentCount ?? 0,
-        hasSpouse: emp.hasSpouse ?? false,
-        dependentEquivalentCount: depEquivCount,
-        expectedDependentEquivalentCount: 1,
-      });
-    }
-    // ─────────────────────────────────────────────────────────────
 
     const bwPayrollData = {
       baseSalary: baseSalaryCalc,
@@ -622,7 +388,6 @@ router.post("/payroll/calculate", async (req, res) => {
   // ────────────────────────────────────────────────────────────────
   // 標準ロジック
   // ────────────────────────────────────────────────────────────────
-  const isTamagawa = emp.name?.includes("玉川");
   const result = calculatePayroll({
     baseSalary: emp.baseSalary,
     salaryType: emp.salaryType,
@@ -662,8 +427,6 @@ router.post("/payroll/calculate", async (req, res) => {
     overtimeUnitRate: emp.overtimeUnitRate ?? 0,
     taxExempt: emp.taxExempt ?? false,
     customAllowances,
-    enableTrace: isTamagawa,
-    traceExpectedIncomeTax: isTamagawa ? 10220 : undefined,
   });
 
   // 子育て支援金：2026年5月以前は0にする

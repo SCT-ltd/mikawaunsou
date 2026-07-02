@@ -44,6 +44,12 @@ export interface Company {
   lateNightAdditionalRate: number;
   /** 休日出勤割増率（例：1.35） */
   holidayRate: number;
+  /** 平日日給（日給制の会社共通単価、円） */
+  dailyWageWeekday: number;
+  /** 土曜日給（日給制の会社共通単価、円） */
+  dailyWageSaturday: number;
+  /** 日曜・祝日時給（会社共通単価、円/時） */
+  hourlyWageSunday: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -65,10 +71,13 @@ export interface UpdateCompanyBody {
   overtimeRate?: number;
   lateNightAdditionalRate?: number;
   holidayRate?: number;
+  dailyWageWeekday?: number;
+  dailyWageSaturday?: number;
+  hourlyWageSunday?: number;
 }
 
 /**
- * 給与形態（fixed=固定給, daily=日給制）
+ * 給与形態（fixed=固定給, daily=日給制, hourly=時給制）
  */
 export type EmployeeSalaryType =
   (typeof EmployeeSalaryType)[keyof typeof EmployeeSalaryType];
@@ -76,6 +85,7 @@ export type EmployeeSalaryType =
 export const EmployeeSalaryType = {
   fixed: "fixed",
   daily: "daily",
+  hourly: "hourly",
 } as const;
 
 export interface Employee {
@@ -126,7 +136,7 @@ export interface Employee {
   taxExempt: boolean;
   /** 住民税（月額） */
   residentTax: number;
-  /** 給与形態（fixed=固定給, daily=日給制） */
+  /** 給与形態（fixed=固定給, daily=日給制, hourly=時給制） */
   salaryType: EmployeeSalaryType;
   /** 事務員フラグ（true=事務員用打刻画面, false=ドライバー用打刻画面） */
   isOfficeStaff: boolean;
@@ -189,7 +199,7 @@ export interface CreateEmployeeBody {
 }
 
 /**
- * 給与形態（fixed=固定給, daily=日給制）
+ * 給与形態（fixed=固定給, daily=日給制, hourly=時給制）
  */
 export type UpdateEmployeeBodySalaryType =
   (typeof UpdateEmployeeBodySalaryType)[keyof typeof UpdateEmployeeBodySalaryType];
@@ -197,6 +207,7 @@ export type UpdateEmployeeBodySalaryType =
 export const UpdateEmployeeBodySalaryType = {
   fixed: "fixed",
   daily: "daily",
+  hourly: "hourly",
 } as const;
 
 export interface UpdateEmployeeBody {
@@ -228,7 +239,7 @@ export interface UpdateEmployeeBody {
   /** 全額非課税フラグ（true=社会保険・所得税・住民税すべて控除なし、手取り=総支給） */
   taxExempt?: boolean;
   residentTax?: number;
-  /** 給与形態（fixed=固定給, daily=日給制） */
+  /** 給与形態（fixed=固定給, daily=日給制, hourly=時給制） */
   salaryType?: UpdateEmployeeBodySalaryType;
   /** @deprecated 旧仕様。新規は dailyRateWeekday/dailyRateSaturday を使用 */
   dailyRateOverride?: number;
@@ -351,12 +362,16 @@ export interface Payroll {
   familyAllowance: number;
   /** 早出残業手当 */
   earlyOvertimeAllowance: number;
+  /** カスタム手当合計 */
+  customAllowancesTotal?: number;
   /** 欠勤控除 */
   absenceDeduction: number;
   /** 支給合計 */
   grossSalary: number;
-  /** 社会保険料 */
+  /** 社会保険料（健保＋子育て支援金＋厚年） */
   socialInsurance: number;
+  /** 子ども・子育て支援金 */
+  childcareSupportContribution?: number;
   /** 雇用保険料 */
   employmentInsurance: number;
   /** 源泉所得税 */
@@ -480,6 +495,8 @@ export interface AllowanceDefinition {
   /** 表示順 */
   sortOrder: number;
   isActive: boolean;
+  /** ONにすると全社員の手当リストに常時表示される */
+  pinned: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -499,6 +516,7 @@ export interface CreateAllowanceDefinitionBody {
   isTaxable: boolean;
   calculationType?: CreateAllowanceDefinitionBodyCalculationType;
   sortOrder?: number;
+  pinned?: boolean;
 }
 
 export type UpdateAllowanceDefinitionBodyCalculationType =
@@ -517,6 +535,7 @@ export interface UpdateAllowanceDefinitionBody {
   calculationType?: UpdateAllowanceDefinitionBodyCalculationType;
   sortOrder?: number;
   isActive?: boolean;
+  pinned?: boolean;
 }
 
 export interface EmployeeAllowance {

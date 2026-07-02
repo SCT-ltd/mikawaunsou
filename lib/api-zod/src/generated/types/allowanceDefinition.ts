@@ -20,6 +20,8 @@ export interface AllowanceDefinition {
   /** 表示順 */
   sortOrder: number;
   isActive: boolean;
+  /** ONにすると全社員の手当リストに常時表示される */
+  pinned: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

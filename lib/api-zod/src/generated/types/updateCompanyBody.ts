@@ -23,4 +23,7 @@ export interface UpdateCompanyBody {
   overtimeRate?: number;
   lateNightAdditionalRate?: number;
   holidayRate?: number;
+  dailyWageWeekday?: number;
+  dailyWageSaturday?: number;
+  hourlyWageSunday?: number;
 }

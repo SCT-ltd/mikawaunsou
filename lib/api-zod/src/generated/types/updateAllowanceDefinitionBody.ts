@@ -14,4 +14,5 @@ export interface UpdateAllowanceDefinitionBody {
   calculationType?: UpdateAllowanceDefinitionBodyCalculationType;
   sortOrder?: number;
   isActive?: boolean;
+  pinned?: boolean;
 }

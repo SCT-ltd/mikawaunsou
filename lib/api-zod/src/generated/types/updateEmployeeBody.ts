@@ -36,7 +36,7 @@ export interface UpdateEmployeeBody {
   /** 全額非課税フラグ（true=社会保険・所得税・住民税すべて控除なし、手取り=総支給） */
   taxExempt?: boolean;
   residentTax?: number;
-  /** 給与形態（fixed=固定給, daily=日給制） */
+  /** 給与形態（fixed=固定給, daily=日給制, hourly=時給制） */
   salaryType?: UpdateEmployeeBodySalaryType;
   /** @deprecated 旧仕様。新規は dailyRateWeekday/dailyRateSaturday を使用 */
   dailyRateOverride?: number;
