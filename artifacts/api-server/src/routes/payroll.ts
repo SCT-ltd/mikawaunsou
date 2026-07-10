@@ -211,7 +211,9 @@ router.post("/payroll/calculate", async (req, res) => {
       workDays: record.workDays ?? 0,
       overtimeHours: record.overtimeHours ?? 0,
       lateNightHours: record.lateNightHours ?? 0,
-      holidayWorkDays: record.holidayWorkDays ?? 0,
+      // 表示用: 「日曜/祝日」列(sundayWorkDays)を休日日数として保存、土曜日数も保存
+      holidayWorkDays: record.sundayWorkDays ?? 0,
+      saturdayWorkDays: record.saturdayWorkDays ?? 0,
       useBluewingLogic: false,
     };
 
@@ -349,7 +351,9 @@ router.post("/payroll/calculate", async (req, res) => {
       workDays: record.workDays ?? 0,
       overtimeHours: record.overtimeHours ?? 0,
       lateNightHours: record.lateNightHours ?? 0,
-      holidayWorkDays: record.holidayWorkDays ?? 0,
+      // 表示用: 「日曜/祝日」列(sundayWorkDays)を休日日数として保存、土曜日数も保存
+      holidayWorkDays: record.sundayWorkDays ?? 0,
+      saturdayWorkDays: record.saturdayWorkDays ?? 0,
       useBluewingLogic: true,
       bluewingSalesAmount: record.bluewingSalesAmount,
       bluewingPerformanceAllowance: bwResult.performanceAllowance,
@@ -460,7 +464,9 @@ router.post("/payroll/calculate", async (req, res) => {
       saturdayPay: result.saturdayPay,
       overtimePay: result.overtimePay,
       lateNightPay: result.lateNightPay,
-      holidayPay: result.holidayPay,
+      // 休日出勤手当の表示行は「休日(holidayWorkDays)＋日曜(sundayWorkDays)」分を合算。
+      // grossSalary は不変（エンジンが両者を別々に既に合算済み）。
+      holidayPay: (result.holidayPay ?? 0) + (result.sundayPay ?? 0),
       commissionPay: result.commissionPay,
       transportationAllowance: result.transportationAllowance,
       safetyDrivingAllowance: result.safetyDrivingAllowance,
@@ -480,7 +486,9 @@ router.post("/payroll/calculate", async (req, res) => {
       netSalary: stdNetSalary,
       overtimeHours: record.overtimeHours,
       lateNightHours: record.lateNightHours,
-      holidayWorkDays: record.holidayWorkDays,
+      // 表示用: 「日曜/祝日」列(sundayWorkDays)を休日日数として保存、土曜日数も保存
+      holidayWorkDays: record.sundayWorkDays,
+      saturdayWorkDays: record.saturdayWorkDays,
       workDays: record.workDays,
       customDeductionsTotal,
       calculationMode: "auto",
@@ -497,7 +505,9 @@ router.post("/payroll/calculate", async (req, res) => {
       saturdayPay: result.saturdayPay,
       overtimePay: result.overtimePay,
       lateNightPay: result.lateNightPay,
-      holidayPay: result.holidayPay,
+      // 休日出勤手当の表示行は「休日(holidayWorkDays)＋日曜(sundayWorkDays)」分を合算。
+      // grossSalary は不変（エンジンが両者を別々に既に合算済み）。
+      holidayPay: (result.holidayPay ?? 0) + (result.sundayPay ?? 0),
       commissionPay: result.commissionPay,
       transportationAllowance: result.transportationAllowance,
       safetyDrivingAllowance: result.safetyDrivingAllowance,
@@ -517,7 +527,9 @@ router.post("/payroll/calculate", async (req, res) => {
       netSalary: stdNetSalary,
       overtimeHours: record.overtimeHours,
       lateNightHours: record.lateNightHours,
-      holidayWorkDays: record.holidayWorkDays,
+      // 表示用: 「日曜/祝日」列(sundayWorkDays)を休日日数として保存、土曜日数も保存
+      holidayWorkDays: record.sundayWorkDays,
+      saturdayWorkDays: record.saturdayWorkDays,
       workDays: record.workDays,
       customDeductionsTotal,
       calculationMode: "auto",

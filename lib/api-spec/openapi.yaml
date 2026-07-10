@@ -1464,6 +1464,10 @@ components:
           type: number
         holidayWorkDays:
           type: number
+          description: 休日出勤日数（月次実績の「日曜/祝日」列を表示用に保存）
+        saturdayWorkDays:
+          type: number
+          description: 土曜出勤日数（表示用）
         workDays:
           type: number
         createdAt:

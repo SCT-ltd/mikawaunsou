@@ -386,7 +386,10 @@ export interface Payroll {
   netSalary: number;
   overtimeHours: number;
   lateNightHours: number;
+  /** 休日出勤日数（月次実績の「日曜/祝日」列を表示用に保存） */
   holidayWorkDays: number;
+  /** 土曜出勤日数（表示用） */
+  saturdayWorkDays?: number;
   workDays: number;
   createdAt: string;
   updatedAt: string;

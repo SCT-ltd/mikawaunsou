@@ -34,6 +34,7 @@ export const payrollsTable = pgTable("payrolls", {
   overtimeHours: doublePrecision("overtime_hours").notNull().default(0),
   lateNightHours: doublePrecision("late_night_hours").notNull().default(0),
   holidayWorkDays: doublePrecision("holiday_work_days").notNull().default(0),
+  saturdayWorkDays: doublePrecision("saturday_work_days").notNull().default(0),
   workDays: doublePrecision("work_days").notNull().default(0),
   notes: text("notes"),
   useMikawaLogic: boolean("use_mikawa_logic").notNull().default(false),

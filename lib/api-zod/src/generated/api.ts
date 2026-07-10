@@ -766,7 +766,10 @@ export const ListPayrollsResponseItem = zod.object({
   netSalary: zod.number().describe("差引支給額"),
   overtimeHours: zod.number(),
   lateNightHours: zod.number(),
-  holidayWorkDays: zod.number(),
+  holidayWorkDays: zod
+    .number()
+    .describe("休日出勤日数（月次実績の「日曜\/祝日」列を表示用に保存）"),
+  saturdayWorkDays: zod.number().optional().describe("土曜出勤日数（表示用）"),
   workDays: zod.number(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -820,7 +823,10 @@ export const CalculatePayrollResponse = zod.object({
   netSalary: zod.number().describe("差引支給額"),
   overtimeHours: zod.number(),
   lateNightHours: zod.number(),
-  holidayWorkDays: zod.number(),
+  holidayWorkDays: zod
+    .number()
+    .describe("休日出勤日数（月次実績の「日曜\/祝日」列を表示用に保存）"),
+  saturdayWorkDays: zod.number().optional().describe("土曜出勤日数（表示用）"),
   workDays: zod.number(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -870,7 +876,10 @@ export const GetPayrollResponse = zod.object({
   netSalary: zod.number().describe("差引支給額"),
   overtimeHours: zod.number(),
   lateNightHours: zod.number(),
-  holidayWorkDays: zod.number(),
+  holidayWorkDays: zod
+    .number()
+    .describe("休日出勤日数（月次実績の「日曜\/祝日」列を表示用に保存）"),
+  saturdayWorkDays: zod.number().optional().describe("土曜出勤日数（表示用）"),
   workDays: zod.number(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -927,7 +936,10 @@ export const UpdatePayrollResponse = zod.object({
   netSalary: zod.number().describe("差引支給額"),
   overtimeHours: zod.number(),
   lateNightHours: zod.number(),
-  holidayWorkDays: zod.number(),
+  holidayWorkDays: zod
+    .number()
+    .describe("休日出勤日数（月次実績の「日曜\/祝日」列を表示用に保存）"),
+  saturdayWorkDays: zod.number().optional().describe("土曜出勤日数（表示用）"),
   workDays: zod.number(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -977,7 +989,10 @@ export const ConfirmPayrollResponse = zod.object({
   netSalary: zod.number().describe("差引支給額"),
   overtimeHours: zod.number(),
   lateNightHours: zod.number(),
-  holidayWorkDays: zod.number(),
+  holidayWorkDays: zod
+    .number()
+    .describe("休日出勤日数（月次実績の「日曜\/祝日」列を表示用に保存）"),
+  saturdayWorkDays: zod.number().optional().describe("土曜出勤日数（表示用）"),
   workDays: zod.number(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -1027,7 +1042,10 @@ export const UnconfirmPayrollResponse = zod.object({
   netSalary: zod.number().describe("差引支給額"),
   overtimeHours: zod.number(),
   lateNightHours: zod.number(),
-  holidayWorkDays: zod.number(),
+  holidayWorkDays: zod
+    .number()
+    .describe("休日出勤日数（月次実績の「日曜\/祝日」列を表示用に保存）"),
+  saturdayWorkDays: zod.number().optional().describe("土曜出勤日数（表示用）"),
   workDays: zod.number(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),

@@ -39,6 +39,7 @@
 ## 決定事項
 
 - 2026-07-02 このファイル作成（api-server 階層の overview 初版）
+- 2026-07-10 給与明細の土曜/日曜（休日）出勤が印刷に出ない不具合を修正。原因は勤怠フィールドの二重帳簿: 月次実績入力は 土曜=`saturdayWorkDays`・日曜/祝日=`sundayWorkDays` に書くが、payroll には土曜日数の列が無く、休日表示は入力に使われない `holidayWorkDays` を保存していた（常に0）。対応: `payrolls` に `saturday_work_days` 列追加、`POST /payroll/:id/calculate` の全3枝（手動/BW/標準）の保存で `saturdayWorkDays=record.saturdayWorkDays`／`holidayWorkDays=record.sundayWorkDays` に是正。標準枝は休日出勤手当の表示行を `holidayPay + sundayPay` に合算（grossSalary は不変、エンジンが既に両者を合算済みのため二重計上なし）。BW枝の holidayPay は元々 sundayWorkDays 由来のため非干渉。過去の確定分は月次実績からの日数バックフィルで表示補完（金額不変）。
 - 2026-07-03 運用リスクの是正（オペレーション改善）:
   - **PIN漏洩の修正**: `/employees` の list/get/create/update レスポンスが全カラム（4桁 `pin` 含む）を返していたのを、`sanitizeEmployee()` で `pin` を除去し `hasPin`（設定有無のbool）に置換。PIN値はAPIに一切乗らない。
   - **社員物理削除のガード**: `DELETE /employees/:id` は給与明細/月次実績がある社員に対し 409 を返して物理削除を拒否（賃金台帳等の法定保存記録を保護）。退職は在籍OFF（`isActive=false`＝論理削除）へ誘導。誤登録の空社員のみ物理削除可。
