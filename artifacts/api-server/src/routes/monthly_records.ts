@@ -109,7 +109,7 @@ router.get("/monthly-records/:id", async (req, res) => {
     .from(monthlyRecordsTable)
     .innerJoin(employeesTable, eq(monthlyRecordsTable.employeeId, employeesTable.id))
     .where(eq(monthlyRecordsTable.id, id));
-  if (!record) return res.status(404).json({ error: "Record not found" });
+  if (!record) return res.status(404).json({ error: "月次実績が見つかりません。" });
   return res.json(record);
 });
 
@@ -135,7 +135,7 @@ router.put("/monthly-records/:id", async (req, res) => {
     ...(body.actualWorkHours !== undefined && { actualWorkHours: body.actualWorkHours }),
     updatedAt: new Date(),
   }).where(eq(monthlyRecordsTable.id, id)).returning();
-  if (!updated) return res.status(404).json({ error: "Record not found" });
+  if (!updated) return res.status(404).json({ error: "月次実績が見つかりません。" });
   return res.json(updated);
 });
 

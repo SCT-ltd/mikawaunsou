@@ -73,6 +73,8 @@ export interface Employee {
   overtimeUnitRate?: number;
   hireDate: Date;
   isActive: boolean;
+  /** 打刻PINが設定済みか（PIN値自体は返さない） */
+  hasPin?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

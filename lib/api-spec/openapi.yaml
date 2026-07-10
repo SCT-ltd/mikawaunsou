@@ -396,6 +396,21 @@ paths:
               schema:
                 $ref: "#/components/schemas/Payroll"
 
+  /payroll/{id}/unconfirm:
+    post:
+      operationId: unconfirmPayroll
+      tags: [payroll]
+      summary: 給与確定を解除（draftに戻す）
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Unconfirmed (status=draft)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payroll"
+
   /payroll/{id}/csv:
     get:
       operationId: exportPayrollCsv
@@ -1029,6 +1044,9 @@ components:
           format: date
         isActive:
           type: boolean
+        hasPin:
+          type: boolean
+          description: 打刻PINが設定済みか（PIN値自体は返さない）
         createdAt:
           type: string
           format: date-time

@@ -249,6 +249,10 @@ export const ListEmployeesResponseItem = zod.object({
     ),
   hireDate: zod.coerce.date(),
   isActive: zod.boolean(),
+  hasPin: zod
+    .boolean()
+    .optional()
+    .describe("打刻PINが設定済みか（PIN値自体は返さない）"),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -382,6 +386,10 @@ export const GetEmployeeResponse = zod.object({
     ),
   hireDate: zod.coerce.date(),
   isActive: zod.boolean(),
+  hasPin: zod
+    .boolean()
+    .optional()
+    .describe("打刻PINが設定済みか（PIN値自体は返さない）"),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -545,6 +553,10 @@ export const UpdateEmployeeResponse = zod.object({
     ),
   hireDate: zod.coerce.date(),
   isActive: zod.boolean(),
+  hasPin: zod
+    .boolean()
+    .optional()
+    .describe("打刻PINが設定済みか（PIN値自体は返さない）"),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -929,6 +941,56 @@ export const ConfirmPayrollParams = zod.object({
 });
 
 export const ConfirmPayrollResponse = zod.object({
+  id: zod.number(),
+  employeeId: zod.number(),
+  employeeName: zod.string().optional(),
+  employeeCode: zod.string().optional(),
+  year: zod.number(),
+  month: zod.number(),
+  status: zod.enum(["draft", "confirmed"]),
+  baseSalary: zod.number().describe("基本給"),
+  saturdayPay: zod.number().optional().describe("土曜出勤手当"),
+  overtimePay: zod.number().describe("時間外手当"),
+  lateNightPay: zod.number().describe("深夜手当"),
+  holidayPay: zod.number().describe("休日手当"),
+  commissionPay: zod.number().describe("歩合給"),
+  transportationAllowance: zod.number().describe("通勤手当"),
+  safetyDrivingAllowance: zod.number().describe("無事故手当"),
+  longDistanceAllowance: zod.number().describe("長距離手当"),
+  positionAllowance: zod.number().describe("役職手当"),
+  familyAllowance: zod.number().describe("家族手当"),
+  earlyOvertimeAllowance: zod.number().describe("早出残業手当"),
+  customAllowancesTotal: zod.number().optional().describe("カスタム手当合計"),
+  absenceDeduction: zod.number().describe("欠勤控除"),
+  grossSalary: zod.number().describe("支給合計"),
+  socialInsurance: zod
+    .number()
+    .describe("社会保険料（健保＋子育て支援金＋厚年）"),
+  childcareSupportContribution: zod
+    .number()
+    .optional()
+    .describe("子ども・子育て支援金"),
+  employmentInsurance: zod.number().describe("雇用保険料"),
+  incomeTax: zod.number().describe("源泉所得税"),
+  residentTax: zod.number().describe("住民税"),
+  totalDeductions: zod.number().describe("控除合計"),
+  netSalary: zod.number().describe("差引支給額"),
+  overtimeHours: zod.number(),
+  lateNightHours: zod.number(),
+  holidayWorkDays: zod.number(),
+  workDays: zod.number(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary 給与確定を解除（draftに戻す）
+ */
+export const UnconfirmPayrollParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UnconfirmPayrollResponse = zod.object({
   id: zod.number(),
   employeeId: zod.number(),
   employeeName: zod.string().optional(),

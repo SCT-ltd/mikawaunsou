@@ -39,6 +39,10 @@
 ## 決定事項
 
 - 2026-07-02 このファイル作成（api-server 階層の overview 初版）
+- 2026-07-03 運用リスクの是正（オペレーション改善）:
+  - **PIN漏洩の修正**: `/employees` の list/get/create/update レスポンスが全カラム（4桁 `pin` 含む）を返していたのを、`sanitizeEmployee()` で `pin` を除去し `hasPin`（設定有無のbool）に置換。PIN値はAPIに一切乗らない。
+  - **社員物理削除のガード**: `DELETE /employees/:id` は給与明細/月次実績がある社員に対し 409 を返して物理削除を拒否（賃金台帳等の法定保存記録を保護）。退職は在籍OFF（`isActive=false`＝論理削除）へ誘導。誤登録の空社員のみ物理削除可。
+  - **確定解除**: `POST /payroll/:id/unconfirm` を追加（confirmed→draft）。確定後に誤りが見つかった際の訂正導線。`/calculate` の確定ガード（409）と対で運用。
 - 2026-07-02 三川ロジックを削除（デッドコード整理・フェーズ1）。フロントの給与計算呼び出しは `useMikawaLogic` を送っておらず未使用だったため、`payroll-calculator.ts` の `calculateMikawaPayroll`/`MikawaPayrollInput`/`MikawaPayrollResult`/`MIKAWA_DAILY_BASE` と、`payroll.ts` の `useMikawaLogic` 分岐・引数・import を削除。給与エンジンは「標準ロジック（固定給/日給/時給）＋ Bluewing ロジック」の2系統に集約。BWの受け入れ基準はユーザー提示の計算例（総支給 270,555円）で、本削除は BW 分岐に非干渉。※ `monthly_records`/`employees` の `salesAmount`/`commissionRate`/`mikawaCommissionRate` カラムと passthrough は NOT NULL insert 失敗回避のため休眠状態で残置（カラム物理削除は drizzle スキーマ移行を伴う別作業）。
 - 2026-07-02 `POST /payroll/calculate` に「確定済み（status=confirmed）は再計算で上書きしない」ガードを追加（全計算モード共通、月次レコード確認直後に 409 を返す）。理由: 手入力固定/行ごと計算/保存時自動計算のいずれからも確定済み明細が draft に巻き戻る潜在バグを防止するため。
 - 2026-07-02 給与計算エンジン内の「玉川さん専用デバッグ処理」を全削除（`console.log` 群 + 検算用の R7/R8×支援金有無 4パターン再計算 + `enableTrace`/`traceExpectedIncomeTax` の玉川ハードコード + 未使用となった `calculateIncomeTaxReiwa7/8` import）。理由: 本番結果に影響しない無駄な計算・ログで、特定社員名をロジックに埋め込むのはバグの温床のため。

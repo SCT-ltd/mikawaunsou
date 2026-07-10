@@ -9,6 +9,7 @@ import {
   useGetPayroll,
   getGetPayrollQueryKey,
   useConfirmPayroll,
+  useUnconfirmPayroll,
   useListMonthlyRecords,
   useGetCompany,
   useGetEmployeeAllowances,
@@ -28,7 +29,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatMonth } from "@/lib/format";
 import {
-  Calculator, Download, AlertCircle, X, CheckCircle2, FileText, Printer, ArrowLeft, Wallet, Receipt,
+  Calculator, Download, AlertCircle, X, CheckCircle2, FileText, Printer, ArrowLeft, Wallet, Receipt, RotateCcw, Info,
 } from "lucide-react";
 import { PayrollSummaryStats } from "@/components/payroll/summary-stats";
 import { PayrollListPane, filterPayrolls } from "@/components/payroll/payroll-list-pane";
@@ -107,12 +108,13 @@ export default function PayrollList() {
     { query: { enabled: !!selectedPayrollId, queryKey: getGetPayrollQueryKey(selectedPayrollId ?? 0), staleTime: 0, refetchOnMount: "always" } }
   );
   const confirmPayroll = useConfirmPayroll();
+  const unconfirmPayroll = useUnconfirmPayroll();
 
   const selectedEmployeeId = selectedPayroll?.employeeId ?? 0;
-  const { data: printEmployeeAllowances } = useGetEmployeeAllowances(selectedEmployeeId, {
+  const { data: printEmployeeAllowances, isFetching: allowancesFetching } = useGetEmployeeAllowances(selectedEmployeeId, {
     query: { enabled: !!selectedPayroll?.employeeId, queryKey: getGetEmployeeAllowancesQueryKey(selectedEmployeeId) },
   });
-  const { data: printEmployeeDeductions } = useGetEmployeeDeductions(selectedEmployeeId, {
+  const { data: printEmployeeDeductions, isFetching: deductionsFetching } = useGetEmployeeDeductions(selectedEmployeeId, {
     query: { enabled: !!selectedPayroll?.employeeId, queryKey: getGetEmployeeDeductionsQueryKey(selectedEmployeeId) },
   });
 
@@ -141,43 +143,50 @@ export default function PayrollList() {
     }
   };
 
-  useEffect(() => {
-    const cleanup = () => {
-      console.log("[handlePrint] afterprint: cleaning up print portal.");
-      setPrintPayroll(null);
-    };
-    window.addEventListener("afterprint", cleanup);
-    return () => window.removeEventListener("afterprint", cleanup);
-  }, []);
+  const handleUnconfirm = async () => {
+    if (!selectedPayrollId) return;
+    try {
+      await unconfirmPayroll.mutateAsync({ id: selectedPayrollId });
+      queryClient.invalidateQueries({ queryKey: getGetPayrollQueryKey(selectedPayrollId) });
+      queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) });
+      toast({ title: "確定を解除しました", description: "未確定（draft）に戻しました。再計算・訂正ができます。" });
+    } catch {
+      toast({ title: "エラー", description: "確定解除に失敗しました。", variant: "destructive" });
+    }
+  };
 
   const handlePrint = useCallback(() => {
-    if (!selectedPayroll) {
-      console.warn("[handlePrint] No payroll selected.");
+    if (!selectedPayroll) return;
+    // 手当・控除の取得が終わっていないと明細に載らないため、完了を待つ
+    if (allowancesFetching || deductionsFetching) {
+      toast({ title: "データ取得中", description: "手当・控除の読み込み中です。少し待ってから再度お試しください。" });
       return;
     }
-    console.log("[handlePrint] Setting print payroll...");
     setPrintPayroll(selectedPayroll);
+    // ポータル（印刷対象DOM）の描画を待ってから印刷（2フレーム）
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         const printTargets = document.querySelectorAll("[data-print-target='payslip-classic']");
-        console.log("[handlePrint] data-print-target='payslip-classic' count:", printTargets.length);
         if (printTargets.length !== 1) {
-          console.error("印刷対象DOMが1つではありません", printTargets.length);
-          alert("印刷対象の生成に問題があります。ページをリロードして再度お試しください。");
+          toast({ title: "印刷を準備できませんでした", description: "もう一度「印刷」を押してください。", variant: "destructive" });
           setPrintPayroll(null);
           return;
         }
         const prevTitle = document.title;
         document.title = `${selectedPayroll.employeeName}_${selectedPayroll.year}年${selectedPayroll.month}月`;
-        const restoreTitle = () => {
+        // 印刷後のクリーンアップ（タイトル復元＋ポータル撤去）。
+        // afterprint を主とし、不発ブラウザ向けに setTimeout をフォールバックにする（冪等）。
+        const cleanup = () => {
           document.title = prevTitle;
-          window.removeEventListener("afterprint", restoreTitle);
+          setPrintPayroll(null);
+          window.removeEventListener("afterprint", cleanup);
         };
-        window.addEventListener("afterprint", restoreTitle);
+        window.addEventListener("afterprint", cleanup);
         window.print();
+        window.setTimeout(cleanup, 3000);
       });
     });
-  }, [selectedPayroll]);
+  }, [selectedPayroll, allowancesFetching, deductionsFetching, toast]);
 
   const handleCalculateAll = async () => {
     if (!employees) return;
@@ -199,7 +208,7 @@ export default function PayrollList() {
           if (err && typeof err === "object") {
             const e = err as { data?: { error?: string }; message?: string };
             const apiMsg = (e.data as { error?: string } | null)?.error ?? e.message ?? "";
-            if (apiMsg.toLowerCase().includes("monthly record not found")) {
+            if (apiMsg.includes("月次実績") || apiMsg.toLowerCase().includes("monthly record not found")) {
               msg = `${formatMonth(year, month)}の月次実績が未入力です`;
             } else if (apiMsg) {
               msg = apiMsg;
@@ -291,18 +300,35 @@ export default function PayrollList() {
                   setIsDirty(false);
                 })}
               />
-              <Button variant="secondary" size="sm" onClick={handleCalculateAll} disabled={calculating || !employees?.length}>
+              <Button variant="secondary" size="sm" onClick={handleCalculateAll} disabled={calculating || !employees?.length}
+                title="保存済みの月次実績をもとに、全社員の給与を計算します（確定済みは対象外）。">
                 <Calculator className="mr-1.5 h-4 w-4" />
                 {calculating ? "計算中..." : "一括計算"}
               </Button>
               <Button variant="outline" size="sm" onClick={handleExportCsv} disabled={payrolls.length === 0}>
                 <Download className="mr-1.5 h-4 w-4" />CSV出力
               </Button>
-              <Button variant="outline" size="sm" onClick={() => setBulkPrintActive(true)} disabled={payrolls.length === 0 || bulkPrintActive}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setBulkPrintActive(true)}
+                disabled={payrolls.length === 0 || bulkPrintActive}
+                title="全員の給与明細を1人1ページで印刷します。複数枚を1ページにまとめたい場合は、印刷ダイアログの「1枚あたりのページ数」で4や16を選んでください。"
+              >
                 <Printer className="mr-1.5 h-4 w-4" />
                 {bulkPrintActive ? "印刷準備中..." : "一括印刷"}
               </Button>
             </div>
+          </div>
+
+          {/* 使い方ガイド（常時表示・#1/#2 対策） */}
+          <div className="flex items-start gap-2 rounded-lg border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-xs text-indigo-900">
+            <Info className="h-3.5 w-3.5 mt-0.5 shrink-0 text-indigo-500" />
+            <p className="leading-relaxed">
+              <span className="font-semibold">給与の流れ：</span>
+              ①「月次実績入力」で保存 → ② ここで<strong>「一括計算」</strong>（1人だけ直すときは明細の<strong>「再計算」</strong>）→ ③ 金額を確認して<strong>「確定」</strong>。
+              <span className="ml-1 text-indigo-700">確定すると金額がロックされます（訂正するときは「確定解除」）。</span>
+            </p>
           </div>
 
           {/* 集計サマリー */}
@@ -396,18 +422,30 @@ export default function PayrollList() {
                     </div>
                     {selectedPayroll && (
                       <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                        <Button variant="outline" size="sm" className="h-7 px-2 text-xs" disabled={calculating} onClick={recalcSelected}>
+                        <Button variant="outline" size="sm" className="h-7 px-2 text-xs" disabled={calculating} onClick={recalcSelected}
+                          title="この社員だけ、最新の月次実績で計算し直します。">
                           <Calculator className="h-3 w-3 mr-1" />再計算
                         </Button>
-                        <Button variant="outline" size="sm" className="h-7 px-2 text-xs border-amber-300 text-amber-800 hover:bg-amber-50" onClick={recalcManual}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 text-xs border-amber-300 text-amber-800 hover:bg-amber-50"
+                          onClick={recalcManual}
+                          title="月次実績（勤怠）を使わず、マスターの基本給＋固定手当だけで計算します。日給制・歩合など勤怠連動の社員には使わないでください。"
+                        >
                           <Calculator className="h-3 w-3 mr-1" />手入力固定
                         </Button>
                         <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={handlePrint}>
                           <FileText className="h-3.5 w-3.5 mr-1" />印刷
                         </Button>
-                        {selectedPayroll.status !== "confirmed" && (
-                          <Button size="sm" className="h-7 px-2 text-xs bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleConfirm} disabled={confirmPayroll.isPending}>
+                        {selectedPayroll.status !== "confirmed" ? (
+                          <Button size="sm" className="h-7 px-2 text-xs bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleConfirm} disabled={confirmPayroll.isPending}
+                            title="この明細の金額を締めてロックします。以後は再計算されません（訂正するときは「確定解除」）。">
                             <CheckCircle2 className="h-3.5 w-3.5 mr-1" />確定
+                          </Button>
+                        ) : (
+                          <Button variant="outline" size="sm" className="h-7 px-2 text-xs border-amber-300 text-amber-800 hover:bg-amber-50" onClick={handleUnconfirm} disabled={unconfirmPayroll.isPending}>
+                            <RotateCcw className="h-3.5 w-3.5 mr-1" />確定解除
                           </Button>
                         )}
                         <button onClick={tryClosePanel} className="hidden md:inline-flex p-1.5 rounded-lg hover:bg-slate-100 transition-colors text-slate-400 hover:text-slate-600 shrink-0" aria-label="閉じる">

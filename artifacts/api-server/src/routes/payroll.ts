@@ -80,7 +80,7 @@ router.post("/payroll/calculate", async (req, res) => {
   } = req.body;
 
   const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, employeeId));
-  if (!emp) return res.status(404).json({ error: "Employee not found" });
+  if (!emp) return res.status(404).json({ error: "社員が見つかりません。" });
 
   const [record] = await db.select().from(monthlyRecordsTable)
     .where(and(
@@ -88,7 +88,7 @@ router.post("/payroll/calculate", async (req, res) => {
       eq(monthlyRecordsTable.year, year),
       eq(monthlyRecordsTable.month, month)
     ));
-  if (!record) return res.status(404).json({ error: "Monthly record not found. Please enter monthly data first." });
+  if (!record) return res.status(404).json({ error: "該当の月次実績がありません。先に月次実績を入力・保存してください。" });
 
   // 確定済みの給与明細は再計算で上書きしない（全計算モード共通のガード）。
   const [existingPayrollForGuard] = await db.select().from(payrollsTable)
@@ -536,7 +536,7 @@ router.get("/payroll/:id", async (req, res) => {
     .from(payrollsTable)
     .innerJoin(employeesTable, eq(payrollsTable.employeeId, employeesTable.id))
     .where(eq(payrollsTable.id, id));
-  if (!row) return res.status(404).json({ error: "Payroll not found" });
+  if (!row) return res.status(404).json({ error: "給与明細が見つかりません。" });
   return res.json(buildPayrollResponse(row.payroll, row.employee));
 });
 
@@ -550,7 +550,7 @@ router.put("/payroll/:id", async (req, res) => {
     ...(body.notes !== undefined && { notes: body.notes }),
     updatedAt: new Date(),
   }).where(eq(payrollsTable.id, id)).returning();
-  if (!updated) return res.status(404).json({ error: "Payroll not found" });
+  if (!updated) return res.status(404).json({ error: "給与明細が見つかりません。" });
   const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, updated.employeeId));
   return res.json(buildPayrollResponse(updated, emp));
 });
@@ -561,7 +561,19 @@ router.post("/payroll/:id/confirm", async (req, res) => {
     .set({ status: "confirmed", updatedAt: new Date() })
     .where(eq(payrollsTable.id, id))
     .returning();
-  if (!updated) return res.status(404).json({ error: "Payroll not found" });
+  if (!updated) return res.status(404).json({ error: "給与明細が見つかりません。" });
+  const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, updated.employeeId));
+  return res.json(buildPayrollResponse(updated, emp));
+});
+
+// 確定解除：確定済みを draft に戻し、再計算・訂正を可能にする
+router.post("/payroll/:id/unconfirm", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const [updated] = await db.update(payrollsTable)
+    .set({ status: "draft", updatedAt: new Date() })
+    .where(eq(payrollsTable.id, id))
+    .returning();
+  if (!updated) return res.status(404).json({ error: "給与明細が見つかりません。" });
   const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, updated.employeeId));
   return res.json(buildPayrollResponse(updated, emp));
 });
@@ -575,7 +587,7 @@ router.get("/payroll/:id/csv", async (req, res) => {
     .from(payrollsTable)
     .innerJoin(employeesTable, eq(payrollsTable.employeeId, employeesTable.id))
     .where(eq(payrollsTable.id, id));
-  if (!row) return res.status(404).json({ error: "Payroll not found" });
+  if (!row) return res.status(404).json({ error: "給与明細が見つかりません。" });
 
   const p = row.payroll;
   const e = row.employee;

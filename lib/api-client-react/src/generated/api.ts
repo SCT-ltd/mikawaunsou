@@ -1800,6 +1800,90 @@ export const useConfirmPayroll = <
 };
 
 /**
+ * @summary 給与確定を解除（draftに戻す）
+ */
+export const getUnconfirmPayrollUrl = (id: number) => {
+  return `/api/payroll/${id}/unconfirm`;
+};
+
+export const unconfirmPayroll = async (
+  id: number,
+  options?: RequestInit,
+): Promise<Payroll> => {
+  return customFetch<Payroll>(getUnconfirmPayrollUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getUnconfirmPayrollMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unconfirmPayroll>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unconfirmPayroll>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["unconfirmPayroll"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unconfirmPayroll>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return unconfirmPayroll(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnconfirmPayrollMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unconfirmPayroll>>
+>;
+
+export type UnconfirmPayrollMutationError = ErrorType<unknown>;
+
+/**
+ * @summary 給与確定を解除（draftに戻す）
+ */
+export const useUnconfirmPayroll = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unconfirmPayroll>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof unconfirmPayroll>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getUnconfirmPayrollMutationOptions(options));
+};
+
+/**
  * @summary 給与明細CSV出力
  */
 export const getExportPayrollCsvUrl = (id: number) => {

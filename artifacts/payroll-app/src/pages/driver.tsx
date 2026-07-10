@@ -1047,6 +1047,11 @@ export default function DriverPage() {
                 走行距離：{(parseFloat(endOdometer) - parseFloat(startOdometer)).toFixed(1)} km
               </div>
             )}
+            {status === "出勤中" && endOdometer.trim() === "" && (
+              <div className="mt-2 flex items-center justify-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                ⚠️ 退勤するには「帰着時（km）」の入力が必要です
+              </div>
+            )}
           </div>
 
           {/* 4大ボタン */}

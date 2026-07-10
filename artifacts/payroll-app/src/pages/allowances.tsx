@@ -1026,6 +1026,16 @@ function EmpFormFields({
 
       {/* ── 保険・扶養タブ ── */}
       <TabsContent value="insurance" className="space-y-4 pt-4">
+        <details className="rounded-md border border-sky-200 bg-sky-50/60 px-3 py-2 text-xs text-sky-900">
+          <summary className="cursor-pointer font-medium">用語のかんたん解説（クリックで開く）</summary>
+          <ul className="mt-2 space-y-1 list-disc list-inside text-sky-800">
+            <li><strong>標準報酬月額</strong>：健康保険・厚生年金の計算のもとになる金額。4〜6月の給与の平均で決まり、9月から翌年8月まで固定です。</li>
+            <li><strong>折半（せっぱん）</strong>：保険料を会社と本人で半分ずつ負担すること。ここに入るのは本人負担分です。</li>
+            <li><strong>扶養親族</strong>：生活を支えている家族（子など）。人数が多いほど源泉所得税が安くなります（配偶者は別スイッチ）。</li>
+            <li><strong>甲欄（こうらん）</strong>：源泉所得税の表の種類。「扶養控除等申告書」を出した人に使う欄で、本システムは甲欄で計算します。</li>
+            <li><strong>全額非課税</strong>：社会保険・所得税・住民税をすべて引かない設定（手取り＝総支給）。特別な場合のみ。</li>
+          </ul>
+        </details>
         <div>
           <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">扶養・家族設定</h4>
           <div className="space-y-3">
@@ -1293,8 +1303,14 @@ function EmployeeMasterTab() {
       queryClient.invalidateQueries({ queryKey: getListEmployeesQueryKey() });
       setDeleteTarget(null);
       if (editingEmployee?.id === deleteTarget.id) setEditingEmployee(null);
-    } catch {
-      toast({ title: "エラー", description: "社員の削除に失敗しました。", variant: "destructive" });
+    } catch (err: unknown) {
+      // バックエンドが給与明細/月次実績ありで 409 を返した場合はその理由を表示
+      let msg = "社員の削除に失敗しました。";
+      if (err && typeof err === "object") {
+        const e = err as { data?: { error?: string }; message?: string };
+        msg = e.data?.error ?? e.message ?? msg;
+      }
+      toast({ title: "削除できません", description: msg, variant: "destructive" });
     }
   };
 
@@ -1361,6 +1377,9 @@ function EmployeeMasterTab() {
                       ) : (
                         <Badge variant="secondary" className="text-xs shrink-0">退職</Badge>
                       )}
+                      {emp.isActive && !emp.isOfficeStaff && !emp.hasPin && (
+                        <Badge variant="outline" className="text-xs shrink-0 bg-amber-50 text-amber-700 border-amber-300">PIN未設定</Badge>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className="text-xs text-muted-foreground">{emp.employeeCode}</span>
@@ -1406,11 +1425,16 @@ function EmployeeMasterTab() {
                         )}
                       </TableCell>
                       <TableCell>
-                        {emp.isActive ? (
-                          <Badge className="bg-emerald-600 hover:bg-emerald-700 text-xs">在籍</Badge>
-                        ) : (
-                          <Badge variant="secondary" className="text-xs">退職</Badge>
-                        )}
+                        <div className="flex items-center gap-1.5">
+                          {emp.isActive ? (
+                            <Badge className="bg-emerald-600 hover:bg-emerald-700 text-xs">在籍</Badge>
+                          ) : (
+                            <Badge variant="secondary" className="text-xs">退職</Badge>
+                          )}
+                          {emp.isActive && !emp.isOfficeStaff && !emp.hasPin && (
+                            <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-300">PIN未設定</Badge>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="text-right">
                         <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleOpenEdit(emp); }}>
@@ -1549,17 +1573,19 @@ function EmployeeMasterTab() {
             <AlertDialogTitle>社員を完全に削除しますか？</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-2">
-                <p>「{deleteTarget?.name}」を削除します。</p>
+                <p className="rounded-md border border-amber-300 bg-amber-50 p-2 text-amber-900">
+                  <strong>退職の場合は削除しないでください。</strong> 編集画面の「在籍」をOFFにすると、
+                  給与明細などの記録を残したまま一覧から外せます（賃金台帳は法定保存が必要です）。
+                </p>
+                <p>「{deleteTarget?.name}」を完全削除します。誤って登録した社員の抹消のみに使用してください。</p>
                 <p className="font-semibold text-destructive">⚠️ この操作は元に戻せません。</p>
                 <p>以下のデータがすべて完全に削除されます：</p>
                 <ul className="list-disc list-inside text-sm space-y-0.5 pl-1">
-                  <li>勤怠打刻記録</li>
-                  <li>給与明細</li>
-                  <li>月次記録</li>
-                  <li>メッセージ履歴</li>
-                  <li>欠勤・休暇記録</li>
+                  <li>勤怠打刻記録 / 給与明細 / 月次記録</li>
+                  <li>メッセージ履歴 / 欠勤・休暇記録</li>
                   <li>その他すべての関連データ</li>
                 </ul>
+                <p className="text-xs text-muted-foreground">※ 給与明細または月次実績がある社員は削除できません（在籍OFFをご利用ください）。</p>
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -1639,7 +1665,10 @@ function CalcTableMasterTab() {
       {/* ── ① 適用中の税・保険基準（令和8年度）── 読み取り専用 */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">① 適用中の税・保険基準（令和8年度）</CardTitle>
+          <CardTitle className="text-base flex items-center gap-2">
+            ① 適用中の税・保険基準（令和8年度）
+            <Badge variant="outline" className="bg-slate-100 text-slate-600 border-slate-300 text-[10px] font-normal">参照専用・編集不可</Badge>
+          </CardTitle>
           <CardDescription>
             国税庁・協会けんぽの公式値をシステムに内蔵し、給与計算とプレビューの<span className="font-medium">両方で自動適用</span>されます（1円単位一致のため編集不可）。
           </CardDescription>

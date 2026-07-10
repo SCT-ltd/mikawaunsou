@@ -17,6 +17,9 @@ interface AnyEmployee {
   [key: string]: unknown;
 }
 
+// 1人1ページの詳細明細。手当/控除の取得完了を onReady で通知。
+// 面付け（複数枚を1ページ）が必要な場合は、印刷ダイアログの「1枚あたりのページ数」で
+// 4 / 16 などを選ぶ（ブラウザ標準機能。1面と完全に同じ内容が縮小されて並ぶ）。
 function BulkItem({
   payroll,
   companyName,
@@ -92,8 +95,7 @@ export function PayslipBulkPrint({
   month?: number;
 }) {
   const [portalEl] = useState<HTMLDivElement>(() => {
-    const existing = document.getElementById("payroll-print-root");
-    if (existing) existing.remove();
+    document.getElementById("payroll-print-root")?.remove();
     const el = document.createElement("div");
     el.id = "payroll-print-root";
     el.setAttribute("data-bulk-print", "true");
@@ -101,49 +103,34 @@ export function PayslipBulkPrint({
     return el;
   });
 
-  const [readyCount, setReadyCount] = useState(0);
   const printTriggeredRef = useRef(false);
-
-  const handleReady = useCallback(() => {
-    setReadyCount((c) => c + 1);
-  }, []);
+  const [readyCount, setReadyCount] = useState(0);
+  const handleReady = useCallback(() => setReadyCount((c) => c + 1), []);
 
   useEffect(() => {
     if (readyCount >= payrolls.length && !printTriggeredRef.current && payrolls.length > 0) {
       printTriggeredRef.current = true;
-      console.log("[PayslipBulkPrint] All items ready. Triggering print.", readyCount, "/", payrolls.length);
       const prevTitle = document.title;
       const y = year ?? payrolls[0]?.year;
       const m = month ?? payrolls[0]?.month;
-      if (y && m) {
-        document.title = `一括_${y}年${m}月`;
-      }
+      if (y && m) document.title = `一括_${y}年${m}月`;
       const restoreTitle = () => {
         document.title = prevTitle;
         window.removeEventListener("afterprint", restoreTitle);
       };
       window.addEventListener("afterprint", restoreTitle);
-      requestAnimationFrame(() => {
-        window.print();
-      });
+      requestAnimationFrame(() => window.print());
     }
   }, [readyCount, payrolls, year, month]);
 
   useEffect(() => {
-    const cleanup = () => {
-      console.log("[PayslipBulkPrint] afterprint: calling onDone.");
-      onDone();
-    };
-    window.addEventListener("afterprint", cleanup);
-    return () => window.removeEventListener("afterprint", cleanup);
+    window.addEventListener("afterprint", onDone);
+    return () => window.removeEventListener("afterprint", onDone);
   }, [onDone]);
 
   useEffect(() => {
     return () => {
-      if (document.body.contains(portalEl)) {
-        document.body.removeChild(portalEl);
-        console.log("[PayslipBulkPrint] Portal removed.");
-      }
+      if (document.body.contains(portalEl)) document.body.removeChild(portalEl);
     };
   }, [portalEl]);
 

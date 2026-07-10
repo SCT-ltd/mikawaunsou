@@ -55,6 +55,13 @@ function newUid() {
   return `row-${Date.now()}-${++uidCounter}`;
 }
 
+// 給与計算で自動的に支給される項目名。これらと同名のカスタム手当を社員に付けると、
+// 明細で二重表示・総支給の二重計上になるため警告する（例: BW社員の職務手当/早出残業/休日出勤）。
+const RESERVED_PAY_ITEM_NAMES = new Set([
+  "基本給", "土曜出勤手当", "早出残業手当", "職務手当", "休日出勤手当",
+  "深夜手当", "時間外手当", "歩合給", "固定残業代",
+]);
+
 interface Props {
   employee: Employee;
   monthlyData?: { workDays: number; saturdayWorkDays: number; sundayWorkDays: number };
@@ -717,9 +724,28 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
   const isBwEmployee = !!(employee as unknown as { useBluewingLogic?: boolean }).useBluewingLogic;
   const fmt = (v: number) => v >= 0 ? v.toLocaleString("ja-JP") : "—";
 
+  // 自動計算項目と同名のカスタム手当（＝二重計上の恐れ）を検知
+  const duplicateAllowanceNames = Array.from(new Set(
+    rows
+      .map(r => (allowanceDefinitions as { id: number; name: string }[] | undefined)?.find(d => d.id === r.defId)?.name)
+      .filter((n): n is string => !!n && RESERVED_PAY_ITEM_NAMES.has(n))
+  ));
+
 
   return (
     <div className="flex flex-col gap-0 select-none">
+      {/* 二重計上の警告（自動計算項目と同名のカスタム手当） */}
+      {duplicateAllowanceNames.length > 0 && (
+        <div className="mb-2 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-800">
+          <p className="font-semibold">⚠️ 二重計上の可能性があります</p>
+          <p className="mt-0.5">
+            「{duplicateAllowanceNames.join("・")}」は給与計算で自動的に支給される項目です。
+            同名のカスタム手当が付いているため、明細で二重表示・総支給の二重計上になります。
+            <span className="font-medium">この行を削除して「再計算」してください。</span>
+          </p>
+        </div>
+      )}
+
       {/* ── ヘッダー行 ── */}
       <div className="flex items-center gap-1.5 px-2 py-1 bg-muted/60 border-b border-border text-[10px] font-semibold text-muted-foreground">
         <div className={COL_DRAG} />
@@ -773,6 +799,12 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
           />
         ))}
       </Reorder.Group>
+
+      {(allowanceDefinitions?.length ?? 0) === 0 && (
+        <div className="mx-2 my-1.5 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          手当の種類がまだありません。先に <span className="font-semibold">マスター管理 → 手当マスター</span> で種類を作成すると、ここで選べるようになります。
+        </div>
+      )}
 
       {/* 行を追加 */}
       <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-border/40 bg-muted/10">
@@ -848,6 +880,12 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
           />
         ))}
       </Reorder.Group>
+
+      {(deductionDefinitions?.length ?? 0) === 0 && (
+        <div className="mx-2 my-1.5 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          差引の種類がまだありません。先に <span className="font-semibold">マスター管理 → 差引マスター</span> で種類を作成すると、ここで選べるようになります。
+        </div>
+      )}
 
       {/* 差引 行を追加 */}
       <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-border/40 bg-muted/10">

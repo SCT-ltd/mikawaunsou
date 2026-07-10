@@ -77,6 +77,29 @@ The code reads `process.env` directly — **there is no dotenv loader**, so env 
 - API routes: `artifacts/api-server/src/routes/` (mounted under `/api` in `routes/index.ts`, which also applies the prefix-based `requireAdmin` authorization).
 - Frontend pages: `artifacts/payroll-app/src/pages/`; auth wiring in `src/context/auth-context.tsx` + `ProtectedRoutes` in `src/App.tsx`.
 
+## Payroll has three calculation branches (one endpoint, `POST /payroll/:id/calculate`)
+
+`routes/payroll.ts` dispatches on the request body **before** touching the tax tables — read all three before changing calc behavior:
+
+1. **manual** (`calculationMode === "manual"`) — nothing is computed; the client-supplied 社会保険/所得税 values are stored as-is. `emp.taxExempt === true` zeroes every deduction. No engine call.
+2. **Bluewing** (`useBluewingLogic` in the body **or** `emp.useBluewingLogic`) → `calculateBluewingPayroll`. Persisted with `calculationMode: "bluewing_auto"`.
+3. **standard** (default) → `calculatePayroll`, `calculationMode: "auto"`.
+
+Confirmation is a hard gate: if the existing record is `status: "confirmed"`, calculate returns **409**（「確定済みの給与明細は再計算できません。」）. `POST /payroll/:id/confirm` sets `confirmed`; `POST /payroll/:id/unconfirm` reverts to `draft` to allow recalculation. All freshly-written records start as `draft`.
+
+## PIN never leaves the server in the clear
+
+Employee rows carry a 4-digit `pin`. Every employee response goes through `sanitizeEmployee()` in `routes/employees.ts`, which **strips `pin`** and substitutes `hasPin: boolean`. The raw `pin` is only read internally by the verify/status endpoints (`/employees/:id/verify-pin`, `/pin-status`). If you add an employee-returning endpoint, route it through `sanitizeEmployee` too, and expose `hasPin` (not `pin`) in `openapi.yaml`.
+
+## Payslip printing (frontend-only, no PDF backend)
+
+Printing is done entirely in the browser via a React portal + `@media print`, not server-rendered:
+
+- A portal div `#payroll-print-root` is created at print time; `index.css` keeps it `display:none` on screen and only reveals it under `@media print` (this prevents the payslip lingering on screen if `afterprint` doesn't fire). `#root` is hidden while printing.
+- **Single** payslip renders fixed-position full-page; **bulk** print sets `data-bulk-print="true"` on the portal, which switches to static/stacked flow so each 明細 is one page (`payslip-bulk-print.tsx`, one `100vh` block per employee, `window.print()` after all allowance/deduction queries resolve).
+- **N-up（面付け, several payslips per sheet）is intentionally NOT implemented in-app** — users select the browser print dialog's「1枚あたりのページ数」(pages-per-sheet 4/16). Custom scaling was tried and removed because it always cut content off; do not reintroduce it.
+- The classic payslip (`payslip-print-classic.tsx`) de-dups custom allowances whose name collides with a BW auto-computed 手当, and splits 社会保険料 into 健康保険料/厚生年金保険料 for display only (recomputed from `stdRem`, not stored separately).
+
 ## Local dev on Windows (non-obvious)
 
 This repo is built and deployed on **Replit (linux-x64)**. Two things bite when running natively on Windows:

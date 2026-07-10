@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { formatCurrency, formatMonth } from "@/lib/format";
+import { round50sen, HEALTH_EMPLOYEE_RATE_R8, HEALTH_WITH_CARE_EMPLOYEE_RATE_R8 } from "@/lib/tax-tables-reiwa8";
 
 interface PayrollData {
   year: number;
@@ -293,8 +294,12 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
     if ((payroll.earlyOvertimeAllowance ?? 0) > 0) payItemsFixed.push({ label: "固定残業代", value: payroll.earlyOvertimeAllowance ?? 0 });
   }
 
+  // 自動計算される支給項目（早出残業・職務手当・休日出勤等）と同名のカスタム手当は
+  // 二重表示になるため除外する（BW社員で同名のカスタム手当が登録されているケース対策）。
+  const fixedLabels = new Set(payItemsFixed.map(i => i.label));
   const payItemsCustom = (employeeAllowances ?? [])
     .filter(a => a.amount !== 0)
+    .filter(a => !fixedLabels.has(a.allowanceName))
     .map(a => ({ label: a.allowanceName, value: a.amount, nonTaxable: !a.isTaxable }));
 
   const allPayItems = [...payItemsFixed, ...payItemsCustom];
@@ -302,12 +307,23 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
   // 控除項目：DBに保存された値をそのまま使用（再計算しない）
   const deductionItems: Array<{ label: string; value: number; exempt?: boolean }> = [];
   const socialBase = (payroll.socialInsurance ?? 0) - childcare;
+  // 健康保険と厚生年金を分けて表示する。payroll には合算値しか保存されていないため、
+  // 標準報酬月額×令和8年料率で健保分を求め、残り（社保合計−健保）を厚年分とする
+  // （合計は必ず socialBase に一致）。
+  const empRec = employee as Record<string, unknown> | undefined;
+  const stdRem = Number(empRec?.standardRemuneration ?? 0);
+  const insBase = stdRem > 0 ? stdRem : (payroll.grossSalary ?? 0);
+  const healthRate = empRec?.careInsuranceApplied ? HEALTH_WITH_CARE_EMPLOYEE_RATE_R8 : HEALTH_EMPLOYEE_RATE_R8;
+  const healthAmt = Math.min(socialBase, round50sen(insBase * healthRate));
+  const pensionAmt = Math.max(0, socialBase - healthAmt);
   if (isTaxExempt) {
-    deductionItems.push({ label: "社会保険料（健保・厚年）", value: 0, exempt: true });
+    deductionItems.push({ label: "健康保険料", value: 0, exempt: true });
+    deductionItems.push({ label: "厚生年金保険料", value: 0, exempt: true });
     deductionItems.push({ label: "雇用保険料", value: 0, exempt: true });
     deductionItems.push({ label: "源泉所得税", value: 0, exempt: true });
   } else {
-    if (socialBase > 0) deductionItems.push({ label: "社会保険料（健保・厚年）", value: socialBase });
+    if (healthAmt > 0) deductionItems.push({ label: "健康保険料", value: healthAmt });
+    if (pensionAmt > 0) deductionItems.push({ label: "厚生年金保険料", value: pensionAmt });
     if (childcare > 0) deductionItems.push({ label: "子ども・子育て支援金", value: childcare });
     if ((payroll.employmentInsurance ?? 0) > 0) deductionItems.push({ label: "雇用保険料", value: payroll.employmentInsurance });
     if ((payroll.incomeTax ?? 0) > 0) deductionItems.push({ label: "源泉所得税", value: payroll.incomeTax });
@@ -319,7 +335,7 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
   });
 
   const attendanceItems = [
-    { label: "出勤日数", value: `${payroll.workDays ?? 0}日` },
+    { label: "平日日数", value: `${payroll.workDays ?? 0}日` },
     { label: "土曜出勤", value: `${payroll.saturdayWorkDays ?? 0}日` },
     { label: "休日出勤", value: `${payroll.holidayWorkDays ?? 0}日` },
     { label: "残業時間", value: `${payroll.overtimeHours ?? 0}時間` },
@@ -331,38 +347,6 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
   const issuedDate = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日`;
   const payrollMonthStr = formatMonth(payroll.year, payroll.month);
 
-  const customDeductionsTotal = (employeeDeductions ?? []).reduce((s, d) => s + (d.amount ?? 0), 0);
-
-  console.log("[PRINT_VALUES_SOURCE_CHECK]", {
-    componentName: "PayslipPrintClassic",
-    payrollId: (payroll as { id?: number }).id,
-    grossSalary: payroll.grossSalary,
-    healthInsurance: socialBase,
-    childcareSupportContribution: childcare,
-    pension: 0,
-    employmentInsurance: payroll.employmentInsurance,
-    incomeTax: payroll.incomeTax,
-    residentTax: payroll.residentTax,
-    customDeductionsTotal,
-    totalDeductions: payroll.totalDeductions,
-    netSalary: payroll.netSalary,
-    source: "DB_SAVED_VALUES",
-  });
-
-  console.log("[CLASSIC_PAYSLIP_PRINT_DATA]", {
-    employeeName: payroll.employeeName,
-    employeeCode: payroll.employeeCode,
-    department,
-    payrollMonth: payrollMonthStr,
-    paymentDate: issuedDate,
-    companyName,
-    attendanceItems,
-    payItems: allPayItems,
-    deductionItems,
-    grossSalary: payroll.grossSalary,
-    totalDeductions: payroll.totalDeductions,
-    netSalary: payroll.netSalary,
-  });
 
   const taxableTotal = allPayItems
     .filter(i => !i.nonTaxable)
@@ -544,26 +528,18 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
 
 export function PayslipPrintClassic(props: ClassicPayslipProps) {
   const [portalEl] = useState<HTMLDivElement>(() => {
-    const existing = document.getElementById("payroll-print-root");
-    if (existing) {
-      console.log("[PayslipPrintClassic] Removed stale portal element.");
-      existing.remove();
-    }
+    // 残存ポータル（前回の印刷が afterprint 不発で残った等）を掃除してから作り直す
+    document.getElementById("payroll-print-root")?.remove();
     const el = document.createElement("div");
     el.id = "payroll-print-root";
     document.body.appendChild(el);
-    console.log("[PayslipPrintClassic] Portal created. Count:", document.querySelectorAll("#payroll-print-root").length);
     return el;
   });
 
   useEffect(() => {
-    const count = document.querySelectorAll("#payroll-print-root").length;
-    console.log("[PayslipPrintClassic] Mounted. Count:", count);
-    if (count > 1) console.error("[PayslipPrintClassic] ERROR: Multiple portals!");
     return () => {
       if (document.body.contains(portalEl)) {
         document.body.removeChild(portalEl);
-        console.log("[PayslipPrintClassic] Portal removed.");
       }
     };
   }, [portalEl]);

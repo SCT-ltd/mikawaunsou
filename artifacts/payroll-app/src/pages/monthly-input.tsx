@@ -365,7 +365,7 @@ export default function MonthlyInput() {
                 size="sm"
                 onClick={handleImportAttendance}
                 disabled={isLoading || importing || saving || !employees.length}
-                title="打刻データから出勤日数・残業時間を自動入力"
+                title="打刻データから出勤日数・残業時間を自動入力します。※勤怠系の項目に手入力した値は打刻データで上書きされます（先に反映→その後で手修正→保存の順で操作してください）"
               >
                 <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${importing ? "animate-spin" : ""}`} />
                 <span className="hidden sm:inline">{importing ? "取り込み中..." : "勤怠から一括反映"}</span>

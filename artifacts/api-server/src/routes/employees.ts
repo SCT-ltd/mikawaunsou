@@ -17,6 +17,15 @@ import { asc, eq } from "drizzle-orm";
 
 const router = Router();
 
+/**
+ * 社員行から機密の `pin` を除去し、代わりに `hasPin`（設定有無）を付与する。
+ * PIN は打刻認証の秘密情報なので、API レスポンスに値を含めない。
+ */
+function sanitizeEmployee(row: typeof employeesTable.$inferSelect) {
+  const { pin, ...rest } = row;
+  return { ...rest, hasPin: !!pin };
+}
+
 router.get("/employees", async (req, res) => {
   const { active } = req.query;
   if (active !== undefined) {
@@ -24,11 +33,11 @@ router.get("/employees", async (req, res) => {
     const rows = await db.select().from(employeesTable)
       .where(eq(employeesTable.isActive, activeFilter))
       .orderBy(asc(employeesTable.employeeCode));
-    return res.json(rows);
+    return res.json(rows.map(sanitizeEmployee));
   }
   const rows = await db.select().from(employeesTable)
     .orderBy(asc(employeesTable.employeeCode));
-  return res.json(rows);
+  return res.json(rows.map(sanitizeEmployee));
 });
 
 router.post("/employees", async (req, res) => {
@@ -87,21 +96,21 @@ router.post("/employees", async (req, res) => {
       .set(fields)
       .where(eq(employeesTable.id, existing.id))
       .returning();
-    return res.status(200).json(emp);
+    return res.status(200).json(sanitizeEmployee(emp));
   }
 
   const [emp] = await db.insert(employeesTable).values({
     employeeCode: body.employeeCode,
     ...fields,
   }).returning();
-  return res.status(201).json(emp);
+  return res.status(201).json(sanitizeEmployee(emp));
 });
 
 router.get("/employees/:id", async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, id));
-  if (!emp) return res.status(404).json({ error: "Employee not found" });
-  return res.json(emp);
+  if (!emp) return res.status(404).json({ error: "社員が見つかりません。" });
+  return res.json(sanitizeEmployee(emp));
 });
 
 router.put("/employees/:id", async (req, res) => {
@@ -156,8 +165,8 @@ router.put("/employees/:id", async (req, res) => {
     })
     .where(eq(employeesTable.id, id))
     .returning();
-  if (!updated) return res.status(404).json({ error: "Employee not found" });
-  return res.json(updated);
+  if (!updated) return res.status(404).json({ error: "社員が見つかりません。" });
+  return res.json(sanitizeEmployee(updated));
 });
 
 router.delete("/employees/:id", async (req, res) => {
@@ -167,6 +176,18 @@ router.delete("/employees/:id", async (req, res) => {
   const [emp] = await db.select({ id: employeesTable.id })
     .from(employeesTable).where(eq(employeesTable.id, id));
   if (!emp) return res.status(404).json({ error: "社員が見つかりません" });
+
+  // 給与明細・月次実績がある社員は物理削除を禁止（賃金台帳等の法定保存記録を守る）。
+  // 退職の場合は在籍を OFF（論理削除）にする運用へ誘導する。
+  const [existingPayroll] = await db.select({ id: payrollsTable.id })
+    .from(payrollsTable).where(eq(payrollsTable.employeeId, id)).limit(1);
+  const [existingRecord] = await db.select({ id: monthlyRecordsTable.id })
+    .from(monthlyRecordsTable).where(eq(monthlyRecordsTable.employeeId, id)).limit(1);
+  if (existingPayroll || existingRecord) {
+    return res.status(409).json({
+      error: "給与明細または月次実績がある社員は削除できません。退職の場合は「在籍」をOFFにしてください。",
+    });
+  }
 
   // 関連データを順番に完全削除（外部キー制約順）
   await db.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.employeeId, id));
@@ -197,7 +218,7 @@ router.put("/employees/:id/pin", async (req, res) => {
     .set({ pin: String(pin), updatedAt: new Date() })
     .where(eq(employeesTable.id, id))
     .returning({ id: employeesTable.id });
-  if (!updated) return res.status(404).json({ error: "Employee not found" });
+  if (!updated) return res.status(404).json({ error: "社員が見つかりません。" });
   return res.json({ ok: true });
 });
 
@@ -208,7 +229,7 @@ router.delete("/employees/:id/pin", async (req, res) => {
     .set({ pin: null, updatedAt: new Date() })
     .where(eq(employeesTable.id, id))
     .returning({ id: employeesTable.id });
-  if (!updated) return res.status(404).json({ error: "Employee not found" });
+  if (!updated) return res.status(404).json({ error: "社員が見つかりません。" });
   return res.json({ ok: true });
 });
 
@@ -217,7 +238,7 @@ router.post("/employees/:id/pin/verify", async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { pin } = req.body;
   const [emp] = await db.select({ pin: employeesTable.pin }).from(employeesTable).where(eq(employeesTable.id, id));
-  if (!emp) return res.status(404).json({ error: "Employee not found" });
+  if (!emp) return res.status(404).json({ error: "社員が見つかりません。" });
   if (!emp.pin) return res.json({ ok: true, pinRequired: false });
   const ok = emp.pin === String(pin);
   return res.json({ ok, pinRequired: true });
@@ -227,7 +248,7 @@ router.post("/employees/:id/pin/verify", async (req, res) => {
 router.get("/employees/:id/pin/status", async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const [emp] = await db.select({ pin: employeesTable.pin }).from(employeesTable).where(eq(employeesTable.id, id));
-  if (!emp) return res.status(404).json({ error: "Employee not found" });
+  if (!emp) return res.status(404).json({ error: "社員が見つかりません。" });
   return res.json({ pinSet: !!emp.pin });
 });
 
