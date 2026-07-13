@@ -34,6 +34,9 @@ services:
 
   # ── API（Express。esbuild で単一 ESM 済み） ──────────────────────────
   api:
+    # ビルド済みイメージがあればそれを使う（開発機で検証したものを docker save/load で持ち込む）。
+    # NAS 上でビルドし直したいときは `docker compose up -d --build`。
+    image: mikawa-api:latest
     build:
       context: ..
       dockerfile: deploy/Dockerfile
@@ -54,6 +57,7 @@ services:
 
   # ── nginx（SPA 配信 + /api リバースプロキシ） ────────────────────────
   web:
+    image: mikawa-web:latest
     build:
       context: ..
       dockerfile: deploy/Dockerfile
