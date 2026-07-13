@@ -47,6 +47,11 @@ app.use(
   }),
 );
 
+// 本番（Cloudflare Tunnel → nginx → api）ではプロキシ1段を信頼する。
+// これが無いと Express は req.protocol を "http" と判断し、secure Cookie を発行できない。
+const isProduction = process.env.NODE_ENV === "production";
+if (isProduction) app.set("trust proxy", 1);
+
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -71,7 +76,9 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: false,
+      // 本番は HTTPS 固定（Cloudflare）なので Secure 属性を付ける。
+      // 開発は http://localhost のため false のまま（true にすると Cookie が発行されずログインできない）。
+      secure: isProduction,
       maxAge: 8 * 60 * 60 * 1000, // 8時間
       sameSite: "lax",
     },

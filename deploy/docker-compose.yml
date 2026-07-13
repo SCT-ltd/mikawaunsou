@@ -1,0 +1,108 @@
+# 三川運送システム — NAS(Synology) + Cloudflare Tunnel 構成
+#
+#   [インターネット] → Cloudflare → cloudflared(トンネル) → web(nginx) → api(Express) → db(Postgres)
+#
+# NAS 側でポートを一切公開しない（ports: を書かない）のが要点。
+# 外からの唯一の入口は cloudflared がCloudflareへ張る outbound 接続だけ。
+#
+# 使い方:
+#   cd /volume2/docker/mikawa-system/deploy
+#   cp .env.example .env   &&  vi .env      # ← 秘密情報を埋める
+#   docker compose up -d --build
+
+name: mikawa-system
+
+services:
+  # ── PostgreSQL（給与データ。法定保存対象） ──────────────────────────
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      TZ: Asia/Tokyo
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+      - ./backups:/backups          # 移行用ダンプの受け渡し・バックアップ出力先
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    # ports: は書かない。NAS の外はもちろん LAN にも晒さない。
+
+  # ── API（Express。esbuild で単一 ESM 済み） ──────────────────────────
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production          # ← これで secure Cookie + trust proxy が有効になる
+      PORT: "8080"
+      DATABASE_URL: ${DATABASE_URL}
+      SESSION_SECRET: ${SESSION_SECRET}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+      VAPID_EMAIL: ${VAPID_EMAIL}
+      TZ: Asia/Tokyo
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ── nginx（SPA 配信 + /api リバースプロキシ） ────────────────────────
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: web
+      args:
+        # QRコードが指す公開ホスト。管理画面(admin.*)は Access の背後にあるため、
+        # ここを指定しないと QR が admin.* を指してドライバーが Access に弾かれる。
+        VITE_PUBLIC_ORIGIN: ${PUBLIC_ORIGIN}
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Tokyo
+    depends_on:
+      - api
+
+  # ── Cloudflare Tunnel（唯一の入口。outbound のみ） ───────────────────
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN}
+      TZ: Asia/Tokyo
+    depends_on:
+      - web
+
+  # ── 日次バックアップ（給与データは法定保存。NAS障害＝喪失にしない） ──
+  db-backup:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-60}
+      TZ: Asia/Tokyo
+    volumes:
+      - ./backups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "[backup] started (retention=$${BACKUP_RETENTION_DAYS}d)"
+        while true; do
+          ts=$$(date +%Y%m%d-%H%M%S)
+          if pg_dump "$$DATABASE_URL" -Fc -f "/backups/mikawa-$$ts.dump"; then
+            echo "[backup] ok: mikawa-$$ts.dump"
+            find /backups -name 'mikawa-*.dump' -mtime +$${BACKUP_RETENTION_DAYS} -delete
+          else
+            echo "[backup] FAILED at $$ts" >&2
+          fi
+          sleep 86400
+        done

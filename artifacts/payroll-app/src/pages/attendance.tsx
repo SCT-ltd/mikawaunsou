@@ -325,7 +325,11 @@ export default function AttendancePage() {
   }), [data]);
 
   const qrAttendancePath = qrEmployee?.isOfficeStaff ? "office" : "driver";
-  const qrUrl = qrEmployee ? `${window.location.origin}${BASE}/${qrAttendancePath}/${qrEmployee.id}` : "";
+  // QRは「公開ホスト」を指さなければならない。管理画面は Cloudflare Access の背後にあるため、
+  // window.location.origin（＝admin.…）でQRを作るとドライバーが Access に弾かれて打刻できない。
+  // VITE_PUBLIC_ORIGIN（公開ホストのURL）が設定されていればそれを使う。未設定なら従来どおり現在のオリジン。
+  const publicOrigin = import.meta.env.VITE_PUBLIC_ORIGIN || window.location.origin;
+  const qrUrl = qrEmployee ? `${publicOrigin}${BASE}/${qrAttendancePath}/${qrEmployee.id}` : "";
 
   return (
     <AppLayout fullWidth>

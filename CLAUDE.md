@@ -15,6 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `docs/overview.md` — プロジェクト全体の概要
 - `artifacts/api-server/overview.md` / `artifacts/payroll-app/overview.md`
 - `lib/db/overview.md` / `lib/api-spec/overview.md` / `lib/api-client-react/overview.md` / `lib/api-zod/overview.md` / `lib/tax-tables-reiwa8/overview.md`
+- `deploy/overview.md` — 本番デプロイ（NAS + Cloudflare Tunnel）
 
 新しい主要ディレクトリを作ったら、その階層にも `overview.md` を追加する。
 
@@ -132,6 +133,16 @@ Printing is done entirely in the browser via a React portal + `@media print`, no
 - 切替は `src/context/theme-context.tsx`（ThemeProvider）。localStorage の `theme` が最優先、無ければ OS の `prefers-color-scheme` に追従する。`index.html` のインラインスクリプトが初回描画前に `.dark` を付けて FOUC を防ぐ。
 - **対象は管理アプリ（ログイン後の画面）のみ。** ドライバー/事務所の公開QR画面（`/driver/:id`, `/office/:id`）は対象外。
 - 新しい UI を書くときは `bg-white` / `text-slate-900` のような固定色ではなく**トークン**（`bg-card` / `text-foreground` / `text-muted-foreground` / `border-border`）を使う。淡色タイント（`bg-blue-50` 等）を使う場合は `dark:` 変種を必ず添える。
+
+## 本番デプロイ（NAS + Cloudflare Tunnel）— `deploy/`
+
+`deploy/README.md` が手順書、`deploy/overview.md` が設計と決定事項。要点だけ:
+
+- **2ホスト構成。** `mikawa-unso.jp` は QR打刻専用の公開ホスト（Access なし）、`admin.mikawa-unso.jp` が管理画面（Cloudflare Access で保護）。QR画面は未ログインで動く必要があるため、サイト全体に Access を掛けることはできない。
+- **公開APIの allowlist が2箇所にある。** `routes/index.ts` の `isPublicDriverFlowRequest()` と `deploy/nginx/default.conf` の正規表現。QR画面が叩くエンドポイントを増減したら**両方**直すこと（nginx を忘れると 403 で無言で壊れる）。
+- **SSE はバッファリング禁止。** `deploy/nginx/proxy.conf` の `proxy_buffering off` を外すとリアルタイム更新が止まる。
+- **QRのURLは公開ホスト固定。** `VITE_PUBLIC_ORIGIN`（ビルド時）。これが無いと管理画面で発行したQRが `admin.*` を指し、ドライバーが Access に弾かれる。
+- **本番のみ secure Cookie + `trust proxy`**（`NODE_ENV=production` で有効）。nginx が `X-Forwarded-Proto: https` を付ける前提。
 
 ## Local dev on Windows (non-obvious)
 

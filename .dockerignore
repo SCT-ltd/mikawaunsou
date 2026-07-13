@@ -1,0 +1,22 @@
+node_modules
+**/node_modules
+**/dist
+**/.turbo
+**/*.tsbuildinfo
+
+.git
+.github
+.claude
+.agents
+.canvas
+
+# 秘密情報は絶対にイメージへ入れない
+.env
+.env.local
+.env*.local
+deploy/.env
+deploy/data
+deploy/backups
+
+**/.DS_Store
+Thumbs.db

@@ -15,6 +15,11 @@ node_modules
 .env.local
 .env*.local
 
+# 本番デプロイ（NAS）: 秘密情報・DB実体・バックアップは絶対にコミットしない
+deploy/.env
+deploy/data/
+deploy/backups/
+
 # IDEs and editors
 /.idea
 .project
