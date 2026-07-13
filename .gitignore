@@ -56,3 +56,6 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Cloudflare API トークン等（ローカルのみ・絶対にコミットしない）
+.secrets.local

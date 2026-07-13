@@ -23,8 +23,39 @@ NAS 側はポートを一切開けず、cloudflared が Cloudflare へ張る out
 
 ## 現在のステータス
 
-- 2026-07-13 実装。ローカル（Docker Desktop）で **api / web 両イメージのビルドと起動、
-  ホスト振り分け・公開API allowlist・SPA配信を実測で検証済み**。NAS 上での実デプロイは未実施。
+- 2026-07-13 **本番稼働開始。** NAS（Synology DS224+ / `acebita` / 192.168.0.199）へデプロイ完了し、
+  `https://mikawa-unso.jp`（QR公開）と `https://admin.mikawa-unso.jp`（管理・Access保護）が
+  インターネットから稼働中。Neon から全データ移行済み（件数完全一致で検証）。
+
+### 稼働環境の実値
+
+| 項目 | 値 |
+|---|---|
+| NAS | Synology DS224+ (x86_64) / 5.7GB RAM / Docker Compose v2.20.1 |
+| デプロイ先 | `/volume2/docker/mikawa-system/app/`（`deploy/` 配下で compose 実行） |
+| コンテナ | `mikawa-system-{db,api,web,cloudflared,db-backup}-1` |
+| Cloudflare Tunnel | `mikawa-system` / `6079b5d9-74bf-4cd4-982c-8b3310c74558` |
+| Access アプリ | `Mikawa Unso Admin` → `admin.mikawa-unso.jp`（session 24h、メール許可制） |
+| DB | Postgres 17（コンテナ）。データは `deploy/data/postgres/` |
+| 公開ポート | **0個**（`ports:` 無し。入口は cloudflared の outbound のみ） |
+
+- Docker は `sudo /usr/local/bin/docker`（`kotaki` ユーザーは docker グループ非所属）。
+- NAS には他システム（FesDX / kamatamei / lstep / message-assist 等）が15コンテナ稼働中。**一切触っていない。**
+- `/volume2/docker/mikawa-system/` の `config/` `source/` `database/` は 2026-05-30 の
+  **旧デプロイ試行の残骸**（LAN内テスト用・未起動・`mikawa_lan_test` DB）。本番とは無関係。
+  ユーザー判断待ちのため削除せず残してある。
+
+### 検証結果（インターネット経由の実測 / 2026-07-13）
+
+```
+https://mikawa-unso.jp/driver/25          -> 200  QRは開く（Access なし）
+https://mikawa-unso.jp/api/employees/25   -> 200  打刻に必要なAPIは通る
+https://mikawa-unso.jp/api/auth/login     -> 403  ログインAPIは露出しない
+https://mikawa-unso.jp/api/payroll        -> 403  給与APIは露出しない
+https://mikawa-unso.jp/                   -> 404  管理画面は出ない
+https://admin.mikawa-unso.jp/             -> 302  Cloudflare Access のログインへ
+```
+配信中の JS バンドルに `https://mikawa-unso.jp` が焼き込まれ、`admin.` は 0 件（QRの向き先が正しい）。
 
 ## 決定事項
 
