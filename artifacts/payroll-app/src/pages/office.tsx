@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "wouter";
-import { playNotificationSound, unlockAudio } from "@/lib/notification-sound";
+import { playFeedbackSound, unlockAudio } from "@/lib/notification-sound";
 
 type EventType = "clock_in" | "clock_out" | "break_start" | "break_end";
 type Status = "未出勤" | "出勤中" | "休憩中" | "退勤済";
@@ -236,7 +236,7 @@ export default function OfficePage() {
           checklistNgItems: null,
         }),
       });
-      playNotificationSound();
+      playFeedbackSound();
       setSuccessMsg(`${EVENT_LABELS[eventType]}を記録しました`);
       setTimeout(() => setSuccessMsg(null), 4000);
       await fetchData();

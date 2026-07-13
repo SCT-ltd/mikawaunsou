@@ -38,6 +38,21 @@ function _playBeep(ctx: AudioContext): void {
   oscillator.stop(ctx.currentTime + 0.4);
 }
 
+/** 操作フィードバック用の単発ビープ（打刻成功時など）。メッセージ通知の重複抑止は行わない。 */
+export function playFeedbackSound(): void {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+
+  if (ctx.state === "suspended") {
+    ctx.resume()
+      .then(() => _playBeep(ctx))
+      .catch(() => {});
+    return;
+  }
+
+  _playBeep(ctx);
+}
+
 export function playNotificationSound(
   messageId: number,
   options?: { senderId?: number; conversationId?: number; currentUserId?: number }

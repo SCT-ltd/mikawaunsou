@@ -493,7 +493,7 @@ export default function DriverPage() {
   useEffect(() => {
     if (!pinVerified) return;
     apiFetch(`/messages/${employeeId}`)
-      .then((data: { id: number; sender: "office" | "employee"; content: string; createdAt: string }[]) => setMessages(data ?? []))
+      .then((data: { id: number; employeeId: number; sender: "office" | "employee"; content: string; createdAt: string }[]) => setMessages(data ?? []))
       .catch(() => {});
     // DBからの未読件数を取得（リロード後も保持される）
     apiFetch(`/messages/${employeeId}/unread-count`)
@@ -515,7 +515,7 @@ export default function DriverPage() {
         if (perm !== "granted") return;
         const sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(publicKey),
+          applicationServerKey: urlBase64ToUint8Array(publicKey) as BufferSource,
         });
         const json = sub.toJSON();
         await fetch(`${BASE}/api/push/subscribe`, {

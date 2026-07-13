@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
-interface DatePartsInputProps extends React.HTMLAttributes<HTMLDivElement> {
+interface DatePartsInputProps extends Omit<React.HTMLAttributes<HTMLDivElement>, "onChange"> {
   value?: string;
   onChange?: (value: string) => void;
 }
