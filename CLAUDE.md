@@ -136,6 +136,24 @@ Printing is done entirely in the browser via a React portal + `@media print`, no
 
 ## 本番デプロイ（NAS + Cloudflare Tunnel）— `deploy/`
 
+**稼働中**: `https://admin.mikawa-unso.jp`（管理・Cloudflare Access 保護）と `https://mikawa-unso.jp`（QR打刻の公開ホスト）。実体は Synology NAS（`acebita` / `192.168.0.199`）の `/volume2/docker/mikawa-system/app/deploy`。
+
+### アップデートのしかた（これが本番反映の唯一の手順）
+
+```powershell
+powershell -File deploy/update-nas.ps1              # api と web の両方
+powershell -File deploy/update-nas.ps1 -Only web    # フロント/nginx だけ変えたとき
+powershell -File deploy/update-nas.ps1 -Only api    # バックエンドだけ変えたとき
+```
+
+**開発機でイメージをビルドし、`docker save` → SCP → NAS で `docker load` → `compose up` する**方式。NAS 上ではビルドしない（Celeron の NAS でモノレポをビルドし直すより、開発機で検証済みのイメージをそのまま動かす方が確実で速い）。スクリプトは最後にインターネット経由で疎通検証まで行い、1つでも落ちたら失敗させる。
+
+NAS 固有の注意（ハマりどころ）:
+- **`docker` は `sudo /usr/local/bin/docker`**。`kotaki` は docker グループに入っておらず、PATH にも無い。
+- **バインドマウント先は先に `mkdir` が要る。** Synology の Docker はディレクトリを自動作成せず、無いと起動に失敗する。
+- **DBスキーマを変えたときは NAS 側で `drizzle-kit push` が別途必要**（`compose` は push しない）。
+- 他システム（FesDX / kamatamei / lstep 等）が同じ NAS に15コンテナ稼働中。**`mikawa-system-*` 以外に触らないこと。**
+
 `deploy/README.md` が手順書、`deploy/overview.md` が設計と決定事項。要点だけ:
 
 - **2ホスト構成。** `mikawa-unso.jp` は QR打刻専用の公開ホスト（Access なし）、`admin.mikawa-unso.jp` が管理画面（Cloudflare Access で保護）。QR画面は未ログインで動く必要があるため、サイト全体に Access を掛けることはできない。
