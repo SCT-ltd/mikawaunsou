@@ -294,6 +294,10 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
     if ((payroll.earlyOvertimeAllowance ?? 0) > 0) payItemsFixed.push({ label: "固定残業代", value: payroll.earlyOvertimeAllowance ?? 0 });
   }
 
+  // 業績手当（ブルーウィングの解答C）。総支給に含まれるため必ず行として出す。
+  const performanceValue = Number((payroll as Record<string, unknown>).performanceAllowance ?? 0);
+  if (performanceValue > 0) payItemsFixed.push({ label: "業績手当", value: performanceValue });
+
   // 自動計算される支給項目（早出残業・職務手当・休日出勤等）と同名のカスタム手当は
   // 二重表示になるため除外する（BW社員で同名のカスタム手当が登録されているケース対策）。
   const fixedLabels = new Set(payItemsFixed.map(i => i.label));

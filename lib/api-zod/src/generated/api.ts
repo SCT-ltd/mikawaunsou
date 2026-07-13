@@ -749,6 +749,14 @@ export const ListPayrollsResponseItem = zod.object({
   positionAllowance: zod.number().describe("役職手当"),
   familyAllowance: zod.number().describe("家族手当"),
   earlyOvertimeAllowance: zod.number().describe("早出残業手当"),
+  performanceAllowance: zod
+    .number()
+    .optional()
+    .describe("業績手当（ブルーウィング計算の解答C。総支給に含まれる）"),
+  useBluewingLogic: zod
+    .boolean()
+    .optional()
+    .describe("ブルーウィングロジックで計算したか"),
   customAllowancesTotal: zod.number().optional().describe("カスタム手当合計"),
   absenceDeduction: zod.number().describe("欠勤控除"),
   grossSalary: zod.number().describe("支給合計"),
@@ -806,6 +814,14 @@ export const CalculatePayrollResponse = zod.object({
   positionAllowance: zod.number().describe("役職手当"),
   familyAllowance: zod.number().describe("家族手当"),
   earlyOvertimeAllowance: zod.number().describe("早出残業手当"),
+  performanceAllowance: zod
+    .number()
+    .optional()
+    .describe("業績手当（ブルーウィング計算の解答C。総支給に含まれる）"),
+  useBluewingLogic: zod
+    .boolean()
+    .optional()
+    .describe("ブルーウィングロジックで計算したか"),
   customAllowancesTotal: zod.number().optional().describe("カスタム手当合計"),
   absenceDeduction: zod.number().describe("欠勤控除"),
   grossSalary: zod.number().describe("支給合計"),
@@ -859,6 +875,14 @@ export const GetPayrollResponse = zod.object({
   positionAllowance: zod.number().describe("役職手当"),
   familyAllowance: zod.number().describe("家族手当"),
   earlyOvertimeAllowance: zod.number().describe("早出残業手当"),
+  performanceAllowance: zod
+    .number()
+    .optional()
+    .describe("業績手当（ブルーウィング計算の解答C。総支給に含まれる）"),
+  useBluewingLogic: zod
+    .boolean()
+    .optional()
+    .describe("ブルーウィングロジックで計算したか"),
   customAllowancesTotal: zod.number().optional().describe("カスタム手当合計"),
   absenceDeduction: zod.number().describe("欠勤控除"),
   grossSalary: zod.number().describe("支給合計"),
@@ -919,6 +943,14 @@ export const UpdatePayrollResponse = zod.object({
   positionAllowance: zod.number().describe("役職手当"),
   familyAllowance: zod.number().describe("家族手当"),
   earlyOvertimeAllowance: zod.number().describe("早出残業手当"),
+  performanceAllowance: zod
+    .number()
+    .optional()
+    .describe("業績手当（ブルーウィング計算の解答C。総支給に含まれる）"),
+  useBluewingLogic: zod
+    .boolean()
+    .optional()
+    .describe("ブルーウィングロジックで計算したか"),
   customAllowancesTotal: zod.number().optional().describe("カスタム手当合計"),
   absenceDeduction: zod.number().describe("欠勤控除"),
   grossSalary: zod.number().describe("支給合計"),
@@ -972,6 +1004,14 @@ export const ConfirmPayrollResponse = zod.object({
   positionAllowance: zod.number().describe("役職手当"),
   familyAllowance: zod.number().describe("家族手当"),
   earlyOvertimeAllowance: zod.number().describe("早出残業手当"),
+  performanceAllowance: zod
+    .number()
+    .optional()
+    .describe("業績手当（ブルーウィング計算の解答C。総支給に含まれる）"),
+  useBluewingLogic: zod
+    .boolean()
+    .optional()
+    .describe("ブルーウィングロジックで計算したか"),
   customAllowancesTotal: zod.number().optional().describe("カスタム手当合計"),
   absenceDeduction: zod.number().describe("欠勤控除"),
   grossSalary: zod.number().describe("支給合計"),
@@ -1025,6 +1065,14 @@ export const UnconfirmPayrollResponse = zod.object({
   positionAllowance: zod.number().describe("役職手当"),
   familyAllowance: zod.number().describe("家族手当"),
   earlyOvertimeAllowance: zod.number().describe("早出残業手当"),
+  performanceAllowance: zod
+    .number()
+    .optional()
+    .describe("業績手当（ブルーウィング計算の解答C。総支給に含まれる）"),
+  useBluewingLogic: zod
+    .boolean()
+    .optional()
+    .describe("ブルーウィングロジックで計算したか"),
   customAllowancesTotal: zod.number().optional().describe("カスタム手当合計"),
   absenceDeduction: zod.number().describe("欠勤控除"),
   grossSalary: zod.number().describe("支給合計"),

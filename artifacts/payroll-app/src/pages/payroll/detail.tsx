@@ -141,6 +141,18 @@ export default function PayrollDetail() {
                     <td className="py-2">歩合給</td>
                     <td className="py-2 text-right">{formatCurrency(payroll.commissionPay)}</td>
                   </tr>
+                  {(payroll.earlyOvertimeAllowance ?? 0) > 0 && (
+                    <tr className="border-b border-dotted border-gray-300">
+                      <td className="py-2">{payroll.useBluewingLogic ? "職務手当" : "固定残業代"}</td>
+                      <td className="py-2 text-right">{formatCurrency(payroll.earlyOvertimeAllowance ?? 0)}</td>
+                    </tr>
+                  )}
+                  {Number(payroll.performanceAllowance ?? 0) > 0 && (
+                    <tr className="border-b border-dotted border-gray-300">
+                      <td className="py-2">業績手当</td>
+                      <td className="py-2 text-right">{formatCurrency(Number(payroll.performanceAllowance ?? 0))}</td>
+                    </tr>
+                  )}
                   {(payroll.customAllowancesTotal ?? 0) > 0 && (
                     <tr className="border-b border-dotted border-gray-300">
                       <td className="py-2">その他手当</td>

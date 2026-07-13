@@ -1428,6 +1428,12 @@ components:
         earlyOvertimeAllowance:
           type: number
           description: 早出残業手当
+        performanceAllowance:
+          type: number
+          description: 業績手当（ブルーウィング計算の解答C。総支給に含まれる）
+        useBluewingLogic:
+          type: boolean
+          description: ブルーウィングロジックで計算したか
         customAllowancesTotal:
           type: number
           description: カスタム手当合計

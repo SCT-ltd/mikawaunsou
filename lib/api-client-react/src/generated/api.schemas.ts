@@ -364,6 +364,10 @@ export interface Payroll {
   familyAllowance: number;
   /** 早出残業手当 */
   earlyOvertimeAllowance: number;
+  /** 業績手当（ブルーウィング計算の解答C。総支給に含まれる） */
+  performanceAllowance?: number;
+  /** ブルーウィングロジックで計算したか */
+  useBluewingLogic?: boolean;
   /** カスタム手当合計 */
   customAllowancesTotal?: number;
   /** 欠勤控除 */
