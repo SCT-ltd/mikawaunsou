@@ -34,3 +34,4 @@
   - `Payroll` に `customAllowancesTotal` / `childcareSupportContribution` を追加。
   これにより payroll-app の型エラーが 18→5 に減少（残5件は date-parts-input / dashboard / driver / office の別種の既存不具合で型ドリフトではない）。付随して `payroll/detail.tsx` の不要な `@ts-expect-error` を除去し、DBに存在しない `payroll.sundayWorkDays` 参照を実在する `holidayWorkDays` に修正。
   - ※ Windows で codegen すると生成物が CRLF 化しコミット時に多数のファイルが差分表示されるが、内容差分は上記のみ（行末は正規化される想定）。
+- 2026-07-13 生成型ドリフトの是正（続き）。`Payroll` に `performanceAllowance`（業績手当・BWの解答C）と `useBluewingLogic` を追加し codegen 再実行。`buildPayrollResponse()` が payroll 行をそのまま spread しているため **API は元々これらを返していたが spec に無く、フロントの生成型から参照できなかった**（`payroll.performanceAllowance` が TS2339）。結果、業績手当は総支給に含まれるのに給与明細に行が出ず、支給項目の合計が総支給額と一致しない状態だった。
