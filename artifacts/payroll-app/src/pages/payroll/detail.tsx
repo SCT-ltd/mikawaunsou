@@ -12,7 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/componen
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { formatCurrency, formatMonth } from "@/lib/format";
+import { formatCurrency, formatMonth, formatHours } from "@/lib/format";
 import { ChevronLeft, CheckCircle2, FileText } from "lucide-react";
 
 export default function PayrollDetail() {
@@ -163,11 +163,11 @@ export default function PayrollDetail() {
                   </tr>
                   <tr className="border-b border-dotted border-gray-300">
                     <td className="py-2">時間外労働</td>
-                    <td className="py-2 text-right">{payroll.overtimeHours} 時間</td>
+                    <td className="py-2 text-right">{formatHours(payroll.overtimeHours)}</td>
                   </tr>
                   <tr className="border-b border-dotted border-gray-300">
                     <td className="py-2">深夜労働</td>
-                    <td className="py-2 text-right">{payroll.lateNightHours} 時間</td>
+                    <td className="py-2 text-right">{formatHours(payroll.lateNightHours)}</td>
                   </tr>
                   <tr className="border-b border-dotted border-gray-300">
                     <td className="py-2">祝日/休日出勤日数</td>

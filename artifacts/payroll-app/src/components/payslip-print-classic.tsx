@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { formatCurrency, formatMonth } from "@/lib/format";
+import { formatCurrency, formatMonth, formatHours } from "@/lib/format";
 import { round50sen, HEALTH_EMPLOYEE_RATE_R8, HEALTH_WITH_CARE_EMPLOYEE_RATE_R8 } from "@/lib/tax-tables-reiwa8";
 
 interface PayrollData {
@@ -338,8 +338,8 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
     { label: "平日日数", value: `${payroll.workDays ?? 0}日` },
     { label: "土曜出勤", value: `${payroll.saturdayWorkDays ?? 0}日` },
     { label: "休日出勤", value: `${payroll.holidayWorkDays ?? 0}日` },
-    { label: "残業時間", value: `${payroll.overtimeHours ?? 0}時間` },
-    { label: "深夜時間", value: `${payroll.lateNightHours ?? 0}時間` },
+    { label: "残業時間", value: formatHours(payroll.overtimeHours) },
+    { label: "深夜時間", value: formatHours(payroll.lateNightHours) },
   ];
 
   const department = "";
