@@ -133,7 +133,10 @@ if (-not $SkipVerify) {
     @{ url = "https://mikawa-unso.jp/api/auth/login";   expect = 403; note = "ログインAPIは非公開" },
     @{ url = "https://mikawa-unso.jp/api/payroll";      expect = 403; note = "給与APIは非公開" },
     @{ url = "https://mikawa-unso.jp/";                 expect = 302; note = "管理画面へ転送" },
-    @{ url = "https://admin.mikawa-unso.jp/";           expect = 302; note = "Accessログインへ" }
+    # Cloudflare Access は 2026-07-15 に撤去した（ユーザー判断）。
+    # 管理ホストはアプリ自身のログイン画面を直接返す（総当たり対策は
+    # routes/auth.ts のレート制限で担保）。
+    @{ url = "https://admin.mikawa-unso.jp/";           expect = 200; note = "ログイン画面" }
   )
   # Windows PowerShell 5.1 には -SkipHttpErrorCheck が無く、Invoke-WebRequest は
   # 4xx/3xx で例外を投げる。素直に curl.exe（Win10 以降に同梱）でステータスだけ取る。
