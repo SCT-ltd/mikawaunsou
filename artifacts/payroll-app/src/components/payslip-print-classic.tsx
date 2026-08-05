@@ -78,6 +78,8 @@ export interface ClassicPayslipProps {
   employeeDeductions?: EmployeeDeduction[];
   employee?: EmployeeInfo;
   company?: CompanyInfo;
+  /** 2人/A4（縦半分）に収めるための縮小表示。zoom で全体を比例縮小する（scale と違い見切れない）。 */
+  compact?: boolean;
 }
 
 const C = "#7bb6d6";
@@ -270,7 +272,7 @@ const styles = {
   },
 };
 
-export function ClassicContent({ payroll, companyName, employeeAllowances, employeeDeductions, employee }: ClassicPayslipProps) {
+export function ClassicContent({ payroll, companyName, employeeAllowances, employeeDeductions, employee, compact }: ClassicPayslipProps) {
   const isBW = !!(payroll.useBluewingLogic as boolean);
   const childcare = payroll.childcareSupportContribution ?? 0;
   const isTaxExempt = !!(employee as Record<string, unknown> | undefined)?.taxExempt;
@@ -362,7 +364,7 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
   return (
     <div
       data-print-target="payslip-classic"
-      style={styles.root}
+      style={compact ? { ...styles.root, zoom: 0.72, height: "auto" } : styles.root}
     >
       {/* ── ヘッダー ── */}
       <div style={styles.header}>

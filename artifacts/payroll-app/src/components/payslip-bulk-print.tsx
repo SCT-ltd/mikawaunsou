@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import {
   useGetEmployeeAllowances,
@@ -27,6 +27,7 @@ function BulkItem({
   company,
   onReady,
   isLast,
+  variant = "full",
 }: {
   payroll: PayrollItem;
   companyName: string;
@@ -34,6 +35,8 @@ function BulkItem({
   company: CompanyInfo;
   onReady: () => void;
   isLast: boolean;
+  /** full = 1人1ページ（A4横）、half = A4縦の半分（2人/ページ） */
+  variant?: "full" | "half";
 }) {
   const empId = (payroll.employeeId as number) ?? 0;
   const { data: allowances, isSuccess: aOk } = useGetEmployeeAllowances(empId, {
@@ -53,9 +56,11 @@ function BulkItem({
 
   const employee = employees.find((e) => e.id === empId) as ClassicPayslipProps["employee"] | undefined;
 
-  return (
-    <div
-      style={{
+  // half（2人/ページ）のときは、ページ区切りはペアのラッパーが持つので個々では出さない。
+  // 高さは 50% にして A4縦の上下半分に収める（scale は使わない＝見切れ回避）。
+  const style: CSSProperties = variant === "half"
+    ? { width: "100%", height: "50%", display: "flex", flexDirection: "column", overflow: "hidden", boxSizing: "border-box" }
+    : {
         width: "100%",
         height: "100vh",
         pageBreakAfter: isLast ? "auto" : "always",
@@ -63,8 +68,10 @@ function BulkItem({
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
-      }}
-    >
+      };
+
+  return (
+    <div style={style}>
       <ClassicContent
         payroll={payroll}
         companyName={companyName}
@@ -72,6 +79,7 @@ function BulkItem({
         employeeDeductions={deductions as ClassicPayslipProps["employeeDeductions"]}
         employee={employee}
         company={company}
+        compact={variant === "half"}
       />
     </div>
   );
@@ -85,6 +93,7 @@ export function PayslipBulkPrint({
   onDone,
   year,
   month,
+  layout = "1up",
 }: {
   payrolls: PayrollItem[];
   companyName: string;
@@ -93,15 +102,29 @@ export function PayslipBulkPrint({
   onDone: () => void;
   year?: number;
   month?: number;
+  /** "1up" = 1人1ページ（A4横）、"2up" = A4縦1枚に2人（上下） */
+  layout?: "1up" | "2up";
 }) {
   const [portalEl] = useState<HTMLDivElement>(() => {
     document.getElementById("payroll-print-root")?.remove();
     const el = document.createElement("div");
     el.id = "payroll-print-root";
     el.setAttribute("data-bulk-print", "true");
+    el.setAttribute("data-print-mode", layout);
     document.body.appendChild(el);
     return el;
   });
+
+  // 2up のときだけ用紙を A4縦にする。@page の size は要素セレクタで切り替えられないため、
+  // 印刷中だけ portrait を指定する <style> を後ろに差し込んで既存の landscape を上書きする。
+  useEffect(() => {
+    if (layout !== "2up") return;
+    const style = document.createElement("style");
+    style.setAttribute("data-print-2up", "");
+    style.textContent = "@media print { @page { size: A4 portrait; margin: 6mm; } }";
+    document.head.appendChild(style);
+    return () => style.remove();
+  }, [layout]);
 
   const printTriggeredRef = useRef(false);
   const [readyCount, setReadyCount] = useState(0);
@@ -133,6 +156,34 @@ export function PayslipBulkPrint({
       if (document.body.contains(portalEl)) document.body.removeChild(portalEl);
     };
   }, [portalEl]);
+
+  if (layout === "2up") {
+    // 2人ずつペアにして、各ペアを A4縦1枚（.print-pair）に上下で載せる。
+    const pairs: PayrollItem[][] = [];
+    for (let i = 0; i < payrolls.length; i += 2) pairs.push(payrolls.slice(i, i + 2));
+
+    return createPortal(
+      <>
+        {pairs.map((pair, pi) => (
+          <div className="print-pair" key={pi} data-last={pi === pairs.length - 1 ? "true" : "false"}>
+            {pair.map((p, j) => (
+              <BulkItem
+                key={(p as { id?: number }).id ?? `${pi}-${j}`}
+                payroll={p}
+                companyName={companyName}
+                employees={employees}
+                company={company}
+                onReady={handleReady}
+                isLast={false}
+                variant="half"
+              />
+            ))}
+          </div>
+        ))}
+      </>,
+      portalEl,
+    );
+  }
 
   return createPortal(
     <>
