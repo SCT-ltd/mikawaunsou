@@ -324,10 +324,10 @@ export function AllowancePanel({
   const isPensionApplied = resolvePensionApplied(employee);
   const healthInsurance = roundJapanese(grandTotal * healthRate);
   const pensionInsurance = isPensionApplied ? roundJapanese(grandTotal * pensionRate) : 0;
-  // 雇用保険: 総支給額（全額）× 料率（非課税手当も含めて計算）
+  // 雇用保険: （総支給 − 非課税手当）× 料率。携帯代等の非課税手当は計算基礎から除く。
   const employmentInsurance =
     employee.employmentInsuranceApplied !== false
-      ? roundJapanese(grandTotal * eiRate)
+      ? roundJapanese((grandTotal - nonTaxableAllowancesTotal) * eiRate)
       : 0;
   const totalInsurance = healthInsurance + pensionInsurance + employmentInsurance;
 
