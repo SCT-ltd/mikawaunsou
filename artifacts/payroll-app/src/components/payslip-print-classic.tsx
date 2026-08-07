@@ -364,7 +364,7 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
   return (
     <div
       data-print-target="payslip-classic"
-      style={compact ? { ...styles.root, zoom: 0.8, height: "auto" } : styles.root}
+      style={compact ? { ...styles.root, zoom: 0.92, height: "auto" } : styles.root}
     >
       {/* ── ヘッダー ── */}
       <div style={styles.header}>
