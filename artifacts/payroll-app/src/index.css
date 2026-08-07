@@ -266,25 +266,15 @@
     height: 100% !important;
   }
 
-  /* ── 2人/A4（縦・上下2人）── data-print-mode="2up" のとき ──
+  /* ── 2人/A4（縦・自動詰め）── data-print-mode="2up" のとき ──
      用紙は payslip-bulk-print.tsx が注入する <style> で A4 portrait に切り替わる。
-     .print-pair が1ページ（A4縦）で、その中に明細2つを上下半分ずつ入れる。 */
-  #payroll-print-root[data-print-mode="2up"] .print-pair {
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    page-break-after: always;
-    break-after: page;
-  }
-  #payroll-print-root[data-print-mode="2up"] .print-pair[data-last="true"] {
-    page-break-after: auto;
-    break-after: auto;
-  }
-  /* 2up では各明細を高さ100%指定にすると zoom 縮小と干渉するので、
-     ここでは高さを固定しない（BulkItem 側の height:50% と ClassicContent の height:auto に任せる）。 */
+     各明細を自然な高さのブロックにして break-inside:avoid で1明細を分割させない。
+     ブラウザが1ページに収まる分だけ詰めるので、項目の少ない社員は2人並び、
+     多い社員は1人で次ページへ流れる（見切れなし）。 */
   #payroll-print-root[data-print-mode="2up"] [data-print-target="payslip-classic"] {
     height: auto !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 
   /* スクロールバー・アウトライン除去 */

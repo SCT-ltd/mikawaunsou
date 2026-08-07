@@ -35,8 +35,8 @@ function BulkItem({
   company: CompanyInfo;
   onReady: () => void;
   isLast: boolean;
-  /** full = 1人1ページ（A4横）、half = A4縦の半分（2人/ページ） */
-  variant?: "full" | "half";
+  /** full = 1人1ページ（A4横）、stack = A4縦に自然な高さで積む（ページに収まる分だけ自動で詰める） */
+  variant?: "full" | "stack";
 }) {
   const empId = (payroll.employeeId as number) ?? 0;
   const { data: allowances, isSuccess: aOk } = useGetEmployeeAllowances(empId, {
@@ -56,10 +56,17 @@ function BulkItem({
 
   const employee = employees.find((e) => e.id === empId) as ClassicPayslipProps["employee"] | undefined;
 
-  // half（2人/ページ）のときは、ページ区切りはペアのラッパーが持つので個々では出さない。
-  // 高さは 50% にして A4縦の上下半分に収める（scale は使わない＝見切れ回避）。
-  const style: CSSProperties = variant === "half"
-    ? { width: "100%", height: "50%", display: "flex", flexDirection: "column", overflow: "hidden", boxSizing: "border-box" }
+  // stack（2人/A4）: 明細ごとに自然な高さのブロックにし、break-inside:avoid で
+  // 1明細が途中で分割されないようにする。ブラウザが1ページに収まる分だけ自動で詰めるので、
+  // 項目の多い社員は次のページへ流れ（実質1人/ページ）、少ない社員は2人並ぶ。見切れは起きない。
+  const style: CSSProperties = variant === "stack"
+    ? {
+        width: "100%",
+        breakInside: "avoid",
+        pageBreakInside: "avoid",
+        marginBottom: "5mm",
+        boxSizing: "border-box",
+      }
     : {
         width: "100%",
         height: "100vh",
@@ -79,7 +86,7 @@ function BulkItem({
         employeeDeductions={deductions as ClassicPayslipProps["employeeDeductions"]}
         employee={employee}
         company={company}
-        compact={variant === "half"}
+        compact={variant === "stack"}
       />
     </div>
   );
@@ -158,27 +165,21 @@ export function PayslipBulkPrint({
   }, [portalEl]);
 
   if (layout === "2up") {
-    // 2人ずつペアにして、各ペアを A4縦1枚（.print-pair）に上下で載せる。
-    const pairs: PayrollItem[][] = [];
-    for (let i = 0; i < payrolls.length; i += 2) pairs.push(payrolls.slice(i, i + 2));
-
+    // A4縦に明細を自然な高さで積む。各明細は break-inside:avoid なので途中で分割されず、
+    // ブラウザが1ページに入る分だけ詰める（少ない社員は2人、多い社員は1人になる）。
     return createPortal(
       <>
-        {pairs.map((pair, pi) => (
-          <div className="print-pair" key={pi} data-last={pi === pairs.length - 1 ? "true" : "false"}>
-            {pair.map((p, j) => (
-              <BulkItem
-                key={(p as { id?: number }).id ?? `${pi}-${j}`}
-                payroll={p}
-                companyName={companyName}
-                employees={employees}
-                company={company}
-                onReady={handleReady}
-                isLast={false}
-                variant="half"
-              />
-            ))}
-          </div>
+        {payrolls.map((p, i) => (
+          <BulkItem
+            key={(p as { id?: number }).id ?? i}
+            payroll={p}
+            companyName={companyName}
+            employees={employees}
+            company={company}
+            onReady={handleReady}
+            isLast={i === payrolls.length - 1}
+            variant="stack"
+          />
         ))}
       </>,
       portalEl,
