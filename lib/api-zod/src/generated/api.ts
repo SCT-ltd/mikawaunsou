@@ -1243,6 +1243,11 @@ export const ListAllowanceDefinitionsResponseItem = zod.object({
   pinned: zod
     .boolean()
     .describe("ONにすると全社員の手当リストに常時表示される"),
+  excludeFromEmploymentInsurance: zod
+    .boolean()
+    .describe(
+      "ONにすると雇用保険料の計算基礎から除外される（携帯代など実費弁償の手当）",
+    ),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -1296,6 +1301,11 @@ export const UpdateAllowanceDefinitionResponse = zod.object({
   pinned: zod
     .boolean()
     .describe("ONにすると全社員の手当リストに常時表示される"),
+  excludeFromEmploymentInsurance: zod
+    .boolean()
+    .describe(
+      "ONにすると雇用保険料の計算基礎から除外される（携帯代など実費弁償の手当）",
+    ),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });

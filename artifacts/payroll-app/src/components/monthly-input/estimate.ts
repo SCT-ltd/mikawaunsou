@@ -192,6 +192,10 @@ export function computeQuickEstimate(
     const isPensionApplied = resolvePensionApplied(emp);
     const { healthInsurance, pension } = calculateInsuranceByGrade(stdRem, healthRate, PENSION_EMPLOYEE_RATE_R8);
     const childcareSupport = round50sen(stdRem * CHILDCARE_SUPPORT_EMPLOYEE_RATE_R8);
+    // 雇用保険料の概算。ここでの grossEstimate は勤怠のみ（基本給＋残業等）で、
+    // カスタム手当（携帯代・職務手当など）を含まない。したがって「雇用保険の対象外」
+    // 手当（携帯代）も元から基礎に入っておらず、確定計算のような除外処理は不要。
+    // これは月次入力の速報概算であり、手当込みの正確な雇用保険料は明細（手当・控除パネル）で算出する。
     const employmentInsurance = emp.employmentInsuranceApplied !== false
       ? round50sen(grossEstimate * EMP_INS_EMPLOYEE_RATE_R8)
       : 0;

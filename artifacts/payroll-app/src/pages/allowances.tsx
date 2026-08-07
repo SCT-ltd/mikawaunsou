@@ -106,7 +106,7 @@ function AllowanceMasterTab() {
       calculationType: (allowance.calculationType as "fixed" | "variable" | "unit_time") ?? "variable",
       isActive: allowance.isActive,
       pinned: allowance.pinned ?? false,
-      excludeFromEmploymentInsurance: (allowance as { excludeFromEmploymentInsurance?: boolean }).excludeFromEmploymentInsurance ?? false,
+      excludeFromEmploymentInsurance: allowance.excludeFromEmploymentInsurance ?? false,
       sortOrder: Math.max(1, allowance.sortOrder),
     });
     setIsDialogOpen(true);

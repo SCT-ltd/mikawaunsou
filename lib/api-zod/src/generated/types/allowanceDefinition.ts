@@ -22,6 +22,8 @@ export interface AllowanceDefinition {
   isActive: boolean;
   /** ONにすると全社員の手当リストに常時表示される */
   pinned: boolean;
+  /** ONにすると雇用保険料の計算基礎から除外される（携帯代など実費弁償の手当） */
+  excludeFromEmploymentInsurance: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

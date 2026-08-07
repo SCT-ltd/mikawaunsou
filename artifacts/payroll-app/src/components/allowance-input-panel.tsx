@@ -701,7 +701,7 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
 
   // 雇用保険の計算基礎から除外する手当合計（「雇用保険の対象外」ON の手当のみ。交通費は含めない）
   const empInsExcludedTotal = rows.reduce((s, r) => {
-    const def = allowanceDefinitions?.find(d => d.id === r.defId) as { excludeFromEmploymentInsurance?: boolean } | undefined;
+    const def = allowanceDefinitions?.find(d => d.id === r.defId);
     return s + (def?.excludeFromEmploymentInsurance ? (r.amount || 0) : 0);
   }, 0);
 
