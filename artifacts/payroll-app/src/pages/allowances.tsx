@@ -69,6 +69,7 @@ const allowanceSchema = z.object({
   calculationType: z.enum(["fixed", "variable", "unit_time"]).default("variable"),
   isActive: z.boolean().default(true).optional(),
   pinned: z.boolean().default(false),
+  excludeFromEmploymentInsurance: z.boolean().default(false),
   sortOrder: z.number().int().min(1, "1以上の整数を入力してください").optional(),
 });
 type AllowanceFormValues = z.infer<typeof allowanceSchema>;
@@ -87,12 +88,12 @@ function AllowanceMasterTab() {
 
   const form = useForm<AllowanceFormValues>({
     resolver: zodResolver(allowanceSchema),
-    defaultValues: { name: "", description: "", isTaxable: true, calculationType: "variable", isActive: true, pinned: false },
+    defaultValues: { name: "", description: "", isTaxable: true, calculationType: "variable", isActive: true, pinned: false, excludeFromEmploymentInsurance: false },
   });
 
   const handleOpenCreate = () => {
     setEditingAllowance(null);
-    form.reset({ name: "", description: "", isTaxable: true, calculationType: "variable", isActive: true, pinned: false });
+    form.reset({ name: "", description: "", isTaxable: true, calculationType: "variable", isActive: true, pinned: false, excludeFromEmploymentInsurance: false });
     setIsDialogOpen(true);
   };
 
@@ -105,6 +106,7 @@ function AllowanceMasterTab() {
       calculationType: (allowance.calculationType as "fixed" | "variable" | "unit_time") ?? "variable",
       isActive: allowance.isActive,
       pinned: allowance.pinned ?? false,
+      excludeFromEmploymentInsurance: (allowance as { excludeFromEmploymentInsurance?: boolean }).excludeFromEmploymentInsurance ?? false,
       sortOrder: Math.max(1, allowance.sortOrder),
     });
     setIsDialogOpen(true);
@@ -115,12 +117,12 @@ function AllowanceMasterTab() {
       if (editingAllowance) {
         await updateAllowance.mutateAsync({
           id: editingAllowance.id,
-          data: { name: data.name, description: data.description || undefined, isTaxable: data.isTaxable, calculationType: data.calculationType, isActive: data.isActive ?? true, sortOrder: data.sortOrder, pinned: data.pinned },
+          data: { name: data.name, description: data.description || undefined, isTaxable: data.isTaxable, calculationType: data.calculationType, isActive: data.isActive ?? true, sortOrder: data.sortOrder, pinned: data.pinned, excludeFromEmploymentInsurance: data.excludeFromEmploymentInsurance },
         });
         toast({ title: "保存しました", description: "手当マスタを更新しました。" });
       } else {
         await createAllowance.mutateAsync({
-          data: { name: data.name, description: data.description || undefined, isTaxable: data.isTaxable, calculationType: data.calculationType, pinned: data.pinned },
+          data: { name: data.name, description: data.description || undefined, isTaxable: data.isTaxable, calculationType: data.calculationType, pinned: data.pinned, excludeFromEmploymentInsurance: data.excludeFromEmploymentInsurance },
         });
         toast({ title: "追加しました", description: "新しい手当を登録しました。" });
       }
@@ -272,6 +274,15 @@ function AllowanceMasterTab() {
                   <div>
                     <FormLabel className="text-base flex items-center gap-1.5"><Pin className="h-4 w-4 text-amber-600" />リストに固定</FormLabel>
                     <p className="text-sm text-muted-foreground">オンにすると全社員の手当リストに常時表示され、毎回追加する手間が省けます</p>
+                  </div>
+                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="excludeFromEmploymentInsurance" render={({ field }) => (
+                <FormItem className="flex items-center justify-between rounded-lg border border-sky-200 bg-sky-50/50 dark:bg-sky-500/10 dark:border-sky-500/25 p-4">
+                  <div>
+                    <FormLabel className="text-base">雇用保険の対象外にする</FormLabel>
+                    <p className="text-sm text-muted-foreground">オンにすると、この手当は雇用保険料の計算基礎から除きます（携帯代など実費弁償の手当向け。交通費は対象に含めるためオフのまま）</p>
                   </div>
                   <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
                 </FormItem>

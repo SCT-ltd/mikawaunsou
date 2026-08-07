@@ -257,6 +257,8 @@ export interface InsuranceTaxInput {
   grossSalary: number;
   /** 非課税手当合計（通勤手当等、所得税計算から除外する金額）*/
   nonTaxableAllowances: number;
+  /** 雇用保険の計算基礎から除外する手当合計（携帯代など実費弁償。通勤手当は含めない）*/
+  employmentInsuranceExcludedAllowances?: number;
   /** 扶養親族数 */
   dependentCount: number;
   /** 配偶者控除対象の有無（true で +1人）*/
@@ -318,6 +320,7 @@ export function calculateInsuranceAndTax(input: InsuranceTaxInput): InsuranceTax
     standardRemuneration,
     grossSalary,
     nonTaxableAllowances = 0,
+    employmentInsuranceExcludedAllowances = 0,
     dependentCount,
     hasSpouse,
     careInsuranceApplied,
@@ -345,11 +348,12 @@ export function calculateInsuranceAndTax(input: InsuranceTaxInput): InsuranceTax
     ? round50sen(pensionBase * PENSION_EMPLOYEE_RATE_R8)
     : 0;
 
-  // 雇用保険料：（総支給額 − 非課税手当）× 雇用保険率
-  // 通勤手当・携帯代等の非課税手当は計算基礎から除外する（会社運用に合わせる）。
+  // 雇用保険料：（総支給額 − 除外対象手当）× 雇用保険率
+  // 除外対象は「雇用保険の対象外」フラグが立った手当のみ（携帯代など実費弁償）。
+  // 通勤手当（交通費）は非課税でも賃金に含めるため除外しない。
   // 例) 総支給163,652 に携帯代2,000 が含まれる場合、161,652 × 0.0005 = 80.826 → 81。
   const employmentInsurance = employmentInsuranceApplied
-    ? round50sen((grossSalary - nonTaxableAllowances) * employmentInsuranceRate)
+    ? round50sen((grossSalary - employmentInsuranceExcludedAllowances) * employmentInsuranceRate)
     : 0;
 
   // 社会保険料等合計

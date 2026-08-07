@@ -27,6 +27,8 @@ export interface CustomAllowanceItem {
   allowanceDefinitionId: number;
   allowanceName: string;
   isTaxable: boolean;
+  /** 雇用保険の計算基礎から除外するか（携帯代など実費弁償の手当）*/
+  excludeFromEmploymentInsurance?: boolean;
   amount: number;
 }
 
@@ -307,10 +309,16 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
   // transportationAllowance は非課税扱い（月15万以内の通勤手当）
   const nonTaxableAllowances = transportationAllowance + nonTaxableCustomTotal;
 
+  // 雇用保険の計算基礎から除外する手当合計（「雇用保険の対象外」ON の手当のみ。通勤手当は含めない）
+  const empInsExcludedTotal = customAllowances
+    .filter(a => a.excludeFromEmploymentInsurance)
+    .reduce((s, a) => s + a.amount, 0);
+
   const ins = calculateInsuranceAndTax({
     standardRemuneration: insBase,
     grossSalary,
     nonTaxableAllowances,
+    employmentInsuranceExcludedAllowances: empInsExcludedTotal,
     dependentCount,
     hasSpouse,
     careInsuranceApplied,

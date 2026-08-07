@@ -15,4 +15,5 @@ export interface UpdateAllowanceDefinitionBody {
   sortOrder?: number;
   isActive?: boolean;
   pinned?: boolean;
+  excludeFromEmploymentInsurance?: boolean;
 }

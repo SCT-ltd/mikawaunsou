@@ -1260,6 +1260,7 @@ export const CreateAllowanceDefinitionBody = zod.object({
   calculationType: zod.enum(["fixed", "variable", "unit_time"]).optional(),
   sortOrder: zod.number().optional(),
   pinned: zod.boolean().optional(),
+  excludeFromEmploymentInsurance: zod.boolean().optional(),
 });
 
 /**
@@ -1277,6 +1278,7 @@ export const UpdateAllowanceDefinitionBody = zod.object({
   sortOrder: zod.number().optional(),
   isActive: zod.boolean().optional(),
   pinned: zod.boolean().optional(),
+  excludeFromEmploymentInsurance: zod.boolean().optional(),
 });
 
 export const UpdateAllowanceDefinitionResponse = zod.object({

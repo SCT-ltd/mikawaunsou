@@ -699,10 +699,16 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
     return s + (def && !def.isTaxable ? (r.amount || 0) : 0);
   }, 0);
 
-  // 雇用保険料：（総支給 − 非課税手当）× 料率。携帯代等の非課税手当は計算基礎から除く。
+  // 雇用保険の計算基礎から除外する手当合計（「雇用保険の対象外」ON の手当のみ。交通費は含めない）
+  const empInsExcludedTotal = rows.reduce((s, r) => {
+    const def = allowanceDefinitions?.find(d => d.id === r.defId) as { excludeFromEmploymentInsurance?: boolean } | undefined;
+    return s + (def?.excludeFromEmploymentInsurance ? (r.amount || 0) : 0);
+  }, 0);
+
+  // 雇用保険料：（総支給 − 除外対象手当）× 料率。携帯代等の実費手当のみ計算基礎から除く。
   const employmentInsurance = (isTaxExemptEmployee || employee.employmentInsuranceApplied === false)
     ? 0
-    : round50sen((grandTotal - nonTaxableAllowancesTotal) * empInsRate);
+    : round50sen((grandTotal - empInsExcludedTotal) * empInsRate);
 
   const totalInsurance = healthInsurance + childcareSupportContribution + pensionInsurance + employmentInsurance;
 

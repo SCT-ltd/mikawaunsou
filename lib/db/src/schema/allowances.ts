@@ -13,6 +13,9 @@ export const allowanceDefinitionsTable = pgTable("allowance_definitions", {
   isActive: boolean("is_active").notNull().default(true),
   // ON にすると全社員の手当リストに常時表示される（毎回の手当追加を省く）
   pinned: boolean("pinned").notNull().default(false),
+  // ON にすると、この手当は雇用保険料の計算基礎から除外される（例: 携帯代など実費弁償の手当）。
+  // 交通費（通勤手当）は非課税でも賃金に含めるため OFF のまま。
+  excludeFromEmploymentInsurance: boolean("exclude_from_employment_insurance").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

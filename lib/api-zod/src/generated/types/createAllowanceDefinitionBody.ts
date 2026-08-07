@@ -14,4 +14,5 @@ export interface CreateAllowanceDefinitionBody {
   calculationType?: CreateAllowanceDefinitionBodyCalculationType;
   sortOrder?: number;
   pinned?: boolean;
+  excludeFromEmploymentInsurance?: boolean;
 }

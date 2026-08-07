@@ -1724,6 +1724,7 @@ components:
         - sortOrder
         - isActive
         - pinned
+        - excludeFromEmploymentInsurance
         - createdAt
         - updatedAt
 
@@ -1742,6 +1743,8 @@ components:
         sortOrder:
           type: integer
         pinned:
+          type: boolean
+        excludeFromEmploymentInsurance:
           type: boolean
       required:
         - name
@@ -1764,6 +1767,8 @@ components:
         isActive:
           type: boolean
         pinned:
+          type: boolean
+        excludeFromEmploymentInsurance:
           type: boolean
 
     EmployeeAllowance:

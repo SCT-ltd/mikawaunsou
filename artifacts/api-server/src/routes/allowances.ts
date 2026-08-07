@@ -28,6 +28,7 @@ router.post("/allowance-definitions", requireAdmin, async (req, res) => {
     sortOrder: maxSort + 1,
     isActive: true,
     pinned: body.pinned ?? false,
+    excludeFromEmploymentInsurance: body.excludeFromEmploymentInsurance ?? false,
   }).returning();
   return res.status(201).json(created);
 });
@@ -62,6 +63,7 @@ router.put("/allowance-definitions/:id", requireAdmin, async (req, res) => {
     ...(body.sortOrder !== undefined && { sortOrder: body.sortOrder }),
     ...(body.isActive !== undefined && { isActive: body.isActive }),
     ...(body.pinned !== undefined && { pinned: body.pinned }),
+    ...(body.excludeFromEmploymentInsurance !== undefined && { excludeFromEmploymentInsurance: body.excludeFromEmploymentInsurance }),
     updatedAt: new Date(),
   }).where(eq(allowanceDefinitionsTable.id, id)).returning();
   if (!updated) return res.status(404).json({ error: "Not found" });

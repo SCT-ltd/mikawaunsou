@@ -123,9 +123,15 @@ router.post("/payroll/calculate", async (req, res) => {
       allowanceDefinitionId: def.id,
       allowanceName: def.name,
       isTaxable: def.isTaxable,
+      excludeFromEmploymentInsurance: def.excludeFromEmploymentInsurance ?? false,
       amount: row?.amount ?? 0,
     };
   }).filter(a => a.amount > 0);
+
+  // 雇用保険の計算基礎から除外する手当合計（携帯代など「雇用保険の対象外」ON の手当）
+  const empInsExcludedTotal = customAllowances
+    .filter(a => a.excludeFromEmploymentInsurance)
+    .reduce((s, a) => s + a.amount, 0);
 
   // 積立金・カスタム控除を取得
   const empDeductionRows = await db.select().from(employeeDeductionsTable)
@@ -160,6 +166,7 @@ router.post("/payroll/calculate", async (req, res) => {
       standardRemuneration: manualInsBase,
       grossSalary: manualGrossSalary,
       nonTaxableAllowances: manualNonTaxableAllowances,
+      employmentInsuranceExcludedAllowances: empInsExcludedTotal,
       dependentCount: emp.dependentCount ?? 0,
       hasSpouse: emp.hasSpouse ?? false,
       careInsuranceApplied: emp.careInsuranceApplied ?? false,
@@ -307,6 +314,7 @@ router.post("/payroll/calculate", async (req, res) => {
       standardRemuneration: bwInsBase,
       grossSalary,
       nonTaxableAllowances: bwNonTaxableAllowances,
+      employmentInsuranceExcludedAllowances: empInsExcludedTotal,
       dependentCount: emp.dependentCount ?? 0,
       hasSpouse: emp.hasSpouse ?? false,
       careInsuranceApplied: emp.careInsuranceApplied ?? false,

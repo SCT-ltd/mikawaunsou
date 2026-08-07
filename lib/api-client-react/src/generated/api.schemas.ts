@@ -526,6 +526,7 @@ export interface CreateAllowanceDefinitionBody {
   calculationType?: CreateAllowanceDefinitionBodyCalculationType;
   sortOrder?: number;
   pinned?: boolean;
+  excludeFromEmploymentInsurance?: boolean;
 }
 
 export type UpdateAllowanceDefinitionBodyCalculationType =
@@ -545,6 +546,7 @@ export interface UpdateAllowanceDefinitionBody {
   sortOrder?: number;
   isActive?: boolean;
   pinned?: boolean;
+  excludeFromEmploymentInsurance?: boolean;
 }
 
 export interface EmployeeAllowance {

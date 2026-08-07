@@ -324,10 +324,15 @@ export function AllowancePanel({
   const isPensionApplied = resolvePensionApplied(employee);
   const healthInsurance = roundJapanese(grandTotal * healthRate);
   const pensionInsurance = isPensionApplied ? roundJapanese(grandTotal * pensionRate) : 0;
-  // 雇用保険: （総支給 − 非課税手当）× 料率。携帯代等の非課税手当は計算基礎から除く。
+  // 雇用保険の計算基礎から除外する手当合計（「雇用保険の対象外」ON の手当のみ。交通費は含めない）
+  const empInsExcludedTotal = rows.reduce((s, r) => {
+    const def = allowanceDefinitions.find(d => d.id === r.defId) as { excludeFromEmploymentInsurance?: boolean } | undefined;
+    return s + (def?.excludeFromEmploymentInsurance ? (r.amount || 0) : 0);
+  }, 0);
+  // 雇用保険: （総支給 − 除外対象手当）× 料率。携帯代等の実費手当のみ計算基礎から除く。
   const employmentInsurance =
     employee.employmentInsuranceApplied !== false
-      ? roundJapanese((grandTotal - nonTaxableAllowancesTotal) * eiRate)
+      ? roundJapanese((grandTotal - empInsExcludedTotal) * eiRate)
       : 0;
   const totalInsurance = healthInsurance + pensionInsurance + employmentInsurance;
 
