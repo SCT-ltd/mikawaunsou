@@ -35,6 +35,8 @@ export type CompanySettings = Company & {
   dailyWageWeekday?: number;
   dailyWageSaturday?: number;
   monthlyWorkingHours?: number;
+  /** 日曜・祝日の時給（既定 1,655円/h）*/
+  hourlyWageSunday?: number;
 };
 
 export type RowData = Record<string, number | string>;
@@ -43,6 +45,15 @@ export type RowData = Record<string, number | string>;
 export function roundJapanese(amount: number): number {
   const fraction = amount - Math.floor(amount);
   return fraction <= 0.5 ? Math.floor(amount) : Math.ceil(amount);
+}
+
+/**
+ * 深夜割増の1時間単価を「割増込みの残業時給」から復元する。
+ * サーバ側 payroll-calculator.ts の lateNightPremiumPerHour と同一式。
+ *   例) 2,111円/h → round(2111/1.25)=1,689 → floor(1689×0.25)=422円/h
+ */
+export function lateNightPremiumPerHour(overtimeHourlyRate: number): number {
+  return Math.floor(Math.round(overtimeHourlyRate / 1.25) * 0.25);
 }
 
 /**
@@ -113,6 +124,9 @@ export function computeQuickEstimate(
   const overtimeHours = Number(editData.overtimeHours) || 0;
   const lateNightHours = Number(editData.lateNightHours) || 0;
   const holidayWorkDays = Number(editData.holidayWorkDays) || 0;
+  // 日曜・祝日は「時間 × 日曜時給」（会社設定 hourlyWageSunday、既定 1,655円/h）
+  const sundayWorkHours = Number(editData.sundayWorkHours) || 0;
+  const sundayPay = Math.round((company?.hourlyWageSunday ?? 1655) * sundayWorkHours);
 
   // 個人残業単位設定がある場合はその計算式を使用（切り上げ×単位単価）
   const unitMinutes = emp.overtimeUnitMinutes ?? 0;
@@ -127,32 +141,34 @@ export function computeQuickEstimate(
   if (isDaily && unitMinutes > 0 && unitRate > 0) {
     const overtimeMinutes = overtimeHours * 60;
     if (overtimeHours <= OT_THRESHOLD) {
-      overtimePay = overtimeMinutes > 0 ? Math.ceil(overtimeMinutes / unitMinutes) * unitRate : 0;
+      overtimePay = overtimeMinutes > 0 ? Math.round(Math.ceil(overtimeMinutes / unitMinutes) * unitRate) : 0;
     } else {
       const unitsNormal = Math.ceil((OT_THRESHOLD * 60) / unitMinutes);
       const overMins = overtimeMinutes - OT_THRESHOLD * 60;
       const unitsOver = overMins > 0 ? Math.ceil(overMins / unitMinutes) : 0;
       overtimePay = unitsNormal * unitRate + Math.round(unitsOver * unitRate * 1.20);
     }
-    const lateNightMinutes = lateNightHours * 60;
-    lateNightPay = lateNightMinutes > 0 ? Math.ceil(lateNightMinutes / unitMinutes) * unitRate : 0;
+    // 深夜手当は残業の単位単価ではなく素の時給の25%（サーバ側 calculatePayroll と同じ）。
+    // 以前は残業と同じ単位単価を掛けていたため、概算と確定値が大きくズレていた。
+    lateNightPay = roundJapanese((effectiveWeekdayRate / 8) * LATE_NIGHT_ADDITIONAL_RATE_R8 * lateNightHours);
     holidayPay = roundJapanese(companyDailyRate * 1.35 * holidayWorkDays);
   } else if (empOtRate > 0) {
     // 個人残業時給が設定されている場合はそれを直接使用（割増込み単価）
     // 60h超部分は ×1.20（= 1.50/1.25）追加
     if (overtimeHours <= OT_THRESHOLD) {
-      overtimePay = roundJapanese(empOtRate * overtimeHours);
+      overtimePay = Math.round(empOtRate * overtimeHours);
     } else {
       overtimePay =
-        roundJapanese(empOtRate * OT_THRESHOLD) +
-        roundJapanese(empOtRate * 1.20 * (overtimeHours - OT_THRESHOLD));
+        Math.round(empOtRate * OT_THRESHOLD) +
+        Math.round(empOtRate * 1.20 * (overtimeHours - OT_THRESHOLD));
     }
     const hourlyRate = isHourly
       ? (emp.baseSalary ?? 0)
       : isDaily
       ? effectiveWeekdayRate / 8
       : monthlyHours > 0 ? baseSalary / monthlyHours : 0;
-    lateNightPay = roundJapanese(hourlyRate * LATE_NIGHT_ADDITIONAL_RATE_R8 * lateNightHours);
+    // 深夜手当は残業単価から素の時給を復元して25%（サーバ側 calculatePayroll と同じ）
+    lateNightPay = Math.floor(lateNightPremiumPerHour(empOtRate) * lateNightHours);
     holidayPay = roundJapanese(hourlyRate * HOLIDAY_RATE_R8 * holidayWorkDays * 8);
   } else {
     // 標準計算: 日給÷8 or 月給÷月平均 × 割増率（令和8年 内蔵定数）
@@ -162,11 +178,11 @@ export function computeQuickEstimate(
       ? effectiveWeekdayRate / 8
       : monthlyHours > 0 ? baseSalary / monthlyHours : 0;
     if (overtimeHours <= OT_THRESHOLD) {
-      overtimePay = roundJapanese(hourlyRate * OVERTIME_RATE_R8 * overtimeHours);
+      overtimePay = Math.round(hourlyRate * OVERTIME_RATE_R8 * overtimeHours);
     } else {
       overtimePay =
-        roundJapanese(hourlyRate * OVERTIME_RATE_R8 * OT_THRESHOLD) +
-        roundJapanese(hourlyRate * 1.50 * (overtimeHours - OT_THRESHOLD));
+        Math.round(hourlyRate * OVERTIME_RATE_R8 * OT_THRESHOLD) +
+        Math.round(hourlyRate * 1.50 * (overtimeHours - OT_THRESHOLD));
     }
     lateNightPay = roundJapanese(hourlyRate * LATE_NIGHT_ADDITIONAL_RATE_R8 * lateNightHours);
     holidayPay = roundJapanese(hourlyRate * HOLIDAY_RATE_R8 * holidayWorkDays * 8);
@@ -177,7 +193,7 @@ export function computeQuickEstimate(
     ? Math.round((Number(editData.saturdayWorkDays) || 0) * effectiveSaturdayRate)
     : 0;
 
-  const grossEstimate = baseSalary + saturdayPayPreview + overtimePay + lateNightPay + holidayPay;
+  const grossEstimate = baseSalary + saturdayPayPreview + overtimePay + lateNightPay + holidayPay + sundayPay;
 
   // 全額非課税社員は控除なし（手取り=総支給）
   const isExempt = emp.taxExempt === true;
@@ -252,15 +268,12 @@ export function computeBWCalc(
   const actualOTHours = Math.max(0, overtimeHours - fixedOTHours);
   const actualOTPay   = Math.round(actualOTHours * otUnitPrice);
 
-  // BW深夜手当: 時給 = round(残業単価 / 1.25) → 例 round(2111/1.25)=1689
-  // 深夜割増 per h = floor(1689×0.25)=422、4.5h×422=1899
-  const bwBaseHourlyRate         = Math.round(otUnitPrice / 1.25);
-  const lateNightPremiumPerHour  = Math.floor(bwBaseHourlyRate * 0.25);
-  const lateNightPay             = Math.floor(lateNightPremiumPerHour * lateNightHours);
+  // BW深夜手当: 残業単価から素の時給を復元して25%（例 2111 → 1689 → 422円/h、4.5h → 1,899円）
+  const lateNightPay = Math.floor(lateNightPremiumPerHour(otUnitPrice) * lateNightHours);
 
-  // 休日出勤: 「日曜/祝日」列 = sundayWorkDays を使用
-  const holidayDays2 = Number(rowData.sundayWorkDays) || 0;
-  const holidayPay   = Math.floor(dailySaturday * holidayDays2);
+  // 休日出勤: 「日曜/祝日」列 = sundayWorkHours（時間）× 日曜時給
+  const sundayHours = Number(rowData.sundayWorkHours) || 0;
+  const holidayPay  = Math.floor((company?.hourlyWageSunday ?? 1655) * sundayHours);
 
   // 公式A: 調整済み歩合率 × 売上
   const otRatio      = sales > 0 ? Math.round((actualOTPay / sales) * 1000) / 1000 : 0;
@@ -290,7 +303,7 @@ export function computeBWCalc(
 export function hasAnyRecordData(ed: RowData | undefined): boolean {
   if (!ed) return false;
   const numericFields = [
-    "workDays", "saturdayWorkDays", "sundayWorkDays", "absenceDays",
+    "workDays", "saturdayWorkDays", "sundayWorkDays", "sundayWorkHours", "absenceDays",
     "overtimeHours", "lateNightHours", "holidayWorkDays",
     "drivingDistanceKm", "deliveryCases", "actualWorkHours",
     "bluewingSalesAmount",

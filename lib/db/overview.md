@@ -36,6 +36,7 @@ PostgreSQL への接続（pg `Pool`）と Drizzle ORM のスキーマ定義を�
 
 ## 決定事項
 
+- 2026-08-26 日曜出勤の時間計算化に伴い2列追加: `monthly_records.sunday_work_hours`（日曜・祝日の出勤時間。会社設定 `company.hourly_wage_sunday`（既定1,655）と掛けて手当を算出）、`payrolls.holiday_work_hours`（明細の勤怠欄表示用スナップショット）。いずれも `notNull().default(0)`。既存の `sunday_work_days` / `holiday_work_days` は過去データの表示互換のため残置（金額計算には使わない）。**本番反映には NAS 側で `drizzle-kit push` が必要**。
 - 2026-07-02 このファイル作成（db 階層の overview 初版）
 - 2026-07-10 `payrolls` に `saturday_work_days`(double, default 0) を追加。給与明細印刷で土曜出勤日数が常に0だった不具合対応（列が無く保存先が無かった）。合わせて payroll 保存時に休日日数表示は月次実績の `sunday_work_days`(「日曜/祝日」列)から採るよう是正（従来は入力に使われない `holiday_work_days` を参照し常に0だった）。本番へは `ALTER TABLE payrolls ADD COLUMN IF NOT EXISTS saturday_work_days ...` ＋ 月次実績からの日数バックフィルで反映（金額列は不変）。
 - 2026-07-13 上記を本番 Neon へ実際に反映。`drizzle-kit push` で `saturday_work_days` 列を追加し、既存 payroll 20件（うち確定済み8件）に月次実績から日数をバックフィル（`saturday_work_days` は新規列のため全件転記、`holiday_work_days` は `sunday_work_days <> 0` の行のみ転記して既存の非0レガシー値を0で潰さないようにした）。**金額列は一切変更していない**ため確定済み明細の支給額・控除額・差引支給額は不変で、確定解除も不要だった。

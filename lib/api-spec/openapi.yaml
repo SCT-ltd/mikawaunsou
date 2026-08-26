@@ -1274,7 +1274,10 @@ components:
           description: 土曜出勤日数
         sundayWorkDays:
           type: number
-          description: 日曜出勤日数（日当×1.35で計算）
+          description: 日曜出勤日数（過去データ互換。金額計算には使わない）
+        sundayWorkHours:
+          type: number
+          description: 日曜・祝日の出勤時間（会社設定 hourlyWageSunday × この時間で計算）
         notes:
           type: string
         actualWorkHours:
@@ -1328,7 +1331,10 @@ components:
           type: number
         sundayWorkDays:
           type: number
-          description: 日曜出勤日数（日当×1.35で計算）
+          description: 日曜出勤日数（過去データ互換。金額計算には使わない）
+        sundayWorkHours:
+          type: number
+          description: 日曜・祝日の出勤時間（会社設定 hourlyWageSunday × この時間で計算）
         notes:
           type: string
         actualWorkHours:
@@ -1367,7 +1373,10 @@ components:
           type: number
         sundayWorkDays:
           type: number
-          description: 日曜出勤日数（日当×1.35で計算）
+          description: 日曜出勤日数（過去データ互換。金額計算には使わない）
+        sundayWorkHours:
+          type: number
+          description: 日曜・祝日の出勤時間（会社設定 hourlyWageSunday × この時間で計算）
         actualWorkHours:
           type: number
           description: 実働時間（時給制・事務員用、30分切り上げ後の合計時間）
@@ -1470,7 +1479,10 @@ components:
           type: number
         holidayWorkDays:
           type: number
-          description: 休日出勤日数（月次実績の「日曜/祝日」列を表示用に保存）
+          description: 休日出勤日数（過去データ互換。表示用）
+        holidayWorkHours:
+          type: number
+          description: 日曜・祝日の出勤時間（月次実績の sundayWorkHours を表示用に保存）
         saturdayWorkDays:
           type: number
           description: 土曜出勤日数（表示用）

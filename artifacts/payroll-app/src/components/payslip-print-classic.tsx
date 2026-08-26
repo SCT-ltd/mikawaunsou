@@ -34,6 +34,7 @@ interface PayrollData {
   saturdayWorkDays?: number;
   overtimeHours: number;
   lateNightHours: number;
+  holidayWorkHours?: number;
   holidayWorkDays: number;
   employeeId?: number;
   notes?: string;
@@ -343,7 +344,10 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
   const attendanceItems = [
     { label: "平日日数", value: `${payroll.workDays ?? 0}日` },
     { label: "土曜出勤", value: `${payroll.saturdayWorkDays ?? 0}日` },
-    { label: "休日出勤", value: `${payroll.holidayWorkDays ?? 0}日` },
+    // 日曜・祝日出勤は 2026-08 から時間管理。過去分（時間0で日数のみ）は従来どおり日数で出す。
+    (payroll.holidayWorkHours ?? 0) > 0
+      ? { label: "休日出勤", value: formatHours(payroll.holidayWorkHours ?? 0) }
+      : { label: "休日出勤", value: `${payroll.holidayWorkDays ?? 0}日` },
     { label: "残業時間", value: formatHours(payroll.overtimeHours) },
     { label: "深夜時間", value: formatHours(payroll.lateNightHours) },
   ];

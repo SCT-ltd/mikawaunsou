@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db, payrollsTable, employeesTable, monthlyRecordsTable, companyTable, allowanceDefinitionsTable, employeeAllowancesTable, employeeDeductionsTable, deductionDefinitionsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
-import { calculatePayroll, calculateBluewingPayroll, roundJapanese } from "../lib/payroll-calculator";
+import { calculatePayroll, calculateBluewingPayroll, roundJapanese, lateNightPremiumPerHour } from "../lib/payroll-calculator";
 import { calculateInsuranceAndTax, EMP_INS_RATE_R8 } from "../lib/tax-tables-reiwa8";
 
 const router = Router();
@@ -106,6 +106,9 @@ router.post("/payroll/calculate", async (req, res) => {
     monthlyAverageWorkHours: 160,
     employmentInsuranceRate: EMP_INS_RATE_R8,
   };
+
+  // 日曜・祝日の時給（会社設定。既定 1,655円/h）。2026-08 から日曜出勤は「時間 × この単価」。
+  const sundayHourlyRate = (company as { hourlyWageSunday?: number }).hourlyWageSunday ?? 1655;
 
   // 雇用保険率：会社設定優先、なければ令和8年度デフォルト 0.5%
   const empInsRate = (company.employmentInsuranceRate ?? 0) > 0
@@ -218,8 +221,9 @@ router.post("/payroll/calculate", async (req, res) => {
       workDays: record.workDays ?? 0,
       overtimeHours: record.overtimeHours ?? 0,
       lateNightHours: record.lateNightHours ?? 0,
-      // 表示用: 「日曜/祝日」列(sundayWorkDays)を休日日数として保存、土曜日数も保存
+      // 表示用: 「日曜/祝日」列を休日として保存（時間が主、日数は過去データ互換）、土曜日数も保存
       holidayWorkDays: record.sundayWorkDays ?? 0,
+      holidayWorkHours: record.sundayWorkHours ?? 0,
       saturdayWorkDays: record.saturdayWorkDays ?? 0,
       useBluewingLogic: false,
     };
@@ -277,15 +281,13 @@ router.post("/payroll/calculate", async (req, res) => {
     const customAllowancesFixedTotal = customAllowances.reduce((s, a) => s + a.amount, 0);
     const fixedAllowancesTotal = masterFixedAllowances + customAllowancesFixedTotal;
 
-    // 休日出勤: テーブルの「日曜/祝日」列 = sundayWorkDays に入力される
-    const holidayPay = Math.floor((company.dailyWageSaturday ?? 12260) * (record.sundayWorkDays ?? 0));
+    // 休日出勤: 「日曜/祝日」は 2026-08 から時間入力（sundayWorkHours × 日曜時給）
+    const holidayPay = Math.round(sundayHourlyRate * (record.sundayWorkHours ?? 0));
 
-    // BW深夜手当: 時給 = round(残業単価 / 1.25)  例) round(2111/1.25) = 1689
-    // 深夜割増 per h = floor(1689 × 0.25) = 422、4.5h × 422 = 1899
+    // BW深夜手当: 残業単価から素の時給を復元して25%（標準計算と共通の lateNightPremiumPerHour）
+    //   例) 2111 → 1689 → 422円/h、4.5h × 422 = 1,899円
     const bwOtUnitPrice = record.overtimeUnitPrice ?? 2111;
-    const bwBaseHourlyRate = Math.round(bwOtUnitPrice / 1.25);
-    const bwLateNightPremiumPerHour = Math.floor(bwBaseHourlyRate * 0.25);
-    const bwLateNightPay = Math.floor(bwLateNightPremiumPerHour * (record.lateNightHours ?? 0));
+    const bwLateNightPay = Math.floor(lateNightPremiumPerHour(bwOtUnitPrice) * (record.lateNightHours ?? 0));
 
     const bwResult = calculateBluewingPayroll({
       bluewingSalesAmount: record.bluewingSalesAmount,
@@ -359,8 +361,9 @@ router.post("/payroll/calculate", async (req, res) => {
       workDays: record.workDays ?? 0,
       overtimeHours: record.overtimeHours ?? 0,
       lateNightHours: record.lateNightHours ?? 0,
-      // 表示用: 「日曜/祝日」列(sundayWorkDays)を休日日数として保存、土曜日数も保存
+      // 表示用: 「日曜/祝日」列を休日として保存（時間が主、日数は過去データ互換）、土曜日数も保存
       holidayWorkDays: record.sundayWorkDays ?? 0,
+      holidayWorkHours: record.sundayWorkHours ?? 0,
       saturdayWorkDays: record.saturdayWorkDays ?? 0,
       useBluewingLogic: true,
       bluewingSalesAmount: record.bluewingSalesAmount,
@@ -424,7 +427,8 @@ router.post("/payroll/calculate", async (req, res) => {
     monthlyAverageWorkHours: company.monthlyAverageWorkHours,
     workDays: record.workDays,
     saturdayWorkDays: record.saturdayWorkDays,
-    sundayWorkDays: record.sundayWorkDays,
+    sundayWorkHours: record.sundayWorkHours ?? 0,
+    sundayHourlyRate,
     overtimeHours: record.overtimeHours,
     lateNightHours: record.lateNightHours,
     holidayWorkDays: record.holidayWorkDays,
@@ -494,8 +498,9 @@ router.post("/payroll/calculate", async (req, res) => {
       netSalary: stdNetSalary,
       overtimeHours: record.overtimeHours,
       lateNightHours: record.lateNightHours,
-      // 表示用: 「日曜/祝日」列(sundayWorkDays)を休日日数として保存、土曜日数も保存
+      // 表示用: 「日曜/祝日」列を休日として保存（時間が主、日数は過去データ互換）、土曜日数も保存
       holidayWorkDays: record.sundayWorkDays,
+      holidayWorkHours: record.sundayWorkHours ?? 0,
       saturdayWorkDays: record.saturdayWorkDays,
       workDays: record.workDays,
       customDeductionsTotal,
@@ -535,8 +540,9 @@ router.post("/payroll/calculate", async (req, res) => {
       netSalary: stdNetSalary,
       overtimeHours: record.overtimeHours,
       lateNightHours: record.lateNightHours,
-      // 表示用: 「日曜/祝日」列(sundayWorkDays)を休日日数として保存、土曜日数も保存
+      // 表示用: 「日曜/祝日」列を休日として保存（時間が主、日数は過去データ互換）、土曜日数も保存
       holidayWorkDays: record.sundayWorkDays,
+      holidayWorkHours: record.sundayWorkHours ?? 0,
       saturdayWorkDays: record.saturdayWorkDays,
       workDays: record.workDays,
       customDeductionsTotal,

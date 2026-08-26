@@ -38,6 +38,11 @@
 
 ## 決定事項
 
+- 2026-08-26 クライアント報告「残業・深夜の時間を入れると金額がズレる」の是正と、日曜出勤の時間計算化:
+  - **深夜手当が個人残業時給を無視していた**（標準計算のみ）。`calculatePayroll` の深夜手当は `基本給 ÷ 月平均労働時間 × 0.25` だったため、基本給を0にして手当中心で運用している社員は深夜手当が常に0円になっていた（実データ: 玉川で深夜2.5h入力→0円）。BW分岐は元々「残業単価 ÷ 1.25 × 0.25」を使っており、これを `lateNightPremiumPerHour()` として切り出して両分岐で共有。個人残業時給が設定されている社員はこちらを使う（2,111円/h→422円/h、1,750円/h→350円/h）。
+  - **支給額の端数処理を四捨五入に変更**（`roundPayYen`）。`roundJapanese` は「50銭以下切り捨て」＝社会保険料の通達ルールで、39.5h × 2,111円 = 83,384.5 → 83,384 となり事務所の手計算（83,385）と1円ズレていた。BW分岐は元々 `Math.round`。**対象は残業手当・日曜出勤手当のみ**で、保険料・税・総支給の `roundJapanese` は1円完全一致要件のため不変。
+  - **日曜・祝日出勤を日数計算から時間計算へ**（クライアント依頼）。`sundayPay = 会社設定 hourlyWageSunday（既定1,655円/h） × monthly_records.sundayWorkHours`。旧式は `日当 × 1.35 × 日数`。BW分岐の holidayPay も `土曜日当 × 日数` から同式に変更。`payrolls.holidayWorkHours` に表示用スナップショットを保存（3経路すべて）。`GET /attendance/monthly-summary` に日曜の実働時間 `sundayWorkHours` を追加。
+  - ※ **本番反映には NAS 側で `drizzle-kit push` が別途必要**（`monthly_records.sunday_work_hours` / `payrolls.holiday_work_hours`）。既存の月次実績は sundayWorkHours=0 で入るため、8月分の日曜出勤は時間で入れ直しが要る。
 - 2026-07-02 このファイル作成（api-server 階層の overview 初版）
 - 2026-07-10 給与明細の土曜/日曜（休日）出勤が印刷に出ない不具合を修正。原因は勤怠フィールドの二重帳簿: 月次実績入力は 土曜=`saturdayWorkDays`・日曜/祝日=`sundayWorkDays` に書くが、payroll には土曜日数の列が無く、休日表示は入力に使われない `holidayWorkDays` を保存していた（常に0）。対応: `payrolls` に `saturday_work_days` 列追加、`POST /payroll/:id/calculate` の全3枝（手動/BW/標準）の保存で `saturdayWorkDays=record.saturdayWorkDays`／`holidayWorkDays=record.sundayWorkDays` に是正。標準枝は休日出勤手当の表示行を `holidayPay + sundayPay` に合算（grossSalary は不変、エンジンが既に両者を合算済みのため二重計上なし）。BW枝の holidayPay は元々 sundayWorkDays 由来のため非干渉。過去の確定分は月次実績からの日数バックフィルで表示補完（金額不変）。
 - 2026-07-03 運用リスクの是正（オペレーション改善）:

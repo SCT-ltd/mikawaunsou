@@ -17,6 +17,11 @@ export const monthlyRecordsTable = pgTable("monthly_records", {
   absenceDays: doublePrecision("absence_days").notNull().default(0),
   saturdayWorkDays: doublePrecision("saturday_work_days").notNull().default(0),
   sundayWorkDays: doublePrecision("sunday_work_days").notNull().default(0),
+  /**
+   * 日曜・祝日の出勤「時間」。2026-08 以降はこちらが日曜出勤手当の計算根拠
+   * （会社設定 hourlyWageSunday × この時間）。sundayWorkDays は過去データ表示用に残す。
+   */
+  sundayWorkHours: doublePrecision("sunday_work_hours").notNull().default(0),
   notes: text("notes"),
   salesAmount: doublePrecision("sales_amount").notNull().default(0),
   commissionRate: doublePrecision("commission_rate").notNull().default(0),

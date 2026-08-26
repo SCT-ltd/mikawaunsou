@@ -281,8 +281,10 @@ export interface MonthlyRecord {
   absenceDays: number;
   /** 土曜出勤日数 */
   saturdayWorkDays?: number;
-  /** 日曜出勤日数（日当×1.35で計算） */
+  /** 日曜出勤日数（過去データ互換。金額計算には使わない） */
   sundayWorkDays?: number;
+  /** 日曜・祝日の出勤時間（会社設定 hourlyWageSunday × この時間で計算） */
+  sundayWorkHours?: number;
   notes?: string;
   /** 実働時間（時給制・事務員用、30分切り上げ後の合計時間） */
   actualWorkHours?: number;
@@ -302,8 +304,10 @@ export interface CreateMonthlyRecordBody {
   deliveryCases: number;
   absenceDays: number;
   saturdayWorkDays?: number;
-  /** 日曜出勤日数（日当×1.35で計算） */
+  /** 日曜出勤日数（過去データ互換。金額計算には使わない） */
   sundayWorkDays?: number;
+  /** 日曜・祝日の出勤時間（会社設定 hourlyWageSunday × この時間で計算） */
+  sundayWorkHours?: number;
   notes?: string;
   /** 実働時間（時給制・事務員用、30分切り上げ後の合計時間） */
   actualWorkHours?: number;
@@ -318,8 +322,10 @@ export interface UpdateMonthlyRecordBody {
   deliveryCases?: number;
   absenceDays?: number;
   saturdayWorkDays?: number;
-  /** 日曜出勤日数（日当×1.35で計算） */
+  /** 日曜出勤日数（過去データ互換。金額計算には使わない） */
   sundayWorkDays?: number;
+  /** 日曜・祝日の出勤時間（会社設定 hourlyWageSunday × この時間で計算） */
+  sundayWorkHours?: number;
   /** 実働時間（時給制・事務員用、30分切り上げ後の合計時間） */
   actualWorkHours?: number;
   notes?: string;
@@ -390,8 +396,10 @@ export interface Payroll {
   netSalary: number;
   overtimeHours: number;
   lateNightHours: number;
-  /** 休日出勤日数（月次実績の「日曜/祝日」列を表示用に保存） */
+  /** 休日出勤日数（過去データ互換。表示用） */
   holidayWorkDays: number;
+  /** 日曜・祝日の出勤時間（月次実績の sundayWorkHours を表示用に保存） */
+  holidayWorkHours?: number;
   /** 土曜出勤日数（表示用） */
   saturdayWorkDays?: number;
   workDays: number;

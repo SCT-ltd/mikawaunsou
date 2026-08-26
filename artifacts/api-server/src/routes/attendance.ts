@@ -640,6 +640,7 @@ router.get("/attendance/monthly-summary", requireAdmin, async (req, res) => {
     workDays: number;
     saturdayWorkDays: number;
     sundayWorkDays: number;
+    sundayWorkHours: number;
     overtimeHours: number;
     drivingDistanceKm: number;
     actualWorkHours: number;
@@ -652,7 +653,7 @@ router.get("/attendance/monthly-summary", requireAdmin, async (req, res) => {
     if (!recs.some(r => r.eventType === "clock_in")) continue;
 
     if (!summaryMap.has(empId)) {
-      summaryMap.set(empId, { workDays: 0, saturdayWorkDays: 0, sundayWorkDays: 0, overtimeHours: 0, drivingDistanceKm: 0, actualWorkHours: 0 });
+      summaryMap.set(empId, { workDays: 0, saturdayWorkDays: 0, sundayWorkDays: 0, sundayWorkHours: 0, overtimeHours: 0, drivingDistanceKm: 0, actualWorkHours: 0 });
     }
     const s = summaryMap.get(empId)!;
     const dow = new Date(dateStr).getDay(); // 0=日, 6=土
@@ -667,8 +668,9 @@ router.get("/attendance/monthly-summary", requireAdmin, async (req, res) => {
     s.actualWorkHours = Math.round((s.actualWorkHours + billingMins / 60) * 100) / 100;
 
     if (dow === 0) {
-      // 日曜出勤は日数でカウント（日当×1.35で計算するため）
+      // 日曜出勤は 2026-08 から「時間 × 日曜時給」で計算する。日数は過去データ互換のため併せて集計。
       s.sundayWorkDays += 1;
+      s.sundayWorkHours = Math.round((s.sundayWorkHours + rawWorkMins / 60) * 10) / 10;
     } else if (dow === 6) {
       s.saturdayWorkDays += 1;
     } else {
@@ -697,7 +699,7 @@ router.get("/attendance/monthly-summary", requireAdmin, async (req, res) => {
   // 欠勤のみの社員も結果に含める
   for (const [empId] of absenceSummary.entries()) {
     if (!summaryMap.has(empId)) {
-      summaryMap.set(empId, { workDays: 0, saturdayWorkDays: 0, sundayWorkDays: 0, overtimeHours: 0, drivingDistanceKm: 0, actualWorkHours: 0 });
+      summaryMap.set(empId, { workDays: 0, saturdayWorkDays: 0, sundayWorkDays: 0, sundayWorkHours: 0, overtimeHours: 0, drivingDistanceKm: 0, actualWorkHours: 0 });
     }
   }
 

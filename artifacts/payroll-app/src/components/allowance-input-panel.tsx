@@ -64,7 +64,7 @@ const RESERVED_PAY_ITEM_NAMES = new Set([
 
 interface Props {
   employee: Employee;
-  monthlyData?: { workDays: number; saturdayWorkDays: number; sundayWorkDays: number };
+  monthlyData?: { workDays: number; saturdayWorkDays: number; sundayWorkHours: number };
   onDirtyChange?: (isDirty: boolean) => void;
   year?: number;
   month?: number;

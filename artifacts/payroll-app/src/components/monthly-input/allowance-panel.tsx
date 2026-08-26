@@ -202,7 +202,7 @@ export function AllowancePanel({
   monthlyData,
 }: {
   employee: EmployeeExt;
-  monthlyData?: { workDays: number; saturdayWorkDays: number; sundayWorkDays: number };
+  monthlyData?: { workDays: number; saturdayWorkDays: number; sundayWorkHours: number };
 }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -241,7 +241,8 @@ export function AllowancePanel({
       ? Math.round(
           (monthlyData?.workDays ?? 0) * (company.dailyWageWeekday ?? 9808) +
             (monthlyData?.saturdayWorkDays ?? 0) * (company.dailyWageSaturday ?? 12260) +
-            (monthlyData?.sundayWorkDays ?? 0) * (company.dailyWageWeekday ?? 9808) * 1.35
+            // 日曜・祝日は 2026-08 から「時間 × 日曜時給（既定1,655円/h）」
+            (monthlyData?.sundayWorkHours ?? 0) * (company.hourlyWageSunday ?? 1655)
         )
       : null;
 

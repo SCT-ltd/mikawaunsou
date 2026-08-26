@@ -29,6 +29,7 @@ import {
   EmployeeExt,
   CompanySettings,
   RowData,
+  hasAnyRecordData,
 } from "@/components/monthly-input/estimate";
 import {
   EmployeeList,
@@ -74,12 +75,14 @@ export default function MonthlyInput() {
   const [calendarOpen, setCalendarOpen] = useState(false);
   const isAutoFilling = useRef(false);
   const isDirtyRef = useRef(false);
+  const dirtyIdsRef = useRef<Set<number>>(new Set());
   const { setIsDirty } = useNavigationGuard();
 
   // dirtyIds → ナビゲーションガード同期
   useEffect(() => {
     const dirty = dirtyIds.size > 0;
     isDirtyRef.current = dirty;
+    dirtyIdsRef.current = dirtyIds;
     setIsDirty(dirty);
   }, [dirtyIds, setIsDirty]);
 
@@ -119,6 +122,23 @@ export default function MonthlyInput() {
             }
             return;
           }
+          // 取り込みは下記フィールドを打刻集計で上書きする（深夜時間は対象外）。
+          // 未保存の手入力がある社員の値まで無言で消えてしまうため、事前に確認を取る。
+          if (shouldMarkDirty) {
+            const dirtyTargets = (summary as Array<{ employeeId: number }>)
+              .filter((s) => dirtyIdsRef.current.has(s.employeeId))
+              .map((s) => employees.find((e) => e.id === s.employeeId)?.name ?? `社員ID ${s.employeeId}`);
+            if (dirtyTargets.length > 0) {
+              const ok = window.confirm(
+                `未保存の手入力がある社員がいます:\n${dirtyTargets.join("・")}\n\n` +
+                  "打刻データを取り込むと、これらの社員の\n" +
+                  "「平日出勤・土曜出勤・日曜祝日・欠勤・残業時間・走行距離・実働時間」は\n" +
+                  "打刻集計の値で上書きされます（深夜時間は上書きされません）。\n\n" +
+                  "取り込みを続けますか？"
+              );
+              if (!ok) return;
+            }
+          }
           isAutoFilling.current = true;
           setEdits((prev) => {
             const next = { ...prev };
@@ -128,6 +148,7 @@ export default function MonthlyInput() {
                 workDays: s.workDays,
                 saturdayWorkDays: s.saturdayWorkDays,
                 sundayWorkDays: s.sundayWorkDays,
+                sundayWorkHours: s.sundayWorkHours ?? 0,
                 overtimeHours: s.overtimeHours,
                 absenceDays: s.absenceDays ?? 0,
                 drivingDistanceKm: s.drivingDistanceKm ?? 0,
@@ -139,7 +160,7 @@ export default function MonthlyInput() {
           if (shouldMarkDirty) {
             toast({
               title: "勤怠データを取り込みました",
-              description: `${summary.length}名分の出勤・残業・走行距離を反映しました。確認後「実績を保存」してください。`,
+              description: `${summary.length}名分の出勤・残業・走行距離を反映しました。深夜時間は打刻から取り込めないため手入力のまま残ります。確認後「実績を保存」してください。`,
             });
             setDirtyIds((prev) => {
               const next = new Set(prev);
@@ -158,7 +179,7 @@ export default function MonthlyInput() {
           isAutoFilling.current = false;
         });
     },
-    [year, month, toast]
+    [year, month, toast, employees]
   );
 
   // 手動ボタン用
@@ -183,7 +204,7 @@ export default function MonthlyInput() {
         initialEdits[emp.id] = {
           workDays: 0, overtimeHours: 0, lateNightHours: 0,
           holidayWorkDays: 0, drivingDistanceKm: 0, deliveryCases: 0,
-          absenceDays: 0, saturdayWorkDays: 0, sundayWorkDays: 0, notes: "",
+          absenceDays: 0, saturdayWorkDays: 0, sundayWorkDays: 0, sundayWorkHours: 0, notes: "",
           bluewingSalesAmount: 0, actualWorkHours: 0,
         };
       }
@@ -231,6 +252,7 @@ export default function MonthlyInput() {
           absenceDays: Number(ed.absenceDays) || 0,
           saturdayWorkDays: Number(ed.saturdayWorkDays) || 0,
           sundayWorkDays: Number(ed.sundayWorkDays) || 0,
+          sundayWorkHours: Number(ed.sundayWorkHours) || 0,
           notes: String(ed.notes || ""),
           bluewingSalesAmount: Number(ed.bluewingSalesAmount) || 0,
           actualWorkHours: Number(ed.actualWorkHours) || 0,
@@ -240,11 +262,9 @@ export default function MonthlyInput() {
           await updateRecord.mutateAsync({ id: existingRecord.id, data: payload });
           savedEmployeeIds.push(emp.id);
         } else {
-          const hasData =
-            payload.workDays > 0 || payload.saturdayWorkDays > 0 ||
-            payload.drivingDistanceKm > 0 || payload.deliveryCases > 0 ||
-            payload.bluewingSalesAmount > 0 || payload.actualWorkHours > 0;
-          if (hasData) {
+          // 残業・深夜・日曜出勤・欠勤だけを入力したケースも「データあり」として保存する。
+          // （以前は workDays 等だけを見ていたため、残業時間だけ入れた新規行が無言で捨てられていた）
+          if (hasAnyRecordData(payload as unknown as RowData)) {
             await createRecord.mutateAsync({ data: { employeeId: emp.id, year, month, ...payload } });
             savedEmployeeIds.push(emp.id);
           }
@@ -515,7 +535,7 @@ export default function MonthlyInput() {
                           monthlyData={{
                             workDays: Number(edits[selectedEmployee.id]?.workDays) || 0,
                             saturdayWorkDays: Number(edits[selectedEmployee.id]?.saturdayWorkDays) || 0,
-                            sundayWorkDays: Number(edits[selectedEmployee.id]?.sundayWorkDays) || 0,
+                            sundayWorkHours: Number(edits[selectedEmployee.id]?.sundayWorkHours) || 0,
                           }}
                         />
                       </TabsContent>
