@@ -14,6 +14,8 @@ export interface UpdateMonthlyRecordBody {
   drivingDistanceKm?: number;
   deliveryCases?: number;
   absenceDays?: number;
+  /** 有給休暇の日数（0.5=半休）。欠勤控除の対象外 */
+  paidLeaveDays?: number;
   saturdayWorkDays?: number;
   /** 日曜出勤日数（過去データ互換。金額計算には使わない） */
   sundayWorkDays?: number;

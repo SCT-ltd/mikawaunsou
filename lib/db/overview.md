@@ -36,6 +36,7 @@ PostgreSQL への接続（pg `Pool`）と Drizzle ORM のスキーマ定義を�
 
 ## 決定事項
 
+- 2026-08-26 有給の日数管理のため2列追加: `monthly_records.paid_leave_days`（0.5=半休。欠勤控除の対象にしない）、`payrolls.paid_leave_days`（明細表示用スナップショット）。いずれも `notNull().default(0)`。**本番反映には NAS 側で列追加が必要**。
 - 2026-08-26 日曜出勤の時間計算化に伴い2列追加: `monthly_records.sunday_work_hours`（日曜・祝日の出勤時間。会社設定 `company.hourly_wage_sunday`（既定1,655）と掛けて手当を算出）、`payrolls.holiday_work_hours`（明細の勤怠欄表示用スナップショット）。いずれも `notNull().default(0)`。既存の `sunday_work_days` / `holiday_work_days` は過去データの表示互換のため残置（金額計算には使わない）。**本番反映には NAS 側で `drizzle-kit push` が必要**。
 - 2026-07-02 このファイル作成（db 階層の overview 初版）
 - 2026-07-10 `payrolls` に `saturday_work_days`(double, default 0) を追加。給与明細印刷で土曜出勤日数が常に0だった不具合対応（列が無く保存先が無かった）。合わせて payroll 保存時に休日日数表示は月次実績の `sunday_work_days`(「日曜/祝日」列)から採るよう是正（従来は入力に使われない `holiday_work_days` を参照し常に0だった）。本番へは `ALTER TABLE payrolls ADD COLUMN IF NOT EXISTS saturday_work_days ...` ＋ 月次実績からの日数バックフィルで反映（金額列は不変）。

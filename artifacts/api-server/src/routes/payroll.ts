@@ -224,6 +224,7 @@ router.post("/payroll/calculate", async (req, res) => {
       // 表示用: 「日曜/祝日」列を休日として保存（時間が主、日数は過去データ互換）、土曜日数も保存
       holidayWorkDays: record.sundayWorkDays ?? 0,
       holidayWorkHours: record.sundayWorkHours ?? 0,
+      paidLeaveDays: record.paidLeaveDays ?? 0,
       saturdayWorkDays: record.saturdayWorkDays ?? 0,
       useBluewingLogic: false,
     };
@@ -364,6 +365,7 @@ router.post("/payroll/calculate", async (req, res) => {
       // 表示用: 「日曜/祝日」列を休日として保存（時間が主、日数は過去データ互換）、土曜日数も保存
       holidayWorkDays: record.sundayWorkDays ?? 0,
       holidayWorkHours: record.sundayWorkHours ?? 0,
+      paidLeaveDays: record.paidLeaveDays ?? 0,
       saturdayWorkDays: record.saturdayWorkDays ?? 0,
       useBluewingLogic: true,
       bluewingSalesAmount: record.bluewingSalesAmount,
@@ -501,6 +503,7 @@ router.post("/payroll/calculate", async (req, res) => {
       // 表示用: 「日曜/祝日」列を休日として保存（時間が主、日数は過去データ互換）、土曜日数も保存
       holidayWorkDays: record.sundayWorkDays,
       holidayWorkHours: record.sundayWorkHours ?? 0,
+      paidLeaveDays: record.paidLeaveDays ?? 0,
       saturdayWorkDays: record.saturdayWorkDays,
       workDays: record.workDays,
       customDeductionsTotal,
@@ -543,6 +546,7 @@ router.post("/payroll/calculate", async (req, res) => {
       // 表示用: 「日曜/祝日」列を休日として保存（時間が主、日数は過去データ互換）、土曜日数も保存
       holidayWorkDays: record.sundayWorkDays,
       holidayWorkHours: record.sundayWorkHours ?? 0,
+      paidLeaveDays: record.paidLeaveDays ?? 0,
       saturdayWorkDays: record.saturdayWorkDays,
       workDays: record.workDays,
       customDeductionsTotal,

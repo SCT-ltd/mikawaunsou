@@ -277,8 +277,10 @@ export interface MonthlyRecord {
   drivingDistanceKm: number;
   /** 配送件数 */
   deliveryCases: number;
-  /** 欠勤日数 */
+  /** 欠勤日数（有給は含まない） */
   absenceDays: number;
+  /** 有給休暇の日数（0.5=半休）。欠勤控除の対象外 */
+  paidLeaveDays?: number;
   /** 土曜出勤日数 */
   saturdayWorkDays?: number;
   /** 日曜出勤日数（過去データ互換。金額計算には使わない） */
@@ -303,6 +305,8 @@ export interface CreateMonthlyRecordBody {
   drivingDistanceKm: number;
   deliveryCases: number;
   absenceDays: number;
+  /** 有給休暇の日数（0.5=半休）。欠勤控除の対象外 */
+  paidLeaveDays?: number;
   saturdayWorkDays?: number;
   /** 日曜出勤日数（過去データ互換。金額計算には使わない） */
   sundayWorkDays?: number;
@@ -321,6 +325,8 @@ export interface UpdateMonthlyRecordBody {
   drivingDistanceKm?: number;
   deliveryCases?: number;
   absenceDays?: number;
+  /** 有給休暇の日数（0.5=半休）。欠勤控除の対象外 */
+  paidLeaveDays?: number;
   saturdayWorkDays?: number;
   /** 日曜出勤日数（過去データ互換。金額計算には使わない） */
   sundayWorkDays?: number;
@@ -400,6 +406,8 @@ export interface Payroll {
   holidayWorkDays: number;
   /** 日曜・祝日の出勤時間（月次実績の sundayWorkHours を表示用に保存） */
   holidayWorkHours?: number;
+  /** 有給休暇の日数（月次実績の paidLeaveDays を表示用に保存） */
+  paidLeaveDays?: number;
   /** 土曜出勤日数（表示用） */
   saturdayWorkDays?: number;
   workDays: number;

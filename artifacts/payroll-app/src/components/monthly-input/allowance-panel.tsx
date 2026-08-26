@@ -65,11 +65,14 @@ function AllowanceReorderItem({
   definitions,
   onChange,
   onRemove,
+  autoNote,
 }: {
   row: AllowanceRow;
   definitions: { id: number; name: string; isTaxable: boolean }[];
   onChange: (uid: string, field: "defId" | "amount", value: number | null) => void;
   onRemove: (uid: string) => void;
+  /** 金額が勤怠から自動で入る手当（有給など）の注記 */
+  autoNote?: string;
 }) {
   const controls = useDragControls();
   const def = definitions.find((d) => d.id === row.defId);
@@ -99,6 +102,9 @@ function AllowanceReorderItem({
             ))}
           </SelectContent>
         </Select>
+        {autoNote && (
+          <div className="text-[10px] text-muted-foreground px-1">{autoNote}</div>
+        )}
       </div>
 
       {def ? (
@@ -202,7 +208,7 @@ export function AllowancePanel({
   monthlyData,
 }: {
   employee: EmployeeExt;
-  monthlyData?: { workDays: number; saturdayWorkDays: number; sundayWorkHours: number };
+  monthlyData?: { workDays: number; saturdayWorkDays: number; sundayWorkHours: number; paidLeaveDays: number };
 }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -246,7 +252,22 @@ export function AllowancePanel({
         )
       : null;
 
-  // pinned な手当IDを安定した文字列キーにして effect の依存を安定化する。
+  // ── 有給: 日数 × 日当 を手当「有給」の金額欄へ自動反映 ────────────────
+  // 事務所は「有給日数 × 平日日当」を電卓で出して金額欄に手入力しており、
+  // 手当は年月を持たないため前月の金額が残る事故が起きていた。月次実績の日数から
+  // 金額を導出して、手計算と持ち越しの両方を無くす。
+  // 単価は個人日当（dailyRateWeekday）優先、無ければ会社の平日日当。
+  const paidLeaveDays = monthlyData?.paidLeaveDays ?? 0;
+  const paidLeaveRate = (employee.dailyRateWeekday ?? 0) > 0
+    ? (employee.dailyRateWeekday ?? 0)
+    : (company?.dailyWageWeekday ?? 9808);
+  const paidLeaveDefId = useMemo(
+    () => allowanceDefinitions.find((d) => d.name.includes("有給"))?.id ?? null,
+    [allowanceDefinitions]
+  );
+  const paidLeaveAmount = Math.round(paidLeaveRate * paidLeaveDays);
+
+  // pinned な手当IDを安定した文字列キーにして依存を安定化する。
   // allowanceDefinitions は `= []` デフォルトのためロード中に毎レンダー参照が変わり、
   // これを直接 effect 依存にすると setRows → 再レンダー → effect の無限ループになる。
   const pinnedIdsKey = useMemo(
@@ -273,6 +294,31 @@ export function AllowancePanel({
     // 手当データが到着してから初期化した場合のみ ready（ロード中の暫定初期化では立てない）
     if (employeeAllowances !== undefined) setRowsReady(true);
   }, [employeeAllowances, employeeId, pinnedIdsKey]);
+
+  // 有給日数が変わったら「有給」手当の金額を入れ直す（日数0なら0にする）。
+  // 依存は日数と単価だけなので、金額欄を手で直した後に再レンダーしても上書きしない。
+  useEffect(() => {
+    if (!rowsReady || paidLeaveDefId === null) return;
+    setRows((prev) => {
+      const idx = prev.findIndex((r) => r.defId === paidLeaveDefId);
+      if (idx >= 0) {
+        if (prev[idx].amount === paidLeaveAmount) return prev;
+        const next = [...prev];
+        next[idx] = { ...next[idx], amount: paidLeaveAmount };
+        return next;
+      }
+      if (paidLeaveAmount === 0) return prev;
+      // 「有給」の行がまだ無ければ足す（空行しか無い場合はその行を使う）
+      const blank = prev.findIndex((r) => r.defId === null && !r.amount);
+      const row = { uid: genUid(), defId: paidLeaveDefId, amount: paidLeaveAmount };
+      if (blank >= 0) {
+        const next = [...prev];
+        next[blank] = row;
+        return next;
+      }
+      return [...prev, row];
+    });
+  }, [rowsReady, paidLeaveDefId, paidLeaveAmount]);
 
   useEffect(() => {
     if (employeeDeductions && employeeDeductions.length > 0) {
@@ -497,6 +543,11 @@ export function AllowancePanel({
               definitions={allowanceDefinitions}
               onChange={handleAllowanceChange}
               onRemove={handleRemoveAllowance}
+              autoNote={
+                row.defId !== null && row.defId === paidLeaveDefId
+                  ? `勤怠の有給 ${paidLeaveDays}日 × ${paidLeaveRate.toLocaleString("ja-JP")}円（自動）`
+                  : undefined
+              }
             />
           ))}
         </Reorder.Group>

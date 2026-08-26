@@ -35,6 +35,7 @@ interface PayrollData {
   overtimeHours: number;
   lateNightHours: number;
   holidayWorkHours?: number;
+  paidLeaveDays?: number;
   holidayWorkDays: number;
   employeeId?: number;
   notes?: string;
@@ -351,6 +352,9 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
     { label: "残業時間", value: formatHours(payroll.overtimeHours) },
     { label: "深夜時間", value: formatHours(payroll.lateNightHours) },
   ];
+  if ((payroll.paidLeaveDays ?? 0) > 0) {
+    attendanceItems.push({ label: "有給", value: `${payroll.paidLeaveDays}日` });
+  }
 
   const department = "";
   const today = new Date();

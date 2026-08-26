@@ -27,6 +27,7 @@
 
 ## 決定事項
 
+- 2026-08-26 有給の日数管理に伴い `MonthlyRecord` / `CreateMonthlyRecordBody` / `UpdateMonthlyRecordBody` / `Payroll` に `paidLeaveDays` を追加し codegen 実行。`absenceDays` の説明を「有給は含まない」に変更。
 - 2026-08-26 日曜出勤の時間計算化に伴い契約を更新: `MonthlyRecord` / `CreateMonthlyRecordBody` / `UpdateMonthlyRecordBody` に `sundayWorkHours`、`Payroll` に `holidayWorkHours` を追加し codegen 実行。`sundayWorkDays` は過去データ互換として description を「金額計算には使わない」に変更。
 - 2026-07-02 このファイル作成（api-spec 階層の overview 初版）
 - 2026-07-02 生成型ドリフトの是正（型基盤の整理）。DB・実装にはあるが `openapi.yaml` に未定義だったフィールドを追加し codegen 再実行:

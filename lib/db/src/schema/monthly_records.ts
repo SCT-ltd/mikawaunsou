@@ -15,6 +15,8 @@ export const monthlyRecordsTable = pgTable("monthly_records", {
   drivingDistanceKm: doublePrecision("driving_distance_km").notNull().default(0),
   deliveryCases: integer("delivery_cases").notNull().default(0),
   absenceDays: doublePrecision("absence_days").notNull().default(0),
+  /** 有給休暇の取得日数（0.5=半休）。欠勤控除の対象にはせず、有給手当の算出根拠にする。 */
+  paidLeaveDays: doublePrecision("paid_leave_days").notNull().default(0),
   saturdayWorkDays: doublePrecision("saturday_work_days").notNull().default(0),
   sundayWorkDays: doublePrecision("sunday_work_days").notNull().default(0),
   /**

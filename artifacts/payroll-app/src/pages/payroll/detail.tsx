@@ -181,6 +181,14 @@ export default function PayrollDetail() {
                     <td className="py-2">深夜労働</td>
                     <td className="py-2 text-right">{formatHours(payroll.lateNightHours)}</td>
                   </tr>
+                  {Number((payroll as { paidLeaveDays?: number }).paidLeaveDays ?? 0) > 0 && (
+                    <tr className="border-b border-dotted border-gray-300">
+                      <td className="py-2">有給休暇</td>
+                      <td className="py-2 text-right">
+                        {Number((payroll as { paidLeaveDays?: number }).paidLeaveDays)} 日
+                      </td>
+                    </tr>
+                  )}
                   <tr className="border-b border-dotted border-gray-300">
                     <td className="py-2">祝日/休日出勤</td>
                     <td className="py-2 text-right">

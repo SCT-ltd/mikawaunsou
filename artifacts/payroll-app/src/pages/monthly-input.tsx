@@ -132,7 +132,7 @@ export default function MonthlyInput() {
               const ok = window.confirm(
                 `未保存の手入力がある社員がいます:\n${dirtyTargets.join("・")}\n\n` +
                   "打刻データを取り込むと、これらの社員の\n" +
-                  "「平日出勤・土曜出勤・日曜祝日・欠勤・残業時間・走行距離・実働時間」は\n" +
+                  "「平日出勤・土曜出勤・日曜祝日・欠勤・有給・残業時間・走行距離・実働時間」は\n" +
                   "打刻集計の値で上書きされます（深夜時間は上書きされません）。\n\n" +
                   "取り込みを続けますか？"
               );
@@ -151,6 +151,7 @@ export default function MonthlyInput() {
                 sundayWorkHours: s.sundayWorkHours ?? 0,
                 overtimeHours: s.overtimeHours,
                 absenceDays: s.absenceDays ?? 0,
+                paidLeaveDays: s.paidLeaveDays ?? 0,
                 drivingDistanceKm: s.drivingDistanceKm ?? 0,
                 actualWorkHours: s.actualWorkHours ?? 0,
               };
@@ -204,7 +205,7 @@ export default function MonthlyInput() {
         initialEdits[emp.id] = {
           workDays: 0, overtimeHours: 0, lateNightHours: 0,
           holidayWorkDays: 0, drivingDistanceKm: 0, deliveryCases: 0,
-          absenceDays: 0, saturdayWorkDays: 0, sundayWorkDays: 0, sundayWorkHours: 0, notes: "",
+          absenceDays: 0, paidLeaveDays: 0, saturdayWorkDays: 0, sundayWorkDays: 0, sundayWorkHours: 0, notes: "",
           bluewingSalesAmount: 0, actualWorkHours: 0,
         };
       }
@@ -250,6 +251,7 @@ export default function MonthlyInput() {
           drivingDistanceKm: Number(ed.drivingDistanceKm) || 0,
           deliveryCases: Number(ed.deliveryCases) || 0,
           absenceDays: Number(ed.absenceDays) || 0,
+          paidLeaveDays: Number(ed.paidLeaveDays) || 0,
           saturdayWorkDays: Number(ed.saturdayWorkDays) || 0,
           sundayWorkDays: Number(ed.sundayWorkDays) || 0,
           sundayWorkHours: Number(ed.sundayWorkHours) || 0,
@@ -536,6 +538,7 @@ export default function MonthlyInput() {
                             workDays: Number(edits[selectedEmployee.id]?.workDays) || 0,
                             saturdayWorkDays: Number(edits[selectedEmployee.id]?.saturdayWorkDays) || 0,
                             sundayWorkHours: Number(edits[selectedEmployee.id]?.sundayWorkHours) || 0,
+                            paidLeaveDays: Number(edits[selectedEmployee.id]?.paidLeaveDays) || 0,
                           }}
                         />
                       </TabsContent>

@@ -155,6 +155,11 @@ export function RecordForm({
 
   const { gross, net } = computeQuickEstimate(employee, rowData, company);
 
+  // 有給1日あたりの単価: 個人日当 > 0 ならそれ、無ければ会社の平日日当
+  const paidLeaveRate = (employee.dailyRateWeekday ?? 0) > 0
+    ? (employee.dailyRateWeekday ?? 0)
+    : (company?.dailyWageWeekday ?? 9808);
+
   const numInput = (field: string, opts?: { max?: number; step?: string }) => {
     const val = rowData[field];
     const invalid = Number(val) < 0;
@@ -226,8 +231,15 @@ export function RecordForm({
           >
             {numInput("sundayWorkHours", { step: "0.5" })}
           </Field>
-          <Field label="欠勤" unit="日">
+          <Field label="欠勤" unit="日" hint="日当 × 日数を控除">
             {numInput("absenceDays", { max: 31, step: "1" })}
+          </Field>
+          <Field
+            label="有給"
+            unit="日"
+            hint={`${formatYen(paidLeaveRate)} / 日。控除はされません`}
+          >
+            {numInput("paidLeaveDays", { max: 31, step: "0.5" })}
           </Field>
           <Field label="残業" unit={hasUnit ? "回" : "h"} hint={unitHint}>
             {hasUnit ? unitInput("overtimeHours") : numInput("overtimeHours", { step: "0.5" })}

@@ -588,7 +588,11 @@ export const ListMonthlyRecordsResponseItem = zod.object({
   holidayWorkDays: zod.number().describe("休日出勤数"),
   drivingDistanceKm: zod.number().describe("走行距離（km）"),
   deliveryCases: zod.number().describe("配送件数"),
-  absenceDays: zod.number().describe("欠勤日数"),
+  absenceDays: zod.number().describe("欠勤日数（有給は含まない）"),
+  paidLeaveDays: zod
+    .number()
+    .optional()
+    .describe("有給休暇の日数（0.5=半休）。欠勤控除の対象外"),
   saturdayWorkDays: zod.number().optional().describe("土曜出勤日数"),
   sundayWorkDays: zod
     .number()
@@ -626,6 +630,10 @@ export const CreateMonthlyRecordBody = zod.object({
   drivingDistanceKm: zod.number(),
   deliveryCases: zod.number(),
   absenceDays: zod.number(),
+  paidLeaveDays: zod
+    .number()
+    .optional()
+    .describe("有給休暇の日数（0.5=半休）。欠勤控除の対象外"),
   saturdayWorkDays: zod.number().optional(),
   sundayWorkDays: zod
     .number()
@@ -663,7 +671,11 @@ export const GetMonthlyRecordResponse = zod.object({
   holidayWorkDays: zod.number().describe("休日出勤数"),
   drivingDistanceKm: zod.number().describe("走行距離（km）"),
   deliveryCases: zod.number().describe("配送件数"),
-  absenceDays: zod.number().describe("欠勤日数"),
+  absenceDays: zod.number().describe("欠勤日数（有給は含まない）"),
+  paidLeaveDays: zod
+    .number()
+    .optional()
+    .describe("有給休暇の日数（0.5=半休）。欠勤控除の対象外"),
   saturdayWorkDays: zod.number().optional().describe("土曜出勤日数"),
   sundayWorkDays: zod
     .number()
@@ -699,6 +711,10 @@ export const UpdateMonthlyRecordBody = zod.object({
   drivingDistanceKm: zod.number().optional(),
   deliveryCases: zod.number().optional(),
   absenceDays: zod.number().optional(),
+  paidLeaveDays: zod
+    .number()
+    .optional()
+    .describe("有給休暇の日数（0.5=半休）。欠勤控除の対象外"),
   saturdayWorkDays: zod.number().optional(),
   sundayWorkDays: zod
     .number()
@@ -729,7 +745,11 @@ export const UpdateMonthlyRecordResponse = zod.object({
   holidayWorkDays: zod.number().describe("休日出勤数"),
   drivingDistanceKm: zod.number().describe("走行距離（km）"),
   deliveryCases: zod.number().describe("配送件数"),
-  absenceDays: zod.number().describe("欠勤日数"),
+  absenceDays: zod.number().describe("欠勤日数（有給は含まない）"),
+  paidLeaveDays: zod
+    .number()
+    .optional()
+    .describe("有給休暇の日数（0.5=半休）。欠勤控除の対象外"),
   saturdayWorkDays: zod.number().optional().describe("土曜出勤日数"),
   sundayWorkDays: zod
     .number()
@@ -813,6 +833,10 @@ export const ListPayrollsResponseItem = zod.object({
     .describe(
       "日曜・祝日の出勤時間（月次実績の sundayWorkHours を表示用に保存）",
     ),
+  paidLeaveDays: zod
+    .number()
+    .optional()
+    .describe("有給休暇の日数（月次実績の paidLeaveDays を表示用に保存）"),
   saturdayWorkDays: zod.number().optional().describe("土曜出勤日数（表示用）"),
   workDays: zod.number(),
   createdAt: zod.coerce.date(),
@@ -884,6 +908,10 @@ export const CalculatePayrollResponse = zod.object({
     .describe(
       "日曜・祝日の出勤時間（月次実績の sundayWorkHours を表示用に保存）",
     ),
+  paidLeaveDays: zod
+    .number()
+    .optional()
+    .describe("有給休暇の日数（月次実績の paidLeaveDays を表示用に保存）"),
   saturdayWorkDays: zod.number().optional().describe("土曜出勤日数（表示用）"),
   workDays: zod.number(),
   createdAt: zod.coerce.date(),
@@ -951,6 +979,10 @@ export const GetPayrollResponse = zod.object({
     .describe(
       "日曜・祝日の出勤時間（月次実績の sundayWorkHours を表示用に保存）",
     ),
+  paidLeaveDays: zod
+    .number()
+    .optional()
+    .describe("有給休暇の日数（月次実績の paidLeaveDays を表示用に保存）"),
   saturdayWorkDays: zod.number().optional().describe("土曜出勤日数（表示用）"),
   workDays: zod.number(),
   createdAt: zod.coerce.date(),
@@ -1025,6 +1057,10 @@ export const UpdatePayrollResponse = zod.object({
     .describe(
       "日曜・祝日の出勤時間（月次実績の sundayWorkHours を表示用に保存）",
     ),
+  paidLeaveDays: zod
+    .number()
+    .optional()
+    .describe("有給休暇の日数（月次実績の paidLeaveDays を表示用に保存）"),
   saturdayWorkDays: zod.number().optional().describe("土曜出勤日数（表示用）"),
   workDays: zod.number(),
   createdAt: zod.coerce.date(),
@@ -1092,6 +1128,10 @@ export const ConfirmPayrollResponse = zod.object({
     .describe(
       "日曜・祝日の出勤時間（月次実績の sundayWorkHours を表示用に保存）",
     ),
+  paidLeaveDays: zod
+    .number()
+    .optional()
+    .describe("有給休暇の日数（月次実績の paidLeaveDays を表示用に保存）"),
   saturdayWorkDays: zod.number().optional().describe("土曜出勤日数（表示用）"),
   workDays: zod.number(),
   createdAt: zod.coerce.date(),
@@ -1159,6 +1199,10 @@ export const UnconfirmPayrollResponse = zod.object({
     .describe(
       "日曜・祝日の出勤時間（月次実績の sundayWorkHours を表示用に保存）",
     ),
+  paidLeaveDays: zod
+    .number()
+    .optional()
+    .describe("有給休暇の日数（月次実績の paidLeaveDays を表示用に保存）"),
   saturdayWorkDays: zod.number().optional().describe("土曜出勤日数（表示用）"),
   workDays: zod.number(),
   createdAt: zod.coerce.date(),

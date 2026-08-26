@@ -689,15 +689,19 @@ router.get("/attendance/monthly-summary", requireAdmin, async (req, res) => {
       lte(absenceRecordsTable.workDate, to),
     ));
 
-  // 欠勤ごとに absenceDays を加算
+  // 欠勤ごとに日数を加算。
+  // 有給休暇(paid_leave)は「休んでも賃金が出る」ので欠勤控除の対象にしてはいけない。
+  // absenceDays（＝日当×日数で控除される）とは別に paidLeaveDays として集計する。
   const absenceSummary = new Map<number, number>();
+  const paidLeaveSummary = new Map<number, number>();
   for (const a of absenceRecs) {
     const days = ABSENCE_DAYS[a.absenceType] ?? 1.0;
-    absenceSummary.set(a.employeeId, (absenceSummary.get(a.employeeId) ?? 0) + days);
+    const target = a.absenceType === "paid_leave" ? paidLeaveSummary : absenceSummary;
+    target.set(a.employeeId, (target.get(a.employeeId) ?? 0) + days);
   }
 
-  // 欠勤のみの社員も結果に含める
-  for (const [empId] of absenceSummary.entries()) {
+  // 欠勤・有給のみの社員も結果に含める
+  for (const [empId] of [...absenceSummary.entries(), ...paidLeaveSummary.entries()]) {
     if (!summaryMap.has(empId)) {
       summaryMap.set(empId, { workDays: 0, saturdayWorkDays: 0, sundayWorkDays: 0, sundayWorkHours: 0, overtimeHours: 0, drivingDistanceKm: 0, actualWorkHours: 0 });
     }
@@ -707,6 +711,7 @@ router.get("/attendance/monthly-summary", requireAdmin, async (req, res) => {
     employeeId,
     ...s,
     absenceDays: Math.round((absenceSummary.get(employeeId) ?? 0) * 10) / 10,
+    paidLeaveDays: Math.round((paidLeaveSummary.get(employeeId) ?? 0) * 10) / 10,
   }));
 
   return res.json(result);

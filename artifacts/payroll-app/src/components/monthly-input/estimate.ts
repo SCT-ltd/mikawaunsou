@@ -303,7 +303,7 @@ export function computeBWCalc(
 export function hasAnyRecordData(ed: RowData | undefined): boolean {
   if (!ed) return false;
   const numericFields = [
-    "workDays", "saturdayWorkDays", "sundayWorkDays", "sundayWorkHours", "absenceDays",
+    "workDays", "saturdayWorkDays", "sundayWorkDays", "sundayWorkHours", "absenceDays", "paidLeaveDays",
     "overtimeHours", "lateNightHours", "holidayWorkDays",
     "drivingDistanceKm", "deliveryCases", "actualWorkHours",
     "bluewingSalesAmount",

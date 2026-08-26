@@ -1268,7 +1268,10 @@ components:
           description: 配送件数
         absenceDays:
           type: number
-          description: 欠勤日数
+          description: 欠勤日数（有給は含まない）
+        paidLeaveDays:
+          type: number
+          description: 有給休暇の日数（0.5=半休）。欠勤控除の対象外
         saturdayWorkDays:
           type: number
           description: 土曜出勤日数
@@ -1327,6 +1330,9 @@ components:
           type: integer
         absenceDays:
           type: number
+        paidLeaveDays:
+          type: number
+          description: 有給休暇の日数（0.5=半休）。欠勤控除の対象外
         saturdayWorkDays:
           type: number
         sundayWorkDays:
@@ -1369,6 +1375,9 @@ components:
           type: integer
         absenceDays:
           type: number
+        paidLeaveDays:
+          type: number
+          description: 有給休暇の日数（0.5=半休）。欠勤控除の対象外
         saturdayWorkDays:
           type: number
         sundayWorkDays:
@@ -1483,6 +1492,9 @@ components:
         holidayWorkHours:
           type: number
           description: 日曜・祝日の出勤時間（月次実績の sundayWorkHours を表示用に保存）
+        paidLeaveDays:
+          type: number
+          description: 有給休暇の日数（月次実績の paidLeaveDays を表示用に保存）
         saturdayWorkDays:
           type: number
           description: 土曜出勤日数（表示用）
