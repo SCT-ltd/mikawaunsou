@@ -27,6 +27,7 @@ import {
   roundJapanese,
   resolvePensionApplied,
   calculateIncomeTaxFromOfficialTable,
+  lateNightPremiumPerHour,
 } from "./estimate";
 
 /**
@@ -208,7 +209,14 @@ export function AllowancePanel({
   monthlyData,
 }: {
   employee: EmployeeExt;
-  monthlyData?: { workDays: number; saturdayWorkDays: number; sundayWorkHours: number; paidLeaveDays: number };
+  monthlyData?: {
+    workDays: number;
+    saturdayWorkDays: number;
+    sundayWorkHours: number;
+    paidLeaveDays: number;
+    overtimeHours: number;
+    lateNightHours: number;
+  };
 }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -252,20 +260,66 @@ export function AllowancePanel({
         )
       : null;
 
-  // ── 有給: 日数 × 日当 を手当「有給」の金額欄へ自動反映 ────────────────
-  // 事務所は「有給日数 × 平日日当」を電卓で出して金額欄に手入力しており、
-  // 手当は年月を持たないため前月の金額が残る事故が起きていた。月次実績の日数から
-  // 金額を導出して、手計算と持ち越しの両方を無くす。
-  // 単価は個人日当（dailyRateWeekday）優先、無ければ会社の平日日当。
-  const paidLeaveDays = monthlyData?.paidLeaveDays ?? 0;
+  // ── 勤怠から金額が決まる手当の自動反映 ──────────────────────────────
+  // 事務所は「時間（日数）× 単価」を電卓で出して金額欄に手入力していた。手当は年月を
+  // 持たない社員マスタの1レコードなので、翌月も前月の金額が残り続ける（実際に7月分の
+  // 早出残業手当85,496円・深夜手当1,266円が8月にそのまま残り、クライアントから
+  // 「残業39.5h×2,111=83,385のはずが85,496になる」と報告された）。
+  // 月次実績から金額を導出して、手計算と持ち越しの両方を無くす。
+  const paidLeaveDays  = monthlyData?.paidLeaveDays  ?? 0;
+  const overtimeHours  = monthlyData?.overtimeHours  ?? 0;
+  const lateNightHours = monthlyData?.lateNightHours ?? 0;
+
+  // 有給の単価: 個人日当（dailyRateWeekday）優先、無ければ会社の平日日当
   const paidLeaveRate = (employee.dailyRateWeekday ?? 0) > 0
     ? (employee.dailyRateWeekday ?? 0)
     : (company?.dailyWageWeekday ?? 9808);
-  const paidLeaveDefId = useMemo(
-    () => allowanceDefinitions.find((d) => d.name.includes("有給"))?.id ?? null,
-    [allowanceDefinitions]
-  );
-  const paidLeaveAmount = Math.round(paidLeaveRate * paidLeaveDays);
+  // 残業の単価: 社員マスタの「残業 時給（円/時）」。未設定(0)の社員は自動反映しない
+  // （0円で上書きして手入力を消さないため）。
+  const overtimeRate = employee.overtimeHourlyRate ?? 0;
+
+  const defIdOf = (keyword: string) =>
+    allowanceDefinitions.find((d) => d.name.includes(keyword))?.id ?? null;
+
+  /** 勤怠から金額が決まる手当。defId が null（手当が未定義）のものは対象外。 */
+  const autoRows = useMemo(() => {
+    const rowsOut: { defId: number; amount: number; note: string }[] = [];
+    const push = (defId: number | null, amount: number, note: string) => {
+      if (defId !== null) rowsOut.push({ defId, amount, note });
+    };
+
+    push(
+      defIdOf("有給"),
+      Math.round(paidLeaveRate * paidLeaveDays),
+      `勤怠の有給 ${paidLeaveDays}日 × ${paidLeaveRate.toLocaleString("ja-JP")}円（自動）`
+    );
+
+    if (overtimeRate > 0) {
+      // 残業手当 = 残業時間 × 残業時給。労基法37条3項に合わせ60時間超は ×1.20 追加。
+      const OT_THRESHOLD = 60;
+      const overtimePay = overtimeHours <= OT_THRESHOLD
+        ? Math.round(overtimeRate * overtimeHours)
+        : Math.round(overtimeRate * OT_THRESHOLD) +
+          Math.round(overtimeRate * 1.20 * (overtimeHours - OT_THRESHOLD));
+      push(
+        defIdOf("早出残業手当"),
+        overtimePay,
+        `勤怠の残業 ${overtimeHours}h × ${overtimeRate.toLocaleString("ja-JP")}円（自動）`
+      );
+
+      // 深夜手当 = 深夜時間 × 深夜割増単価（残業時給 ÷ 1.25 × 0.25）
+      const perHour = lateNightPremiumPerHour(overtimeRate);
+      push(
+        defIdOf("深夜手当"),
+        Math.round(perHour * lateNightHours),
+        `勤怠の深夜 ${lateNightHours}h × ${perHour.toLocaleString("ja-JP")}円（自動）`
+      );
+    }
+    return rowsOut;
+  }, [allowanceDefinitions, paidLeaveRate, paidLeaveDays, overtimeRate, overtimeHours, lateNightHours]);
+
+  /** 自動反映の対象と金額が変わったときだけ effect を走らせるための安定キー */
+  const autoRowsKey = autoRows.map((r) => `${r.defId}:${r.amount}`).join(",");
 
   // pinned な手当IDを安定した文字列キーにして依存を安定化する。
   // allowanceDefinitions は `= []` デフォルトのためロード中に毎レンダー参照が変わり、
@@ -295,30 +349,34 @@ export function AllowancePanel({
     if (employeeAllowances !== undefined) setRowsReady(true);
   }, [employeeAllowances, employeeId, pinnedIdsKey]);
 
-  // 有給日数が変わったら「有給」手当の金額を入れ直す（日数0なら0にする）。
-  // 依存は日数と単価だけなので、金額欄を手で直した後に再レンダーしても上書きしない。
+  // 勤怠が変わったら対象手当の金額を入れ直す（時間・日数が0なら0にする＝持ち越しを断つ）。
+  // 依存は autoRowsKey（対象と金額）だけなので、金額欄を手で直した後に再レンダーしても
+  // 上書きしない。
   useEffect(() => {
-    if (!rowsReady || paidLeaveDefId === null) return;
+    if (!rowsReady || autoRows.length === 0) return;
     setRows((prev) => {
-      const idx = prev.findIndex((r) => r.defId === paidLeaveDefId);
-      if (idx >= 0) {
-        if (prev[idx].amount === paidLeaveAmount) return prev;
-        const next = [...prev];
-        next[idx] = { ...next[idx], amount: paidLeaveAmount };
-        return next;
+      let next = prev;
+      for (const auto of autoRows) {
+        const idx = next.findIndex((r) => r.defId === auto.defId);
+        if (idx >= 0) {
+          if (next[idx].amount === auto.amount) continue;
+          if (next === prev) next = [...prev];
+          next[idx] = { ...next[idx], amount: auto.amount };
+          continue;
+        }
+        if (auto.amount === 0) continue;
+        // 行がまだ無ければ足す（空行しか無い場合はその行を使う）
+        if (next === prev) next = [...prev];
+        const row = { uid: genUid(), defId: auto.defId, amount: auto.amount };
+        const blank = next.findIndex((r) => r.defId === null && !r.amount);
+        if (blank >= 0) next[blank] = row;
+        else next.push(row);
       }
-      if (paidLeaveAmount === 0) return prev;
-      // 「有給」の行がまだ無ければ足す（空行しか無い場合はその行を使う）
-      const blank = prev.findIndex((r) => r.defId === null && !r.amount);
-      const row = { uid: genUid(), defId: paidLeaveDefId, amount: paidLeaveAmount };
-      if (blank >= 0) {
-        const next = [...prev];
-        next[blank] = row;
-        return next;
-      }
-      return [...prev, row];
+      return next;
     });
-  }, [rowsReady, paidLeaveDefId, paidLeaveAmount]);
+    // autoRows は autoRowsKey から導出されるので依存はキーだけでよい
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rowsReady, autoRowsKey]);
 
   useEffect(() => {
     if (employeeDeductions && employeeDeductions.length > 0) {
@@ -543,11 +601,7 @@ export function AllowancePanel({
               definitions={allowanceDefinitions}
               onChange={handleAllowanceChange}
               onRemove={handleRemoveAllowance}
-              autoNote={
-                row.defId !== null && row.defId === paidLeaveDefId
-                  ? `勤怠の有給 ${paidLeaveDays}日 × ${paidLeaveRate.toLocaleString("ja-JP")}円（自動）`
-                  : undefined
-              }
+              autoNote={autoRows.find((a) => a.defId === row.defId)?.note}
             />
           ))}
         </Reorder.Group>

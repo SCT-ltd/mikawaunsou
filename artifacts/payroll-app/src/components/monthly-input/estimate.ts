@@ -50,10 +50,10 @@ export function roundJapanese(amount: number): number {
 /**
  * 深夜割増の1時間単価を「割増込みの残業時給」から復元する。
  * サーバ側 payroll-calculator.ts の lateNightPremiumPerHour と同一式。
- *   例) 2,111円/h → round(2111/1.25)=1,689 → floor(1689×0.25)=422円/h
+ *   例) 2,111円/h → 422円/h、1,750円/h → 350円/h、1,909円/h → 382円/h
  */
 export function lateNightPremiumPerHour(overtimeHourlyRate: number): number {
-  return Math.floor(Math.round(overtimeHourlyRate / 1.25) * 0.25);
+  return Math.round(Math.round(overtimeHourlyRate / 1.25) * 0.25);
 }
 
 /**

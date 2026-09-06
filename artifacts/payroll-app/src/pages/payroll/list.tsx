@@ -484,6 +484,8 @@ export default function PayrollList() {
                             saturdayWorkDays: (rec as { saturdayWorkDays?: number } | undefined)?.saturdayWorkDays ?? 0,
                             sundayWorkHours: (rec as { sundayWorkHours?: number } | undefined)?.sundayWorkHours ?? 0,
                             paidLeaveDays: (rec as { paidLeaveDays?: number } | undefined)?.paidLeaveDays ?? 0,
+                            overtimeHours: rec?.overtimeHours ?? selectedPayroll.overtimeHours ?? 0,
+                            lateNightHours: rec?.lateNightHours ?? selectedPayroll.lateNightHours ?? 0,
                           };
                         })()}
                         onDirtyChange={setIsDirty}

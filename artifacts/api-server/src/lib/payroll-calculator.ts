@@ -39,15 +39,19 @@ export function roundPayYen(amount: number): number {
 /**
  * 深夜割増の1時間単価を「割増込みの残業時給」から復元する。
  *   残業時給 ÷ 1.25 = 素の時給 → × 0.25 = 深夜割増
- *   例) 2,111円/h → round(2111/1.25)=1,689 → floor(1689×0.25)=422円/h
- *       1,750円/h → round(1750/1.25)=1,400 → floor(1400×0.25)=350円/h
+ *   例) 2,111円/h → round(2111/1.25)=1,689 → round(1689×0.25)=422円/h
+ *       1,750円/h → round(1750/1.25)=1,400 → round(1400×0.25)=350円/h
+ *       1,909円/h → round(1909/1.25)=1,527 → round(1527×0.25)=382円/h
+ *
+ * 端数は四捨五入。事務所の手計算（上記3件）と一致するのは四捨五入だけで、
+ * 切り捨てにすると 1,909円/h の社員が 381円/h になり1円ズレる。
  *
  * ブルーウィング分岐（routes/payroll.ts）が元々この式を使っており、標準計算だけが
  * 「基本給 ÷ 月平均労働時間 × 0.25」を使っていたため、残業単価で運用している社員の
  * 深夜手当が実態と合わない（基本給が0なら深夜手当も0）状態だった。両者をこの関数に揃える。
  */
 export function lateNightPremiumPerHour(overtimeHourlyRate: number): number {
-  return Math.floor(Math.round(overtimeHourlyRate / 1.25) * 0.25);
+  return Math.round(Math.round(overtimeHourlyRate / 1.25) * 0.25);
 }
 
 export interface CustomAllowanceItem {
