@@ -276,6 +276,7 @@ export default function MonthlyInput() {
       // 保存した社員の給与を続けて計算（確定済みはサーバが 409 で弾くので無視）。
       // 失敗は個別に無視し、詳細なエラー表示は給与明細画面の一括計算に委ねる。
       let calculated = 0;
+      let confirmedSkipped = 0;
       for (const employeeId of savedEmployeeIds) {
         try {
           const res = await fetch(`${BASE}/api/payroll/calculate`, {
@@ -284,14 +285,23 @@ export default function MonthlyInput() {
             body: JSON.stringify({ employeeId, year, month }),
           });
           if (res.ok) calculated++;
+          // 確定済みはサーバが 409 で弾く。黙って無視すると「保存したのに明細が
+          // 変わらない」という形で表に出るため、件数を数えて明示する。
+          else if (res.status === 409) confirmedSkipped++;
         } catch {
-          // 自動計算失敗は無視（給与明細画面で再計算・エラー確認できる）
+          // 通信失敗は無視（給与明細画面の一括計算でエラー確認できる）
         }
       }
 
       toast({
-        title: "保存して計算しました",
-        description: `${month}月分の実績${savedEmployeeIds.length}名分を保存し、${calculated}名分の給与を計算しました。`,
+        title: confirmedSkipped > 0 ? "確定済みの明細は更新されていません" : "保存して計算しました",
+        description:
+          `${month}月分の実績${savedEmployeeIds.length}名分を保存し、${calculated}名分の給与を計算しました。` +
+          (confirmedSkipped > 0
+            ? `
+確定済みのため${confirmedSkipped}名分は再計算されていません。給与明細画面で確定を解除してから計算してください。`
+            : ""),
+        variant: confirmedSkipped > 0 ? "destructive" : undefined,
       });
       setDirtyIds(new Set());
       queryClient.invalidateQueries({ queryKey: getListMonthlyRecordsQueryKey({ year, month }) });
@@ -534,6 +544,8 @@ export default function MonthlyInput() {
                         <AllowancePanel
                           key={selectedEmployee.id}
                           employee={selectedEmployee}
+                          year={year}
+                          month={month}
                           monthlyData={{
                             workDays: Number(edits[selectedEmployee.id]?.workDays) || 0,
                             saturdayWorkDays: Number(edits[selectedEmployee.id]?.saturdayWorkDays) || 0,

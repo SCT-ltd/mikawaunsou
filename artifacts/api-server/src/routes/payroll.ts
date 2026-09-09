@@ -76,7 +76,6 @@ router.post("/payroll/calculate", async (req, res) => {
     year,
     month,
     useBluewingLogic = false,
-    calculationMode = "auto",
   } = req.body;
 
   const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, employeeId));
@@ -100,6 +99,14 @@ router.post("/payroll/calculate", async (req, res) => {
   if (existingPayrollForGuard?.status === "confirmed") {
     return res.status(409).json({ error: "確定済みの給与明細は再計算できません。" });
   }
+
+  // 計算モードは、指定が無ければ「その明細が前回どのモードで作られたか」を引き継ぐ。
+  // 月次実績入力の「実績を保存」はモードを送らないため、既定の "auto" のままだと
+  // 事務所が manual で組み立てた明細が BW/標準の自動計算で上書きされ、
+  // 手当ベースの支給額が消えてしまう（実際に 2026-08 の明細が manual → bluewing_auto に
+  // 化けていた）。既存が無い新規のときだけ "auto" にフォールバックする。
+  const calculationMode: string =
+    req.body.calculationMode ?? existingPayrollForGuard?.calculationMode ?? "auto";
 
   const companyRows = await db.select().from(companyTable).limit(1);
   const company = companyRows[0] ?? {

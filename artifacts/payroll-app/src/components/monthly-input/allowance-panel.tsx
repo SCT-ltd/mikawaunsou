@@ -14,6 +14,8 @@ import {
   useUpdateEmployee,
   useGetCompany,
   getListEmployeesQueryKey,
+  useCalculatePayroll,
+  getListPayrollsQueryKey,
 } from "@workspace/api-client-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -207,8 +209,13 @@ function DeductionReorderItem({
 export function AllowancePanel({
   employee,
   monthlyData,
+  year,
+  month,
 }: {
   employee: EmployeeExt;
+  /** 再計算する対象月。省略すると保存しても給与明細は更新されない */
+  year?: number;
+  month?: number;
   monthlyData?: {
     workDays: number;
     saturdayWorkDays: number;
@@ -238,6 +245,7 @@ export function AllowancePanel({
   });
   const { data: companyData } = useGetCompany();
   const company = companyData as CompanySettings | undefined;
+  const calculatePayroll = useCalculatePayroll();
   const updateAllowances = useUpdateEmployeeAllowances();
   const updateDeductions = useUpdateEmployeeDeductions();
   const updateEmployee = useUpdateEmployee();
@@ -250,14 +258,23 @@ export function AllowancePanel({
   const [rowsReady, setRowsReady] = useState(false);
 
   const isDaily = employee.salaryType === "daily";
+  // 実効単価（個人単価があればそれ、無ければ会社共通）
+  const rateWeekday = (employee.dailyRateWeekday ?? 0) > 0
+    ? (employee.dailyRateWeekday ?? 0)
+    : (company?.dailyWageWeekday ?? 9808);
+  const rateSaturday = (employee.dailyRateSaturday ?? 0) > 0
+    ? (employee.dailyRateSaturday ?? 0)
+    : (company?.dailyWageSaturday ?? 12260);
+  const rateSundayHour = company?.hourlyWageSunday ?? 1655;
+
+  // 基本給は「平日日数 × 平日日当」だけ。土曜・日曜分は休日出勤手当に入れる。
+  // 本番データで裏付け済み: 岡田 平日17d×9,808=166,736、玉川 平日18d×9,808=176,544 が
+  // それぞれ実際の基本給と一致する（給与明細一覧側の手当パネルと同じ式）。
+  // 以前ここだけ土曜・日曜も足していたため、明細一覧側で保存した場合と金額が食い違い、
+  // かつ休日出勤手当と土曜分が二重計上になっていた。
   const computedDailyBaseSalary =
     isDaily && company
-      ? Math.round(
-          (monthlyData?.workDays ?? 0) * (company.dailyWageWeekday ?? 9808) +
-            (monthlyData?.saturdayWorkDays ?? 0) * (company.dailyWageSaturday ?? 12260) +
-            // 日曜・祝日は 2026-08 から「時間 × 日曜時給（既定1,655円/h）」
-            (monthlyData?.sundayWorkHours ?? 0) * (company.hourlyWageSunday ?? 1655)
-        )
+      ? Math.round((monthlyData?.workDays ?? 0) * rateWeekday)
       : null;
 
   // ── 勤怠から金額が決まる手当の自動反映 ──────────────────────────────
@@ -270,10 +287,8 @@ export function AllowancePanel({
   const overtimeHours  = monthlyData?.overtimeHours  ?? 0;
   const lateNightHours = monthlyData?.lateNightHours ?? 0;
 
-  // 有給の単価: 個人日当（dailyRateWeekday）優先、無ければ会社の平日日当
-  const paidLeaveRate = (employee.dailyRateWeekday ?? 0) > 0
-    ? (employee.dailyRateWeekday ?? 0)
-    : (company?.dailyWageWeekday ?? 9808);
+  // 有給の単価は平日日当と同じ
+  const paidLeaveRate = rateWeekday;
   // 残業の単価: 社員マスタの「残業 時給（円/時）」。未設定(0)の社員は自動反映しない
   // （0円で上書きして手入力を消さないため）。
   const overtimeRate = employee.overtimeHourlyRate ?? 0;
@@ -292,6 +307,18 @@ export function AllowancePanel({
       defIdOf("有給"),
       Math.round(paidLeaveRate * paidLeaveDays),
       `勤怠の有給 ${paidLeaveDays}日 × ${paidLeaveRate.toLocaleString("ja-JP")}円（自動）`
+    );
+
+    // 休日出勤手当 = 土曜日数 × 土曜日当 ＋ 日曜・祝日時間 × 日曜時給。
+    // 本番データで裏付け済み: 岡田 2d×12,260+0h = 24,520、
+    // 玉川 2d×12,260+5.5h×1,655 = 33,623 が、いずれも事務所の手入力額と一致する。
+    const saturdayDays = monthlyData?.saturdayWorkDays ?? 0;
+    const sundayHours = monthlyData?.sundayWorkHours ?? 0;
+    push(
+      defIdOf("休日出勤手当"),
+      Math.round(saturdayDays * rateSaturday + sundayHours * rateSundayHour),
+      `勤怠の土曜 ${saturdayDays}日 × ${rateSaturday.toLocaleString("ja-JP")}円` +
+        ` ＋ 日曜祝日 ${sundayHours}h × ${rateSundayHour.toLocaleString("ja-JP")}円（自動）`
     );
 
     if (overtimeRate > 0) {
@@ -316,7 +343,11 @@ export function AllowancePanel({
       );
     }
     return rowsOut;
-  }, [allowanceDefinitions, paidLeaveRate, paidLeaveDays, overtimeRate, overtimeHours, lateNightHours]);
+  }, [
+    allowanceDefinitions, paidLeaveRate, paidLeaveDays,
+    monthlyData?.saturdayWorkDays, monthlyData?.sundayWorkHours, rateSaturday, rateSundayHour,
+    overtimeRate, overtimeHours, lateNightHours,
+  ]);
 
   /** 自動反映の対象と金額が変わったときだけ effect を走らせるための安定キー */
   const autoRowsKey = autoRows.map((r) => `${r.defId}:${r.amount}`).join(",");
@@ -495,7 +526,27 @@ export function AllowancePanel({
       queryClient.invalidateQueries({ queryKey: getGetEmployeeAllowancesQueryKey(employeeId) });
       queryClient.invalidateQueries({ queryKey: getGetEmployeeDeductionsQueryKey(employeeId) });
       queryClient.invalidateQueries({ queryKey: getListEmployeesQueryKey({ active: true }) });
-      toast({ title: "保存しました", description: `${employee.name}の基本給・手当・差引を更新しました。` });
+
+      // 保存しただけでは payrolls は古いままで、給与明細に反映されない。
+      // 事務所は manual モードで確定しているので、同じモードで再計算して明細を最新化する
+      // （給与明細一覧側の手当パネルは元からこれをやっていた。こちらだけ抜けていた）。
+      if (year != null && month != null) {
+        try {
+          await calculatePayroll.mutateAsync({
+            data: { employeeId, year, month, calculationMode: "manual" },
+          });
+          queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) });
+        } catch {
+          toast({
+            title: "警告",
+            description: "手当は保存しましたが給与明細の再計算に失敗しました。確定済みの場合は確定を解除してください。",
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+
+      toast({ title: "保存・再計算しました", description: `${employee.name}の給与明細を更新しました。` });
     } catch {
       toast({ title: "エラー", description: "保存に失敗しました。", variant: "destructive" });
     }
