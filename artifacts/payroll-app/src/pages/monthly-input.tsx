@@ -67,7 +67,9 @@ export default function MonthlyInput() {
 
   const [edits, setEdits] = useState<Record<number, RowData>>({});
   const [dirtyIds, setDirtyIds] = useState<Set<number>>(new Set());
-  const [saving, setSaving] = useState(false);
+  /** 保存・計算中の対象。"dirty"=変更した社員すべて、数値=その社員1名、null=待機中 */
+  const [savingTarget, setSavingTarget] = useState<"dirty" | number | null>(null);
+  const saving = savingTarget !== null;
   const [importing, setImporting] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
@@ -249,15 +251,18 @@ export default function MonthlyInput() {
     }
   };
 
-  // 一括保存 → 保存した社員をそのまま給与計算（全社員で統一。計算ロジックは
-  // employeeId/year/month のみ渡し、BW判定などはサーバ側 emp 設定に一任する）。
-  const handleSaveAll = async () => {
-    if (!employees.length) return;
-    setSaving(true);
+  // 保存して計算。対象の社員だけ月次実績を保存し、その社員の給与明細を計算する。
+  // 以前はボタンに「◯名分」と出ていても、実績のある社員全員を画面の値で保存し直して全員を
+  // 再計算していた。そのため (1) 別のPCで先に保存された内容を古い画面の値で上書きする、
+  // (2) 触っていない社員の明細まで作り直す（月の初回は自動計算/BW自動計算で作られる）、
+  // (3) 変更が1人でも全員分待たされる、という問題があった。
+  const saveAndCalculate = async (targetIds: number[], target: "dirty" | number) => {
+    const targets = employees.filter((e) => targetIds.includes(e.id));
+    if (!targets.length) return;
+    setSavingTarget(target);
     try {
-      // 実績を保存し、保存対象（データのある社員）を控える
       const savedEmployeeIds: number[] = [];
-      for (const emp of employees) {
+      for (const emp of targets) {
         const ed = edits[emp.id] ?? {};
         const existingRecord = monthlyRecords?.find((r) => r.employeeId === emp.id);
         const payload = {
@@ -280,21 +285,20 @@ export default function MonthlyInput() {
         if (existingRecord) {
           await updateRecord.mutateAsync({ id: existingRecord.id, data: payload });
           savedEmployeeIds.push(emp.id);
-        } else {
-          // 残業・深夜・日曜出勤・欠勤だけを入力したケースも「データあり」として保存する。
-          // （以前は workDays 等だけを見ていたため、残業時間だけ入れた新規行が無言で捨てられていた）
-          if (hasAnyRecordData(payload as unknown as RowData)) {
-            await createRecord.mutateAsync({ data: { employeeId: emp.id, year, month, ...payload } });
-            savedEmployeeIds.push(emp.id);
-          }
+        } else if (hasAnyRecordData(payload as unknown as RowData)) {
+          // 残業・深夜・日曜出勤・欠勤だけを入力したケースも「データあり」として保存する
+          await createRecord.mutateAsync({ data: { employeeId: emp.id, year, month, ...payload } });
+          savedEmployeeIds.push(emp.id);
         }
       }
 
-      // 保存した社員の給与を続けて計算（確定済みはサーバが 409 で弾くので無視）。
-      // 失敗は個別に無視し、詳細なエラー表示は給与明細画面の一括計算に委ねる。
+      // 保存した社員の給与を計算する。確定済み(409)と、それ以外の失敗（BWで売上0円など）は
+      // 黙って捨てると「保存したのに明細が変わらない」形でしか気付けないので、分けて表示する。
       let calculated = 0;
       let confirmedSkipped = 0;
+      const failures: string[] = [];
       for (const employeeId of savedEmployeeIds) {
+        const name = employees.find((e) => e.id === employeeId)?.name ?? `社員ID ${employeeId}`;
         try {
           const res = await fetch(`${BASE}/api/payroll/calculate`, {
             method: "POST",
@@ -302,30 +306,50 @@ export default function MonthlyInput() {
             body: JSON.stringify({ employeeId, year, month }),
           });
           if (res.ok) calculated++;
-          // 確定済みはサーバが 409 で弾く。黙って無視すると「保存したのに明細が
-          // 変わらない」という形で表に出るため、件数を数えて明示する。
           else if (res.status === 409) confirmedSkipped++;
+          else {
+            const body = (await res.json().catch(() => null)) as { error?: string } | null;
+            failures.push(`${name}（${body?.error ?? `HTTP ${res.status}`}）`);
+          }
         } catch {
-          // 通信失敗は無視（給与明細画面の一括計算でエラー確認できる）
+          failures.push(`${name}（通信エラー）`);
         }
       }
 
+      const single = typeof target === "number";
+      const who = single ? `${targets[0].name}さん` : `${savedEmployeeIds.length}名分`;
+      const lines: string[] = [];
+      if (savedEmployeeIds.length === 0) {
+        lines.push("保存する実績がありません（入力がすべて0です）。");
+      } else if (single) {
+        lines.push(calculated > 0 ? `${month}月分の実績を保存し、給与を計算しました。` : `${month}月分の実績を保存しました。`);
+      } else {
+        lines.push(`${month}月分の実績${savedEmployeeIds.length}名分を保存し、${calculated}名分の給与を計算しました。`);
+      }
+      if (confirmedSkipped > 0) {
+        lines.push(`確定済みのため${confirmedSkipped}名分は再計算されていません。給与明細画面で確定を解除してから計算してください。`);
+      }
+      if (failures.length > 0) {
+        lines.push(`計算できなかった社員: ${failures.join("、")}`);
+      }
+      const problem = confirmedSkipped > 0 || failures.length > 0;
       toast({
-        title: confirmedSkipped > 0 ? "確定済みの明細は更新されていません" : "保存して計算しました",
-        description:
-          `${month}月分の実績${savedEmployeeIds.length}名分を保存し、${calculated}名分の給与を計算しました。` +
-          (confirmedSkipped > 0
-            ? `
-確定済みのため${confirmedSkipped}名分は再計算されていません。給与明細画面で確定を解除してから計算してください。`
-            : ""),
-        variant: confirmedSkipped > 0 ? "destructive" : undefined,
+        title: problem ? `${who}：一部の明細が更新されていません` : `${who}を保存して計算しました`,
+        description: lines.join("\n"),
+        variant: problem ? "destructive" : undefined,
       });
-      setDirtyIds(new Set());
+
+      // 処理した社員だけ「変更あり」を外す（1名分の保存で他の社員の未保存の変更を消さない）
+      setDirtyIds((prev) => {
+        const next = new Set(prev);
+        targetIds.forEach((id) => next.delete(id));
+        return next;
+      });
       queryClient.invalidateQueries({ queryKey: getListMonthlyRecordsQueryKey({ year, month }) });
     } catch {
       toast({ title: "エラー", description: "一部のデータの保存に失敗しました。", variant: "destructive" });
     } finally {
-      setSaving(false);
+      setSavingTarget(null);
     }
   };
 
@@ -422,16 +446,21 @@ export default function MonthlyInput() {
               </Button>
               <Button
                 size="sm"
-                onClick={handleSaveAll}
-                disabled={isLoading || saving || !employees.length}
+                onClick={() => saveAndCalculate([...dirtyIds], "dirty")}
+                disabled={isLoading || saving || dirtyCount === 0}
                 className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm"
+                title={
+                  dirtyCount > 0
+                    ? `変更した${dirtyCount}名分の実績を保存し、給与明細を計算します（変更していない社員は処理しません）`
+                    : "変更した社員がいません。全員を計算し直すときは給与明細画面の「一括計算」を使ってください"
+                }
               >
                 <Save className="mr-1.5 h-3.5 w-3.5" />
-                {saving
+                {savingTarget === "dirty"
                   ? "保存して計算中..."
                   : dirtyCount > 0
                   ? `${dirtyCount}名分を保存して計算`
-                  : "保存して計算"}
+                  : "変更なし"}
               </Button>
             </div>
           </div>
@@ -500,6 +529,21 @@ export default function MonthlyInput() {
                         {selectedEmployee.useBluewingLogic && <BWBadge />}
                       </div>
                     </div>
+                    <Button
+                      variant={dirtyIds.has(selectedEmployee.id) ? "default" : "outline"}
+                      size="sm"
+                      className={`gap-1.5 shrink-0 ${
+                        dirtyIds.has(selectedEmployee.id) ? "bg-indigo-600 hover:bg-indigo-700 text-white" : ""
+                      }`}
+                      onClick={() => saveAndCalculate([selectedEmployee.id], selectedEmployee.id)}
+                      disabled={isLoading || saving}
+                      title={`${selectedEmployee.name}さんだけ実績を保存し、給与明細を計算します`}
+                    >
+                      <Save className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">
+                        {savingTarget === selectedEmployee.id ? "計算中..." : "この社員を保存して計算"}
+                      </span>
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
