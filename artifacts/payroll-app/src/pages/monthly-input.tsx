@@ -188,9 +188,18 @@ export default function MonthlyInput() {
     applyAttendanceSummary(edits, true);
   }, [applyAttendanceSummary, edits]);
 
-  // DB データロード後に編集状態を初期化（旧実装と同ロジック）
+  // DB データロード後に編集状態を初期化する。
+  // 社員一覧・月次実績が再取得されるたびに走るので、同じ月のうちは「未保存の編集がある社員」の
+  // 入力を保持する。以前は全員をDBの値で作り直していたため、手当・控除の自動保存が社員一覧を
+  // 再取得した瞬間に、入力途中の残業時間などが巻き戻っていた（実ブラウザ検証で発覚）。
+  // 月を切り替えたときは、前の月の編集を持ち越さないよう全員を作り直す。
+  const editsMonthRef = useRef<string | null>(null);
   useEffect(() => {
     if (!employees.length || !monthlyRecords) return;
+
+    const monthKey = `${year}-${month}`;
+    const sameMonth = editsMonthRef.current === monthKey;
+    const keepIds = sameMonth ? new Set(dirtyIdsRef.current) : new Set<number>();
 
     const initialEdits: Record<number, RowData> = {};
     employees.forEach((emp) => {
@@ -210,9 +219,17 @@ export default function MonthlyInput() {
         };
       }
     });
-    setEdits(initialEdits);
-    setDirtyIds(new Set());
-  }, [employees, monthlyRecords]);
+    setEdits((prev) => {
+      if (keepIds.size === 0) return initialEdits;
+      const merged = { ...initialEdits };
+      keepIds.forEach((id) => {
+        if (prev[id]) merged[id] = prev[id];
+      });
+      return merged;
+    });
+    if (!sameMonth) setDirtyIds(new Set());
+    editsMonthRef.current = monthKey;
+  }, [employees, monthlyRecords, year, month]);
 
   const handleEditChange = (employeeId: number, field: string, value: string) => {
     setEdits((prev) => ({
@@ -546,6 +563,7 @@ export default function MonthlyInput() {
                           employee={selectedEmployee}
                           year={year}
                           month={month}
+                          hasMonthlyRecord={!!monthlyRecords?.some((r) => r.employeeId === selectedEmployee.id)}
                           monthlyData={{
                             workDays: Number(edits[selectedEmployee.id]?.workDays) || 0,
                             saturdayWorkDays: Number(edits[selectedEmployee.id]?.saturdayWorkDays) || 0,
