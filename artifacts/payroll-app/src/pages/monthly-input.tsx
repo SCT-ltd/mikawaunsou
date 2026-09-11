@@ -24,6 +24,7 @@ import {
   Users,
 } from "lucide-react";
 import { AttendanceCalendarDialog } from "@/components/attendance-calendar-dialog";
+import { HelpTip } from "@/components/help-tip";
 import { useNavigationGuard } from "@/context/navigation-guard-context";
 import {
   EmployeeExt,
@@ -414,6 +415,31 @@ export default function MonthlyInput() {
   const selectedIdx = filtered.findIndex((e) => e.id === selectedId);
   const dirtyCount = dirtyIds.size;
 
+  // ── ボタンのツールチップ（カーソルを置くと出る詳しい説明）──
+  const dirtyNames = employees.filter((e) => dirtyIds.has(e.id)).map((e) => e.name);
+  const dirtyNamesLabel = dirtyNames.length > 5
+    ? `${dirtyNames.slice(0, 5).join("、")} ほか${dirtyNames.length - 5}名`
+    : dirtyNames.join("、");
+  const importTip =
+    `打刻データを集計して、${month}月分の実績入力欄に反映します（まだ保存はされません）。\n` +
+    "・反映する項目：平日出勤・土曜出勤・日曜祝日の時間・欠勤・有給・残業時間・走行距離・実働時間\n" +
+    "・深夜時間は打刻から集計できないため反映しません\n" +
+    "・手入力した値は打刻の値で上書きされます（未保存の入力がある社員は確認が出ます）\n" +
+    "・反映した社員は「変更あり」になるので、確認後に「保存して計算」を押してください";
+  const saveDirtyTip = savingTarget === "dirty"
+    ? "変更した社員の実績を保存し、給与明細を計算しています…"
+    : dirtyCount > 0
+    ? `変更した${dirtyCount}名分の実績を保存し、給与明細を計算します。\n` +
+      `対象：${dirtyNamesLabel}\n` +
+      "・変更していない社員は保存も計算もしません\n" +
+      "・未確定の明細は前回と同じ計算方法で計算します（その月の明細がまだ無い社員は自動計算）\n" +
+      "・確定済みの明細は計算しません\n" +
+      "・手当の金額は「手当・控除」タブで自動保存されます"
+    : "変更した社員がいないため押せません。\n" +
+      "「実績入力」タブで数値を変えると押せるようになります。\n" +
+      "全員をまとめて計算し直すときは、給与明細画面の「一括計算」を使ってください。";
+
+
   return (
     <AppLayout fullWidth>
       <div className="flex flex-col h-[calc(100dvh-9.5rem)] md:h-[calc(100dvh-5.5rem)]">
@@ -433,35 +459,33 @@ export default function MonthlyInput() {
             </div>
             <div className="flex items-center gap-2 ml-auto flex-wrap">
               <RichMonthPicker year={year} month={month} onChange={(y, m) => { setYear(y); setMonth(m); }} />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleImportAttendance}
-                disabled={isLoading || importing || saving || !employees.length}
-                title="打刻データから出勤日数・残業時間を自動入力します。※勤怠系の項目に手入力した値は打刻データで上書きされます（先に反映→その後で手修正→保存の順で操作してください）"
-              >
-                <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${importing ? "animate-spin" : ""}`} />
-                <span className="hidden sm:inline">{importing ? "取り込み中..." : "勤怠から一括反映"}</span>
-                <span className="sm:hidden">{importing ? "取込中..." : "勤怠反映"}</span>
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => saveAndCalculate([...dirtyIds], "dirty")}
-                disabled={isLoading || saving || dirtyCount === 0}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm"
-                title={
-                  dirtyCount > 0
-                    ? `変更した${dirtyCount}名分の実績を保存し、給与明細を計算します（変更していない社員は処理しません）`
-                    : "変更した社員がいません。全員を計算し直すときは給与明細画面の「一括計算」を使ってください"
-                }
-              >
-                <Save className="mr-1.5 h-3.5 w-3.5" />
-                {savingTarget === "dirty"
-                  ? "保存して計算中..."
-                  : dirtyCount > 0
-                  ? `${dirtyCount}名分を保存して計算`
-                  : "変更なし"}
-              </Button>
+              <HelpTip content={importTip}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleImportAttendance}
+                  disabled={isLoading || importing || saving || !employees.length}
+                >
+                  <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${importing ? "animate-spin" : ""}`} />
+                  <span className="hidden sm:inline">{importing ? "取り込み中..." : "勤怠から一括反映"}</span>
+                  <span className="sm:hidden">{importing ? "取込中..." : "勤怠反映"}</span>
+                </Button>
+              </HelpTip>
+              <HelpTip content={saveDirtyTip} align="end">
+                <Button
+                  size="sm"
+                  onClick={() => saveAndCalculate([...dirtyIds], "dirty")}
+                  disabled={isLoading || saving || dirtyCount === 0}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm"
+                >
+                  <Save className="mr-1.5 h-3.5 w-3.5" />
+                  {savingTarget === "dirty"
+                    ? "保存して計算中..."
+                    : dirtyCount > 0
+                    ? `${dirtyCount}名分を保存して計算`
+                    : "変更なし"}
+                </Button>
+              </HelpTip>
             </div>
           </div>
         </div>
@@ -529,54 +553,91 @@ export default function MonthlyInput() {
                         {selectedEmployee.useBluewingLogic && <BWBadge />}
                       </div>
                     </div>
-                    <Button
-                      variant={dirtyIds.has(selectedEmployee.id) ? "default" : "outline"}
-                      size="sm"
-                      className={`gap-1.5 shrink-0 ${
-                        dirtyIds.has(selectedEmployee.id) ? "bg-indigo-600 hover:bg-indigo-700 text-white" : ""
-                      }`}
-                      onClick={() => saveAndCalculate([selectedEmployee.id], selectedEmployee.id)}
-                      disabled={isLoading || saving}
-                      title={`${selectedEmployee.name}さんだけ実績を保存し、給与明細を計算します`}
+                    <HelpTip
+                      align="end"
+                      content={
+                        `${selectedEmployee.name}さんの${month}月分の実績だけを保存し、給与明細を計算します。\n` +
+                        "・他の社員の未保存の変更はそのまま残ります\n" +
+                        `・未保存の変更：${dirtyIds.has(selectedEmployee.id) ? "あり（ボタンが青色）" : "なし"}\n` +
+                        "・確定済みの明細は計算しません\n" +
+                        "・手当の金額は「手当・控除」タブで自動保存されます"
+                      }
                     >
-                      <Save className="h-3.5 w-3.5" />
-                      <span className="hidden sm:inline">
-                        {savingTarget === selectedEmployee.id ? "計算中..." : "この社員を保存して計算"}
-                      </span>
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="gap-1.5 shrink-0"
-                      onClick={() => setCalendarOpen(true)}
-                      title="勤怠カレンダーを表示"
+                      <Button
+                        variant={dirtyIds.has(selectedEmployee.id) ? "default" : "outline"}
+                        size="sm"
+                        className={`gap-1.5 shrink-0 ${
+                          dirtyIds.has(selectedEmployee.id) ? "bg-indigo-600 hover:bg-indigo-700 text-white" : ""
+                        }`}
+                        onClick={() => saveAndCalculate([selectedEmployee.id], selectedEmployee.id)}
+                        disabled={isLoading || saving}
+                      >
+                        <Save className="h-3.5 w-3.5" />
+                        <span className="hidden sm:inline">
+                          {savingTarget === selectedEmployee.id ? "計算中..." : "この社員を保存して計算"}
+                        </span>
+                      </Button>
+                    </HelpTip>
+                    <HelpTip
+                      align="end"
+                      content={
+                        `${selectedEmployee.name}さんの打刻を、月のカレンダーで表示します。\n` +
+                        "・出勤した日に丸印が付きます\n" +
+                        "・日付を押すと、出勤・休憩・退勤の時刻を確認できます\n" +
+                        "・表示のみで、ここから打刻や実績は変更できません"
+                      }
                     >
-                      <CalIcon className="h-3.5 w-3.5" />
-                      <span className="hidden sm:inline">勤怠カレンダー</span>
-                    </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5 shrink-0"
+                        onClick={() => setCalendarOpen(true)}
+                      >
+                        <CalIcon className="h-3.5 w-3.5" />
+                        <span className="hidden sm:inline">勤怠カレンダー</span>
+                      </Button>
+                    </HelpTip>
                     {/* 前へ／次へ */}
                     <div className="hidden md:flex items-center border rounded-md overflow-hidden shrink-0">
-                      <button
-                        type="button"
-                        className="p-1.5 hover:bg-muted transition-colors disabled:opacity-30 disabled:pointer-events-none"
-                        onClick={() => moveSelection(-1)}
-                        disabled={selectedIdx <= 0}
-                        title="前の社員（Ctrl+↑）"
+                      <HelpTip
+                        align="end"
+                        content={
+                          selectedIdx <= 0
+                            ? "先頭の社員です。"
+                            : "前の社員に移動します（Ctrl+↑）。\n左のリストの並び順（検索中は検索結果の順）で移動します。"
+                        }
                       >
-                        <ChevronLeft className="h-4 w-4" />
-                      </button>
+                        <button
+                          type="button"
+                          className="p-1.5 hover:bg-muted transition-colors disabled:opacity-30 disabled:pointer-events-none"
+                          onClick={() => moveSelection(-1)}
+                          disabled={selectedIdx <= 0}
+                          aria-label="前の社員"
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                        </button>
+                      </HelpTip>
                       <span className="px-1.5 text-[11px] text-muted-foreground amount border-x">
                         {selectedIdx + 1}/{filtered.length}
                       </span>
-                      <button
-                        type="button"
-                        className="p-1.5 hover:bg-muted transition-colors disabled:opacity-30 disabled:pointer-events-none"
-                        onClick={() => moveSelection(1)}
-                        disabled={selectedIdx === -1 || selectedIdx >= filtered.length - 1}
-                        title="次の社員（Ctrl+↓）"
+                      <HelpTip
+                        align="end"
+                        content={
+                          selectedIdx === -1 || selectedIdx >= filtered.length - 1
+                            ? "最後の社員です。"
+                            : "次の社員に移動します（Ctrl+↓）。\n左のリストの並び順（検索中は検索結果の順）で移動します。"
+                        }
                       >
-                        <ChevronRight className="h-4 w-4" />
-                      </button>
+                        <button
+                          type="button"
+                          className="p-1.5 hover:bg-muted transition-colors disabled:opacity-30 disabled:pointer-events-none"
+                          onClick={() => moveSelection(1)}
+                          disabled={selectedIdx === -1 || selectedIdx >= filtered.length - 1}
+                          aria-label="次の社員"
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
+                      </HelpTip>
                     </div>
                   </div>
 
