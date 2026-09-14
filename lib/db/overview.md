@@ -42,7 +42,7 @@ PostgreSQL への接続（pg `Pool`）と Drizzle ORM のスキーマ定義を�
   - `standard_remuneration_history`: `employee_id`（社員削除でカスケード）、適用開始（社員×年月で一意）、`amount`、`reason`（teiji/zuiji/shikaku/other）、`note`。
   - `payrolls` に計算に使った基準のスナップショット列を追加（すべて null 可。この変更より前の明細は null）: `applied_standard_remuneration`、`applied_health_insurance_rate`、`applied_care_insurance_rate`（介護対象外は0）、`applied_childcare_support_rate`、`applied_pension_rate`、`applied_employment_insurance_rate`。
   - `company.employment_insurance_rate` / `health_insurance_employee_rate` などの会社設定の料率列は、計算では使わなくなった（料率の表が空のときの初期値として雇用保険料率だけ読む）。列は残置。
-  - **本番反映には NAS 側で `drizzle-kit push` が必要**（新テーブル2つ＋`payrolls` の null 可の列追加のみで、既存データは変わらない）。
+  - 本番反映: 2026-09-14 に `deploy/release-2026-09-14-insurance.ps1` と同じ DDL（CREATE TABLE IF NOT EXISTS ×2、ADD COLUMN IF NOT EXISTS ×6）を NAS の db コンテナに適用済み（既存の明細106件は不変）。料率の初期行は、API への初回アクセス時に自動で作られる。
 
 - 2026-08-26 有給の日数管理のため2列追加: `monthly_records.paid_leave_days`（0.5=半休。欠勤控除の対象にしない）、`payrolls.paid_leave_days`（明細表示用スナップショット）。いずれも `notNull().default(0)`。**本番反映には NAS 側で列追加が必要**。
 - 2026-08-26 日曜出勤の時間計算化に伴い2列追加: `monthly_records.sunday_work_hours`（日曜・祝日の出勤時間。会社設定 `company.hourly_wage_sunday`（既定1,655）と掛けて手当を算出）、`payrolls.holiday_work_hours`（明細の勤怠欄表示用スナップショット）。いずれも `notNull().default(0)`。既存の `sunday_work_days` / `holiday_work_days` は過去データの表示互換のため残置（金額計算には使わない）。**本番反映には NAS 側で `drizzle-kit push` が必要**。
