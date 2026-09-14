@@ -39,6 +39,7 @@ import {
   BWBadge,
 } from "@/components/monthly-input/employee-list";
 import { RecordForm } from "@/components/monthly-input/record-form";
+import { useMonthInsurance } from "@/lib/insurance-rates";
 import { AllowancePanel } from "@/components/monthly-input/allowance-panel";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -59,6 +60,8 @@ export default function MonthlyInput() {
   const { data: employeesData, isLoading: employeesLoading } = useListEmployees({ active: true });
   const { data: monthlyRecords, isLoading: recordsLoading } = useListMonthlyRecords({ year, month });
   const { data: companyData } = useGetCompany();
+  // 表示中の月の保険料率・標準報酬月額（マスターの履歴）。社員一覧・実績入力の手取り概算に使う
+  const monthInsurance = useMonthInsurance(year, month);
   const company = companyData as CompanySettings | undefined;
 
   const employees: EmployeeExt[] = useMemo(() => employeesData ?? [], [employeesData]);
@@ -519,6 +522,7 @@ export default function MonthlyInput() {
                 edits={edits}
                 dirtyIds={dirtyIds}
                 company={company}
+                insurance={monthInsurance}
                 search={search}
                 onSearchChange={setSearch}
               />
@@ -663,6 +667,7 @@ export default function MonthlyInput() {
                           rowData={edits[selectedEmployee.id] ?? {}}
                           onChange={(field, value) => handleEditChange(selectedEmployee.id, field, value)}
                           company={company}
+                          insurance={monthInsurance}
                         />
                       </TabsContent>
                       <TabsContent value="allowance" className="mt-0 data-[state=inactive]:hidden" forceMount>

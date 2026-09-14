@@ -18,16 +18,20 @@ import type {
 
 import type {
   AllowanceDefinition,
+  BulkStandardRemunerationBody,
   CalculatePayrollBody,
   Company,
   CreateAllowanceDefinitionBody,
   CreateDeductionDefinitionBody,
   CreateEmployeeBody,
   CreateMonthlyRecordBody,
+  CreateStandardRemunerationHistoryBody,
   DashboardSummary,
   DeductionDefinition,
   DeleteCalendarOverrides200,
   DeleteCalendarOverridesParams,
+  EffectiveInsuranceRates,
+  EffectiveStandardRemuneration,
   Employee,
   EmployeeAllowance,
   EmployeeDeduction,
@@ -35,11 +39,15 @@ import type {
   GenerateJournalEntriesBody,
   GetCalendarOverrides200,
   GetDashboardSummaryParams,
+  GetEffectiveInsuranceRatesParams,
   GetPendingEmployeesParams,
   HealthStatus,
+  InsuranceRatePeriod,
+  InsuranceRatePeriodBody,
   JournalEntry,
   ListAllowanceDefinitionsParams,
   ListDeductionDefinitionsParams,
+  ListEffectiveStandardRemunerationParams,
   ListEmployeesParams,
   ListJournalEntriesParams,
   ListMonthlyRecordsParams,
@@ -50,6 +58,7 @@ import type {
   PendingEmployee,
   SetCalendarOverride200,
   SetCalendarOverrideBody,
+  StandardRemunerationHistory,
   UpdateAllowanceDefinitionBody,
   UpdateCompanyBody,
   UpdateDeductionDefinitionBody,
@@ -3609,4 +3618,932 @@ export const useUpdateEmployeeDeductions = <
   TContext
 > => {
   return useMutation(getUpdateEmployeeDeductionsMutationOptions(options));
+};
+
+/**
+ * @summary 保険料率の履歴一覧（適用開始の古い順。空なら初期行を作って返す）
+ */
+export const getListInsuranceRatePeriodsUrl = () => {
+  return `/api/insurance-rate-periods`;
+};
+
+export const listInsuranceRatePeriods = async (
+  options?: RequestInit,
+): Promise<InsuranceRatePeriod[]> => {
+  return customFetch<InsuranceRatePeriod[]>(getListInsuranceRatePeriodsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListInsuranceRatePeriodsQueryKey = () => {
+  return [`/api/insurance-rate-periods`] as const;
+};
+
+export const getListInsuranceRatePeriodsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listInsuranceRatePeriods>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listInsuranceRatePeriods>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListInsuranceRatePeriodsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listInsuranceRatePeriods>>
+  > = ({ signal }) => listInsuranceRatePeriods({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listInsuranceRatePeriods>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListInsuranceRatePeriodsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listInsuranceRatePeriods>>
+>;
+export type ListInsuranceRatePeriodsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary 保険料率の履歴一覧（適用開始の古い順。空なら初期行を作って返す）
+ */
+
+export function useListInsuranceRatePeriods<
+  TData = Awaited<ReturnType<typeof listInsuranceRatePeriods>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listInsuranceRatePeriods>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListInsuranceRatePeriodsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary 保険料率の行を追加
+ */
+export const getCreateInsuranceRatePeriodUrl = () => {
+  return `/api/insurance-rate-periods`;
+};
+
+export const createInsuranceRatePeriod = async (
+  insuranceRatePeriodBody: InsuranceRatePeriodBody,
+  options?: RequestInit,
+): Promise<InsuranceRatePeriod> => {
+  return customFetch<InsuranceRatePeriod>(getCreateInsuranceRatePeriodUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(insuranceRatePeriodBody),
+  });
+};
+
+export const getCreateInsuranceRatePeriodMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createInsuranceRatePeriod>>,
+    TError,
+    { data: BodyType<InsuranceRatePeriodBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createInsuranceRatePeriod>>,
+  TError,
+  { data: BodyType<InsuranceRatePeriodBody> },
+  TContext
+> => {
+  const mutationKey = ["createInsuranceRatePeriod"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createInsuranceRatePeriod>>,
+    { data: BodyType<InsuranceRatePeriodBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createInsuranceRatePeriod(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateInsuranceRatePeriodMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createInsuranceRatePeriod>>
+>;
+export type CreateInsuranceRatePeriodMutationBody =
+  BodyType<InsuranceRatePeriodBody>;
+export type CreateInsuranceRatePeriodMutationError = ErrorType<unknown>;
+
+/**
+ * @summary 保険料率の行を追加
+ */
+export const useCreateInsuranceRatePeriod = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createInsuranceRatePeriod>>,
+    TError,
+    { data: BodyType<InsuranceRatePeriodBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createInsuranceRatePeriod>>,
+  TError,
+  { data: BodyType<InsuranceRatePeriodBody> },
+  TContext
+> => {
+  return useMutation(getCreateInsuranceRatePeriodMutationOptions(options));
+};
+
+/**
+ * @summary 保険料率の行を更新
+ */
+export const getUpdateInsuranceRatePeriodUrl = (id: number) => {
+  return `/api/insurance-rate-periods/${id}`;
+};
+
+export const updateInsuranceRatePeriod = async (
+  id: number,
+  insuranceRatePeriodBody: InsuranceRatePeriodBody,
+  options?: RequestInit,
+): Promise<InsuranceRatePeriod> => {
+  return customFetch<InsuranceRatePeriod>(getUpdateInsuranceRatePeriodUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(insuranceRatePeriodBody),
+  });
+};
+
+export const getUpdateInsuranceRatePeriodMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateInsuranceRatePeriod>>,
+    TError,
+    { id: number; data: BodyType<InsuranceRatePeriodBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateInsuranceRatePeriod>>,
+  TError,
+  { id: number; data: BodyType<InsuranceRatePeriodBody> },
+  TContext
+> => {
+  const mutationKey = ["updateInsuranceRatePeriod"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateInsuranceRatePeriod>>,
+    { id: number; data: BodyType<InsuranceRatePeriodBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateInsuranceRatePeriod(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateInsuranceRatePeriodMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateInsuranceRatePeriod>>
+>;
+export type UpdateInsuranceRatePeriodMutationBody =
+  BodyType<InsuranceRatePeriodBody>;
+export type UpdateInsuranceRatePeriodMutationError = ErrorType<unknown>;
+
+/**
+ * @summary 保険料率の行を更新
+ */
+export const useUpdateInsuranceRatePeriod = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateInsuranceRatePeriod>>,
+    TError,
+    { id: number; data: BodyType<InsuranceRatePeriodBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateInsuranceRatePeriod>>,
+  TError,
+  { id: number; data: BodyType<InsuranceRatePeriodBody> },
+  TContext
+> => {
+  return useMutation(getUpdateInsuranceRatePeriodMutationOptions(options));
+};
+
+/**
+ * @summary 保険料率の行を削除（最後の1行は削除不可）
+ */
+export const getDeleteInsuranceRatePeriodUrl = (id: number) => {
+  return `/api/insurance-rate-periods/${id}`;
+};
+
+export const deleteInsuranceRatePeriod = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteInsuranceRatePeriodUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteInsuranceRatePeriodMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteInsuranceRatePeriod>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteInsuranceRatePeriod>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteInsuranceRatePeriod"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteInsuranceRatePeriod>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteInsuranceRatePeriod(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteInsuranceRatePeriodMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteInsuranceRatePeriod>>
+>;
+
+export type DeleteInsuranceRatePeriodMutationError = ErrorType<unknown>;
+
+/**
+ * @summary 保険料率の行を削除（最後の1行は削除不可）
+ */
+export const useDeleteInsuranceRatePeriod = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteInsuranceRatePeriod>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteInsuranceRatePeriod>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteInsuranceRatePeriodMutationOptions(options));
+};
+
+/**
+ * @summary 給与明細の年月に適用される保険料率
+ */
+export const getGetEffectiveInsuranceRatesUrl = (
+  params: GetEffectiveInsuranceRatesParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/insurance-rates/effective?${stringifiedParams}`
+    : `/api/insurance-rates/effective`;
+};
+
+export const getEffectiveInsuranceRates = async (
+  params: GetEffectiveInsuranceRatesParams,
+  options?: RequestInit,
+): Promise<EffectiveInsuranceRates> => {
+  return customFetch<EffectiveInsuranceRates>(
+    getGetEffectiveInsuranceRatesUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetEffectiveInsuranceRatesQueryKey = (
+  params?: GetEffectiveInsuranceRatesParams,
+) => {
+  return [
+    `/api/insurance-rates/effective`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetEffectiveInsuranceRatesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEffectiveInsuranceRates>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetEffectiveInsuranceRatesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEffectiveInsuranceRates>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetEffectiveInsuranceRatesQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getEffectiveInsuranceRates>>
+  > = ({ signal }) =>
+    getEffectiveInsuranceRates(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEffectiveInsuranceRates>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEffectiveInsuranceRatesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEffectiveInsuranceRates>>
+>;
+export type GetEffectiveInsuranceRatesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary 給与明細の年月に適用される保険料率
+ */
+
+export function useGetEffectiveInsuranceRates<
+  TData = Awaited<ReturnType<typeof getEffectiveInsuranceRates>>,
+  TError = ErrorType<unknown>,
+>(
+  params: GetEffectiveInsuranceRatesParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEffectiveInsuranceRates>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEffectiveInsuranceRatesQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary 社員の標準報酬月額の履歴（適用開始の新しい順）
+ */
+export const getListStandardRemunerationHistoryUrl = (id: number) => {
+  return `/api/employees/${id}/standard-remuneration-history`;
+};
+
+export const listStandardRemunerationHistory = async (
+  id: number,
+  options?: RequestInit,
+): Promise<StandardRemunerationHistory[]> => {
+  return customFetch<StandardRemunerationHistory[]>(
+    getListStandardRemunerationHistoryUrl(id),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListStandardRemunerationHistoryQueryKey = (id: number) => {
+  return [`/api/employees/${id}/standard-remuneration-history`] as const;
+};
+
+export const getListStandardRemunerationHistoryQueryOptions = <
+  TData = Awaited<ReturnType<typeof listStandardRemunerationHistory>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listStandardRemunerationHistory>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListStandardRemunerationHistoryQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listStandardRemunerationHistory>>
+  > = ({ signal }) =>
+    listStandardRemunerationHistory(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listStandardRemunerationHistory>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListStandardRemunerationHistoryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listStandardRemunerationHistory>>
+>;
+export type ListStandardRemunerationHistoryQueryError = ErrorType<unknown>;
+
+/**
+ * @summary 社員の標準報酬月額の履歴（適用開始の新しい順）
+ */
+
+export function useListStandardRemunerationHistory<
+  TData = Awaited<ReturnType<typeof listStandardRemunerationHistory>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listStandardRemunerationHistory>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListStandardRemunerationHistoryQueryOptions(
+    id,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary 社員の標準報酬月額の履歴を追加（同じ適用開始の年月は上書き）
+ */
+export const getCreateStandardRemunerationHistoryUrl = (id: number) => {
+  return `/api/employees/${id}/standard-remuneration-history`;
+};
+
+export const createStandardRemunerationHistory = async (
+  id: number,
+  createStandardRemunerationHistoryBody: CreateStandardRemunerationHistoryBody,
+  options?: RequestInit,
+): Promise<StandardRemunerationHistory> => {
+  return customFetch<StandardRemunerationHistory>(
+    getCreateStandardRemunerationHistoryUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(createStandardRemunerationHistoryBody),
+    },
+  );
+};
+
+export const getCreateStandardRemunerationHistoryMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createStandardRemunerationHistory>>,
+    TError,
+    { id: number; data: BodyType<CreateStandardRemunerationHistoryBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createStandardRemunerationHistory>>,
+  TError,
+  { id: number; data: BodyType<CreateStandardRemunerationHistoryBody> },
+  TContext
+> => {
+  const mutationKey = ["createStandardRemunerationHistory"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createStandardRemunerationHistory>>,
+    { id: number; data: BodyType<CreateStandardRemunerationHistoryBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return createStandardRemunerationHistory(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateStandardRemunerationHistoryMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createStandardRemunerationHistory>>
+>;
+export type CreateStandardRemunerationHistoryMutationBody =
+  BodyType<CreateStandardRemunerationHistoryBody>;
+export type CreateStandardRemunerationHistoryMutationError = ErrorType<unknown>;
+
+/**
+ * @summary 社員の標準報酬月額の履歴を追加（同じ適用開始の年月は上書き）
+ */
+export const useCreateStandardRemunerationHistory = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createStandardRemunerationHistory>>,
+    TError,
+    { id: number; data: BodyType<CreateStandardRemunerationHistoryBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createStandardRemunerationHistory>>,
+  TError,
+  { id: number; data: BodyType<CreateStandardRemunerationHistoryBody> },
+  TContext
+> => {
+  return useMutation(
+    getCreateStandardRemunerationHistoryMutationOptions(options),
+  );
+};
+
+/**
+ * @summary 社員の標準報酬月額の履歴を削除
+ */
+export const getDeleteStandardRemunerationHistoryUrl = (
+  id: number,
+  historyId: number,
+) => {
+  return `/api/employees/${id}/standard-remuneration-history/${historyId}`;
+};
+
+export const deleteStandardRemunerationHistory = async (
+  id: number,
+  historyId: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(
+    getDeleteStandardRemunerationHistoryUrl(id, historyId),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getDeleteStandardRemunerationHistoryMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteStandardRemunerationHistory>>,
+    TError,
+    { id: number; historyId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteStandardRemunerationHistory>>,
+  TError,
+  { id: number; historyId: number },
+  TContext
+> => {
+  const mutationKey = ["deleteStandardRemunerationHistory"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteStandardRemunerationHistory>>,
+    { id: number; historyId: number }
+  > = (props) => {
+    const { id, historyId } = props ?? {};
+
+    return deleteStandardRemunerationHistory(id, historyId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteStandardRemunerationHistoryMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteStandardRemunerationHistory>>
+>;
+
+export type DeleteStandardRemunerationHistoryMutationError = ErrorType<unknown>;
+
+/**
+ * @summary 社員の標準報酬月額の履歴を削除
+ */
+export const useDeleteStandardRemunerationHistory = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteStandardRemunerationHistory>>,
+    TError,
+    { id: number; historyId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteStandardRemunerationHistory>>,
+  TError,
+  { id: number; historyId: number },
+  TContext
+> => {
+  return useMutation(
+    getDeleteStandardRemunerationHistoryMutationOptions(options),
+  );
+};
+
+/**
+ * @summary 全社員の、給与明細の年月に使う標準報酬月額
+ */
+export const getListEffectiveStandardRemunerationUrl = (
+  params: ListEffectiveStandardRemunerationParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/standard-remuneration/effective?${stringifiedParams}`
+    : `/api/standard-remuneration/effective`;
+};
+
+export const listEffectiveStandardRemuneration = async (
+  params: ListEffectiveStandardRemunerationParams,
+  options?: RequestInit,
+): Promise<EffectiveStandardRemuneration[]> => {
+  return customFetch<EffectiveStandardRemuneration[]>(
+    getListEffectiveStandardRemunerationUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListEffectiveStandardRemunerationQueryKey = (
+  params?: ListEffectiveStandardRemunerationParams,
+) => {
+  return [
+    `/api/standard-remuneration/effective`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getListEffectiveStandardRemunerationQueryOptions = <
+  TData = Awaited<ReturnType<typeof listEffectiveStandardRemuneration>>,
+  TError = ErrorType<unknown>,
+>(
+  params: ListEffectiveStandardRemunerationParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEffectiveStandardRemuneration>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getListEffectiveStandardRemunerationQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listEffectiveStandardRemuneration>>
+  > = ({ signal }) =>
+    listEffectiveStandardRemuneration(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listEffectiveStandardRemuneration>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListEffectiveStandardRemunerationQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listEffectiveStandardRemuneration>>
+>;
+export type ListEffectiveStandardRemunerationQueryError = ErrorType<unknown>;
+
+/**
+ * @summary 全社員の、給与明細の年月に使う標準報酬月額
+ */
+
+export function useListEffectiveStandardRemuneration<
+  TData = Awaited<ReturnType<typeof listEffectiveStandardRemuneration>>,
+  TError = ErrorType<unknown>,
+>(
+  params: ListEffectiveStandardRemunerationParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEffectiveStandardRemuneration>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListEffectiveStandardRemunerationQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary 標準報酬月額の一括登録（定時決定など。同じ適用開始の年月は上書き）
+ */
+export const getBulkCreateStandardRemunerationHistoryUrl = () => {
+  return `/api/standard-remuneration/bulk`;
+};
+
+export const bulkCreateStandardRemunerationHistory = async (
+  bulkStandardRemunerationBody: BulkStandardRemunerationBody,
+  options?: RequestInit,
+): Promise<StandardRemunerationHistory[]> => {
+  return customFetch<StandardRemunerationHistory[]>(
+    getBulkCreateStandardRemunerationHistoryUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(bulkStandardRemunerationBody),
+    },
+  );
+};
+
+export const getBulkCreateStandardRemunerationHistoryMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkCreateStandardRemunerationHistory>>,
+    TError,
+    { data: BodyType<BulkStandardRemunerationBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkCreateStandardRemunerationHistory>>,
+  TError,
+  { data: BodyType<BulkStandardRemunerationBody> },
+  TContext
+> => {
+  const mutationKey = ["bulkCreateStandardRemunerationHistory"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkCreateStandardRemunerationHistory>>,
+    { data: BodyType<BulkStandardRemunerationBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return bulkCreateStandardRemunerationHistory(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkCreateStandardRemunerationHistoryMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkCreateStandardRemunerationHistory>>
+>;
+export type BulkCreateStandardRemunerationHistoryMutationBody =
+  BodyType<BulkStandardRemunerationBody>;
+export type BulkCreateStandardRemunerationHistoryMutationError =
+  ErrorType<unknown>;
+
+/**
+ * @summary 標準報酬月額の一括登録（定時決定など。同じ適用開始の年月は上書き）
+ */
+export const useBulkCreateStandardRemunerationHistory = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkCreateStandardRemunerationHistory>>,
+    TError,
+    { data: BodyType<BulkStandardRemunerationBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkCreateStandardRemunerationHistory>>,
+  TError,
+  { data: BodyType<BulkStandardRemunerationBody> },
+  TContext
+> => {
+  return useMutation(
+    getBulkCreateStandardRemunerationHistoryMutationOptions(options),
+  );
 };

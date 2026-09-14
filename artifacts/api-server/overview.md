@@ -11,7 +11,9 @@
 - `src/routes/index.ts` — 全ルートを `/api` にマウント。prefix ベースの `requireAdmin` 認可、公開フロー判定 `isPublicDriverFlowRequest()`
 - `src/routes/*.ts` — 機能別ルート（`auth`, `employees`, `payroll`, `monthly_records`, `attendance`, `allowances`, `absences`, `calendar`, `company`, `dashboard`, `journal_entries`, `messages`, `users`, `health`）
 - `src/lib/payroll-calculator.ts` — 給与計算エンジン（基本給/残業/深夜/歩合/源泉税/社保）
-- `src/lib/tax-tables-reiwa8.ts` — 令和8年テーブル（共有 lib のラッパ）。値変更は要出典
+- `src/lib/tax-tables-reiwa8.ts` — 令和8年テーブル（共有 lib のラッパ）。値変更は要出典。`calculateInsuranceAndTax` は `insuranceRates`（本人負担率）を受け取れる（省略時は令和8年度の内蔵値）
+- `src/lib/insurance-settings.ts` — 保険料率マスター・標準報酬月額の履歴から「給与明細の年月」に効く値を解決（`getEffectiveInsuranceRates` / `getEffectiveStandardRemuneration`）。料率の表が空なら初期行を作る
+- `src/routes/insurance.ts` — 保険料率マスター（`/insurance-rate-periods`、`/insurance-rates/effective`）と標準報酬月額の履歴（`/employees/:id/standard-remuneration-history`、`/standard-remuneration/effective`、`/standard-remuneration/bulk`）
 - `src/lib/auth-middleware.ts` — `requireOwnerOrAdmin` 系（未ログイン通過・ログイン中は本人のみ）
 - `src/lib/params.ts` — Express 5 の route params を string に強制（TS2345 対策、コミット c8e6ea9）
 - `src/lib/logger.ts` — pino ロガー
@@ -37,6 +39,13 @@
 - 未実装/弱点: 公開エンドポイントの本人性担保（body/URL の employeeId をそのまま採用。replit.md 参照）
 
 ## 決定事項
+
+- 2026-09-14 **社会保険・雇用保険の料率と標準報酬月額を、年度ごとにマスターで切り替えられるようにした**（ユーザー依頼：定時決定（R8.9適用）の通知書や料率改定のたびに、過去の月の計算を変えずに新しい値へ切り替えたい）。
+  - 以前: 健保9.85%・介護1.62%・支援金0.23%・厚年18.3% はプログラムに直書き、子ども・子育て支援金の開始（2026年4月の明細〜）は `isChildcareSupportApplicable()` に直書き、雇用保険は会社設定の1値、標準報酬月額は社員マスタの1値で、どれも履歴が無かった。値を書き換えるとそれ以降に計算する全ての月に効き、「9月分から変える」ができなかった。
+  - 仕様: 新テーブル `insurance_rate_periods`（料率の履歴）と `standard_remuneration_history`（社員ごとの標準報酬月額の履歴）。**適用開始は給与明細の年月**（`payrolls.year/month`）で数え、「その月以前でいちばん新しい行」を使う。料率は保険料額表の「合計」の率で持ち本人負担は半分にする（雇用保険だけ本人負担の率）。標準報酬月額は該当する履歴が無い月は社員マスタの値（初期値）を使う。
+  - 3つの計算分岐（manual / BW / 標準）すべてがこの値を使う。計算に使った標準報酬月額と料率を `payrolls.applied_*` に複写（明細印刷の健保・厚年の内訳もこれを使う）。
+  - 移行: 料率の表が空なら初回アクセス時に初期行を2行作る（2000年1月〜: 支援金0%、2026年4月〜: 支援金0.23%。雇用保険は会社設定の値）。**既存の計算結果を変えないため、本番の雇用保険料率 0.0005 もそのまま引き継ぐ**（正しい値は社労士に確認のうえ画面で直す）。
+  - 検証: 変更前のビルドと変更後のビルドを同じ検証DBで並べ、社員条件4種（標準報酬あり・未設定、厚年上限超え・70歳以上、全額非課税・雇保対象外）× BW有無 × 3/8/9/10月 × manual/auto の112件を比較し、**2026年4月以降は全項目一致**。2026年3月（支援金の開始前）の8件だけ源泉所得税が 70〜110円高くなる：旧コードは支援金を0円にする前に「支援金を控除した額」で所得税を出していたため（実際には引いていない支援金で税を下げていた）。新コードは支援金0%で最初から計算するので正しい。※本番には 2026年3月の下書きが9件あり、再計算するとこの差が出る。API検証47項目・画面検証53項目も全通過。
 
 - 2026-09-09 `POST /payroll/calculate` の `calculationMode` は、指定が無ければ既存明細のモードを引き継ぐようにした（従来は既定で "auto"）。月次実績入力の「実績を保存」がモードを送らないため、事務所が manual で組み立てた明細が BW/標準の自動計算で上書きされ、手当ベースの支給額が消えていた（2026-08 の明細が実際に manual → bluewing_auto に化けていた）。既存明細が無い新規のときだけ "auto" にフォールバックする。
 - 2026-09-06 `lateNightPremiumPerHour()` の端数を切り捨て→四捨五入に変更。事務所の手計算（2,111円/h→422、1,750→350、1,909→382）と一致するのは四捨五入のみ。BW分岐・標準計算の深夜手当が対象で、影響は1円単位。

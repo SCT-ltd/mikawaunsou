@@ -21,6 +21,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Plus, X, GripVertical, ChevronDown, Check } from "lucide-react";
 import { Reorder, useDragControls } from "framer-motion";
 import { calculateIncomeTaxReiwa8, round50sen } from "@/lib/tax-tables-reiwa8";
+import { formatRatePercent, useMonthInsurance } from "@/lib/insurance-rates";
 
 function roundJapanese(amount: number): number {
   return Math.floor(amount);
@@ -463,6 +464,11 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
     query: { enabled: !!employeeId, queryKey: getGetEmployeeDeductionsQueryKey(employeeId), staleTime: 60_000, refetchOnMount: true }
   });
   const { data: company } = useGetCompany();
+  // 年月の指定が無いときは今月として扱う（resolvePensionApplied と同じ）
+  const monthInsurance = useMonthInsurance(
+    year ?? new Date().getFullYear(),
+    month ?? new Date().getMonth() + 1,
+  );
   const updateAllowances = useUpdateEmployeeAllowances();
   const updateDeductions = useUpdateEmployeeDeductions();
   const updateEmployee = useUpdateEmployee();
@@ -677,29 +683,28 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
   const allowancesTotal = rows.reduce((s, r) => s + (r.amount || 0), 0);
   const grandTotal = baseSalaryInput + allowancesTotal;
 
-  const pensionRate = company?.pensionEmployeeRate ?? 0.0915;
-  const empInsRate = (company?.employmentInsuranceRate ?? 0) > 0
-    ? company!.employmentInsuranceRate
-    : 0.0005;
-
-  const HEALTH_RATE_NO_CARE  = 0.04925;
-  const HEALTH_RATE_WITH_CARE = 0.05735;
-  const CHILDCARE_RATE = 0.00115;
+  // 料率・標準報酬月額は、マスターの履歴から「この明細の年月」に効く値（サーバの計算と同じ）
+  const pensionRate = monthInsurance.rates.pensionEmployeeRate;
+  const empInsRate = monthInsurance.rates.employmentInsuranceRate;
+  const CHILDCARE_RATE = monthInsurance.rates.childcareEmployeeRate;
 
   const appliedHealthRate = employee.careInsuranceApplied === true
-    ? HEALTH_RATE_WITH_CARE
-    : HEALTH_RATE_NO_CARE;
+    ? monthInsurance.rates.healthWithCareEmployeeRate
+    : monthInsurance.rates.healthEmployeeRate;
 
-  const empSR = (employee as unknown as { standardRemuneration?: number }).standardRemuneration ?? 0;
+  const empSR = monthInsurance.standardRemunerationOf(
+    employee.id,
+    (employee as unknown as { standardRemuneration?: number }).standardRemuneration,
+  );
   const insBase = empSR > 0 ? empSR : grandTotal;
 
   const isTaxExemptEmployee = employee.taxExempt === true;
 
   const healthInsurance = isTaxExemptEmployee ? 0 : round50sen(insBase * appliedHealthRate);
-  const childcareSupportApplicable = !(year !== undefined && month !== undefined && (year < 2026 || (year === 2026 && month <= 3)));
-  const childcareSupportContribution = (isTaxExemptEmployee || !childcareSupportApplicable) ? 0 : round50sen(insBase * CHILDCARE_RATE);
+  // 子育て支援金の開始前の月は、料率の履歴で率が 0 になっている
+  const childcareSupportContribution = isTaxExemptEmployee ? 0 : round50sen(insBase * CHILDCARE_RATE);
   const isPensionApplied = resolvePensionApplied(employee, year, month);
-  const pensionInsurance = (isTaxExemptEmployee || !isPensionApplied) ? 0 : round50sen(Math.min(insBase, 650_000) * pensionRate);
+  const pensionInsurance = (isTaxExemptEmployee || !isPensionApplied) ? 0 : round50sen(Math.min(insBase, monthInsurance.rates.pensionMaxStandard) * pensionRate);
 
   const nonTaxableAllowancesTotal = rows.reduce((s, r) => {
     const def = allowanceDefinitions?.find(d => d.id === r.defId);
@@ -942,11 +947,11 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
       )}
       {company && (
         <div className="mt-1 px-3 py-2 bg-muted/40 border rounded text-xs text-muted-foreground">
-          適用料率：健保 {(appliedHealthRate * 100).toFixed(3)}%
+          適用料率（本人負担）：健保 {formatRatePercent(appliedHealthRate)}
           {employee.careInsuranceApplied && <span className="text-amber-600">（介護込）</span>}
-          {childcareSupportApplicable ? "・子育て支援金 0.115%" : "・子育て支援金 0%（3月以前）"}・厚年 {(pensionRate * 100).toFixed(2)}%・雇保 {(empInsRate * 100).toFixed(1)}%
+          ・子育て支援金 {formatRatePercent(CHILDCARE_RATE)}・厚年 {formatRatePercent(pensionRate)}・雇保 {formatRatePercent(empInsRate)}
           {empSR > 0 && (
-            <span className="ml-2 text-blue-600">（健保・厚年{childcareSupportApplicable ? "・支援金" : ""}は標準報酬月額 {empSR.toLocaleString("ja-JP")} 円ベース）</span>
+            <span className="ml-2 text-blue-600">（健保・厚年・支援金は標準報酬月額 {empSR.toLocaleString("ja-JP")} 円ベース）</span>
           )}
         </div>
       )}

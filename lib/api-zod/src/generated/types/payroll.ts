@@ -74,6 +74,18 @@ export interface Payroll {
   /** 土曜出勤日数（表示用） */
   saturdayWorkDays?: number;
   workDays: number;
+  /** 保険料の計算に使った標準報酬月額（この項目が入る前の明細は null） */
+  appliedStandardRemuneration?: number | null;
+  /** 計算に使った健康保険料率（合計） */
+  appliedHealthInsuranceRate?: number | null;
+  /** 計算に使った介護保険料率（合計。対象外の社員は 0） */
+  appliedCareInsuranceRate?: number | null;
+  /** 計算に使った子ども・子育て支援金率（合計） */
+  appliedChildcareSupportRate?: number | null;
+  /** 計算に使った厚生年金保険料率（合計） */
+  appliedPensionRate?: number | null;
+  /** 計算に使った雇用保険料率（本人負担） */
+  appliedEmploymentInsuranceRate?: number | null;
   createdAt: Date;
   updatedAt: Date;
 }

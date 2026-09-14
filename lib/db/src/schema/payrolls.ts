@@ -50,6 +50,20 @@ export const payrollsTable = pgTable("payrolls", {
   performanceAllowance: doublePrecision("performance_allowance").notNull().default(0),
   calculationMode: text("calculation_mode").notNull().default("auto"),
   customDeductionsTotal: doublePrecision("custom_deductions_total").notNull().default(0),
+  // ── 計算に使った保険の基準（スナップショット）。料率・標準報酬月額は履歴で月ごとに変わるため、
+  //    「この明細はどの値で計算したか」を後から確認できるように残す。この列が入る前の明細は null。
+  /** 保険料の計算に使った標準報酬月額（未設定の社員は総支給で計算した値）*/
+  appliedStandardRemuneration: doublePrecision("applied_standard_remuneration"),
+  /** 健康保険料率（合計）*/
+  appliedHealthInsuranceRate: doublePrecision("applied_health_insurance_rate"),
+  /** 介護保険料率（合計）。介護保険の対象外の社員は 0 */
+  appliedCareInsuranceRate: doublePrecision("applied_care_insurance_rate"),
+  /** 子ども・子育て支援金率（合計）*/
+  appliedChildcareSupportRate: doublePrecision("applied_childcare_support_rate"),
+  /** 厚生年金保険料率（合計）*/
+  appliedPensionRate: doublePrecision("applied_pension_rate"),
+  /** 雇用保険料率（本人負担）*/
+  appliedEmploymentInsuranceRate: doublePrecision("applied_employment_insurance_rate"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [

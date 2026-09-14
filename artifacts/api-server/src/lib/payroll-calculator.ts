@@ -13,6 +13,7 @@ import {
   calculateInsuranceAndTax,
   calculateIncomeTaxReiwa8,
   EMP_INS_RATE_R8,
+  type EmployeeInsuranceRates,
 } from "./tax-tables-reiwa8";
 
 /**
@@ -96,6 +97,8 @@ export interface PayrollCalculationInput {
   pensionApplied?: boolean;
   /** 雇用保険料率（省略時は EMP_INS_RATE_R8 = 0.005）*/
   employmentInsuranceRate?: number;
+  /** 健保・介護・子育て支援金・厚年の本人負担率（保険料率マスター。省略時は令和8年度の内蔵値）*/
+  insuranceRates?: EmployeeInsuranceRates;
   residentTax: number;
   monthlyAverageWorkHours: number;
   // Monthly record
@@ -367,6 +370,7 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     residentTax,
     customDeductionsTotal: 0,
     employmentInsuranceRate,
+    insuranceRates: input.insuranceRates,
     enableTrace: input.enableTrace,
     traceExpectedIncomeTax: input.traceExpectedIncomeTax,
   });

@@ -40,17 +40,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { Plus, Edit2, Trash2, Settings2, Users, Wallet, Calculator, Minus, Search, KeyRound, RotateCcw, UserPlus, Pin } from "lucide-react";
+import { Plus, Edit2, Trash2, Settings2, Users, Wallet, Calculator, Minus, Search, KeyRound, RotateCcw, UserPlus, Pin, ClipboardList } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { DatePartsInput } from "@/components/ui/date-parts-input";
-import {
-  HEALTH_EMPLOYEE_RATE_R8,
-  CARE_EMPLOYEE_RATE_R8,
-  PENSION_EMPLOYEE_RATE_R8,
-  CHILDCARE_SUPPORT_EMPLOYEE_RATE_R8,
-  EMP_INS_EMPLOYEE_RATE_R8,
-} from "@/lib/tax-tables-reiwa8";
+import { InsuranceRatePeriodsCard } from "@/components/insurance/insurance-rate-periods-card";
+import { StandardRemunerationHistorySection } from "@/components/insurance/standard-remuneration-history";
+import { StandardRemunerationBulkTab } from "@/components/insurance/standard-remuneration-bulk";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -643,10 +639,13 @@ function EmpFormFields({
   form: f,
   salaryType,
   additionalTabs,
+  employeeId,
 }: {
   form: ReturnType<typeof useForm<EmpFullValues>>;
   salaryType: string;
   additionalTabs?: Array<{ value: string; label: string; content: ReactNode }>;
+  /** 編集中の社員ID（新規登録では無し）。標準報酬月額の履歴を出すのに使う */
+  employeeId?: number;
 }) {
   const dobValue = f.watch("dateOfBirth");
   const age = calcAge(dobValue);
@@ -1094,19 +1093,26 @@ function EmpFormFields({
 
         <div>
           <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">社会保険設定</h4>
-          <p className="text-xs text-muted-foreground mb-3">保険料は計算テーブルマスターの料率 × 標準報酬月額で計算されます。</p>
+          <p className="text-xs text-muted-foreground mb-3">保険料は「標準報酬月額 × 計算テーブルマスターの料率（その明細の年月の行）」で計算されます。</p>
           <div className="space-y-3">
             <FormField control={f.control} name="standardRemuneration" render={({ field }) => (
-              <FormItem><FormLabel>標準報酬月額（円）</FormLabel>
+              <FormItem><FormLabel>{employeeId ? "標準報酬月額（初期値）（円）" : "標準報酬月額（円）"}</FormLabel>
                 <FormControl>
                   <div className="flex items-center gap-2">
-                    <TipInput type="number" min={0} step={1000} placeholder="470000" tip={"健保・厚年の計算基礎となる標準報酬月額。\n4〜6月の平均給与を基に決定し、9月から翌8月まで固定。\n健康保険料 = この額 × 9.85% の折半\n厚生年金 = この額 × 18.3% の折半"} {...field} className="text-right" />
+                    <TipInput type="number" min={0} step={1000} placeholder="470000" tip={"健保・厚年の計算基礎となる標準報酬月額。\n4〜6月の平均給与を基に決定し、原則9月分から翌8月分まで固定。\n健康保険料 = この額 × 健康保険料率 の折半\n厚生年金 = この額 × 厚生年金保険料率 の折半\n定時決定などで変わったときは、この欄を書き換えずに下の履歴へ「適用開始」付きで追加してください（過去の月の計算が変わらないように）。"} {...field} className="text-right" />
                     <span className="text-sm text-muted-foreground shrink-0">円</span>
                   </div>
                 </FormControl>
-                <p className="text-xs text-muted-foreground">4〜6月の平均報酬で決定、9月〜翌8月固定。健保・厚年の計算基礎。</p>
+                <p className="text-xs text-muted-foreground">
+                  {employeeId
+                    ? "履歴が無い月に使う値です。変わったときは下の履歴に追加してください（まとめて入れるときは「標準報酬」タブ）。"
+                    : "入社時の標準報酬月額。以後の変更は、登録後に編集画面の履歴か「標準報酬」タブで入力します。"}
+                </p>
                 <FormMessage /></FormItem>
             )} />
+            {employeeId ? (
+              <StandardRemunerationHistorySection employeeId={employeeId} initialAmount={Number(f.watch("standardRemuneration")) || 0} />
+            ) : null}
             <FormField control={f.control} name="employmentInsuranceApplied" render={({ field }) => (
               <FormItem className="flex items-center justify-between rounded-lg border p-3">
                 <div><FormLabel>雇用保険適用</FormLabel>
@@ -1519,6 +1525,7 @@ function EmployeeMasterTab() {
               <EmpFormFields
                 form={editForm}
                 salaryType={editSalaryType}
+                employeeId={editingEmployee?.id}
                 additionalTabs={[{
                   value: "management",
                   label: "管理",
@@ -1651,9 +1658,9 @@ function RefRow({ label, value, note }: { label: string; value: string; note?: s
 }
 
 // ② 会社ごとに編集する運用パラメータのみ（日給単価は会社設定に集約）
+// 雇用保険料率は年度で変わるため、会社設定ではなく ① の料率の履歴で管理する（2026-09-14〜）
 const companyParamsSchema = z.object({
   monthlyAverageWorkHours: z.coerce.number().min(1),
-  employmentInsuranceRate: z.coerce.number().min(0).max(1),
 });
 type CompanyParamsValues = z.infer<typeof companyParamsSchema>;
 
@@ -1667,11 +1674,9 @@ function CalcTableMasterTab() {
     resolver: zodResolver(companyParamsSchema),
     defaultValues: {
       monthlyAverageWorkHours: 160,
-      employmentInsuranceRate: EMP_INS_EMPLOYEE_RATE_R8,
     },
     values: company ? {
       monthlyAverageWorkHours: company.monthlyAverageWorkHours,
-      employmentInsuranceRate: company.employmentInsuranceRate,
     } : undefined,
   });
 
@@ -1685,8 +1690,6 @@ function CalcTableMasterTab() {
     }
   };
 
-  const pct = (v: unknown) => `${(Number(v) * 100).toFixed(2)}%`;
-
   if (isLoading) return <div className="text-center py-8 text-muted-foreground">読み込み中...</div>;
 
   return (
@@ -1694,41 +1697,35 @@ function CalcTableMasterTab() {
       <div>
         <h3 className="text-lg font-semibold">計算テーブルマスター</h3>
         <p className="text-sm text-muted-foreground">
-          令和8年度の税・保険基準（内蔵・自動適用）と、会社ごとに設定する運用パラメータを管理します。
+          年度ごとに変わる保険料率の履歴と、割増率などの計算基準・会社ごとの運用パラメータを管理します。
         </p>
       </div>
 
-      {/* ── ① 適用中の税・保険基準（令和8年度）── 読み取り専用 */}
+      {/* ── ① 保険料率（年度ごとの履歴）── 編集可 */}
+      <InsuranceRatePeriodsCard />
+
+      {/* ── 割増率・源泉所得税 ── 読み取り専用 */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
-            ① 適用中の税・保険基準（令和8年度）
+            割増率・源泉所得税（令和8年分）
             <Badge variant="outline" className="bg-slate-100 text-slate-600 border-slate-300 text-[10px] font-normal">参照専用・編集不可</Badge>
           </CardTitle>
           <CardDescription>
-            国税庁・協会けんぽの公式値をシステムに内蔵し、給与計算とプレビューの<span className="font-medium">両方で自動適用</span>されます（1円単位一致のため編集不可）。
+            国税庁の公式値をシステムに内蔵しています（1円単位一致のため編集不可）。
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
             <div>
-              <p className="text-xs font-medium text-muted-foreground mb-1">社会保険（本人負担・折半）</p>
-              <RefRow label="健康保険" value={pct(HEALTH_EMPLOYEE_RATE_R8)} note="9.85%" />
-              <RefRow label="介護保険" value={pct(CARE_EMPLOYEE_RATE_R8)} note="40〜64歳・1.62%" />
-              <RefRow label="厚生年金" value={pct(PENSION_EMPLOYEE_RATE_R8)} note="18.3%・上限65万" />
-              <RefRow label="子ども・子育て支援金" value={pct(CHILDCARE_SUPPORT_EMPLOYEE_RATE_R8)} note="0.23%" />
-            </div>
-            <div>
-              <p className="text-xs font-medium text-muted-foreground mb-1 md:mt-0 mt-4">割増率・源泉所得税</p>
               <RefRow label="時間外（残業）割増" value="×1.25" note="60h超は×1.50" />
               <RefRow label="深夜追加割増" value="+0.25" />
+            </div>
+            <div>
               <RefRow label="休日出勤割増" value="×1.35" />
               <RefRow label="源泉所得税" value="月額表・甲欄" note="社保控除後×扶養人数で自動" />
             </div>
           </div>
-          <p className="text-xs text-muted-foreground mt-3 pt-3 border-t">
-            健保・厚年は「標準報酬月額（社員ごとに設定）× 上記料率」で算出。料率の年度改定は内蔵テーブル（<span className="font-mono">lib/tax-tables-reiwa8</span>）の更新で行います。
-          </p>
         </CardContent>
       </Card>
 
@@ -1747,19 +1744,6 @@ function CalcTableMasterTab() {
                     <FormLabel>月平均労働時間（時間）</FormLabel>
                     <FormControl><Input type="number" step="1" placeholder="160" {...field} /></FormControl>
                     <p className="text-xs text-muted-foreground">固定給の時給換算：基本給 ÷ この時間数</p>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={form.control} name="employmentInsuranceRate" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>雇用保険料率（本人負担）</FormLabel>
-                    <FormControl>
-                      <div className="flex items-center gap-2">
-                        <Input type="number" step="0.0001" placeholder="0.005" {...field} />
-                        <span className="text-sm text-muted-foreground w-14">{pct(field.value || 0)}</span>
-                      </div>
-                    </FormControl>
-                    <p className="text-xs text-muted-foreground">令和8年度・一般事業=0.5%。年度・業種で変わるため編集可</p>
                     <FormMessage />
                   </FormItem>
                 )} />
@@ -1800,7 +1784,7 @@ export default function MasterManagement() {
         </div>
 
         <Tabs defaultValue="employees" className="w-full">
-          <TabsList className="grid w-full grid-cols-4 mb-6">
+          <TabsList className="grid w-full grid-cols-5 mb-6">
             <TabsTrigger value="employees" className="flex items-center gap-1.5">
               <Users className="h-4 w-4" /><span className="hidden sm:inline">社員マスター</span><span className="sm:hidden">社員</span>
             </TabsTrigger>
@@ -1809,6 +1793,9 @@ export default function MasterManagement() {
             </TabsTrigger>
             <TabsTrigger value="deductions" className="flex items-center gap-1.5">
               <Minus className="h-4 w-4" /><span className="hidden sm:inline">差引マスター</span><span className="sm:hidden">差引</span>
+            </TabsTrigger>
+            <TabsTrigger value="standard-remuneration" className="flex items-center gap-1.5">
+              <ClipboardList className="h-4 w-4" /><span className="hidden sm:inline">標準報酬</span><span className="sm:hidden">標報</span>
             </TabsTrigger>
             <TabsTrigger value="calc-tables" className="flex items-center gap-1.5">
               <Calculator className="h-4 w-4" /><span className="hidden sm:inline">計算テーブルマスター</span><span className="sm:hidden">計算</span>
@@ -1825,6 +1812,10 @@ export default function MasterManagement() {
 
           <TabsContent value="deductions">
             <DeductionMasterTab />
+          </TabsContent>
+
+          <TabsContent value="standard-remuneration">
+            <StandardRemunerationBulkTab />
           </TabsContent>
 
           <TabsContent value="calc-tables">

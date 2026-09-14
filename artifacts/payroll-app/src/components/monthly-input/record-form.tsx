@@ -11,6 +11,7 @@ import {
   computeBWCalc,
   formatYen,
 } from "./estimate";
+import type { MonthInsurance } from "@/lib/insurance-rates";
 
 /**
  * 実績入力タブ。
@@ -139,11 +140,14 @@ export function RecordForm({
   rowData,
   onChange,
   company,
+  insurance,
 }: {
   employee: EmployeeExt;
   rowData: RowData;
   onChange: (field: string, value: string) => void;
   company: CompanySettings | undefined;
+  /** 表示中の月の保険料率・標準報酬月額（概算用）*/
+  insurance?: MonthInsurance;
 }) {
   const isHourly = employee.salaryType === "hourly";
   const isBW = employee.useBluewingLogic === true;
@@ -153,7 +157,7 @@ export function RecordForm({
   const unitRate = employee.overtimeUnitRate ?? 0;
   const hasUnit = unitMinutes > 0 && unitRate > 0;
 
-  const { gross, net } = computeQuickEstimate(employee, rowData, company);
+  const { gross, net } = computeQuickEstimate(employee, rowData, company, insurance);
 
   // 有給1日あたりの単価: 個人日当 > 0 ならそれ、無ければ会社の平日日当
   const paidLeaveRate = (employee.dailyRateWeekday ?? 0) > 0

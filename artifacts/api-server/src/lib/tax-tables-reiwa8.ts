@@ -275,11 +275,33 @@ export interface InsuranceTaxInput {
   customDeductionsTotal?: number;
   /** 雇用保険料率（省略時は EMP_INS_RATE_R8 = 0.005）*/
   employmentInsuranceRate?: number;
+  /**
+   * 健保・介護・子育て支援金・厚年の本人負担率（保険料率マスターから月ごとに解決した値）。
+   * 省略時は令和8年度の内蔵定数を使う。
+   */
+  insuranceRates?: EmployeeInsuranceRates;
   /** デバッグ用トレースログを出力するか（省略時 false）*/
   enableTrace?: boolean;
   /** トレースログ出力時の期待値（照合用）*/
   traceExpectedIncomeTax?: number;
 }
+
+/** 本人負担の保険料率（折半後）と厚生年金の上限 */
+export interface EmployeeInsuranceRates {
+  healthEmployeeRate: number;
+  healthWithCareEmployeeRate: number;
+  childcareEmployeeRate: number;
+  pensionEmployeeRate: number;
+  pensionMaxStandard: number;
+}
+
+export const DEFAULT_EMPLOYEE_INSURANCE_RATES_R8: EmployeeInsuranceRates = {
+  healthEmployeeRate: HEALTH_EMPLOYEE_RATE_R8,
+  healthWithCareEmployeeRate: HEALTH_WITH_CARE_EMPLOYEE_RATE_R8,
+  childcareEmployeeRate: CHILDCARE_SUPPORT_EMPLOYEE_RATE_R8,
+  pensionEmployeeRate: PENSION_EMPLOYEE_RATE_R8,
+  pensionMaxStandard: PENSION_MAX_STD,
+};
 
 export interface InsuranceTaxResult {
   /** 健康保険料（介護保険込みまたはなし）*/
@@ -329,23 +351,25 @@ export function calculateInsuranceAndTax(input: InsuranceTaxInput): InsuranceTax
     residentTax = 0,
     customDeductionsTotal = 0,
     employmentInsuranceRate = EMP_INS_RATE_R8,
+    insuranceRates = DEFAULT_EMPLOYEE_INSURANCE_RATES_R8,
     enableTrace = false,
     traceExpectedIncomeTax,
   } = input;
 
   // 健康保険料：標準報酬月額 × 料率（介護保険の有無で料率変更）
+  // （料率は保険料率マスターの月ごとの値。省略時は令和8年度: 健保 9.85%、介護込み 11.47%）
   const healthEmployeeRate = careInsuranceApplied
-    ? HEALTH_WITH_CARE_EMPLOYEE_RATE_R8   // 9.85% + 1.62% = 11.47% の折半
-    : HEALTH_EMPLOYEE_RATE_R8;             // 9.85% の折半
+    ? insuranceRates.healthWithCareEmployeeRate
+    : insuranceRates.healthEmployeeRate;
   const healthInsurance = round50sen(standardRemuneration * healthEmployeeRate);
 
-  // 子ども・子育て支援金：標準報酬月額 × 0.23% ÷ 2
-  const childcareSupportContribution = round50sen(standardRemuneration * CHILDCARE_SUPPORT_EMPLOYEE_RATE_R8);
+  // 子ども・子育て支援金：標準報酬月額 × 支援金率 ÷ 2（令和8年度 0.23%。開始前の月は 0%）
+  const childcareSupportContribution = round50sen(standardRemuneration * insuranceRates.childcareEmployeeRate);
 
-  // 厚生年金保険料：min(標準報酬月額, 650,000) × 9.15%
-  const pensionBase = Math.min(standardRemuneration, PENSION_MAX_STD);
+  // 厚生年金保険料：min(標準報酬月額, 上限) × 厚年率 ÷ 2（令和8年度 18.3%・上限 650,000）
+  const pensionBase = Math.min(standardRemuneration, insuranceRates.pensionMaxStandard);
   const pension = pensionApplied
-    ? round50sen(pensionBase * PENSION_EMPLOYEE_RATE_R8)
+    ? round50sen(pensionBase * insuranceRates.pensionEmployeeRate)
     : 0;
 
   // 雇用保険料：（総支給額 − 除外対象手当）× 雇用保険率

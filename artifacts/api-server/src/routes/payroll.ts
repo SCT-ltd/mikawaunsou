@@ -3,6 +3,7 @@ import { db, payrollsTable, employeesTable, monthlyRecordsTable, companyTable, a
 import { eq, and } from "drizzle-orm";
 import { calculatePayroll, calculateBluewingPayroll, roundJapanese, lateNightPremiumPerHour } from "../lib/payroll-calculator";
 import { calculateInsuranceAndTax, EMP_INS_RATE_R8 } from "../lib/tax-tables-reiwa8";
+import { getEffectiveInsuranceRates, getEffectiveStandardRemuneration, type EffectiveInsuranceRates } from "../lib/insurance-settings";
 
 const router = Router();
 
@@ -12,17 +13,24 @@ const router = Router();
  * - emp.pensionApplied が true/false の場合: その値をそのまま使用（手動オーバーライド）
  */
 /**
- * 子ども・子育て支援金の徴収開始月。
- * 三川運送の方針：
- *   2026年4月給料明細（= 3月分の労働）から徴収開始。
- *   - year > 2026                       → 徴収
- *   - year === 2026 && month >= 4       → 徴収
- *   - それ以前                          → 0
+ * 明細に残す「計算に使った保険の基準」。料率・標準報酬月額は月ごとに履歴から解決するため、
+ * どの値で計算したかを payrolls に複写しておく（4つの保存経路すべてで使う）。
+ * ※ 子ども・子育て支援金の開始月（旧 isChildcareSupportApplicable: 2026年4月の明細から）は
+ *   保険料率マスターの行（2026年4月〜 0.23%、それ以前 0%）に移した。
  */
-function isChildcareSupportApplicable(year: number, month: number): boolean {
-  if (year > 2026) return true;
-  if (year === 2026 && month >= 4) return true;
-  return false;
+function appliedInsuranceSnapshot(
+  rates: EffectiveInsuranceRates,
+  insBase: number,
+  careInsuranceApplied: boolean,
+) {
+  return {
+    appliedStandardRemuneration: insBase,
+    appliedHealthInsuranceRate: rates.healthInsuranceRate,
+    appliedCareInsuranceRate: careInsuranceApplied ? rates.careInsuranceRate : 0,
+    appliedChildcareSupportRate: rates.childcareSupportRate,
+    appliedPensionRate: rates.pensionRate,
+    appliedEmploymentInsuranceRate: rates.employmentInsuranceRate,
+  };
 }
 
 function resolvePensionApplied(emp: typeof employeesTable.$inferSelect, year: number, month: number): boolean {
@@ -117,10 +125,11 @@ router.post("/payroll/calculate", async (req, res) => {
   // 日曜・祝日の時給（会社設定。既定 1,655円/h）。2026-08 から日曜出勤は「時間 × この単価」。
   const sundayHourlyRate = (company as { hourlyWageSunday?: number }).hourlyWageSunday ?? 1655;
 
-  // 雇用保険率：会社設定優先、なければ令和8年度デフォルト 0.5%
-  const empInsRate = (company.employmentInsuranceRate ?? 0) > 0
-    ? company.employmentInsuranceRate
-    : EMP_INS_RATE_R8;
+  // 保険料率（健保・介護・子育て支援金・厚年・雇用保険）と標準報酬月額は、
+  // マスターの履歴から「この明細の年月」に効く値を使う。
+  const insuranceRates = await getEffectiveInsuranceRates(year, month);
+  const empInsRate = insuranceRates.employmentInsuranceRate;
+  const stdRemuneration = (await getEffectiveStandardRemuneration(emp, year, month)).standardRemuneration;
 
   // カスタム手当を取得
   const customAllowanceDefs = await db.select().from(allowanceDefinitionsTable)
@@ -170,7 +179,7 @@ router.post("/payroll/calculate", async (req, res) => {
       manualCustomAllowancesTotal
     );
 
-    const manualInsBase = (emp.standardRemuneration ?? 0) > 0 ? emp.standardRemuneration : manualGrossSalary;
+    const manualInsBase = stdRemuneration > 0 ? stdRemuneration : manualGrossSalary;
 
     const manualIns = calculateInsuranceAndTax({
       standardRemuneration: manualInsBase,
@@ -185,9 +194,9 @@ router.post("/payroll/calculate", async (req, res) => {
       residentTax: emp.residentTax ?? 0,
       customDeductionsTotal,
       employmentInsuranceRate: empInsRate,
+      insuranceRates,
     });
 
-    if (!isChildcareSupportApplicable(year, month)) manualIns.childcareSupportContribution = 0;
     const isManualExempt = emp.taxExempt === true;
     const manualSocialInsurance = isManualExempt ? 0 : (manualIns.healthInsurance + manualIns.childcareSupportContribution + manualIns.pension);
     const manualChildcare = isManualExempt ? 0 : manualIns.childcareSupportContribution;
@@ -234,6 +243,7 @@ router.post("/payroll/calculate", async (req, res) => {
       paidLeaveDays: record.paidLeaveDays ?? 0,
       saturdayWorkDays: record.saturdayWorkDays ?? 0,
       useBluewingLogic: false,
+      ...appliedInsuranceSnapshot(insuranceRates, manualInsBase, emp.careInsuranceApplied ?? false),
     };
 
     const existingManual = await db.select().from(payrollsTable)
@@ -312,7 +322,7 @@ router.post("/payroll/calculate", async (req, res) => {
     });
 
     const grossSalary = bwResult.grossSalary;
-    const bwInsBase = (emp.standardRemuneration ?? 0) > 0 ? emp.standardRemuneration : grossSalary;
+    const bwInsBase = stdRemuneration > 0 ? stdRemuneration : grossSalary;
 
     // 非課税手当合計: 通勤手当 + isTaxable=false のカスタム手当（例: 交通費）
     const bwNonTaxableCustom = customAllowances
@@ -333,9 +343,9 @@ router.post("/payroll/calculate", async (req, res) => {
       residentTax: emp.residentTax ?? 0,
       customDeductionsTotal,
       employmentInsuranceRate: empInsRate,
+      insuranceRates,
     });
 
-    if (!isChildcareSupportApplicable(year, month)) bwIns.childcareSupportContribution = 0;
     const socialInsurance = bwIns.healthInsurance + bwIns.childcareSupportContribution + bwIns.pension;
     const totalDeductions = roundJapanese(
       socialInsurance + bwIns.employmentInsurance + bwIns.incomeTax + (emp.residentTax ?? 0) + customDeductionsTotal
@@ -380,6 +390,7 @@ router.post("/payroll/calculate", async (req, res) => {
       performanceAllowance: bwResult.performanceAllowance,
       customDeductionsTotal,
       calculationMode: "bluewing_auto",
+      ...appliedInsuranceSnapshot(insuranceRates, bwInsBase, emp.careInsuranceApplied ?? false),
     };
 
     const existingBw = await db.select().from(payrollsTable)
@@ -427,11 +438,12 @@ router.post("/payroll/calculate", async (req, res) => {
     commissionRatePerCase: emp.commissionRatePerCase,
     dependentCount: emp.dependentCount,
     hasSpouse: emp.hasSpouse,
-    standardRemuneration: emp.standardRemuneration ?? 0,
+    standardRemuneration: stdRemuneration,
     careInsuranceApplied: emp.careInsuranceApplied ?? false,
     employmentInsuranceApplied: emp.employmentInsuranceApplied ?? true,
     pensionApplied: resolvePensionApplied(emp, year, month),
     employmentInsuranceRate: empInsRate,
+    insuranceRates,
     residentTax: emp.residentTax,
     monthlyAverageWorkHours: company.monthlyAverageWorkHours,
     workDays: record.workDays,
@@ -454,14 +466,12 @@ router.post("/payroll/calculate", async (req, res) => {
     customAllowances,
   });
 
-  // 子育て支援金：2026年5月以前は0にする
-  if (!isChildcareSupportApplicable(year, month)) {
-    const csc = result.childcareSupportContribution;
-    result.childcareSupportContribution = 0;
-    result.socialInsurance -= csc;
-    result.totalDeductions -= csc;
-    result.netSalary += csc;
-  }
+  // 標準報酬月額が未設定(0)の社員はエンジン内で総支給を計算基礎にしている
+  const stdSnapshot = appliedInsuranceSnapshot(
+    insuranceRates,
+    stdRemuneration > 0 ? stdRemuneration : result.grossSalary,
+    emp.careInsuranceApplied ?? false,
+  );
 
   // カスタム控除（積立金等）を totalDeductions / netSalary に反映
   const stdTotalDeductions = roundJapanese(
@@ -515,6 +525,7 @@ router.post("/payroll/calculate", async (req, res) => {
       workDays: record.workDays,
       customDeductionsTotal,
       calculationMode: "auto",
+      ...stdSnapshot,
       status: "draft",
       updatedAt: new Date(),
     }).where(eq(payrollsTable.id, existing[0].id)).returning();
@@ -558,6 +569,7 @@ router.post("/payroll/calculate", async (req, res) => {
       workDays: record.workDays,
       customDeductionsTotal,
       calculationMode: "auto",
+      ...stdSnapshot,
     }).returning();
   }
 

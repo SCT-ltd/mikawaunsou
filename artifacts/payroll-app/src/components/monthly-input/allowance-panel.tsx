@@ -32,6 +32,8 @@ import {
   calculateIncomeTaxFromOfficialTable,
   lateNightPremiumPerHour,
 } from "./estimate";
+import { round50sen } from "@/lib/tax-tables-reiwa8";
+import { formatRatePercent, useMonthInsurance } from "@/lib/insurance-rates";
 
 /**
  * 手当・控除タブ。
@@ -251,6 +253,10 @@ export function AllowancePanel({
   });
   const { data: companyData } = useGetCompany();
   const company = companyData as CompanySettings | undefined;
+  const monthInsurance = useMonthInsurance(
+    year ?? new Date().getFullYear(),
+    month ?? new Date().getMonth() + 1,
+  );
   // この月の給与明細が確定済みか。確定済みの月は手当・控除を「表示のみ」にする。
   // 手当は年月を持たない社員マスタの1レコードなので、自動保存のまま過去の確定月を
   // 開くと、その月の勤怠から計算した金額でマスタが上書きされ、未確定の月が壊れる。
@@ -506,13 +512,23 @@ export function AllowancePanel({
     return s + (def && !def.isTaxable ? (r.amount || 0) : 0);
   }, 0);
 
-  const healthRate = company?.healthInsuranceEmployeeRate ?? 0.05;
-  const pensionRate = company?.pensionEmployeeRate ?? 0.0915;
-  const eiRate = company?.employmentInsuranceRate ?? 0.0005;
+  // 保険料はサーバの手入力固定（manual）計算と同じ式: 標準報酬月額（未設定なら総支給）× その月の料率。
+  // 料率・標準報酬月額はマスターの履歴から「この明細の年月」に効く値を使う。
+  // （以前は会社設定の古い料率 × 総支給で概算しており、明細の金額と合っていなかった）
+  const { rates: monthRates } = monthInsurance;
+  const healthRate = employee.careInsuranceApplied ? monthRates.healthWithCareEmployeeRate : monthRates.healthEmployeeRate;
+  const pensionRate = monthRates.pensionEmployeeRate;
+  const eiRate = monthRates.employmentInsuranceRate;
+  const isInsuranceExempt = employee.taxExempt === true;
+  const stdRemuneration = monthInsurance.standardRemunerationOf(employee.id, employee.standardRemuneration);
+  const insBase = stdRemuneration > 0 ? stdRemuneration : grandTotal;
 
-  const isPensionApplied = resolvePensionApplied(employee);
-  const healthInsurance = roundJapanese(grandTotal * healthRate);
-  const pensionInsurance = isPensionApplied ? roundJapanese(grandTotal * pensionRate) : 0;
+  const isPensionApplied = resolvePensionApplied(employee, year, month);
+  const healthInsurance = isInsuranceExempt ? 0 : round50sen(insBase * healthRate);
+  const childcareSupport = isInsuranceExempt ? 0 : round50sen(insBase * monthRates.childcareEmployeeRate);
+  const pensionInsurance = isInsuranceExempt || !isPensionApplied
+    ? 0
+    : round50sen(Math.min(insBase, monthRates.pensionMaxStandard) * pensionRate);
   // 雇用保険の計算基礎から除外する手当合計（「雇用保険の対象外」ON の手当のみ。交通費は含めない）
   const empInsExcludedTotal = rows.reduce((s, r) => {
     const def = allowanceDefinitions.find(d => d.id === r.defId);
@@ -520,13 +536,13 @@ export function AllowancePanel({
   }, 0);
   // 雇用保険: （総支給 − 除外対象手当）× 料率。携帯代等の実費手当のみ計算基礎から除く。
   const employmentInsurance =
-    employee.employmentInsuranceApplied !== false
-      ? roundJapanese((grandTotal - empInsExcludedTotal) * eiRate)
+    !isInsuranceExempt && employee.employmentInsuranceApplied !== false
+      ? round50sen((grandTotal - empInsExcludedTotal) * eiRate)
       : 0;
-  const totalInsurance = healthInsurance + pensionInsurance + employmentInsurance;
+  const totalInsurance = healthInsurance + childcareSupport + pensionInsurance + employmentInsurance;
 
   const afterInsuranceSalary = Math.max(0, grandTotal - totalInsurance - nonTaxableAllowancesTotal);
-  const incomeTax = calculateIncomeTaxFromOfficialTable(
+  const incomeTax = isInsuranceExempt ? 0 : calculateIncomeTaxFromOfficialTable(
     afterInsuranceSalary,
     employee.dependentCount ?? 0,
     employee.hasSpouse ?? false,
@@ -891,9 +907,10 @@ export function AllowancePanel({
         {showInsuranceDetail && (
           <div className="divide-y divide-border/50">
             {[
-              { label: `健康保険料 (${(healthRate * 100).toFixed(2)}%)`, value: healthInsurance },
-              { label: `厚生年金保険料 (${(pensionRate * 100).toFixed(2)}%)`, value: pensionInsurance },
-              { label: `雇用保険料 (${(eiRate * 100).toFixed(2)}%)`, value: employmentInsurance },
+              { label: `健康保険料 (${formatRatePercent(healthRate)}${employee.careInsuranceApplied ? "・介護込み" : ""})`, value: healthInsurance },
+              { label: `子ども・子育て支援金 (${formatRatePercent(monthRates.childcareEmployeeRate)})`, value: childcareSupport },
+              { label: `厚生年金保険料 (${formatRatePercent(pensionRate)})`, value: pensionInsurance },
+              { label: `雇用保険料 (${formatRatePercent(eiRate)})`, value: employmentInsurance },
               { label: "保険料控除後の金額", value: afterInsuranceSalary, highlight: true },
             ].map(({ label, value, highlight }) => (
               <div

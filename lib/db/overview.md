@@ -14,6 +14,7 @@ PostgreSQL への接続（pg `Pool`）と Drizzle ORM のスキーマ定義を�
   - `allowances` — カスタム手当（定義・社員別金額）
   - `attendance` — 打刻記録
   - `calendar` — カレンダー
+  - `insurance` — `insurance_rate_periods`（社会保険・雇用保険の料率の履歴）/ `standard_remuneration_history`（社員ごとの標準報酬月額の履歴）
   - `messages` — メッセージ / プッシュ購読
   - `sessions` — セッション（connect-pg-simple 用、`createTableIfMissing:false`）
   - `users` — `system_users`（アカウント）
@@ -35,6 +36,13 @@ PostgreSQL への接続（pg `Pool`）と Drizzle ORM のスキーマ定義を�
 - 注意: フィールドの詳細・新規カラムの意味は `replit.md` の「Database Schema」を正典とする（ここでは重複させない）
 
 ## 決定事項
+
+- 2026-09-14 **保険料率と標準報酬月額の履歴テーブルを追加**（年度改定・定時決定をマスターで切り替えるため）。
+  - `insurance_rate_periods`: 適用開始（`effective_year` / `effective_month` ＝給与明細の年月、一意）、`health_insurance_rate` / `care_insurance_rate` / `childcare_support_rate` / `pension_rate`（いずれも会社＋本人の合計の率）、`employment_insurance_rate`（本人負担）、`pension_max_standard`（既定650,000）、`note`。
+  - `standard_remuneration_history`: `employee_id`（社員削除でカスケード）、適用開始（社員×年月で一意）、`amount`、`reason`（teiji/zuiji/shikaku/other）、`note`。
+  - `payrolls` に計算に使った基準のスナップショット列を追加（すべて null 可。この変更より前の明細は null）: `applied_standard_remuneration`、`applied_health_insurance_rate`、`applied_care_insurance_rate`（介護対象外は0）、`applied_childcare_support_rate`、`applied_pension_rate`、`applied_employment_insurance_rate`。
+  - `company.employment_insurance_rate` / `health_insurance_employee_rate` などの会社設定の料率列は、計算では使わなくなった（料率の表が空のときの初期値として雇用保険料率だけ読む）。列は残置。
+  - **本番反映には NAS 側で `drizzle-kit push` が必要**（新テーブル2つ＋`payrolls` の null 可の列追加のみで、既存データは変わらない）。
 
 - 2026-08-26 有給の日数管理のため2列追加: `monthly_records.paid_leave_days`（0.5=半休。欠勤控除の対象にしない）、`payrolls.paid_leave_days`（明細表示用スナップショット）。いずれも `notNull().default(0)`。**本番反映には NAS 側で列追加が必要**。
 - 2026-08-26 日曜出勤の時間計算化に伴い2列追加: `monthly_records.sunday_work_hours`（日曜・祝日の出勤時間。会社設定 `company.hourly_wage_sunday`（既定1,655）と掛けて手当を算出）、`payrolls.holiday_work_hours`（明細の勤怠欄表示用スナップショット）。いずれも `notNull().default(0)`。既存の `sunday_work_days` / `holiday_work_days` は過去データの表示互換のため残置（金額計算には使わない）。**本番反映には NAS 側で `drizzle-kit push` が必要**。

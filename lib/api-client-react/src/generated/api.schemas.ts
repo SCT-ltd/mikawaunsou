@@ -5,6 +5,133 @@
  * 給与明細・バックオフィス効率化システム API
  * OpenAPI spec version: 0.1.0
  */
+/**
+ * 保険料率の履歴の1行。料率は保険料額表の「合計」の率（本人は半分）。雇用保険だけ本人負担の率。
+ */
+export interface InsuranceRatePeriod {
+  id: number;
+  /** 適用開始（給与明細の年） */
+  effectiveYear: number;
+  /** 適用開始（給与明細の月） */
+  effectiveMonth: number;
+  /** 健康保険料率（合計。例 0.0985） */
+  healthInsuranceRate: number;
+  /** 介護保険料率（合計。例 0.0162） */
+  careInsuranceRate: number;
+  /** 子ども・子育て支援金率（合計。例 0.0023） */
+  childcareSupportRate: number;
+  /** 厚生年金保険料率（合計。例 0.183） */
+  pensionRate: number;
+  /** 雇用保険料率（本人負担。例 0.005） */
+  employmentInsuranceRate: number;
+  /** 厚生年金の標準報酬月額の上限 */
+  pensionMaxStandard: number;
+  note?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InsuranceRatePeriodBody {
+  effectiveYear: number;
+  effectiveMonth: number;
+  healthInsuranceRate: number;
+  careInsuranceRate: number;
+  childcareSupportRate: number;
+  pensionRate: number;
+  employmentInsuranceRate: number;
+  pensionMaxStandard?: number;
+  note?: string | null;
+}
+
+/**
+ * 給与明細の年月に適用される料率（合計の率と、折半した本人負担率）
+ */
+export interface EffectiveInsuranceRates {
+  periodId?: number | null;
+  effectiveYear?: number | null;
+  effectiveMonth?: number | null;
+  healthInsuranceRate: number;
+  careInsuranceRate: number;
+  childcareSupportRate: number;
+  pensionRate: number;
+  employmentInsuranceRate: number;
+  pensionMaxStandard: number;
+  note?: string | null;
+  /** 健康保険（本人） */
+  healthEmployeeRate: number;
+  /** 健康保険＋介護保険（本人） */
+  healthWithCareEmployeeRate: number;
+  /** 子ども・子育て支援金（本人） */
+  childcareEmployeeRate: number;
+  /** 厚生年金（本人） */
+  pensionEmployeeRate: number;
+}
+
+export interface StandardRemunerationHistory {
+  id: number;
+  employeeId: number;
+  effectiveYear: number;
+  effectiveMonth: number;
+  amount: number;
+  /** teiji（定時決定）/ zuiji（随時改定）/ shikaku（資格取得）/ other */
+  reason: string;
+  note?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CreateStandardRemunerationHistoryBodyReason =
+  (typeof CreateStandardRemunerationHistoryBodyReason)[keyof typeof CreateStandardRemunerationHistoryBodyReason];
+
+export const CreateStandardRemunerationHistoryBodyReason = {
+  teiji: "teiji",
+  zuiji: "zuiji",
+  shikaku: "shikaku",
+  other: "other",
+} as const;
+
+export interface CreateStandardRemunerationHistoryBody {
+  effectiveYear: number;
+  effectiveMonth: number;
+  amount: number;
+  reason?: CreateStandardRemunerationHistoryBodyReason;
+  note?: string | null;
+}
+
+export type BulkStandardRemunerationBodyReason =
+  (typeof BulkStandardRemunerationBodyReason)[keyof typeof BulkStandardRemunerationBodyReason];
+
+export const BulkStandardRemunerationBodyReason = {
+  teiji: "teiji",
+  zuiji: "zuiji",
+  shikaku: "shikaku",
+  other: "other",
+} as const;
+
+export type BulkStandardRemunerationBodyEntriesItem = {
+  employeeId: number;
+  amount: number;
+};
+
+export interface BulkStandardRemunerationBody {
+  effectiveYear: number;
+  effectiveMonth: number;
+  reason?: BulkStandardRemunerationBodyReason;
+  note?: string | null;
+  entries: BulkStandardRemunerationBodyEntriesItem[];
+}
+
+export interface EffectiveStandardRemuneration {
+  employeeId: number;
+  /** その月に使う標準報酬月額（0 = 未設定） */
+  standardRemuneration: number;
+  /** 履歴の行から来たときのID。社員マスタの初期値のときは null */
+  historyId?: number | null;
+  effectiveYear?: number | null;
+  effectiveMonth?: number | null;
+  reason?: string | null;
+}
+
 export interface SetCalendarOverrideBody {
   isRed?: boolean | null;
 }
@@ -411,6 +538,18 @@ export interface Payroll {
   /** 土曜出勤日数（表示用） */
   saturdayWorkDays?: number;
   workDays: number;
+  /** 保険料の計算に使った標準報酬月額（この項目が入る前の明細は null） */
+  appliedStandardRemuneration?: number | null;
+  /** 計算に使った健康保険料率（合計） */
+  appliedHealthInsuranceRate?: number | null;
+  /** 計算に使った介護保険料率（合計。対象外の社員は 0） */
+  appliedCareInsuranceRate?: number | null;
+  /** 計算に使った子ども・子育て支援金率（合計） */
+  appliedChildcareSupportRate?: number | null;
+  /** 計算に使った厚生年金保険料率（合計） */
+  appliedPensionRate?: number | null;
+  /** 計算に使った雇用保険料率（本人負担） */
+  appliedEmploymentInsuranceRate?: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -731,4 +870,14 @@ export type ListAllowanceDefinitionsParams = {
 
 export type ListDeductionDefinitionsParams = {
   activeOnly?: boolean;
+};
+
+export type GetEffectiveInsuranceRatesParams = {
+  year: number;
+  month: number;
+};
+
+export type ListEffectiveStandardRemunerationParams = {
+  year: number;
+  month: number;
 };

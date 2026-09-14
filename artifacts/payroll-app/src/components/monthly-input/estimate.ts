@@ -3,15 +3,11 @@ import {
   calculateIncomeTaxReiwa8,
   calculateInsuranceByGrade,
   round50sen,
-  HEALTH_EMPLOYEE_RATE_R8,
-  HEALTH_WITH_CARE_EMPLOYEE_RATE_R8,
-  PENSION_EMPLOYEE_RATE_R8,
-  CHILDCARE_SUPPORT_EMPLOYEE_RATE_R8,
-  EMP_INS_EMPLOYEE_RATE_R8,
   OVERTIME_RATE_R8,
   LATE_NIGHT_ADDITIONAL_RATE_R8,
   HOLIDAY_RATE_R8,
 } from "@/lib/tax-tables-reiwa8";
+import { DEFAULT_INSURANCE_RATES_R8, type MonthInsurance } from "@/lib/insurance-rates";
 
 /**
  * 月次実績入力の概算計算ロジック。
@@ -98,7 +94,9 @@ export function calculateIncomeTaxFromOfficialTable(
 export function computeQuickEstimate(
   emp: EmployeeExt,
   editData: RowData,
-  company: CompanySettings | undefined
+  company: CompanySettings | undefined,
+  /** その明細の年月の料率・標準報酬月額（マスターの履歴）。省略時は令和8年度の内蔵値＋社員マスタの値 */
+  insurance?: MonthInsurance,
 ) {
   const isDaily = emp.salaryType === "daily";
   const isHourly = emp.salaryType === "hourly";
@@ -201,19 +199,23 @@ export function computeQuickEstimate(
   if (isExempt) {
     net = grossEstimate;
   } else {
-    // 令和8年の内蔵定数＋標準報酬月額等級表で、バックエンドと同じ基準で概算する
-    // （company の可変料率は参照しない＝「プレビュー≠確定」を解消）。
-    const stdRem = (emp.standardRemuneration ?? 0) > 0 ? (emp.standardRemuneration ?? 0) : grossEstimate;
-    const healthRate = emp.careInsuranceApplied ? HEALTH_WITH_CARE_EMPLOYEE_RATE_R8 : HEALTH_EMPLOYEE_RATE_R8;
+    // 保険料率マスター・標準報酬月額の履歴（その明細の年月の値）＋標準報酬月額等級表で、
+    // バックエンドと同じ基準で概算する（company の旧料率は参照しない＝「プレビュー≠確定」を解消）。
+    const rates = insurance?.rates ?? DEFAULT_INSURANCE_RATES_R8;
+    const empStd = insurance
+      ? insurance.standardRemunerationOf(emp.id, emp.standardRemuneration)
+      : (emp.standardRemuneration ?? 0);
+    const stdRem = empStd > 0 ? empStd : grossEstimate;
+    const healthRate = emp.careInsuranceApplied ? rates.healthWithCareEmployeeRate : rates.healthEmployeeRate;
     const isPensionApplied = resolvePensionApplied(emp);
-    const { healthInsurance, pension } = calculateInsuranceByGrade(stdRem, healthRate, PENSION_EMPLOYEE_RATE_R8);
-    const childcareSupport = round50sen(stdRem * CHILDCARE_SUPPORT_EMPLOYEE_RATE_R8);
+    const { healthInsurance, pension } = calculateInsuranceByGrade(stdRem, healthRate, rates.pensionEmployeeRate);
+    const childcareSupport = round50sen(stdRem * rates.childcareEmployeeRate);
     // 雇用保険料の概算。ここでの grossEstimate は勤怠のみ（基本給＋残業等）で、
     // カスタム手当（携帯代・職務手当など）を含まない。したがって「雇用保険の対象外」
     // 手当（携帯代）も元から基礎に入っておらず、確定計算のような除外処理は不要。
     // これは月次入力の速報概算であり、手当込みの正確な雇用保険料は明細（手当・控除パネル）で算出する。
     const employmentInsurance = emp.employmentInsuranceApplied !== false
-      ? round50sen(grossEstimate * EMP_INS_EMPLOYEE_RATE_R8)
+      ? round50sen(grossEstimate * rates.employmentInsuranceRate)
       : 0;
     const totalInsurance =
       healthInsurance +
