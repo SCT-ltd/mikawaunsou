@@ -675,6 +675,34 @@ function EmpFormFields({
 
   const tabCount = 3 + (additionalTabs?.length ?? 0);
 
+  // 残業時給は給与タイプに関係なく使う（月次実績入力で早出残業手当・深夜手当を自動計算する単価）。
+  // 以前は日給制の「個人単価」枠の中にしか無く、固定給・時給制の社員（高橋さんなど）は入力できなかった。
+  const overtimeRateField = (
+    <FormField control={f.control} name="overtimeHourlyRate" render={({ field }) => (
+      <FormItem><FormLabel className="text-xs font-medium">残業 時給（円/時）</FormLabel>
+        <FormControl>
+          <div className="flex items-center gap-1">
+            <TipInput type="number" min={0} step={1} placeholder="未設定"
+              tip={"割増込みの残業時給（入力した金額がそのまま1時間あたりの残業代）。\n" +
+                "設定すると、月次実績入力で残業・深夜の時間を入れたときに、手当・控除タブの「早出残業手当」「深夜手当」へ自動で入ります。\n" +
+                "早出残業手当 = この単価 × 残業時間（60時間超は ×1.20）\n" +
+                "深夜手当 = この単価 ÷ 1.25 × 0.25 × 深夜時間\n" +
+                "空欄だと自動では入りません（手入力になります）"}
+              {...field} value={field.value ? field.value : ""}
+              onChange={(e) => field.onChange(e.target.value === "" ? 0 : Number(e.target.value))}
+              className="text-right bg-white dark:bg-slate-900/40" />
+            <span className="text-xs text-muted-foreground shrink-0">円/時</span>
+          </div>
+        </FormControl>
+        <p className={`text-[11px] mt-1 ${ovrOtRate > 0 ? "text-amber-800 dark:text-amber-300 font-semibold" : "text-muted-foreground"}`}>
+          → 適用: {ovrOtRate > 0
+            ? `個人 ${ovrOtRate.toLocaleString()}円/時（早出残業手当・深夜手当に自動反映）`
+            : "未設定（早出残業手当・深夜手当は自動で入りません）"}
+        </p>
+        <FormMessage /></FormItem>
+    )} />
+  );
+
   return (
     <Tabs defaultValue="basic" className="w-full">
       <TabsList
@@ -896,23 +924,7 @@ function EmpFormFields({
                     </p>
                     <FormMessage /></FormItem>
                 )} />
-                <FormField control={f.control} name="overtimeHourlyRate" render={({ field }) => (
-                  <FormItem><FormLabel className="text-xs font-medium">残業 時給（円/時）</FormLabel>
-                    <FormControl>
-                      <div className="flex items-center gap-1">
-                        <TipInput type="number" min={0} step={1} placeholder="自動計算"
-                          tip={"割増後の残業時給単価（入力値がそのまま残業時給）。\n残業手当 = この単価 × 残業時間\n60時間超は ×1.20 追加割増\n空欄なら 基本給 ÷ 月平均労働時間 × 1.25 で自動計算"}
-                          {...field} value={field.value ? field.value : ""}
-                          onChange={(e) => field.onChange(e.target.value === "" ? 0 : Number(e.target.value))}
-                          className="text-right bg-white dark:bg-slate-900/40" />
-                        <span className="text-xs text-muted-foreground shrink-0">円/時</span>
-                      </div>
-                    </FormControl>
-                    <p className={`text-[11px] mt-1 ${ovrOtRate > 0 ? "text-amber-800 dark:text-amber-300 font-semibold" : "text-muted-foreground"}`}>
-                      → 適用: {ovrOtRate > 0 ? `個人 ${ovrOtRate.toLocaleString()}円/時` : "自動計算（基本給÷月平均×1.25）"}
-                    </p>
-                    <FormMessage /></FormItem>
-                )} />
+                {overtimeRateField}
               </div>
               <details className="text-xs text-muted-foreground">
                 <summary className="cursor-pointer select-none hover:text-foreground">残業を「分単位」で計算する（任意・上級者向け）</summary>
@@ -944,6 +956,19 @@ function EmpFormFields({
                   )} />
                 </div>
               </details>
+            </div>
+            )}
+            {salaryType !== "daily" && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-500/10 dark:border-amber-500/25 p-3.5 space-y-3">
+              <div>
+                <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">残業の単価</p>
+                <p className="text-xs text-amber-700 dark:text-amber-300/80 mt-0.5">
+                  残業したときに手当を付ける社員は入力してください。月次実績入力の残業・深夜の時間から自動で計算されます。
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {overtimeRateField}
+              </div>
             </div>
             )}
             <FormField control={f.control} name="residentTax" render={({ field }) => (
