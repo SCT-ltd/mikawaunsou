@@ -293,8 +293,11 @@ export default function MonthlyInput() {
         }
       }
 
-      // 保存した社員の給与を計算する。確定済み(409)と、それ以外の失敗（BWで売上0円など）は
-      // 黙って捨てると「保存したのに明細が変わらない」形でしか気付けないので、分けて表示する。
+      // 保存した社員の給与を計算する。計算方法は必ず手入力固定（manual）。
+      // 事務所は全員を手入力固定で確定している。指定しないと、その月に明細がまだ無い社員は
+      // 自動計算（BW社員はBW自動計算）で作られ、内部計算の残業手当・固定残業代に手当・控除タブの
+      // 早出残業手当・職務手当まで足されて二重計上になっていた（2026年9月に5件発生）。
+      // 確定済み(409)と、それ以外の失敗は黙って捨てると気付けないので、分けて表示する。
       let calculated = 0;
       let confirmedSkipped = 0;
       const failures: string[] = [];
@@ -304,7 +307,7 @@ export default function MonthlyInput() {
           const res = await fetch(`${BASE}/api/payroll/calculate`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ employeeId, year, month }),
+            body: JSON.stringify({ employeeId, year, month, calculationMode: "manual" }),
           });
           if (res.ok) calculated++;
           else if (res.status === 409) confirmedSkipped++;
@@ -432,7 +435,7 @@ export default function MonthlyInput() {
     ? `変更した${dirtyCount}名分の実績を保存し、給与明細を計算します。\n` +
       `対象：${dirtyNamesLabel}\n` +
       "・変更していない社員は保存も計算もしません\n" +
-      "・未確定の明細は前回と同じ計算方法で計算します（その月の明細がまだ無い社員は自動計算）\n" +
+      "・計算方法は手入力固定です（基本給＋手当・控除タブの金額。自動計算は使いません）\n" +
       "・確定済みの明細は計算しません\n" +
       "・手当の金額は「手当・控除」タブで自動保存されます"
     : "変更した社員がいないため押せません。\n" +

@@ -314,14 +314,19 @@ export function AllowancePanel({
   const overtimeHours  = monthlyData?.overtimeHours  ?? 0;
   const lateNightHours = monthlyData?.lateNightHours ?? 0;
 
+  function defIdOfName(keyword: string): number | null {
+    return allowanceDefinitions.find((d) => d.name.includes(keyword))?.id ?? null;
+  }
+
   // 有給の単価は平日日当と同じ
   const paidLeaveRate = rateWeekday;
   // 残業の単価: 社員マスタの「残業 時給（円/時）」。未設定(0)の社員は自動反映しない
   // （0円で上書きして手入力を消さないため）。
   const overtimeRate = employee.overtimeHourlyRate ?? 0;
+  const overtimeDefId = defIdOfName("早出残業手当");
+  const lateNightDefId = defIdOfName("深夜手当");
 
-  const defIdOf = (keyword: string) =>
-    allowanceDefinitions.find((d) => d.name.includes(keyword))?.id ?? null;
+  const defIdOf = defIdOfName;
 
   /** 勤怠から金額が決まる手当。defId が null（手当が未定義）のものは対象外。 */
   const autoRows = useMemo(() => {
@@ -805,6 +810,20 @@ export function AllowancePanel({
           <span className="w-6 shrink-0" />
         </div>
 
+        {/* 残業時給が未設定の社員への案内。古い月の金額が気付かれずに残るのを防ぐ */}
+        {overtimeRate <= 0 &&
+          (overtimeHours > 0 ||
+            lateNightHours > 0 ||
+            rows.some((r) => (r.defId === overtimeDefId || r.defId === lateNightDefId) && r.amount > 0)) && (
+            <div className="px-4 py-2 border-b border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-xs text-amber-900 dark:text-amber-200">
+              <div className="font-semibold">残業時給が未設定のため、早出残業手当・深夜手当は勤怠から自動計算されていません</div>
+              <div className="mt-0.5">
+                マスター管理 → この社員 →「給与設定」タブの「残業 時給（円/時）」を設定すると、
+                残業{overtimeHours}h・深夜{lateNightHours}hから自動で入るようになります。
+              </div>
+            </div>
+          )}
+
         {/* 列ヘッダー（ドラッグ案内兼用） */}
         <div className="flex items-center gap-1 px-4 py-1.5 bg-muted/30 border-b border-border/40">
           <span className="w-6 shrink-0" />
@@ -823,7 +842,12 @@ export function AllowancePanel({
               definitions={allowanceDefinitions}
               onChange={handleAllowanceChange}
               onRemove={handleRemoveAllowance}
-              autoNote={autoRows.find((a) => a.defId === row.defId)?.note}
+              autoNote={
+                autoRows.find((a) => a.defId === row.defId)?.note ??
+                (overtimeRate <= 0 && row.defId !== null && (row.defId === overtimeDefId || row.defId === lateNightDefId)
+                  ? "残業時給が未設定のため自動計算されていません（手入力の金額です）"
+                  : undefined)
+              }
             />
           ))}
         </Reorder.Group>
