@@ -8,6 +8,7 @@ import {
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { requireAdmin } from "../lib/auth-middleware";
 import { paramStr } from "../lib/params";
+import { writeAudit, diffRow } from "../lib/audit";
 import {
   getEffectiveInsuranceRates,
   listInsuranceRatePeriods,
@@ -80,6 +81,7 @@ router.post("/insurance-rate-periods", requireAdmin, async (req, res) => {
   await listInsuranceRatePeriods(); // 初期行が未作成なら先に作る
   try {
     const [row] = await db.insert(insuranceRatePeriodsTable).values(parsed.value!).returning();
+    await writeAudit(req, { action: "insurance_rate.create", targetType: "insurance_rate_period", targetId: row.id, detail: { after: row } });
     return res.status(201).json(row);
   } catch (e) {
     if (isUniqueViolation(e)) return res.status(409).json({ error: "同じ適用開始の年月の行がすでにあります。その行を編集してください。" });
@@ -91,12 +93,15 @@ router.put("/insurance-rate-periods/:id", requireAdmin, async (req, res) => {
   const id = parseInt(paramStr(req.params.id), 10);
   const parsed = parseRatePeriodBody(req.body ?? {});
   if ("error" in parsed) return res.status(400).json({ error: parsed.error });
+  const [before] = await db.select().from(insuranceRatePeriodsTable).where(eq(insuranceRatePeriodsTable.id, id));
+  if (!before) return res.status(404).json({ error: "料率の行が見つかりません。" });
   try {
     const [row] = await db.update(insuranceRatePeriodsTable)
       .set({ ...parsed.value!, updatedAt: new Date() })
       .where(eq(insuranceRatePeriodsTable.id, id))
       .returning();
     if (!row) return res.status(404).json({ error: "料率の行が見つかりません。" });
+    await writeAudit(req, { action: "insurance_rate.update", targetType: "insurance_rate_period", targetId: id, detail: { changes: diffRow(before, row) } });
     return res.json(row);
   } catch (e) {
     if (isUniqueViolation(e)) return res.status(409).json({ error: "同じ適用開始の年月の行がすでにあります。" });
@@ -107,9 +112,11 @@ router.put("/insurance-rate-periods/:id", requireAdmin, async (req, res) => {
 router.delete("/insurance-rate-periods/:id", requireAdmin, async (req, res) => {
   const id = parseInt(paramStr(req.params.id), 10);
   const rows = await listInsuranceRatePeriods();
-  if (!rows.some((r) => r.id === id)) return res.status(404).json({ error: "料率の行が見つかりません。" });
+  const target = rows.find((r) => r.id === id);
+  if (!target) return res.status(404).json({ error: "料率の行が見つかりません。" });
   if (rows.length <= 1) return res.status(400).json({ error: "最後の1行は削除できません（料率が無いと計算できないため）。" });
   await db.delete(insuranceRatePeriodsTable).where(eq(insuranceRatePeriodsTable.id, id));
+  await writeAudit(req, { action: "insurance_rate.delete", targetType: "insurance_rate_period", targetId: id, detail: { before: target } });
   return res.status(204).end();
 });
 
@@ -176,6 +183,7 @@ router.post("/employees/:id/standard-remuneration-history", async (req, res) => 
   const amount = validAmount(req.body?.amount);
   if (amount === null) return res.status(400).json({ error: "標準報酬月額が正しくありません。" });
   const [row] = await saveHistory(meta.value!, [{ employeeId, amount }]);
+  await writeAudit(req, { action: "standard_remuneration.save", targetType: "employee", targetId: employeeId, detail: { after: row } });
   return res.status(201).json(row);
 });
 
@@ -186,6 +194,7 @@ router.delete("/employees/:id/standard-remuneration-history/:historyId", async (
     .where(and(eq(standardRemunerationHistoryTable.id, historyId), eq(standardRemunerationHistoryTable.employeeId, employeeId)))
     .returning();
   if (deleted.length === 0) return res.status(404).json({ error: "履歴が見つかりません。" });
+  await writeAudit(req, { action: "standard_remuneration.delete", targetType: "employee", targetId: employeeId, detail: { before: deleted[0] } });
   return res.status(204).end();
 });
 
@@ -220,6 +229,8 @@ router.post("/standard-remuneration/bulk", async (req, res) => {
   const found = await db.select({ id: employeesTable.id }).from(employeesTable).where(inArray(employeesTable.id, ids));
   if (found.length !== ids.length) return res.status(400).json({ error: "存在しない社員が含まれています。" });
   const rows = await saveHistory(meta.value!, entries);
+  await writeAudit(req, { action: "standard_remuneration.bulk", targetType: "standard_remuneration", targetId: null,
+    detail: { ...meta.value!, entries } });
   return res.status(201).json(rows);
 });
 

@@ -15,6 +15,8 @@ import {
 } from "@workspace/db";
 import { asc, eq } from "drizzle-orm";
 
+import { writeAudit, diffRow } from "../lib/audit";
+
 const router = Router();
 
 /**
@@ -116,6 +118,8 @@ router.get("/employees/:id", async (req, res) => {
 router.put("/employees/:id", async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const body = req.body;
+  const [before] = await db.select().from(employeesTable).where(eq(employeesTable.id, id));
+  if (!before) return res.status(404).json({ error: "社員が見つかりません。" });
   const [updated] = await db.update(employeesTable)
     .set({
       ...(body.employeeCode !== undefined && { employeeCode: body.employeeCode }),
@@ -166,6 +170,11 @@ router.put("/employees/:id", async (req, res) => {
     .where(eq(employeesTable.id, id))
     .returning();
   if (!updated) return res.status(404).json({ error: "社員が見つかりません。" });
+  const changes = diffRow(before, updated, ["updatedAt", "createdAt", "pin"]);
+  if (Object.keys(changes).length > 0) {
+    await writeAudit(req, { action: "employee.update", targetType: "employee", targetId: id,
+      detail: { employeeCode: updated.employeeCode, name: updated.name, changes } });
+  }
   return res.json(sanitizeEmployee(updated));
 });
 
@@ -173,7 +182,7 @@ router.delete("/employees/:id", async (req, res) => {
   const id = parseInt(req.params.id, 10);
 
   // 社員が存在するか確認
-  const [emp] = await db.select({ id: employeesTable.id })
+  const [emp] = await db.select()
     .from(employeesTable).where(eq(employeesTable.id, id));
   if (!emp) return res.status(404).json({ error: "社員が見つかりません" });
 
@@ -202,6 +211,9 @@ router.delete("/employees/:id", async (req, res) => {
   await db.delete(messagesTable).where(eq(messagesTable.employeeId, id));
   await db.delete(employeesTable).where(eq(employeesTable.id, id));
 
+  const { pin: _pin, ...empForLog } = emp;
+  await writeAudit(req, { action: "employee.delete", targetType: "employee", targetId: id, detail: { before: empForLog } });
+
   return res.status(204).send();
 });
 
@@ -219,6 +231,7 @@ router.put("/employees/:id/pin", async (req, res) => {
     .where(eq(employeesTable.id, id))
     .returning({ id: employeesTable.id });
   if (!updated) return res.status(404).json({ error: "社員が見つかりません。" });
+  await writeAudit(req, { action: "employee.pin_set", targetType: "employee", targetId: id });
   return res.json({ ok: true });
 });
 
@@ -230,6 +243,7 @@ router.delete("/employees/:id/pin", async (req, res) => {
     .where(eq(employeesTable.id, id))
     .returning({ id: employeesTable.id });
   if (!updated) return res.status(404).json({ error: "社員が見つかりません。" });
+  await writeAudit(req, { action: "employee.pin_reset", targetType: "employee", targetId: id });
   return res.json({ ok: true });
 });
 

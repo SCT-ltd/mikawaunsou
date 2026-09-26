@@ -37,6 +37,8 @@ PostgreSQL への接続（pg `Pool`）と Drizzle ORM のスキーマ定義を�
 
 ## 決定事項
 
+- 2026-09-26 **監査ログのテーブル `audit_logs` を追加**（`src/schema/audit.ts`）。列: `at`（timestamptz）/ `user_id`（未ログインの QR 打刻は null）/ `actor_label` / `action`（例 `payroll.confirm`）/ `target_type` / `target_id` / `detail`（jsonb。前後の値、削除した行の中身）/ `ip`。インデックス `audit_logs_target_idx`（target_type, target_id）と `audit_logs_at_idx`（at）。追記専用（外部キーは張らない＝対象を消しても記録は残る）。
+  - ※ **本番（NAS）と Neon には未適用**。追加のみのテーブルなので既存データには影響しない。
 - 2026-09-14 **保険料率と標準報酬月額の履歴テーブルを追加**（年度改定・定時決定をマスターで切り替えるため）。
   - `insurance_rate_periods`: 適用開始（`effective_year` / `effective_month` ＝給与明細の年月、一意）、`health_insurance_rate` / `care_insurance_rate` / `childcare_support_rate` / `pension_rate`（いずれも会社＋本人の合計の率）、`employment_insurance_rate`（本人負担）、`pension_max_standard`（既定650,000）、`note`。
   - `standard_remuneration_history`: `employee_id`（社員削除でカスケード）、適用開始（社員×年月で一意）、`amount`、`reason`（teiji/zuiji/shikaku/other）、`note`。
