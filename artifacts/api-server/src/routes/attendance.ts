@@ -1,9 +1,10 @@
 import { Router, type Response } from "express";
 import { db, attendanceRecordsTable, employeesTable, absenceRecordsTable, liveLocationsTable, attendanceDraftsTable } from "@workspace/db";
 import { paramStr } from "../lib/params";
-import { asc, eq, and, gte, lte, sql } from "drizzle-orm";
+import { asc, desc, eq, and, gte, lte, inArray, sql } from "drizzle-orm";
 import { ABSENCE_DAYS } from "./absences";
 import { requireAdmin, requireOwnerOrAdmin, requireAttendanceRecordOwnerOrAdmin } from "../lib/auth-middleware";
+import { writeAudit } from "../lib/audit";
 
 const router = Router();
 
@@ -42,8 +43,63 @@ function todayJST(): string {
   return jst.toISOString().slice(0, 10);
 }
 
+function jstDateOf(d: Date): string {
+  return new Date(d.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+// ── 日をまたぐ運行（「いまのシフト」の勤務日）─────────────────────
+// 長距離の運行では、出勤した翌日（5時以降のことも、24時間を超えることもある）に退勤する。
+// 以前は「JST 0〜4時台の打刻だけ前日扱い」だったため、5時以降の退勤は翌日の打刻になり、
+// 前日は出勤だけ（実働0分）・翌日は退勤だけ、に割れていた。
+// いまは「最後の出勤がまだ退勤していなければ、その出勤の勤務日がいまのシフト」とする。
+// 出勤から OPEN_SHIFT_LOOKBACK_HOURS を過ぎたものは退勤忘れとみなし、当日扱いに戻す。
+const OPEN_SHIFT_LOOKBACK_HOURS = 48;
+
+type ShiftRec = { employeeId: number; eventType: string; workDate: string; recordedAt: Date | string };
+
+/** 1人分の打刻から「at の時点で続いているシフト」の勤務日を返す。無ければ null */
+function openShiftDate(recs: ShiftRec[], at: Date): string | null {
+  const since = at.getTime() - OPEN_SHIFT_LOOKBACK_HOURS * 60 * 60 * 1000;
+  let last: ShiftRec | null = null;
+  for (const r of recs) {
+    if (r.eventType !== "clock_in") continue;
+    const t = new Date(r.recordedAt).getTime();
+    if (t < since || t > at.getTime()) continue;
+    if (!last || t > new Date(last.recordedAt).getTime()) last = r;
+  }
+  if (!last) return null;
+  const closed = recs.some(r => r.eventType === "clock_out" && r.workDate === last!.workDate);
+  return closed ? null : last.workDate;
+}
+
+/** その社員の「いまのシフト」の勤務日（続いているシフトが無ければ at の JST 日付） */
+async function currentShiftDate(employeeId: number, at: Date = new Date()): Promise<string> {
+  const fromDate = jstDateOf(new Date(at.getTime() - OPEN_SHIFT_LOOKBACK_HOURS * 60 * 60 * 1000));
+  const recs = await db
+    .select({
+      employeeId: attendanceRecordsTable.employeeId,
+      eventType: attendanceRecordsTable.eventType,
+      workDate: attendanceRecordsTable.workDate,
+      recordedAt: attendanceRecordsTable.recordedAt,
+    })
+    .from(attendanceRecordsTable)
+    .where(and(
+      eq(attendanceRecordsTable.employeeId, employeeId),
+      gte(attendanceRecordsTable.workDate, fromDate),
+      inArray(attendanceRecordsTable.eventType, ["clock_in", "clock_out"]),
+    ))
+    .orderBy(desc(attendanceRecordsTable.recordedAt));
+  return openShiftDate(recs, at) ?? jstDateOf(at);
+}
+
 async function buildSnapshot(date?: string) {
+  // 日付の指定が無い（＝いまの状況）ときは、日をまたいで続いているシフトも「いま」として出す
+  const live = date === undefined;
+  const now = new Date();
   const targetDate = date ?? todayJST();
+  const fromDate = live
+    ? jstDateOf(new Date(now.getTime() - OPEN_SHIFT_LOOKBACK_HOURS * 60 * 60 * 1000))
+    : targetDate;
 
   const employees = await db
     .select()
@@ -55,18 +111,20 @@ async function buildSnapshot(date?: string) {
     db
       .select()
       .from(attendanceRecordsTable)
-      .where(eq(attendanceRecordsTable.workDate, targetDate))
+      .where(and(gte(attendanceRecordsTable.workDate, fromDate), lte(attendanceRecordsTable.workDate, targetDate)))
       .orderBy(attendanceRecordsTable.recordedAt),
     db
       .select()
       .from(attendanceDraftsTable)
-      .where(eq(attendanceDraftsTable.workDate, targetDate)),
+      .where(and(gte(attendanceDraftsTable.workDate, fromDate), lte(attendanceDraftsTable.workDate, targetDate))),
   ]);
 
   return employees.map(emp => {
-    const empRecords = allRecords.filter(r => r.employeeId === emp.id);
+    const ownRecords = allRecords.filter(r => r.employeeId === emp.id);
+    const shiftDate = live ? (openShiftDate(ownRecords, now) ?? targetDate) : targetDate;
+    const empRecords = ownRecords.filter(r => r.workDate === shiftDate);
     const lastEvent = empRecords.length > 0 ? empRecords[empRecords.length - 1] : null;
-    const draft = allDrafts.find(d => d.employeeId === emp.id) ?? null;
+    const draft = allDrafts.find(d => d.employeeId === emp.id && d.workDate === shiftDate) ?? null;
 
     let status: string;
     if (!lastEvent) status = "未出勤";
@@ -178,7 +236,7 @@ router.get("/attendance/today", async (req, res) => {
 // ── 社員の今日の打刻一覧 ─────────────────────────────
 router.get("/attendance/employee/:employeeId/today", requireOwnerOrAdmin(req => parseInt(paramStr(req.params.employeeId), 10)), async (req, res) => {
   const employeeId = parseInt(paramStr(req.params.employeeId), 10);
-  const today = todayJST();
+  const today = await currentShiftDate(employeeId);
 
   const records = await db
     .select()
@@ -266,30 +324,10 @@ router.post("/attendance/record", async (req, res) => {
   if (now.getTime() > Date.now() + 60 * 1000) {
     return res.status(400).json({ error: "未来の時刻で打刻することはできません" });
   }
-  const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  const jstDateStr = jst.toISOString().slice(0, 10);
-  const jstHour    = jst.getUTCHours(); // JST時間（0〜23）
-
-  // ── 深夜クロスオーバー判定 ─────────────────────────────
-  // 出勤以外の打刻で JST 0〜4時台の場合、前日にオープンシフト（出勤のみ・退勤なし）
-  // があれば、その前日を workDate として割り当てる（25時制対応）
-  let workDate = jstDateStr;
-  if (eventType !== "clock_in" && jstHour < 5) {
-    const prevDate = new Date(jst.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const prevDayRecords = await db
-      .select({ eventType: attendanceRecordsTable.eventType })
-      .from(attendanceRecordsTable)
-      .where(and(
-        eq(attendanceRecordsTable.employeeId, employeeId),
-        eq(attendanceRecordsTable.workDate, prevDate),
-      ));
-    const hasClockIn  = prevDayRecords.some(r => r.eventType === "clock_in");
-    const hasClockOut = prevDayRecords.some(r => r.eventType === "clock_out");
-    if (hasClockIn && !hasClockOut) {
-      // 前日にオープンシフトがある → 前日の打刻として記録
-      workDate = prevDate;
-    }
-  }
+  // ── 勤務日の割り当て ─────────────────────────────────
+  // 出勤はその時刻の JST 日付。休憩・退勤は「続いているシフト」の勤務日に付ける
+  // （日をまたぐ運行でも出勤と退勤が同じ勤務日に揃う。currentShiftDate の説明を参照）。
+  const workDate = eventType === "clock_in" ? jstDateOf(now) : await currentShiftDate(employeeId, now);
 
   // 同日・同種別の重複チェック（休憩は複数回取得可のため除外）
   if (eventType === "clock_in" || eventType === "clock_out") {
@@ -372,6 +410,14 @@ router.patch("/attendance/records/:id", requireAttendanceRecordOwnerOrAdmin, asy
     }
   }
 
+  const [beforeRecord] = await db
+    .select()
+    .from(attendanceRecordsTable)
+    .where(eq(attendanceRecordsTable.id, id));
+  if (!beforeRecord) {
+    return res.status(404).json({ error: "レコードが見つかりません" });
+  }
+
   const updateValues: Record<string, unknown> = {};
   if (eventType) updateValues.eventType = eventType;
   if (recordedAt) updateValues.recordedAt = new Date(recordedAt);
@@ -386,6 +432,12 @@ router.patch("/attendance/records/:id", requireAttendanceRecordOwnerOrAdmin, asy
   if (!updated) {
     return res.status(404).json({ error: "レコードが見つかりません" });
   }
+
+  await writeAudit(req, { action: "attendance.update", targetType: "attendance_record", targetId: id, detail: {
+    employeeId: beforeRecord.employeeId,
+    before: { eventType: beforeRecord.eventType, recordedAt: beforeRecord.recordedAt, workDate: beforeRecord.workDate },
+    after: { eventType: updated.eventType, recordedAt: updated.recordedAt, workDate: updated.workDate },
+  } });
 
   buildSnapshot().then(snapshot => broadcast(snapshot)).catch(() => {});
   return res.json(updated);
@@ -406,6 +458,10 @@ router.delete("/attendance/records/:id", requireAttendanceRecordOwnerOrAdmin, as
     return res.status(404).json({ error: "レコードが見つかりません" });
   }
 
+  // 出勤簿は法定保存の対象。行そのものは消すが、削除した内容をまるごと監査ログに残す。
+  await writeAudit(req, { action: "attendance.delete", targetType: "attendance_record", targetId: id,
+    detail: { employeeId: deleted.employeeId, before: deleted } });
+
   buildSnapshot().then(snapshot => broadcast(snapshot)).catch(() => {});
   return res.status(204).send();
 });
@@ -413,7 +469,7 @@ router.delete("/attendance/records/:id", requireAttendanceRecordOwnerOrAdmin, as
 // ── 本日のチェックリスト取得（復元用） ────────────────
 router.get("/attendance/checklist/:employeeId", requireOwnerOrAdmin(req => parseInt(paramStr(req.params.employeeId), 10)), async (req, res) => {
   const employeeId = parseInt(paramStr(req.params.employeeId), 10);
-  const today = todayJST();
+  const today = await currentShiftDate(employeeId);
 
   const [clockInRec] = await db
     .select({ checklistNgItems: attendanceRecordsTable.checklistNgItems })
@@ -439,7 +495,7 @@ router.patch("/attendance/checklist/:employeeId", requireOwnerOrAdmin(req => par
     return res.status(400).json({ error: "checklistNgItems が必要です" });
   }
 
-  const today = todayJST();
+  const today = await currentShiftDate(employeeId);
   const [clockInRec] = await db
     .select()
     .from(attendanceRecordsTable)
@@ -469,7 +525,7 @@ router.patch("/attendance/checklist/:employeeId", requireOwnerOrAdmin(req => par
 // ── 入力ドラフト 取得 ─────────────────────────────────
 router.get("/attendance/draft/:employeeId", requireOwnerOrAdmin(req => parseInt(paramStr(req.params.employeeId), 10)), async (req, res) => {
   const employeeId = parseInt(paramStr(req.params.employeeId), 10);
-  const today = todayJST();
+  const today = await currentShiftDate(employeeId);
 
   const [draft] = await db
     .select()
@@ -493,7 +549,7 @@ router.patch("/attendance/draft/:employeeId", requireOwnerOrAdmin(req => parseIn
     endOdometer?: number | null;
   };
 
-  const today = todayJST();
+  const today = await currentShiftDate(employeeId);
 
   const [upserted] = await db
     .insert(attendanceDraftsTable)
@@ -640,6 +696,7 @@ router.get("/attendance/monthly-summary", requireAdmin, async (req, res) => {
     workDays: number;
     saturdayWorkDays: number;
     sundayWorkDays: number;
+    sundayWorkHours: number;
     overtimeHours: number;
     drivingDistanceKm: number;
     actualWorkHours: number;
@@ -652,7 +709,7 @@ router.get("/attendance/monthly-summary", requireAdmin, async (req, res) => {
     if (!recs.some(r => r.eventType === "clock_in")) continue;
 
     if (!summaryMap.has(empId)) {
-      summaryMap.set(empId, { workDays: 0, saturdayWorkDays: 0, sundayWorkDays: 0, overtimeHours: 0, drivingDistanceKm: 0, actualWorkHours: 0 });
+      summaryMap.set(empId, { workDays: 0, saturdayWorkDays: 0, sundayWorkDays: 0, sundayWorkHours: 0, overtimeHours: 0, drivingDistanceKm: 0, actualWorkHours: 0 });
     }
     const s = summaryMap.get(empId)!;
     const dow = new Date(dateStr).getDay(); // 0=日, 6=土
@@ -667,8 +724,9 @@ router.get("/attendance/monthly-summary", requireAdmin, async (req, res) => {
     s.actualWorkHours = Math.round((s.actualWorkHours + billingMins / 60) * 100) / 100;
 
     if (dow === 0) {
-      // 日曜出勤は日数でカウント（日当×1.35で計算するため）
+      // 日曜出勤は 2026-08 から「時間 × 日曜時給」で計算する。日数は過去データ互換のため併せて集計。
       s.sundayWorkDays += 1;
+      s.sundayWorkHours = Math.round((s.sundayWorkHours + rawWorkMins / 60) * 10) / 10;
     } else if (dow === 6) {
       s.saturdayWorkDays += 1;
     } else {
@@ -687,17 +745,21 @@ router.get("/attendance/monthly-summary", requireAdmin, async (req, res) => {
       lte(absenceRecordsTable.workDate, to),
     ));
 
-  // 欠勤ごとに absenceDays を加算
+  // 欠勤ごとに日数を加算。
+  // 有給休暇(paid_leave)は「休んでも賃金が出る」ので欠勤控除の対象にしてはいけない。
+  // absenceDays（＝日当×日数で控除される）とは別に paidLeaveDays として集計する。
   const absenceSummary = new Map<number, number>();
+  const paidLeaveSummary = new Map<number, number>();
   for (const a of absenceRecs) {
     const days = ABSENCE_DAYS[a.absenceType] ?? 1.0;
-    absenceSummary.set(a.employeeId, (absenceSummary.get(a.employeeId) ?? 0) + days);
+    const target = a.absenceType === "paid_leave" ? paidLeaveSummary : absenceSummary;
+    target.set(a.employeeId, (target.get(a.employeeId) ?? 0) + days);
   }
 
-  // 欠勤のみの社員も結果に含める
-  for (const [empId] of absenceSummary.entries()) {
+  // 欠勤・有給のみの社員も結果に含める
+  for (const [empId] of [...absenceSummary.entries(), ...paidLeaveSummary.entries()]) {
     if (!summaryMap.has(empId)) {
-      summaryMap.set(empId, { workDays: 0, saturdayWorkDays: 0, sundayWorkDays: 0, overtimeHours: 0, drivingDistanceKm: 0, actualWorkHours: 0 });
+      summaryMap.set(empId, { workDays: 0, saturdayWorkDays: 0, sundayWorkDays: 0, sundayWorkHours: 0, overtimeHours: 0, drivingDistanceKm: 0, actualWorkHours: 0 });
     }
   }
 
@@ -705,6 +767,7 @@ router.get("/attendance/monthly-summary", requireAdmin, async (req, res) => {
     employeeId,
     ...s,
     absenceDays: Math.round((absenceSummary.get(employeeId) ?? 0) * 10) / 10,
+    paidLeaveDays: Math.round((paidLeaveSummary.get(employeeId) ?? 0) * 10) / 10,
   }));
 
   return res.json(result);
@@ -743,7 +806,9 @@ router.post("/attendance/location/live", requireOwnerOrAdmin(req => Number((req.
 
 // ── ライブ位置情報 全社員取得（マップ表示用） ─────────────
 router.get("/attendance/location/live", requireAdmin, async (req, res) => {
+  const now = new Date();
   const today = todayJST();
+  const fromDate = jstDateOf(new Date(now.getTime() - OPEN_SHIFT_LOOKBACK_HOURS * 60 * 60 * 1000));
 
   const [employees, liveRows, todayRecords] = await Promise.all([
     db.select().from(employeesTable).where(eq(employeesTable.isActive, true)).orderBy(asc(employeesTable.employeeCode)),
@@ -751,19 +816,23 @@ router.get("/attendance/location/live", requireAdmin, async (req, res) => {
     db.select({
         employeeId: attendanceRecordsTable.employeeId,
         eventType: attendanceRecordsTable.eventType,
+        workDate: attendanceRecordsTable.workDate,
         recordedAt: attendanceRecordsTable.recordedAt,
         latitude: attendanceRecordsTable.latitude,
         longitude: attendanceRecordsTable.longitude,
       })
       .from(attendanceRecordsTable)
-      .where(eq(attendanceRecordsTable.workDate, today))
+      .where(and(gte(attendanceRecordsTable.workDate, fromDate), lte(attendanceRecordsTable.workDate, today)))
       .orderBy(attendanceRecordsTable.recordedAt),
   ]);
 
   const liveMap = new Map(liveRows.map(r => [r.employeeId, r]));
 
   const result = employees.map(emp => {
-    const empRecords = todayRecords.filter(r => r.employeeId === emp.id);
+    // 日をまたいで続いているシフトがあれば、その勤務日の打刻で状態を出す
+    const ownRecords = todayRecords.filter(r => r.employeeId === emp.id);
+    const shiftDate = openShiftDate(ownRecords, now) ?? today;
+    const empRecords = ownRecords.filter(r => r.workDate === shiftDate);
     const lastEvent = empRecords.length > 0 ? empRecords[empRecords.length - 1] : null;
 
     let status: string;
@@ -806,7 +875,9 @@ router.get("/attendance/location/live", requireAdmin, async (req, res) => {
 
 // ── 全社員の最新GPS位置情報（リアルタイムマップ用） ────────
 router.get("/attendance/gps-locations", requireAdmin, async (req, res) => {
+  const now = new Date();
   const today = todayJST();
+  const fromDate = jstDateOf(new Date(now.getTime() - OPEN_SHIFT_LOOKBACK_HOURS * 60 * 60 * 1000));
 
   const employees = await db
     .select()
@@ -817,11 +888,13 @@ router.get("/attendance/gps-locations", requireAdmin, async (req, res) => {
   const todayRecords = await db
     .select()
     .from(attendanceRecordsTable)
-    .where(eq(attendanceRecordsTable.workDate, today))
+    .where(and(gte(attendanceRecordsTable.workDate, fromDate), lte(attendanceRecordsTable.workDate, today)))
     .orderBy(attendanceRecordsTable.recordedAt);
 
   const result = employees.map(emp => {
-    const empRecords = todayRecords.filter(r => r.employeeId === emp.id);
+    const ownRecords = todayRecords.filter(r => r.employeeId === emp.id);
+    const shiftDate = openShiftDate(ownRecords, now) ?? today;
+    const empRecords = ownRecords.filter(r => r.workDate === shiftDate);
     const lastEvent = empRecords.length > 0 ? empRecords[empRecords.length - 1] : null;
 
     let status: string;

@@ -90,23 +90,18 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL}
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-60}
+      # 毎日この時刻（JST）以降に1回ダンプする
+      BACKUP_HOUR: ${BACKUP_HOUR:-3}
+      # 週1回、実際に復元できるかを確かめる曜日（1=月〜7=日）
+      BACKUP_VERIFY_WEEKDAY: ${BACKUP_VERIFY_WEEKDAY:-7}
+      # 失敗・復元テストの結果を送る Discord / Slack の Webhook（任意）
+      BACKUP_ALERT_WEBHOOK: ${BACKUP_ALERT_WEBHOOK:-}
       TZ: Asia/Tokyo
     volumes:
       - ./backups:/backups
+      - ./backup/backup.sh:/backup.sh:ro
     depends_on:
       db:
         condition: service_healthy
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        echo "[backup] started (retention=$${BACKUP_RETENTION_DAYS}d)"
-        while true; do
-          ts=$$(date +%Y%m%d-%H%M%S)
-          if pg_dump "$$DATABASE_URL" -Fc -f "/backups/mikawa-$$ts.dump"; then
-            echo "[backup] ok: mikawa-$$ts.dump"
-            find /backups -name 'mikawa-*.dump' -mtime +$${BACKUP_RETENTION_DAYS} -delete
-          else
-            echo "[backup] FAILED at $$ts" >&2
-          fi
-          sleep 86400
-        done
+    # 中身は deploy/backup/backup.sh（ダンプ→読めるか確認→保持日数で削除、週1回の復元テスト）
+    entrypoint: ["/bin/sh", "/backup.sh"]

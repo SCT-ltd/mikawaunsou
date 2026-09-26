@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "wouter";
 import { playNotificationSound, unlockAudio } from "@/lib/notification-sound";
+import { registerPush } from "@/lib/push";
 
 type EventType = "clock_in" | "clock_out" | "break_start" | "break_end";
 type Status = "未出勤" | "出勤中" | "休憩中" | "退勤済";
@@ -505,40 +506,8 @@ export default function DriverPage() {
   useEffect(() => {
     if (!pinVerified) return;
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
-    (async () => {
-      try {
-        const reg = await navigator.serviceWorker.ready;
-        const keyRes = await fetch(`${BASE}/api/messages/vapid-public-key`);
-        const { publicKey } = await keyRes.json() as { publicKey: string };
-        if (!publicKey) return;
-        const perm = await Notification.requestPermission();
-        if (perm !== "granted") return;
-        const sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(publicKey) as BufferSource,
-        });
-        const json = sub.toJSON();
-        await fetch(`${BASE}/api/push/subscribe`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            employeeId,
-            role: "employee",
-            endpoint: json.endpoint,
-            p256dh: json.keys?.p256dh,
-            auth: json.keys?.auth,
-          }),
-        });
-      } catch { /* silent */ }
-    })();
+    registerPush(employeeId, "employee", { askPermission: true });
   }, [employeeId, pinVerified]);
-
-  function urlBase64ToUint8Array(base64String: string): Uint8Array {
-    const padding = "=".repeat((4 - base64String.length % 4) % 4);
-    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-    const rawData = window.atob(base64);
-    return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
-  }
 
   const sendMessage = async () => {
     if (!msgInput.trim() || msgSending) return;

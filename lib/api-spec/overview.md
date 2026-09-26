@@ -27,6 +27,10 @@
 
 ## 決定事項
 
+- 2026-09-14 保険料率マスター・標準報酬月額の履歴の契約を追加し codegen 実行（tag `insurance`）。`/insurance-rate-periods`（GET/POST）、`/insurance-rate-periods/{id}`（PUT/DELETE）、`/insurance-rates/effective`（GET year/month）、`/employees/{id}/standard-remuneration-history`（GET/POST）、`/employees/{id}/standard-remuneration-history/{historyId}`（DELETE）、`/standard-remuneration/effective`（GET year/month）、`/standard-remuneration/bulk`（POST）。`Payroll` に `applied*`（計算に使った標準報酬月額・料率、null 可）を追加。
+
+- 2026-08-26 有給の日数管理に伴い `MonthlyRecord` / `CreateMonthlyRecordBody` / `UpdateMonthlyRecordBody` / `Payroll` に `paidLeaveDays` を追加し codegen 実行。`absenceDays` の説明を「有給は含まない」に変更。
+- 2026-08-26 日曜出勤の時間計算化に伴い契約を更新: `MonthlyRecord` / `CreateMonthlyRecordBody` / `UpdateMonthlyRecordBody` に `sundayWorkHours`、`Payroll` に `holidayWorkHours` を追加し codegen 実行。`sundayWorkDays` は過去データ互換として description を「金額計算には使わない」に変更。
 - 2026-07-02 このファイル作成（api-spec 階層の overview 初版）
 - 2026-07-02 生成型ドリフトの是正（型基盤の整理）。DB・実装にはあるが `openapi.yaml` に未定義だったフィールドを追加し codegen 再実行:
   - `salaryType` enum に `hourly`（時給制事務員）を追加（`Employee` / `UpdateEmployeeBody`。`CreateEmployeeBody` は既存）。

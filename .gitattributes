@@ -1,0 +1,2 @@
+# シェルスクリプトは Linux（NAS のコンテナ）で動くので、Windows で checkout しても LF のままにする
+*.sh text eol=lf

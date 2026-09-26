@@ -13,6 +13,7 @@ import {
   calculateInsuranceAndTax,
   calculateIncomeTaxReiwa8,
   EMP_INS_RATE_R8,
+  type EmployeeInsuranceRates,
 } from "./tax-tables-reiwa8";
 
 /**
@@ -21,6 +22,37 @@ import {
 export function roundJapanese(amount: number): number {
   const fraction = amount - Math.floor(amount);
   return fraction <= 0.5 ? Math.floor(amount) : Math.ceil(amount);
+}
+
+/**
+ * 支給額（時間 × 単価）の端数処理：四捨五入。
+ *
+ * roundJapanese は「50銭以下切り捨て」＝社会保険料の通達ルールで、支給額に使うと
+ *   39.5h × 2,111円 = 83,384.5 → 83,384
+ * となり、事務所の手計算（四捨五入で 83,385）と1円ズレる。
+ * ブルーウィング分岐は元々 Math.round を使っていたため、標準計算もこちらに揃える。
+ * 保険料・税・総支給の端数処理は roundJapanese のまま（1円単位の完全一致要件があるため）。
+ */
+export function roundPayYen(amount: number): number {
+  return Math.round(amount);
+}
+
+/**
+ * 深夜割増の1時間単価を「割増込みの残業時給」から復元する。
+ *   残業時給 ÷ 1.25 = 素の時給 → × 0.25 = 深夜割増
+ *   例) 2,111円/h → round(2111/1.25)=1,689 → round(1689×0.25)=422円/h
+ *       1,750円/h → round(1750/1.25)=1,400 → round(1400×0.25)=350円/h
+ *       1,909円/h → round(1909/1.25)=1,527 → round(1527×0.25)=382円/h
+ *
+ * 端数は四捨五入。事務所の手計算（上記3件）と一致するのは四捨五入だけで、
+ * 切り捨てにすると 1,909円/h の社員が 381円/h になり1円ズレる。
+ *
+ * ブルーウィング分岐（routes/payroll.ts）が元々この式を使っており、標準計算だけが
+ * 「基本給 ÷ 月平均労働時間 × 0.25」を使っていたため、残業単価で運用している社員の
+ * 深夜手当が実態と合わない（基本給が0なら深夜手当も0）状態だった。両者をこの関数に揃える。
+ */
+export function lateNightPremiumPerHour(overtimeHourlyRate: number): number {
+  return Math.round(Math.round(overtimeHourlyRate / 1.25) * 0.25);
 }
 
 export interface CustomAllowanceItem {
@@ -65,13 +97,20 @@ export interface PayrollCalculationInput {
   pensionApplied?: boolean;
   /** 雇用保険料率（省略時は EMP_INS_RATE_R8 = 0.005）*/
   employmentInsuranceRate?: number;
+  /** 健保・介護・子育て支援金・厚年の本人負担率（保険料率マスター。省略時は令和8年度の内蔵値）*/
+  insuranceRates?: EmployeeInsuranceRates;
   residentTax: number;
   monthlyAverageWorkHours: number;
   // Monthly record
   workDays: number;
   saturdayWorkDays: number;
-  /** 日曜出勤日数（1日単位）。日当×1.35で計算 */
-  sundayWorkDays: number;
+  /**
+   * 日曜・祝日の出勤「時間」。sundayHourlyRate × この時間 で計算する。
+   * （2026-08 仕様変更: 以前は日数 × 日当 × 1.35 だった）
+   */
+  sundayWorkHours: number;
+  /** 日曜・祝日の時給（会社設定 hourlyWageSunday。既定 1,655円/h）*/
+  sundayHourlyRate: number;
   overtimeHours: number;
   lateNightHours: number;
   holidayWorkDays: number;
@@ -114,7 +153,7 @@ export interface PayrollCalculationResult {
   overtimePay: number;
   lateNightPay: number;
   holidayPay: number;
-  /** 日曜出勤手当（日当×1.35×出勤日数）*/
+  /** 日曜・祝日出勤手当（日曜時給 × 出勤時間）*/
   sundayPay: number;
   commissionPay: number;
   transportationAllowance: number;
@@ -164,7 +203,8 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     monthlyAverageWorkHours,
     workDays,
     saturdayWorkDays,
-    sundayWorkDays,
+    sundayWorkHours,
+    sundayHourlyRate,
     overtimeHours,
     lateNightHours,
     holidayWorkDays,
@@ -212,11 +252,11 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     // 60h超部分は ×(1.50/1.25)=1.20 を追加乗算
     const baseRate = input.empOvertimeHourlyRate!;
     if (overtimeHours <= OT_THRESHOLD) {
-      overtimePay = roundJapanese(baseRate * overtimeHours);
+      overtimePay = roundPayYen(baseRate * overtimeHours);
     } else {
       overtimePay =
-        roundJapanese(baseRate * OT_THRESHOLD) +
-        roundJapanese(baseRate * 1.20 * (overtimeHours - OT_THRESHOLD));
+        roundPayYen(baseRate * OT_THRESHOLD) +
+        roundPayYen(baseRate * 1.20 * (overtimeHours - OT_THRESHOLD));
     }
   } else if ((input.overtimeUnitMinutes ?? 0) > 0 && (input.overtimeUnitRate ?? 0) > 0) {
     // 単位切り上げ計算: 例）10分単位で2031円
@@ -226,36 +266,39 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     const overtimeMins = overtimeHours * 60;
     if (overtimeHours <= OT_THRESHOLD) {
       const units = overtimeMins > 0 ? Math.ceil(overtimeMins / unitMins) : 0;
-      overtimePay = roundJapanese(units * unitRate);
+      overtimePay = roundPayYen(units * unitRate);
     } else {
       const unitsNormal = Math.ceil((OT_THRESHOLD * 60) / unitMins);
       const overMins = overtimeMins - OT_THRESHOLD * 60;
       const unitsOver = overMins > 0 ? Math.ceil(overMins / unitMins) : 0;
       overtimePay =
-        roundJapanese(unitsNormal * unitRate) +
-        roundJapanese(unitsOver * unitRate * 1.20);
+        roundPayYen(unitsNormal * unitRate) +
+        roundPayYen(unitsOver * unitRate * 1.20);
     }
   } else {
     // 標準計算: 60h以内×1.25、60h超×1.50
     if (overtimeHours <= OT_THRESHOLD) {
-      overtimePay = roundJapanese(hourlyRate * 1.25 * overtimeHours);
+      overtimePay = roundPayYen(hourlyRate * 1.25 * overtimeHours);
     } else {
       overtimePay =
-        roundJapanese(hourlyRate * 1.25 * OT_THRESHOLD) +
-        roundJapanese(hourlyRate * 1.50 * (overtimeHours - OT_THRESHOLD));
+        roundPayYen(hourlyRate * 1.25 * OT_THRESHOLD) +
+        roundPayYen(hourlyRate * 1.50 * (overtimeHours - OT_THRESHOLD));
     }
   }
-  const lateNightPay = roundJapanese(hourlyRate * 0.25 * lateNightHours);
-  // 日曜/祝日手当:
-  //   個人単価設定あり → baseSalaryに込み済みのためゼロ
-  //   会社標準        → 会社平日日当 × 1.35 × 日数
+  // 深夜手当: 個人残業時給が設定されていれば、そこから復元した素の時給の25%を使う。
+  // （設定が無い社員だけ従来どおり 基本給ベースの時給 × 0.25）
+  const lateNightPay = (input.empOvertimeHourlyRate ?? 0) > 0
+    ? Math.floor(lateNightPremiumPerHour(input.empOvertimeHourlyRate!) * lateNightHours)
+    : roundJapanese(hourlyRate * 0.25 * lateNightHours);
+  // 休日手当（holidayWorkDays）は従来どおり 日当 × 1.35 × 日数。
+  // 日曜・祝日手当（sundayWorkHours）は 2026-08 から「時間 × 日曜時給（既定1,655円/h）」。
   let holidayPay: number;
   let sundayPay: number;
   let saturdayPay: number;
   {
     const standardDailyRate = salaryType === "daily" ? effectiveWeekdayRate : hourlyRate * 8;
     holidayPay  = roundJapanese(standardDailyRate * 1.35 * holidayWorkDays);
-    sundayPay   = roundJapanese(standardDailyRate * 1.35 * sundayWorkDays);
+    sundayPay   = roundPayYen(sundayHourlyRate * sundayWorkHours);
     saturdayPay = salaryType === "daily"
       ? roundJapanese(saturdayWorkDays * effectiveSaturdayRate)
       : 0;
@@ -327,6 +370,7 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     residentTax,
     customDeductionsTotal: 0,
     employmentInsuranceRate,
+    insuranceRates: input.insuranceRates,
     enableTrace: input.enableTrace,
     traceExpectedIncomeTax: input.traceExpectedIncomeTax,
   });

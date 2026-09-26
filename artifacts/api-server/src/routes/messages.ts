@@ -325,7 +325,8 @@ router.post("/messages", async (req, res) => {
     } catch (err: unknown) {
       // 期限切れ購読を無効化
       const status = (err as { statusCode?: number }).statusCode;
-      if (status === 410 || status === 404) {
+      // 404/410=購読切れ、401/403=VAPID 鍵が違う（鍵を作り直した後の古い購読）。どちらも送り直しても届かない
+      if (status === 410 || status === 404 || status === 401 || status === 403) {
         await db.update(pushSubscriptionsTable)
           .set({ active: false })
           .where(eq(pushSubscriptionsTable.id, sub.id));
@@ -386,7 +387,8 @@ router.post("/messages/broadcast", requireAdmin, async (req, res) => {
         );
       } catch (err: unknown) {
         const status = (err as { statusCode?: number }).statusCode;
-        if (status === 410 || status === 404) {
+        // 404/410=購読切れ、401/403=VAPID 鍵が違う（鍵を作り直した後の古い購読）。どちらも送り直しても届かない
+        if (status === 410 || status === 404 || status === 401 || status === 403) {
           await db.update(pushSubscriptionsTable)
             .set({ active: false })
             .where(eq(pushSubscriptionsTable.id, sub.id));

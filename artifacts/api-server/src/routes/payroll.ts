@@ -1,10 +1,22 @@
 import { Router } from "express";
 import { db, payrollsTable, employeesTable, monthlyRecordsTable, companyTable, allowanceDefinitionsTable, employeeAllowancesTable, employeeDeductionsTable, deductionDefinitionsTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
-import { calculatePayroll, calculateBluewingPayroll, roundJapanese } from "../lib/payroll-calculator";
+import { eq, and, ne } from "drizzle-orm";
+import { calculatePayroll, calculateBluewingPayroll, roundJapanese, lateNightPremiumPerHour } from "../lib/payroll-calculator";
 import { calculateInsuranceAndTax, EMP_INS_RATE_R8 } from "../lib/tax-tables-reiwa8";
+import { writeAudit } from "../lib/audit";
+import { getEffectiveInsuranceRates, getEffectiveStandardRemuneration, type EffectiveInsuranceRates } from "../lib/insurance-settings";
 
 const router = Router();
+
+// 確定済みの明細は、再計算・修正で上書きしない。
+// 事前の確認（existingPayrollForGuard）と実際の更新の間に別の人が確定した場合に備え、
+// 更新の条件にも「確定済みでない」を入れ、0件なら 409 を返す。
+const CONFIRMED_CONFLICT = { error: "確定済みの給与明細は再計算・修正できません。先に確定を解除してください。" };
+
+/** 監査ログに残す、明細の要点（金額の前後比較用） */
+function payrollSummary(p: { status: string; grossSalary: number; totalDeductions: number; netSalary: number; calculationMode?: string | null }) {
+  return { status: p.status, grossSalary: p.grossSalary, totalDeductions: p.totalDeductions, netSalary: p.netSalary, calculationMode: p.calculationMode ?? null };
+}
 
 /**
  * 厚生年金適用判定
@@ -12,17 +24,24 @@ const router = Router();
  * - emp.pensionApplied が true/false の場合: その値をそのまま使用（手動オーバーライド）
  */
 /**
- * 子ども・子育て支援金の徴収開始月。
- * 三川運送の方針：
- *   2026年4月給料明細（= 3月分の労働）から徴収開始。
- *   - year > 2026                       → 徴収
- *   - year === 2026 && month >= 4       → 徴収
- *   - それ以前                          → 0
+ * 明細に残す「計算に使った保険の基準」。料率・標準報酬月額は月ごとに履歴から解決するため、
+ * どの値で計算したかを payrolls に複写しておく（4つの保存経路すべてで使う）。
+ * ※ 子ども・子育て支援金の開始月（旧 isChildcareSupportApplicable: 2026年4月の明細から）は
+ *   保険料率マスターの行（2026年4月〜 0.23%、それ以前 0%）に移した。
  */
-function isChildcareSupportApplicable(year: number, month: number): boolean {
-  if (year > 2026) return true;
-  if (year === 2026 && month >= 4) return true;
-  return false;
+function appliedInsuranceSnapshot(
+  rates: EffectiveInsuranceRates,
+  insBase: number,
+  careInsuranceApplied: boolean,
+) {
+  return {
+    appliedStandardRemuneration: insBase,
+    appliedHealthInsuranceRate: rates.healthInsuranceRate,
+    appliedCareInsuranceRate: careInsuranceApplied ? rates.careInsuranceRate : 0,
+    appliedChildcareSupportRate: rates.childcareSupportRate,
+    appliedPensionRate: rates.pensionRate,
+    appliedEmploymentInsuranceRate: rates.employmentInsuranceRate,
+  };
 }
 
 function resolvePensionApplied(emp: typeof employeesTable.$inferSelect, year: number, month: number): boolean {
@@ -76,7 +95,6 @@ router.post("/payroll/calculate", async (req, res) => {
     year,
     month,
     useBluewingLogic = false,
-    calculationMode = "auto",
   } = req.body;
 
   const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, employeeId));
@@ -101,16 +119,28 @@ router.post("/payroll/calculate", async (req, res) => {
     return res.status(409).json({ error: "確定済みの給与明細は再計算できません。" });
   }
 
+  // 計算モードは、指定が無ければ「その明細が前回どのモードで作られたか」を引き継ぐ。
+  // 月次実績入力の「実績を保存」はモードを送らないため、既定の "auto" のままだと
+  // 事務所が manual で組み立てた明細が BW/標準の自動計算で上書きされ、
+  // 手当ベースの支給額が消えてしまう（実際に 2026-08 の明細が manual → bluewing_auto に
+  // 化けていた）。既存が無い新規のときだけ "auto" にフォールバックする。
+  const calculationMode: string =
+    req.body.calculationMode ?? existingPayrollForGuard?.calculationMode ?? "auto";
+
   const companyRows = await db.select().from(companyTable).limit(1);
   const company = companyRows[0] ?? {
     monthlyAverageWorkHours: 160,
     employmentInsuranceRate: EMP_INS_RATE_R8,
   };
 
-  // 雇用保険率：会社設定優先、なければ令和8年度デフォルト 0.5%
-  const empInsRate = (company.employmentInsuranceRate ?? 0) > 0
-    ? company.employmentInsuranceRate
-    : EMP_INS_RATE_R8;
+  // 日曜・祝日の時給（会社設定。既定 1,655円/h）。2026-08 から日曜出勤は「時間 × この単価」。
+  const sundayHourlyRate = (company as { hourlyWageSunday?: number }).hourlyWageSunday ?? 1655;
+
+  // 保険料率（健保・介護・子育て支援金・厚年・雇用保険）と標準報酬月額は、
+  // マスターの履歴から「この明細の年月」に効く値を使う。
+  const insuranceRates = await getEffectiveInsuranceRates(year, month);
+  const empInsRate = insuranceRates.employmentInsuranceRate;
+  const stdRemuneration = (await getEffectiveStandardRemuneration(emp, year, month)).standardRemuneration;
 
   // カスタム手当を取得
   const customAllowanceDefs = await db.select().from(allowanceDefinitionsTable)
@@ -160,7 +190,7 @@ router.post("/payroll/calculate", async (req, res) => {
       manualCustomAllowancesTotal
     );
 
-    const manualInsBase = (emp.standardRemuneration ?? 0) > 0 ? emp.standardRemuneration : manualGrossSalary;
+    const manualInsBase = stdRemuneration > 0 ? stdRemuneration : manualGrossSalary;
 
     const manualIns = calculateInsuranceAndTax({
       standardRemuneration: manualInsBase,
@@ -175,9 +205,9 @@ router.post("/payroll/calculate", async (req, res) => {
       residentTax: emp.residentTax ?? 0,
       customDeductionsTotal,
       employmentInsuranceRate: empInsRate,
+      insuranceRates,
     });
 
-    if (!isChildcareSupportApplicable(year, month)) manualIns.childcareSupportContribution = 0;
     const isManualExempt = emp.taxExempt === true;
     const manualSocialInsurance = isManualExempt ? 0 : (manualIns.healthInsurance + manualIns.childcareSupportContribution + manualIns.pension);
     const manualChildcare = isManualExempt ? 0 : manualIns.childcareSupportContribution;
@@ -218,10 +248,13 @@ router.post("/payroll/calculate", async (req, res) => {
       workDays: record.workDays ?? 0,
       overtimeHours: record.overtimeHours ?? 0,
       lateNightHours: record.lateNightHours ?? 0,
-      // 表示用: 「日曜/祝日」列(sundayWorkDays)を休日日数として保存、土曜日数も保存
+      // 表示用: 「日曜/祝日」列を休日として保存（時間が主、日数は過去データ互換）、土曜日数も保存
       holidayWorkDays: record.sundayWorkDays ?? 0,
+      holidayWorkHours: record.sundayWorkHours ?? 0,
+      paidLeaveDays: record.paidLeaveDays ?? 0,
       saturdayWorkDays: record.saturdayWorkDays ?? 0,
       useBluewingLogic: false,
+      ...appliedInsuranceSnapshot(insuranceRates, manualInsBase, emp.careInsuranceApplied ?? false),
     };
 
     const existingManual = await db.select().from(payrollsTable)
@@ -237,7 +270,8 @@ router.post("/payroll/calculate", async (req, res) => {
         ...manualPayrollData,
         status: "draft",
         updatedAt: new Date(),
-      }).where(eq(payrollsTable.id, existingManual[0].id)).returning();
+      }).where(and(eq(payrollsTable.id, existingManual[0].id), ne(payrollsTable.status, "confirmed"))).returning();
+      if (!manualPayroll) return res.status(409).json(CONFIRMED_CONFLICT);
     } else {
       [manualPayroll] = await db.insert(payrollsTable).values({
         employeeId,
@@ -248,6 +282,8 @@ router.post("/payroll/calculate", async (req, res) => {
       }).returning();
     }
 
+    await writeAudit(req, { action: "payroll.calculate", targetType: "payroll", targetId: manualPayroll!.id,
+      detail: { employeeId, year, month, before: existingPayrollForGuard ? payrollSummary(existingPayrollForGuard) : null, after: payrollSummary(manualPayroll!) } });
     return res.json(buildPayrollResponse(manualPayroll!, emp));
   }
 
@@ -277,15 +313,13 @@ router.post("/payroll/calculate", async (req, res) => {
     const customAllowancesFixedTotal = customAllowances.reduce((s, a) => s + a.amount, 0);
     const fixedAllowancesTotal = masterFixedAllowances + customAllowancesFixedTotal;
 
-    // 休日出勤: テーブルの「日曜/祝日」列 = sundayWorkDays に入力される
-    const holidayPay = Math.floor((company.dailyWageSaturday ?? 12260) * (record.sundayWorkDays ?? 0));
+    // 休日出勤: 「日曜/祝日」は 2026-08 から時間入力（sundayWorkHours × 日曜時給）
+    const holidayPay = Math.round(sundayHourlyRate * (record.sundayWorkHours ?? 0));
 
-    // BW深夜手当: 時給 = round(残業単価 / 1.25)  例) round(2111/1.25) = 1689
-    // 深夜割増 per h = floor(1689 × 0.25) = 422、4.5h × 422 = 1899
+    // BW深夜手当: 残業単価から素の時給を復元して25%（標準計算と共通の lateNightPremiumPerHour）
+    //   例) 2111 → 1689 → 422円/h、4.5h × 422 = 1,899円
     const bwOtUnitPrice = record.overtimeUnitPrice ?? 2111;
-    const bwBaseHourlyRate = Math.round(bwOtUnitPrice / 1.25);
-    const bwLateNightPremiumPerHour = Math.floor(bwBaseHourlyRate * 0.25);
-    const bwLateNightPay = Math.floor(bwLateNightPremiumPerHour * (record.lateNightHours ?? 0));
+    const bwLateNightPay = Math.floor(lateNightPremiumPerHour(bwOtUnitPrice) * (record.lateNightHours ?? 0));
 
     const bwResult = calculateBluewingPayroll({
       bluewingSalesAmount: record.bluewingSalesAmount,
@@ -302,7 +336,7 @@ router.post("/payroll/calculate", async (req, res) => {
     });
 
     const grossSalary = bwResult.grossSalary;
-    const bwInsBase = (emp.standardRemuneration ?? 0) > 0 ? emp.standardRemuneration : grossSalary;
+    const bwInsBase = stdRemuneration > 0 ? stdRemuneration : grossSalary;
 
     // 非課税手当合計: 通勤手当 + isTaxable=false のカスタム手当（例: 交通費）
     const bwNonTaxableCustom = customAllowances
@@ -323,9 +357,9 @@ router.post("/payroll/calculate", async (req, res) => {
       residentTax: emp.residentTax ?? 0,
       customDeductionsTotal,
       employmentInsuranceRate: empInsRate,
+      insuranceRates,
     });
 
-    if (!isChildcareSupportApplicable(year, month)) bwIns.childcareSupportContribution = 0;
     const socialInsurance = bwIns.healthInsurance + bwIns.childcareSupportContribution + bwIns.pension;
     const totalDeductions = roundJapanese(
       socialInsurance + bwIns.employmentInsurance + bwIns.incomeTax + (emp.residentTax ?? 0) + customDeductionsTotal
@@ -359,8 +393,10 @@ router.post("/payroll/calculate", async (req, res) => {
       workDays: record.workDays ?? 0,
       overtimeHours: record.overtimeHours ?? 0,
       lateNightHours: record.lateNightHours ?? 0,
-      // 表示用: 「日曜/祝日」列(sundayWorkDays)を休日日数として保存、土曜日数も保存
+      // 表示用: 「日曜/祝日」列を休日として保存（時間が主、日数は過去データ互換）、土曜日数も保存
       holidayWorkDays: record.sundayWorkDays ?? 0,
+      holidayWorkHours: record.sundayWorkHours ?? 0,
+      paidLeaveDays: record.paidLeaveDays ?? 0,
       saturdayWorkDays: record.saturdayWorkDays ?? 0,
       useBluewingLogic: true,
       bluewingSalesAmount: record.bluewingSalesAmount,
@@ -368,6 +404,7 @@ router.post("/payroll/calculate", async (req, res) => {
       performanceAllowance: bwResult.performanceAllowance,
       customDeductionsTotal,
       calculationMode: "bluewing_auto",
+      ...appliedInsuranceSnapshot(insuranceRates, bwInsBase, emp.careInsuranceApplied ?? false),
     };
 
     const existingBw = await db.select().from(payrollsTable)
@@ -383,7 +420,8 @@ router.post("/payroll/calculate", async (req, res) => {
         ...bwPayrollData,
         status: "draft",
         updatedAt: new Date(),
-      }).where(eq(payrollsTable.id, existingBw[0].id)).returning();
+      }).where(and(eq(payrollsTable.id, existingBw[0].id), ne(payrollsTable.status, "confirmed"))).returning();
+      if (!bwPayroll) return res.status(409).json(CONFIRMED_CONFLICT);
     } else {
       [bwPayroll] = await db.insert(payrollsTable).values({
         employeeId,
@@ -394,6 +432,8 @@ router.post("/payroll/calculate", async (req, res) => {
       }).returning();
     }
 
+    await writeAudit(req, { action: "payroll.calculate", targetType: "payroll", targetId: bwPayroll!.id,
+      detail: { employeeId, year, month, before: existingPayrollForGuard ? payrollSummary(existingPayrollForGuard) : null, after: payrollSummary(bwPayroll!) } });
     return res.json(buildPayrollResponse(bwPayroll!, emp));
   }
 
@@ -415,16 +455,18 @@ router.post("/payroll/calculate", async (req, res) => {
     commissionRatePerCase: emp.commissionRatePerCase,
     dependentCount: emp.dependentCount,
     hasSpouse: emp.hasSpouse,
-    standardRemuneration: emp.standardRemuneration ?? 0,
+    standardRemuneration: stdRemuneration,
     careInsuranceApplied: emp.careInsuranceApplied ?? false,
     employmentInsuranceApplied: emp.employmentInsuranceApplied ?? true,
     pensionApplied: resolvePensionApplied(emp, year, month),
     employmentInsuranceRate: empInsRate,
+    insuranceRates,
     residentTax: emp.residentTax,
     monthlyAverageWorkHours: company.monthlyAverageWorkHours,
     workDays: record.workDays,
     saturdayWorkDays: record.saturdayWorkDays,
-    sundayWorkDays: record.sundayWorkDays,
+    sundayWorkHours: record.sundayWorkHours ?? 0,
+    sundayHourlyRate,
     overtimeHours: record.overtimeHours,
     lateNightHours: record.lateNightHours,
     holidayWorkDays: record.holidayWorkDays,
@@ -441,14 +483,12 @@ router.post("/payroll/calculate", async (req, res) => {
     customAllowances,
   });
 
-  // 子育て支援金：2026年5月以前は0にする
-  if (!isChildcareSupportApplicable(year, month)) {
-    const csc = result.childcareSupportContribution;
-    result.childcareSupportContribution = 0;
-    result.socialInsurance -= csc;
-    result.totalDeductions -= csc;
-    result.netSalary += csc;
-  }
+  // 標準報酬月額が未設定(0)の社員はエンジン内で総支給を計算基礎にしている
+  const stdSnapshot = appliedInsuranceSnapshot(
+    insuranceRates,
+    stdRemuneration > 0 ? stdRemuneration : result.grossSalary,
+    emp.careInsuranceApplied ?? false,
+  );
 
   // カスタム控除（積立金等）を totalDeductions / netSalary に反映
   const stdTotalDeductions = roundJapanese(
@@ -494,15 +534,19 @@ router.post("/payroll/calculate", async (req, res) => {
       netSalary: stdNetSalary,
       overtimeHours: record.overtimeHours,
       lateNightHours: record.lateNightHours,
-      // 表示用: 「日曜/祝日」列(sundayWorkDays)を休日日数として保存、土曜日数も保存
+      // 表示用: 「日曜/祝日」列を休日として保存（時間が主、日数は過去データ互換）、土曜日数も保存
       holidayWorkDays: record.sundayWorkDays,
+      holidayWorkHours: record.sundayWorkHours ?? 0,
+      paidLeaveDays: record.paidLeaveDays ?? 0,
       saturdayWorkDays: record.saturdayWorkDays,
       workDays: record.workDays,
       customDeductionsTotal,
       calculationMode: "auto",
+      ...stdSnapshot,
       status: "draft",
       updatedAt: new Date(),
-    }).where(eq(payrollsTable.id, existing[0].id)).returning();
+    }).where(and(eq(payrollsTable.id, existing[0].id), ne(payrollsTable.status, "confirmed"))).returning();
+    if (!payroll) return res.status(409).json(CONFIRMED_CONFLICT);
   } else {
     [payroll] = await db.insert(payrollsTable).values({
       employeeId,
@@ -535,15 +579,20 @@ router.post("/payroll/calculate", async (req, res) => {
       netSalary: stdNetSalary,
       overtimeHours: record.overtimeHours,
       lateNightHours: record.lateNightHours,
-      // 表示用: 「日曜/祝日」列(sundayWorkDays)を休日日数として保存、土曜日数も保存
+      // 表示用: 「日曜/祝日」列を休日として保存（時間が主、日数は過去データ互換）、土曜日数も保存
       holidayWorkDays: record.sundayWorkDays,
+      holidayWorkHours: record.sundayWorkHours ?? 0,
+      paidLeaveDays: record.paidLeaveDays ?? 0,
       saturdayWorkDays: record.saturdayWorkDays,
       workDays: record.workDays,
       customDeductionsTotal,
       calculationMode: "auto",
+      ...stdSnapshot,
     }).returning();
   }
 
+  await writeAudit(req, { action: "payroll.calculate", targetType: "payroll", targetId: payroll.id,
+    detail: { employeeId, year, month, before: existingPayrollForGuard ? payrollSummary(existingPayrollForGuard) : null, after: payrollSummary(payroll) } });
   return res.json(buildPayrollResponse(payroll, emp));
 });
 
@@ -563,25 +612,41 @@ router.get("/payroll/:id", async (req, res) => {
 router.put("/payroll/:id", async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const body = req.body;
+  const [before] = await db.select().from(payrollsTable).where(eq(payrollsTable.id, id));
+  if (!before) return res.status(404).json({ error: "給与明細が見つかりません。" });
+  if (before.status === "confirmed") return res.status(409).json(CONFIRMED_CONFLICT);
   const [updated] = await db.update(payrollsTable).set({
     ...(body.safetyDrivingAllowance !== undefined && { safetyDrivingAllowance: body.safetyDrivingAllowance }),
     ...(body.longDistanceAllowance !== undefined && { longDistanceAllowance: body.longDistanceAllowance }),
     ...(body.positionAllowance !== undefined && { positionAllowance: body.positionAllowance }),
     ...(body.notes !== undefined && { notes: body.notes }),
     updatedAt: new Date(),
-  }).where(eq(payrollsTable.id, id)).returning();
-  if (!updated) return res.status(404).json({ error: "給与明細が見つかりません。" });
+  }).where(and(eq(payrollsTable.id, id), ne(payrollsTable.status, "confirmed"))).returning();
+  if (!updated) return res.status(409).json(CONFIRMED_CONFLICT);
+  await writeAudit(req, { action: "payroll.update", targetType: "payroll", targetId: id, detail: {
+    changes: body,
+    before: { safetyDrivingAllowance: before.safetyDrivingAllowance, longDistanceAllowance: before.longDistanceAllowance, positionAllowance: before.positionAllowance, notes: before.notes },
+  } });
   const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, updated.employeeId));
   return res.json(buildPayrollResponse(updated, emp));
 });
 
 router.post("/payroll/:id/confirm", async (req, res) => {
   const id = parseInt(req.params.id, 10);
+  const [current] = await db.select().from(payrollsTable).where(eq(payrollsTable.id, id));
+  if (!current) return res.status(404).json({ error: "給与明細が見つかりません。" });
+  if (current.status === "confirmed") {
+    // すでに確定済み（二重押し・別画面で確定済み）。変更なしでそのまま返す。
+    const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, current.employeeId));
+    return res.json(buildPayrollResponse(current, emp));
+  }
   const [updated] = await db.update(payrollsTable)
     .set({ status: "confirmed", updatedAt: new Date() })
-    .where(eq(payrollsTable.id, id))
+    .where(and(eq(payrollsTable.id, id), ne(payrollsTable.status, "confirmed")))
     .returning();
-  if (!updated) return res.status(404).json({ error: "給与明細が見つかりません。" });
+  if (!updated) return res.status(409).json({ error: "別の操作と重なりました。画面を読み込み直してください。" });
+  await writeAudit(req, { action: "payroll.confirm", targetType: "payroll", targetId: id,
+    detail: { employeeId: updated.employeeId, year: updated.year, month: updated.month, ...payrollSummary(updated) } });
   const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, updated.employeeId));
   return res.json(buildPayrollResponse(updated, emp));
 });
@@ -589,11 +654,20 @@ router.post("/payroll/:id/confirm", async (req, res) => {
 // 確定解除：確定済みを draft に戻し、再計算・訂正を可能にする
 router.post("/payroll/:id/unconfirm", async (req, res) => {
   const id = parseInt(req.params.id, 10);
+  const [current] = await db.select().from(payrollsTable).where(eq(payrollsTable.id, id));
+  if (!current) return res.status(404).json({ error: "給与明細が見つかりません。" });
+  if (current.status !== "confirmed") {
+    const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, current.employeeId));
+    return res.json(buildPayrollResponse(current, emp));
+  }
   const [updated] = await db.update(payrollsTable)
     .set({ status: "draft", updatedAt: new Date() })
-    .where(eq(payrollsTable.id, id))
+    .where(and(eq(payrollsTable.id, id), eq(payrollsTable.status, "confirmed")))
     .returning();
-  if (!updated) return res.status(404).json({ error: "給与明細が見つかりません。" });
+  if (!updated) return res.status(409).json({ error: "別の操作と重なりました。画面を読み込み直してください。" });
+  await writeAudit(req, { action: "payroll.unconfirm", targetType: "payroll", targetId: id,
+    detail: { employeeId: updated.employeeId, year: updated.year, month: updated.month, ...payrollSummary(updated),
+      reason: typeof req.body?.reason === "string" ? req.body.reason : null } });
   const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, updated.employeeId));
   return res.json(buildPayrollResponse(updated, emp));
 });
