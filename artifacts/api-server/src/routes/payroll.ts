@@ -1,11 +1,22 @@
 import { Router } from "express";
 import { db, payrollsTable, employeesTable, monthlyRecordsTable, companyTable, allowanceDefinitionsTable, employeeAllowancesTable, employeeDeductionsTable, deductionDefinitionsTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, ne } from "drizzle-orm";
 import { calculatePayroll, calculateBluewingPayroll, roundJapanese, lateNightPremiumPerHour } from "../lib/payroll-calculator";
 import { calculateInsuranceAndTax, EMP_INS_RATE_R8 } from "../lib/tax-tables-reiwa8";
+import { writeAudit } from "../lib/audit";
 import { getEffectiveInsuranceRates, getEffectiveStandardRemuneration, type EffectiveInsuranceRates } from "../lib/insurance-settings";
 
 const router = Router();
+
+// 確定済みの明細は、再計算・修正で上書きしない。
+// 事前の確認（existingPayrollForGuard）と実際の更新の間に別の人が確定した場合に備え、
+// 更新の条件にも「確定済みでない」を入れ、0件なら 409 を返す。
+const CONFIRMED_CONFLICT = { error: "確定済みの給与明細は再計算・修正できません。先に確定を解除してください。" };
+
+/** 監査ログに残す、明細の要点（金額の前後比較用） */
+function payrollSummary(p: { status: string; grossSalary: number; totalDeductions: number; netSalary: number; calculationMode?: string | null }) {
+  return { status: p.status, grossSalary: p.grossSalary, totalDeductions: p.totalDeductions, netSalary: p.netSalary, calculationMode: p.calculationMode ?? null };
+}
 
 /**
  * 厚生年金適用判定
@@ -259,7 +270,8 @@ router.post("/payroll/calculate", async (req, res) => {
         ...manualPayrollData,
         status: "draft",
         updatedAt: new Date(),
-      }).where(eq(payrollsTable.id, existingManual[0].id)).returning();
+      }).where(and(eq(payrollsTable.id, existingManual[0].id), ne(payrollsTable.status, "confirmed"))).returning();
+      if (!manualPayroll) return res.status(409).json(CONFIRMED_CONFLICT);
     } else {
       [manualPayroll] = await db.insert(payrollsTable).values({
         employeeId,
@@ -270,6 +282,8 @@ router.post("/payroll/calculate", async (req, res) => {
       }).returning();
     }
 
+    await writeAudit(req, { action: "payroll.calculate", targetType: "payroll", targetId: manualPayroll!.id,
+      detail: { employeeId, year, month, before: existingPayrollForGuard ? payrollSummary(existingPayrollForGuard) : null, after: payrollSummary(manualPayroll!) } });
     return res.json(buildPayrollResponse(manualPayroll!, emp));
   }
 
@@ -406,7 +420,8 @@ router.post("/payroll/calculate", async (req, res) => {
         ...bwPayrollData,
         status: "draft",
         updatedAt: new Date(),
-      }).where(eq(payrollsTable.id, existingBw[0].id)).returning();
+      }).where(and(eq(payrollsTable.id, existingBw[0].id), ne(payrollsTable.status, "confirmed"))).returning();
+      if (!bwPayroll) return res.status(409).json(CONFIRMED_CONFLICT);
     } else {
       [bwPayroll] = await db.insert(payrollsTable).values({
         employeeId,
@@ -417,6 +432,8 @@ router.post("/payroll/calculate", async (req, res) => {
       }).returning();
     }
 
+    await writeAudit(req, { action: "payroll.calculate", targetType: "payroll", targetId: bwPayroll!.id,
+      detail: { employeeId, year, month, before: existingPayrollForGuard ? payrollSummary(existingPayrollForGuard) : null, after: payrollSummary(bwPayroll!) } });
     return res.json(buildPayrollResponse(bwPayroll!, emp));
   }
 
@@ -528,7 +545,8 @@ router.post("/payroll/calculate", async (req, res) => {
       ...stdSnapshot,
       status: "draft",
       updatedAt: new Date(),
-    }).where(eq(payrollsTable.id, existing[0].id)).returning();
+    }).where(and(eq(payrollsTable.id, existing[0].id), ne(payrollsTable.status, "confirmed"))).returning();
+    if (!payroll) return res.status(409).json(CONFIRMED_CONFLICT);
   } else {
     [payroll] = await db.insert(payrollsTable).values({
       employeeId,
@@ -573,6 +591,8 @@ router.post("/payroll/calculate", async (req, res) => {
     }).returning();
   }
 
+  await writeAudit(req, { action: "payroll.calculate", targetType: "payroll", targetId: payroll.id,
+    detail: { employeeId, year, month, before: existingPayrollForGuard ? payrollSummary(existingPayrollForGuard) : null, after: payrollSummary(payroll) } });
   return res.json(buildPayrollResponse(payroll, emp));
 });
 
@@ -592,25 +612,41 @@ router.get("/payroll/:id", async (req, res) => {
 router.put("/payroll/:id", async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const body = req.body;
+  const [before] = await db.select().from(payrollsTable).where(eq(payrollsTable.id, id));
+  if (!before) return res.status(404).json({ error: "給与明細が見つかりません。" });
+  if (before.status === "confirmed") return res.status(409).json(CONFIRMED_CONFLICT);
   const [updated] = await db.update(payrollsTable).set({
     ...(body.safetyDrivingAllowance !== undefined && { safetyDrivingAllowance: body.safetyDrivingAllowance }),
     ...(body.longDistanceAllowance !== undefined && { longDistanceAllowance: body.longDistanceAllowance }),
     ...(body.positionAllowance !== undefined && { positionAllowance: body.positionAllowance }),
     ...(body.notes !== undefined && { notes: body.notes }),
     updatedAt: new Date(),
-  }).where(eq(payrollsTable.id, id)).returning();
-  if (!updated) return res.status(404).json({ error: "給与明細が見つかりません。" });
+  }).where(and(eq(payrollsTable.id, id), ne(payrollsTable.status, "confirmed"))).returning();
+  if (!updated) return res.status(409).json(CONFIRMED_CONFLICT);
+  await writeAudit(req, { action: "payroll.update", targetType: "payroll", targetId: id, detail: {
+    changes: body,
+    before: { safetyDrivingAllowance: before.safetyDrivingAllowance, longDistanceAllowance: before.longDistanceAllowance, positionAllowance: before.positionAllowance, notes: before.notes },
+  } });
   const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, updated.employeeId));
   return res.json(buildPayrollResponse(updated, emp));
 });
 
 router.post("/payroll/:id/confirm", async (req, res) => {
   const id = parseInt(req.params.id, 10);
+  const [current] = await db.select().from(payrollsTable).where(eq(payrollsTable.id, id));
+  if (!current) return res.status(404).json({ error: "給与明細が見つかりません。" });
+  if (current.status === "confirmed") {
+    // すでに確定済み（二重押し・別画面で確定済み）。変更なしでそのまま返す。
+    const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, current.employeeId));
+    return res.json(buildPayrollResponse(current, emp));
+  }
   const [updated] = await db.update(payrollsTable)
     .set({ status: "confirmed", updatedAt: new Date() })
-    .where(eq(payrollsTable.id, id))
+    .where(and(eq(payrollsTable.id, id), ne(payrollsTable.status, "confirmed")))
     .returning();
-  if (!updated) return res.status(404).json({ error: "給与明細が見つかりません。" });
+  if (!updated) return res.status(409).json({ error: "別の操作と重なりました。画面を読み込み直してください。" });
+  await writeAudit(req, { action: "payroll.confirm", targetType: "payroll", targetId: id,
+    detail: { employeeId: updated.employeeId, year: updated.year, month: updated.month, ...payrollSummary(updated) } });
   const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, updated.employeeId));
   return res.json(buildPayrollResponse(updated, emp));
 });
@@ -618,11 +654,20 @@ router.post("/payroll/:id/confirm", async (req, res) => {
 // 確定解除：確定済みを draft に戻し、再計算・訂正を可能にする
 router.post("/payroll/:id/unconfirm", async (req, res) => {
   const id = parseInt(req.params.id, 10);
+  const [current] = await db.select().from(payrollsTable).where(eq(payrollsTable.id, id));
+  if (!current) return res.status(404).json({ error: "給与明細が見つかりません。" });
+  if (current.status !== "confirmed") {
+    const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, current.employeeId));
+    return res.json(buildPayrollResponse(current, emp));
+  }
   const [updated] = await db.update(payrollsTable)
     .set({ status: "draft", updatedAt: new Date() })
-    .where(eq(payrollsTable.id, id))
+    .where(and(eq(payrollsTable.id, id), eq(payrollsTable.status, "confirmed")))
     .returning();
-  if (!updated) return res.status(404).json({ error: "給与明細が見つかりません。" });
+  if (!updated) return res.status(409).json({ error: "別の操作と重なりました。画面を読み込み直してください。" });
+  await writeAudit(req, { action: "payroll.unconfirm", targetType: "payroll", targetId: id,
+    detail: { employeeId: updated.employeeId, year: updated.year, month: updated.month, ...payrollSummary(updated),
+      reason: typeof req.body?.reason === "string" ? req.body.reason : null } });
   const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, updated.employeeId));
   return res.json(buildPayrollResponse(updated, emp));
 });
