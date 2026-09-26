@@ -7,42 +7,9 @@ import { Conversation, Message } from "@/components/messages/shared";
 import { ConversationList } from "@/components/messages/conversation-list";
 import { ChatView } from "@/components/messages/chat-view";
 import { BroadcastDialog } from "@/components/messages/broadcast-dialog";
+import { registerPush } from "@/lib/push";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-
-async function registerPush(employeeId: number | null, role: "office" | "employee") {
-  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
-  try {
-    const reg = await navigator.serviceWorker.ready;
-    const keyRes = await fetch(`${BASE}/api/messages/vapid-public-key`);
-    const { publicKey } = await keyRes.json() as { publicKey: string };
-    if (!publicKey) return;
-
-    const sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(publicKey) as BufferSource,
-    });
-    const json = sub.toJSON();
-    await fetch(`${BASE}/api/push/subscribe`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        employeeId,
-        role,
-        endpoint: json.endpoint,
-        p256dh: json.keys?.p256dh,
-        auth: json.keys?.auth,
-      }),
-    });
-  } catch { /* silent */ }
-}
-
-function urlBase64ToUint8Array(base64String: string): Uint8Array {
-  const padding = "=".repeat((4 - base64String.length % 4) % 4);
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-  const rawData = window.atob(base64);
-  return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
-}
 
 export default function MessagesPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -159,7 +126,10 @@ export default function MessagesPage() {
   // 通知許可状態チェック
   useEffect(() => {
     if ("Notification" in window) {
-      setPushEnabled(Notification.permission === "granted");
+      const granted = Notification.permission === "granted";
+      setPushEnabled(granted);
+      // 許可済みなら開くたびに登録し直す（サーバーの VAPID 鍵を入れ替えた後も通知が届き続けるように）
+      if (granted) registerPush(null, "office");
     }
   }, []);
 
