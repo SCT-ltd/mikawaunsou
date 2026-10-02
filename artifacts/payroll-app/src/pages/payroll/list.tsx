@@ -56,7 +56,9 @@ export default function PayrollList() {
 
   const [calculating, setCalculating] = useState(false);
   const [printPayroll, setPrintPayroll] = useState<NonNullable<ReturnType<typeof useGetPayroll>["data"]> | null>(null);
-  const [bulkPrintActive, setBulkPrintActive] = useState(false);
+  /** null = 印刷していない。"1up" = 1人1ページ(A4横)、"2up" = A4縦1枚に2人 */
+  const [bulkPrintLayout, setBulkPrintLayout] = useState<"1up" | "2up" | null>(null);
+  const bulkPrintActive = bulkPrintLayout !== null;
   const [calcErrors, setCalcErrors] = useState<CalcError[]>([]);
   const [selectedPayrollId, setSelectedPayrollId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
@@ -311,12 +313,22 @@ export default function PayrollList() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setBulkPrintActive(true)}
+                onClick={() => setBulkPrintLayout("1up")}
                 disabled={payrolls.length === 0 || bulkPrintActive}
-                title="全員の給与明細を1人1ページで印刷します。複数枚を1ページにまとめたい場合は、印刷ダイアログの「1枚あたりのページ数」で4や16を選んでください。"
+                title="全員の給与明細を1人1ページ（A4横）で印刷します。文字が最も大きい印刷方法です。"
               >
                 <Printer className="mr-1.5 h-4 w-4" />
-                {bulkPrintActive ? "印刷準備中..." : "一括印刷"}
+                {bulkPrintLayout === "1up" ? "印刷準備中..." : "一括印刷"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setBulkPrintLayout("2up")}
+                disabled={payrolls.length === 0 || bulkPrintActive}
+                title="A4縦1枚に2人ずつ印刷します（用紙半分）。文字は各明細が半ページに収まる範囲で自動的にできるだけ大きくします。印刷ダイアログの「1枚あたりのページ数」は1のままにしてください。"
+              >
+                <Printer className="mr-1.5 h-4 w-4" />
+                {bulkPrintLayout === "2up" ? "印刷準備中..." : "2人/A4印刷"}
               </Button>
             </div>
           </div>
@@ -470,7 +482,10 @@ export default function PayrollList() {
                           return {
                             workDays: rec?.workDays ?? selectedPayroll.workDays ?? 0,
                             saturdayWorkDays: (rec as { saturdayWorkDays?: number } | undefined)?.saturdayWorkDays ?? 0,
-                            sundayWorkDays: (rec as { sundayWorkDays?: number } | undefined)?.sundayWorkDays ?? 0,
+                            sundayWorkHours: (rec as { sundayWorkHours?: number } | undefined)?.sundayWorkHours ?? 0,
+                            paidLeaveDays: (rec as { paidLeaveDays?: number } | undefined)?.paidLeaveDays ?? 0,
+                            overtimeHours: rec?.overtimeHours ?? selectedPayroll.overtimeHours ?? 0,
+                            lateNightHours: rec?.lateNightHours ?? selectedPayroll.lateNightHours ?? 0,
                           };
                         })()}
                         onDirtyChange={setIsDirty}
@@ -523,9 +538,10 @@ export default function PayrollList() {
           companyName={company?.name ?? "三川運送株式会社"}
           employees={(employees ?? []) as unknown as Parameters<typeof PayslipBulkPrint>[0]["employees"]}
           company={company as Parameters<typeof PayslipBulkPrint>[0]["company"]}
-          onDone={() => setBulkPrintActive(false)}
+          onDone={() => setBulkPrintLayout(null)}
           year={year}
           month={month}
+          layout={bulkPrintLayout ?? "1up"}
         />
       )}
 
