@@ -189,11 +189,13 @@ const styles = {
     flex: 1,
   },
   td: {
+    whiteSpace: "nowrap" as const,
     padding: "1.2pt 4pt",
     borderBottom: `1px solid #c5dff0`,
     verticalAlign: "middle" as const,
   },
   tdRight: {
+    whiteSpace: "nowrap" as const,
     padding: "1.2pt 4pt",
     borderBottom: `1px solid #c5dff0`,
     textAlign: "right" as const,
@@ -231,6 +233,7 @@ const styles = {
     marginBottom: "2pt",
   },
   netValue: {
+    whiteSpace: "nowrap" as const,
     fontSize: "16pt",
     fontWeight: "bold",
     color: "#003d6e",
@@ -242,12 +245,14 @@ const styles = {
     marginTop: "4pt",
   },
   summaryTd: {
+    whiteSpace: "nowrap" as const,
     padding: "1.5pt 5pt",
     borderBottom: `1px solid #c5dff0`,
     fontSize: "8pt",
     verticalAlign: "middle" as const,
   },
   summaryTdRight: {
+    whiteSpace: "nowrap" as const,
     padding: "1.5pt 5pt",
     borderBottom: `1px solid #c5dff0`,
     textAlign: "right" as const,
@@ -390,7 +395,7 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
       style={compact ? { ...styles.root, zoom: 1.0, height: "auto" } : styles.root}
     >
       {/* ── ヘッダー ── */}
-      <div style={styles.header}>
+      <div style={styles.header} data-fit-box>
         <div style={styles.headerLeft}>
           <div style={{ ...styles.infoRow, marginBottom: "2pt" }}>
             <span style={{ ...styles.infoLabel, minWidth: "40pt" }}>会社名</span>
@@ -438,7 +443,7 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
       <div style={styles.mainGrid}>
 
         {/* A. 勤怠欄 */}
-        <div style={styles.block}>
+        <div style={styles.block} data-fit-box>
           <div style={styles.blockTitle}>勤　怠</div>
           <table style={styles.table}>
             <tbody>
@@ -453,7 +458,7 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
         </div>
 
         {/* B. 支給欄 */}
-        <div style={styles.block}>
+        <div style={styles.block} data-fit-box>
           <div style={styles.blockTitle}>支　給</div>
           <table style={styles.table}>
             <tbody>
@@ -477,7 +482,7 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
         </div>
 
         {/* C. 控除欄 */}
-        <div style={styles.block}>
+        <div style={styles.block} data-fit-box>
           <div style={styles.blockTitle}>控　除</div>
           <table style={styles.table}>
             <tbody>
@@ -502,7 +507,7 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
         </div>
 
         {/* D. 集計欄 */}
-        <div style={styles.block}>
+        <div style={styles.block} data-fit-box>
           <div style={styles.blockTitle}>集　計</div>
 
           <div style={styles.netBox}>

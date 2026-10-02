@@ -32,6 +32,8 @@ const MM_PRINTABLE_WIDTH = 198;
 const PX_PER_MM = 96 / 25.4;
 /** 拡大の上限。項目の極端に少ない明細で文字が大きくなりすぎるのを防ぐ。 */
 const ZOOM_MAX = 1.6;
+/** 縮小の下限。項目の多い明細で等倍でも欄からはみ出すときは、ここまで小さくして収める。 */
+const ZOOM_MIN = 0.8;
 /** 画面計測と実際の印刷でわずかに版面が違っても溢れないようにする安全率。 */
 const ZOOM_SAFETY = 0.97;
 
@@ -60,22 +62,43 @@ function applyStackZoom(portalEl: HTMLElement): number {
     );
   };
 
+  // 拡大すると組版幅が狭まる。欄の中身（金額・項目名）が横にはみ出すと、枠の overflow:hidden で
+  // 文字が切れる（差引支給額の右端が欠けていた）。はみ出しが1つでもあれば「収まらない」とみなす。
+  const boxes = items.flatMap((el) => Array.from(el.querySelectorAll<HTMLElement>("[data-fit-box]")));
+  const noOverflow = () => boxes.every((b) => b.scrollWidth <= b.clientWidth + 1);
+
   // 等倍・実寸の版面で「半ページに収まる明細」と「元から1ページ使う明細」を分ける
   const budgets = layoutAt(1).map((mm) => (mm > MM_HALF_PAGE ? MM_PRINTABLE_HEIGHT : MM_HALF_PAGE));
-  const fits = (zoom: number) => layoutAt(zoom).every((mm, i) => mm <= budgets[i] * ZOOM_SAFETY);
+  const fits = (zoom: number) =>
+    layoutAt(zoom).every((mm, i) => mm <= budgets[i] * ZOOM_SAFETY) && noOverflow();
 
   let zoom = ZOOM_MAX;
   if (!fits(ZOOM_MAX)) {
-    let lo = 1;
+    let lo = ZOOM_MIN;
     let hi = ZOOM_MAX;
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 7; i++) {
       const mid = (lo + hi) / 2;
       if (fits(mid)) lo = mid; else hi = mid;
     }
     zoom = lo;
   }
 
-  layoutAt(zoom); // 探索の最後に試した倍率とは限らないので、確定値で組み直す
+  const heights = layoutAt(zoom); // 探索の最後に試した倍率とは限らないので、確定値で組み直す
+
+  // ページ割りを自分で決めて、ページの頭になる明細に改ページを明示する。
+  // break-inside:avoid だけに任せると、zoom を掛けた要素では Chrome が分割を避けきれず、
+  // 3人目の見出しだけが1ページ目の下に載り、本体が次のページへ送られていた。
+  let used = 0;
+  let count = 0;
+  items.forEach((el, i) => {
+    const h = heights[i];
+    const startNew = count > 0 && (count >= 2 || used + h > MM_PRINTABLE_HEIGHT * ZOOM_SAFETY);
+    if (startNew) { used = 0; count = 0; }
+    el.style.breakBefore = startNew ? "page" : "";
+    el.style.pageBreakBefore = startNew ? "always" : "";
+    used += h;
+    count += 1;
+  });
   return zoom;
 }
 
