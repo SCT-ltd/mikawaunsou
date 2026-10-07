@@ -79,7 +79,7 @@ The code reads `process.env` directly — **there is no dotenv loader**, so env 
 
 ## Where the important logic lives
 
-- Payroll engine: `artifacts/api-server/src/lib/payroll-calculator.ts` + `artifacts/api-server/src/lib/tax-tables-reiwa8.ts` (and the shared `lib/tax-tables-reiwa8`). Tax/insurance values are officially hard-coded for exact 1-yen matching — change them only against the cited 国税庁 / 協会けんぽ sources in `replit.md`.
+- Payroll engine: `artifacts/api-server/src/lib/payroll-calculator.ts` + `artifacts/api-server/src/lib/tax-tables-reiwa8.ts` (and the shared `lib/tax-tables-reiwa8`). Tax tables are officially hard-coded for exact 1-yen matching — change them only against the cited 国税庁 / 協会けんぽ sources in `replit.md`. **Social/employment insurance rates and each employee's 標準報酬月額 are NOT hard-coded any more**: they come from the history tables `insurance_rate_periods` / `standard_remuneration_history`, resolved per payslip year-month by `artifacts/api-server/src/lib/insurance-settings.ts` (UI: マスター管理 → 計算テーブルマスター / 標準報酬). The R8 constants are only the fallback. Every save path copies the values used into `payrolls.applied_*`.
 - API routes: `artifacts/api-server/src/routes/` (mounted under `/api` in `routes/index.ts`, which also applies the prefix-based `requireAdmin` authorization).
 - Frontend pages: `artifacts/payroll-app/src/pages/`; auth wiring in `src/context/auth-context.tsx` + `ProtectedRoutes` in `src/App.tsx`.
 

@@ -9,6 +9,7 @@ import {
   hasAnyRecordData,
   formatYen,
 } from "./estimate";
+import type { MonthInsurance } from "@/lib/insurance-rates";
 
 export type EmployeeStatus = "dirty" | "entered" | "empty";
 
@@ -90,6 +91,7 @@ export function EmployeeList({
   edits,
   dirtyIds,
   company,
+  insurance,
   search,
   onSearchChange,
 }: {
@@ -100,6 +102,8 @@ export function EmployeeList({
   edits: Record<number, RowData>;
   dirtyIds: Set<number>;
   company: CompanySettings | undefined;
+  /** 表示中の月の保険料率・標準報酬月額（概算用）*/
+  insurance?: MonthInsurance;
   search: string;
   onSearchChange: (s: string) => void;
 }) {
@@ -142,7 +146,7 @@ export function EmployeeList({
         ) : (
           filtered.map((emp) => {
             const status = getEmployeeStatus(emp, edits, dirtyIds);
-            const { gross, net } = computeQuickEstimate(emp, edits[emp.id] ?? {}, company);
+            const { gross, net } = computeQuickEstimate(emp, edits[emp.id] ?? {}, company, insurance);
             const selected = emp.id === selectedId;
             return (
               <button

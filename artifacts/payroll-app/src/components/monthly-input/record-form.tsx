@@ -11,6 +11,7 @@ import {
   computeBWCalc,
   formatYen,
 } from "./estimate";
+import type { MonthInsurance } from "@/lib/insurance-rates";
 
 /**
  * 実績入力タブ。
@@ -139,11 +140,14 @@ export function RecordForm({
   rowData,
   onChange,
   company,
+  insurance,
 }: {
   employee: EmployeeExt;
   rowData: RowData;
   onChange: (field: string, value: string) => void;
   company: CompanySettings | undefined;
+  /** 表示中の月の保険料率・標準報酬月額（概算用）*/
+  insurance?: MonthInsurance;
 }) {
   const isHourly = employee.salaryType === "hourly";
   const isBW = employee.useBluewingLogic === true;
@@ -153,7 +157,12 @@ export function RecordForm({
   const unitRate = employee.overtimeUnitRate ?? 0;
   const hasUnit = unitMinutes > 0 && unitRate > 0;
 
-  const { gross, net } = computeQuickEstimate(employee, rowData, company);
+  const { gross, net } = computeQuickEstimate(employee, rowData, company, insurance);
+
+  // 有給1日あたりの単価: 個人日当 > 0 ならそれ、無ければ会社の平日日当
+  const paidLeaveRate = (employee.dailyRateWeekday ?? 0) > 0
+    ? (employee.dailyRateWeekday ?? 0)
+    : (company?.dailyWageWeekday ?? 9808);
 
   const numInput = (field: string, opts?: { max?: number; step?: string }) => {
     const val = rowData[field];
@@ -219,11 +228,22 @@ export function RecordForm({
           <Field label="土曜出勤" unit="日" hint="土曜日給（平日と別単価）で計算">
             {numInput("saturdayWorkDays", { max: 31, step: "1" })}
           </Field>
-          <Field label="日曜・祝日" unit="日" hint="日当 ×1.35 で計算">
-            {numInput("sundayWorkDays", { step: "1" })}
+          <Field
+            label="日曜・祝日"
+            unit="h"
+            hint={`${formatYen(company?.hourlyWageSunday ?? 1655)} / 時間 で計算`}
+          >
+            {numInput("sundayWorkHours", { step: "0.5" })}
           </Field>
-          <Field label="欠勤" unit="日">
+          <Field label="欠勤" unit="日" hint="日当 × 日数を控除">
             {numInput("absenceDays", { max: 31, step: "1" })}
+          </Field>
+          <Field
+            label="有給"
+            unit="日"
+            hint={`${formatYen(paidLeaveRate)} / 日。控除はされません`}
+          >
+            {numInput("paidLeaveDays", { max: 31, step: "0.5" })}
           </Field>
           <Field label="残業" unit={hasUnit ? "回" : "h"} hint={unitHint}>
             {hasUnit ? unitInput("overtimeHours") : numInput("overtimeHours", { step: "0.5" })}

@@ -34,9 +34,15 @@ interface PayrollData {
   saturdayWorkDays?: number;
   overtimeHours: number;
   lateNightHours: number;
+  holidayWorkHours?: number;
+  paidLeaveDays?: number;
   holidayWorkDays: number;
   employeeId?: number;
   notes?: string;
+  /** 計算に使った標準報酬月額・料率（2026-09-14 より前の明細は null）*/
+  appliedStandardRemuneration?: number | null;
+  appliedHealthInsuranceRate?: number | null;
+  appliedCareInsuranceRate?: number | null;
   [key: string]: unknown;
 }
 
@@ -314,13 +320,24 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
   const deductionItems: Array<{ label: string; value: number; exempt?: boolean }> = [];
   const socialBase = (payroll.socialInsurance ?? 0) - childcare;
   // 健康保険と厚生年金を分けて表示する。payroll には合算値しか保存されていないため、
-  // 標準報酬月額×令和8年料率で健保分を求め、残り（社保合計−健保）を厚年分とする
+  // 標準報酬月額×健保料率で健保分を求め、残り（社保合計−健保）を厚年分とする
   // （合計は必ず socialBase に一致）。
+  // 2026-09-14 以降に計算した明細は「計算に使った標準報酬月額・料率」を持っているのでそれを使う
+  // （料率・標準報酬月額は履歴で月ごとに変わるため、社員マスタの今の値だと過去の明細の内訳がずれる）。
+  // それより前の明細は従来どおり社員マスタの値×令和8年料率で求める。
   const empRec = employee as Record<string, unknown> | undefined;
-  const stdRem = Number(empRec?.standardRemuneration ?? 0);
-  const insBase = stdRem > 0 ? stdRem : (payroll.grossSalary ?? 0);
-  const healthRate = empRec?.careInsuranceApplied ? HEALTH_WITH_CARE_EMPLOYEE_RATE_R8 : HEALTH_EMPLOYEE_RATE_R8;
-  const healthAmt = Math.min(socialBase, round50sen(insBase * healthRate));
+  const appliedStd = payroll.appliedStandardRemuneration;
+  const appliedHealth = payroll.appliedHealthInsuranceRate;
+  let healthAmt: number;
+  if (appliedStd != null && appliedHealth != null) {
+    const healthRateTotal = appliedHealth + (payroll.appliedCareInsuranceRate ?? 0);
+    healthAmt = Math.min(socialBase, round50sen(appliedStd * (Math.round((healthRateTotal / 2) * 1e10) / 1e10)));
+  } else {
+    const stdRem = Number(empRec?.standardRemuneration ?? 0);
+    const insBase = stdRem > 0 ? stdRem : (payroll.grossSalary ?? 0);
+    const healthRate = empRec?.careInsuranceApplied ? HEALTH_WITH_CARE_EMPLOYEE_RATE_R8 : HEALTH_EMPLOYEE_RATE_R8;
+    healthAmt = Math.min(socialBase, round50sen(insBase * healthRate));
+  }
   const pensionAmt = Math.max(0, socialBase - healthAmt);
   if (isTaxExempt) {
     deductionItems.push({ label: "健康保険料", value: 0, exempt: true });
@@ -343,10 +360,16 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
   const attendanceItems = [
     { label: "平日日数", value: `${payroll.workDays ?? 0}日` },
     { label: "土曜出勤", value: `${payroll.saturdayWorkDays ?? 0}日` },
-    { label: "休日出勤", value: `${payroll.holidayWorkDays ?? 0}日` },
+    // 日曜・祝日出勤は 2026-08 から時間管理。過去分（時間0で日数のみ）は従来どおり日数で出す。
+    (payroll.holidayWorkHours ?? 0) > 0
+      ? { label: "休日出勤", value: formatHours(payroll.holidayWorkHours ?? 0) }
+      : { label: "休日出勤", value: `${payroll.holidayWorkDays ?? 0}日` },
     { label: "残業時間", value: formatHours(payroll.overtimeHours) },
     { label: "深夜時間", value: formatHours(payroll.lateNightHours) },
   ];
+  if ((payroll.paidLeaveDays ?? 0) > 0) {
+    attendanceItems.push({ label: "有給", value: `${payroll.paidLeaveDays}日` });
+  }
 
   const department = "";
   const today = new Date();

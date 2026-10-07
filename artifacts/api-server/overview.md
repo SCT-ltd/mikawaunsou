@@ -11,7 +11,9 @@
 - `src/routes/index.ts` — 全ルートを `/api` にマウント。prefix ベースの `requireAdmin` 認可、公開フロー判定 `isPublicDriverFlowRequest()`
 - `src/routes/*.ts` — 機能別ルート（`auth`, `employees`, `payroll`, `monthly_records`, `attendance`, `allowances`, `absences`, `calendar`, `company`, `dashboard`, `journal_entries`, `messages`, `users`, `health`）
 - `src/lib/payroll-calculator.ts` — 給与計算エンジン（基本給/残業/深夜/歩合/源泉税/社保）
-- `src/lib/tax-tables-reiwa8.ts` — 令和8年テーブル（共有 lib のラッパ）。値変更は要出典
+- `src/lib/tax-tables-reiwa8.ts` — 令和8年テーブル（共有 lib のラッパ）。値変更は要出典。`calculateInsuranceAndTax` は `insuranceRates`（本人負担率）を受け取れる（省略時は令和8年度の内蔵値）
+- `src/lib/insurance-settings.ts` — 保険料率マスター・標準報酬月額の履歴から「給与明細の年月」に効く値を解決（`getEffectiveInsuranceRates` / `getEffectiveStandardRemuneration`）。料率の表が空なら初期行を作る
+- `src/routes/insurance.ts` — 保険料率マスター（`/insurance-rate-periods`、`/insurance-rates/effective`）と標準報酬月額の履歴（`/employees/:id/standard-remuneration-history`、`/standard-remuneration/effective`、`/standard-remuneration/bulk`）
 - `src/lib/auth-middleware.ts` — `requireOwnerOrAdmin` 系（未ログイン通過・ログイン中は本人のみ）
 - `src/lib/params.ts` — Express 5 の route params を string に強制（TS2345 対策、コミット c8e6ea9）
 - `src/lib/logger.ts` — pino ロガー
@@ -38,6 +40,23 @@
 
 ## 決定事項
 
+- 2026-09-14 **社会保険・雇用保険の料率と標準報酬月額を、年度ごとにマスターで切り替えられるようにした**（ユーザー依頼：定時決定（R8.9適用）の通知書や料率改定のたびに、過去の月の計算を変えずに新しい値へ切り替えたい）。
+  - 以前: 健保9.85%・介護1.62%・支援金0.23%・厚年18.3% はプログラムに直書き、子ども・子育て支援金の開始（2026年4月の明細〜）は `isChildcareSupportApplicable()` に直書き、雇用保険は会社設定の1値、標準報酬月額は社員マスタの1値で、どれも履歴が無かった。値を書き換えるとそれ以降に計算する全ての月に効き、「9月分から変える」ができなかった。
+  - 仕様: 新テーブル `insurance_rate_periods`（料率の履歴）と `standard_remuneration_history`（社員ごとの標準報酬月額の履歴）。**適用開始は給与明細の年月**（`payrolls.year/month`）で数え、「その月以前でいちばん新しい行」を使う。料率は保険料額表の「合計」の率で持ち本人負担は半分にする（雇用保険だけ本人負担の率）。標準報酬月額は該当する履歴が無い月は社員マスタの値（初期値）を使う。
+  - 3つの計算分岐（manual / BW / 標準）すべてがこの値を使う。計算に使った標準報酬月額と料率を `payrolls.applied_*` に複写（明細印刷の健保・厚年の内訳もこれを使う）。
+  - 移行: 料率の表が空なら初回アクセス時に初期行を2行作る（2000年1月〜: 支援金0%、2026年4月〜: 支援金0.23%。雇用保険は会社設定の値）。**既存の計算結果を変えないため、本番の雇用保険料率 0.0005 もそのまま引き継ぐ**（正しい値は社労士に確認のうえ画面で直す）。
+  - 検証: 変更前のビルドと変更後のビルドを同じ検証DBで並べ、社員条件4種（標準報酬あり・未設定、厚年上限超え・70歳以上、全額非課税・雇保対象外）× BW有無 × 3/8/9/10月 × manual/auto の112件を比較し、**2026年4月以降は全項目一致**。2026年3月（支援金の開始前）の8件だけ源泉所得税が 70〜110円高くなる：旧コードは支援金を0円にする前に「支援金を控除した額」で所得税を出していたため（実際には引いていない支援金で税を下げていた）。新コードは支援金0%で最初から計算するので正しい。※本番には 2026年3月の下書きが9件あり、再計算するとこの差が出る。API検証47項目・画面検証53項目も全通過。
+
+- 2026-09-09 `POST /payroll/calculate` の `calculationMode` は、指定が無ければ既存明細のモードを引き継ぐようにした（従来は既定で "auto"）。月次実績入力の「実績を保存」がモードを送らないため、事務所が manual で組み立てた明細が BW/標準の自動計算で上書きされ、手当ベースの支給額が消えていた（2026-08 の明細が実際に manual → bluewing_auto に化けていた）。既存明細が無い新規のときだけ "auto" にフォールバックする。
+- 2026-09-06 `lateNightPremiumPerHour()` の端数を切り捨て→四捨五入に変更。事務所の手計算（2,111円/h→422、1,750→350、1,909→382）と一致するのは四捨五入のみ。BW分岐・標準計算の深夜手当が対象で、影響は1円単位。
+- 2026-08-26 有給休暇を日数管理に:
+  - `monthly_records.paid_leave_days` / `payrolls.paid_leave_days` を追加。月次実績で日数を入力し、手当「有給」の金額は 日当 × 日数 で導出する（従来は事務所が「日数 × 平日日当9,808」を電卓で出して金額欄に手入力しており、手当が年月を持たないため前月の金額が翌月に残っていた。実データで平良58,848=6日分・古田29,424=3日分…と9名分が9,808の倍数だったことを確認）。
+  - **有給を欠勤控除の対象から外した。** `paid_leave` は元々 `ABSENCE_DAYS` に定義された欠勤種別で、`GET /attendance/monthly-summary` が全種別を `absenceDays` に合算していたため、勤怠カレンダーで有給を登録すると `absenceDeduction = 日当 × 日数` で1日分引かれていた（有給なのに控除）。集計を分離し `paidLeaveDays` を別に返す。本番の有給登録は1件のみ（2026-04-30）で実害は出ていなかった。
+- 2026-08-26 クライアント報告「残業・深夜の時間を入れると金額がズレる」の是正と、日曜出勤の時間計算化:
+  - **深夜手当が個人残業時給を無視していた**（標準計算のみ）。`calculatePayroll` の深夜手当は `基本給 ÷ 月平均労働時間 × 0.25` だったため、基本給を0にして手当中心で運用している社員は深夜手当が常に0円になっていた（実データ: 玉川で深夜2.5h入力→0円）。BW分岐は元々「残業単価 ÷ 1.25 × 0.25」を使っており、これを `lateNightPremiumPerHour()` として切り出して両分岐で共有。個人残業時給が設定されている社員はこちらを使う（2,111円/h→422円/h、1,750円/h→350円/h）。
+  - **支給額の端数処理を四捨五入に変更**（`roundPayYen`）。`roundJapanese` は「50銭以下切り捨て」＝社会保険料の通達ルールで、39.5h × 2,111円 = 83,384.5 → 83,384 となり事務所の手計算（83,385）と1円ズレていた。BW分岐は元々 `Math.round`。**対象は残業手当・日曜出勤手当のみ**で、保険料・税・総支給の `roundJapanese` は1円完全一致要件のため不変。
+  - **日曜・祝日出勤を日数計算から時間計算へ**（クライアント依頼）。`sundayPay = 会社設定 hourlyWageSunday（既定1,655円/h） × monthly_records.sundayWorkHours`。旧式は `日当 × 1.35 × 日数`。BW分岐の holidayPay も `土曜日当 × 日数` から同式に変更。`payrolls.holidayWorkHours` に表示用スナップショットを保存（3経路すべて）。`GET /attendance/monthly-summary` に日曜の実働時間 `sundayWorkHours` を追加。
+  - ※ **本番反映には NAS 側で `drizzle-kit push` が別途必要**（`monthly_records.sunday_work_hours` / `payrolls.holiday_work_hours`）。既存の月次実績は sundayWorkHours=0 で入るため、8月分の日曜出勤は時間で入れ直しが要る。
 - 2026-07-02 このファイル作成（api-server 階層の overview 初版）
 - 2026-07-10 給与明細の土曜/日曜（休日）出勤が印刷に出ない不具合を修正。原因は勤怠フィールドの二重帳簿: 月次実績入力は 土曜=`saturdayWorkDays`・日曜/祝日=`sundayWorkDays` に書くが、payroll には土曜日数の列が無く、休日表示は入力に使われない `holidayWorkDays` を保存していた（常に0）。対応: `payrolls` に `saturday_work_days` 列追加、`POST /payroll/:id/calculate` の全3枝（手動/BW/標準）の保存で `saturdayWorkDays=record.saturdayWorkDays`／`holidayWorkDays=record.sundayWorkDays` に是正。標準枝は休日出勤手当の表示行を `holidayPay + sundayPay` に合算（grossSalary は不変、エンジンが既に両者を合算済みのため二重計上なし）。BW枝の holidayPay は元々 sundayWorkDays 由来のため非干渉。過去の確定分は月次実績からの日数バックフィルで表示補完（金額不変）。
 - 2026-07-03 運用リスクの是正（オペレーション改善）:
