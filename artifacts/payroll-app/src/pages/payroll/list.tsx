@@ -486,6 +486,7 @@ export default function PayrollList() {
                             paidLeaveDays: (rec as { paidLeaveDays?: number } | undefined)?.paidLeaveDays ?? 0,
                             overtimeHours: rec?.overtimeHours ?? selectedPayroll.overtimeHours ?? 0,
                             lateNightHours: rec?.lateNightHours ?? selectedPayroll.lateNightHours ?? 0,
+                            actualWorkHours: (rec as { actualWorkHours?: number } | undefined)?.actualWorkHours ?? 0,
                           };
                         })()}
                         onDirtyChange={setIsDirty}

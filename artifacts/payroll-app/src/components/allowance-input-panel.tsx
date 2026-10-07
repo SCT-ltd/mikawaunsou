@@ -72,6 +72,8 @@ interface Props {
     paidLeaveDays: number;
     overtimeHours: number;
     lateNightHours: number;
+    /** 時給制の実働時間（30分切り上げ後の月合計）。時給 × これ が基本給になる。 */
+    actualWorkHours?: number;
   };
   onDirtyChange?: (isDirty: boolean) => void;
   year?: number;
@@ -581,14 +583,23 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
     ? Math.round((monthlyData?.workDays ?? 0) * effectiveDailyRate)
     : null;
 
+  // 時給制はマスターの「基本給」欄が時給。基本給は 時給 × 実働時間（サーバーの計算と同じ）。
+  // そのまま出すと、時給（例 1,500円）が1か月分の基本給・総支給として表示されてしまう。
+  const isHourly = employee.salaryType === "hourly";
+  const hourlyRate = employee.baseSalary ?? 0;
+  const hourlyHours = monthlyData?.actualWorkHours ?? 0;
+  const computedHourlyBaseSalary = isHourly ? Math.round(hourlyRate * hourlyHours) : null;
+
   useEffect(() => {
     // 日給制は当月の月次実績から常に再計算（マスター employee.baseSalary は無視）
     if (isDaily && computedDailyBaseSalary !== null) {
       setBaseSalaryInput(computedDailyBaseSalary);
+    } else if (computedHourlyBaseSalary !== null) {
+      setBaseSalaryInput(computedHourlyBaseSalary);
     } else {
       setBaseSalaryInput(employee.baseSalary ?? 0);
     }
-  }, [employee.baseSalary, employeeId, isDaily, computedDailyBaseSalary]);
+  }, [employee.baseSalary, employeeId, isDaily, computedDailyBaseSalary, computedHourlyBaseSalary]);
 
   const handleSave = async () => {
     try {
@@ -602,7 +613,9 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
       await Promise.all([
         updateAllowances.mutateAsync({ id: employeeId, data: { allowances: allowancePayload } }),
         updateDeductions.mutateAsync({ id: employeeId, data: { deductions: deductionPayload } }),
-        updateEmployee.mutateAsync({ id: employeeId, data: { baseSalary: baseSalaryInput } }),
+        // 時給制では画面の基本給は「時給 × 実働時間」の計算結果。これをマスターへ書くと
+        // 時給が月額で上書きされてしまうので、時給制のときは基本給を保存しない。
+        ...(isHourly ? [] : [updateEmployee.mutateAsync({ id: employeeId, data: { baseSalary: baseSalaryInput } })]),
       ]);
 
       const savedAllowances = allowancePayload.map((item, idx) => {
@@ -785,16 +798,25 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
           {isDaily && (
             <span className="ml-1.5 text-muted-foreground" style={{ fontSize: "9px" }}>日給制（手動設定可）</span>
           )}
+          {isHourly && (
+            <span className="ml-1.5 text-muted-foreground" style={{ fontSize: "9px" }}>
+              時給 {hourlyRate.toLocaleString()}円 × 実働 {hourlyHours}時間（月次実績入力で変更）
+            </span>
+          )}
         </div>
         <div className={COL_TAX}>
           <span className="inline-block px-1 py-0.5 rounded border font-medium bg-red-50 text-red-700 border-red-200 leading-none" style={{ fontSize: "9px" }}>課税</span>
         </div>
         <div className={COL_AMOUNT}>
-          <AmountInput
-            value={baseSalaryInput}
-            onChange={(v) => { setBaseSalaryInput(v); markDirty(); }}
-            inputRef={(el) => { (baseSalaryRef as React.MutableRefObject<HTMLInputElement | null>).current = el; }}
-          />
+          {isHourly ? (
+            <span className="block text-right text-xs tabular-nums pr-2">{baseSalaryInput.toLocaleString()}</span>
+          ) : (
+            <AmountInput
+              value={baseSalaryInput}
+              onChange={(v) => { setBaseSalaryInput(v); markDirty(); }}
+              inputRef={(el) => { (baseSalaryRef as React.MutableRefObject<HTMLInputElement | null>).current = el; }}
+            />
+          )}
         </div>
         <div className={COL_DEL} />
       </div>
