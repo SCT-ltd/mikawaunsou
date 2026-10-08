@@ -162,7 +162,12 @@ router.post("/payroll/calculate", async (req, res) => {
   // 月次実績・Bluewing自動計算を使わず、マスター基本給＋手当設定をそのまま使用
   // ────────────────────────────────────────────────────────────────
   if (calculationMode === "manual") {
-    const manualBaseSalary = emp.baseSalary ?? 0;
+    // 時給制はマスターの「基本給」欄が時給なので、実働時間を掛けて月の基本給にする。
+    // 掛けないと時給そのもの（例 1,500円）が1か月分の基本給として明細に出てしまう。
+    // 月給・日給はこれまでどおりマスターの金額をそのまま使う。
+    const manualBaseSalary = emp.salaryType === "hourly"
+      ? roundJapanese((emp.baseSalary ?? 0) * (record.actualWorkHours ?? 0))
+      : (emp.baseSalary ?? 0);
     const manualCustomAllowancesTotal = customAllowances.reduce((s, a) => s + a.amount, 0);
     const manualNonTaxableTotal = customAllowances.filter(a => !a.isTaxable).reduce((s, a) => s + a.amount, 0);
     const manualTransportation = emp.transportationAllowance ?? 0;
