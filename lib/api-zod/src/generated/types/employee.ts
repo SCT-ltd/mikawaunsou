@@ -67,6 +67,8 @@ export interface Employee {
   dailyRateSaturday?: number;
   /** 個人 残業時給（>0 の場合は採用、残業時間×単価で計算、1.25倍はかけない） */
   overtimeHourlyRate?: number;
+  /** 個人 深夜単価（>0 の場合は 深夜時間×単価。0 は残業時給から自動） */
+  lateNightHourlyRate?: number;
   /** 残業切り上げ単位（分）。例：10分単位なら10。null=標準計算 */
   overtimeUnitMinutes?: number | null;
   /** 残業単位あたり加算額（円）。overtimeUnitMinutes が設定されている場合のみ有効 */

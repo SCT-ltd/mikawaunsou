@@ -30,7 +30,7 @@ import {
   roundJapanese,
   resolvePensionApplied,
   calculateIncomeTaxFromOfficialTable,
-  lateNightPremiumPerHour,
+  lateNightRateFor,
 } from "./estimate";
 import { round50sen } from "@/lib/tax-tables-reiwa8";
 import { formatRatePercent, useMonthInsurance } from "@/lib/insurance-rates";
@@ -329,6 +329,8 @@ export function AllowancePanel({
   // 残業の単価: 社員マスタの「残業 時給（円/時）」。未設定(0)の社員は自動反映しない
   // （0円で上書きして手入力を消さないため）。
   const overtimeRate = employee.overtimeHourlyRate ?? 0;
+  // 深夜の単価: 社員マスタの「深夜 単価」があればそれ。無ければ残業時給から自動（÷1.25×0.25）。
+  const personalNightRate = (employee as { lateNightHourlyRate?: number }).lateNightHourlyRate ?? 0;
   const overtimeDefId = defIdOfName("早出残業手当");
   const lateNightDefId = defIdOfName("深夜手当");
 
@@ -372,8 +374,10 @@ export function AllowancePanel({
         `勤怠の残業 ${overtimeHours}h × ${overtimeRate.toLocaleString("ja-JP")}円（自動）`
       );
 
-      // 深夜手当 = 深夜時間 × 深夜割増単価（残業時給 ÷ 1.25 × 0.25）
-      const perHour = lateNightPremiumPerHour(overtimeRate);
+    }
+    if (overtimeRate > 0 || personalNightRate > 0) {
+      // 深夜手当 = 深夜時間 × 深夜単価（個人の深夜単価。無ければ 残業時給 ÷ 1.25 × 0.25）
+      const perHour = lateNightRateFor(personalNightRate, overtimeRate);
       push(
         defIdOf("深夜手当"),
         Math.round(perHour * lateNightHours),
@@ -384,7 +388,7 @@ export function AllowancePanel({
   }, [
     allowanceDefinitions, paidLeaveRate, paidLeaveDays,
     monthlyData?.saturdayWorkDays, monthlyData?.sundayWorkHours, rateSaturday, rateSundayHour,
-    overtimeRate, overtimeHours, lateNightHours,
+    overtimeRate, overtimeHours, lateNightHours, personalNightRate,
   ]);
 
   /** 自動反映の対象と金額が変わったときだけ effect を走らせるための安定キー */

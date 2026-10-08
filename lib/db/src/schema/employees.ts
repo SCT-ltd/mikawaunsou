@@ -52,6 +52,8 @@ export const employeesTable = pgTable("employees", {
   dailyRateSaturday: doublePrecision("daily_rate_saturday").notNull().default(0),
   /** 個人 残業時給（>0 の場合は採用。残業時間 × この単価 で残業手当を直接計算（1.25倍はかけない） */
   overtimeHourlyRate: doublePrecision("overtime_hourly_rate").notNull().default(0),
+  /** 個人 深夜単価（円/時）。>0 のときは 深夜時間 × この単価。0 は残業時給から自動（÷1.25×0.25） */
+  lateNightHourlyRate: doublePrecision("late_night_hourly_rate").notNull().default(0),
   /** 残業を n 分単位で切り上げ計算する場合の単位（分）。null=標準計算 */
   overtimeUnitMinutes: integer("overtime_unit_minutes"),
   /** 残業単位あたり加算額（円）。overtimeUnitMinutes が設定されている場合のみ有効 */

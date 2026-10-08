@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db, payrollsTable, employeesTable, monthlyRecordsTable, companyTable, allowanceDefinitionsTable, employeeAllowancesTable, employeeDeductionsTable, deductionDefinitionsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
-import { calculatePayroll, calculateBluewingPayroll, roundJapanese, lateNightPremiumPerHour } from "../lib/payroll-calculator";
+import { calculatePayroll, calculateBluewingPayroll, roundJapanese, lateNightRateFor } from "../lib/payroll-calculator";
 import { calculateInsuranceAndTax, EMP_INS_RATE_R8 } from "../lib/tax-tables-reiwa8";
 import { getEffectiveInsuranceRates, getEffectiveStandardRemuneration, type EffectiveInsuranceRates } from "../lib/insurance-settings";
 
@@ -310,7 +310,7 @@ router.post("/payroll/calculate", async (req, res) => {
     // BW深夜手当: 残業単価から素の時給を復元して25%（標準計算と共通の lateNightPremiumPerHour）
     //   例) 2111 → 1689 → 422円/h、4.5h × 422 = 1,899円
     const bwOtUnitPrice = record.overtimeUnitPrice ?? 2111;
-    const bwLateNightPay = Math.floor(lateNightPremiumPerHour(bwOtUnitPrice) * (record.lateNightHours ?? 0));
+    const bwLateNightPay = Math.floor(lateNightRateFor(emp.lateNightHourlyRate, bwOtUnitPrice) * (record.lateNightHours ?? 0));
 
     const bwResult = calculateBluewingPayroll({
       bluewingSalesAmount: record.bluewingSalesAmount,
@@ -465,6 +465,7 @@ router.post("/payroll/calculate", async (req, res) => {
     empDailyRateWeekday: emp.dailyRateWeekday ?? 0,
     empDailyRateSaturday: emp.dailyRateSaturday ?? 0,
     empOvertimeHourlyRate: emp.overtimeHourlyRate ?? 0,
+    empLateNightHourlyRate: emp.lateNightHourlyRate ?? 0,
     overtimeUnitMinutes: emp.overtimeUnitMinutes ?? null,
     overtimeUnitRate: emp.overtimeUnitRate ?? 0,
     taxExempt: emp.taxExempt ?? false,

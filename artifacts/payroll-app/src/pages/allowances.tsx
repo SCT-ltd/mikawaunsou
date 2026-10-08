@@ -617,6 +617,7 @@ const empFullSchema = z.object({
   dailyRateWeekday: z.coerce.number().min(0).default(0),
   dailyRateSaturday: z.coerce.number().min(0).default(0),
   overtimeHourlyRate: z.coerce.number().min(0).default(0),
+  lateNightHourlyRate: z.coerce.number().min(0).default(0),
   overtimeUnitMinutes: z.coerce.number().int().min(0).default(0),
   overtimeUnitRate: z.coerce.number().min(0).default(0),
 });
@@ -664,6 +665,9 @@ function EmpFormFields({
   const ovrWeekday  = Number(f.watch("dailyRateWeekday"))   || 0;
   const ovrSaturday = Number(f.watch("dailyRateSaturday"))  || 0;
   const ovrOtRate   = Number(f.watch("overtimeHourlyRate")) || 0;
+  const ovrNightRate = Number(f.watch("lateNightHourlyRate")) || 0;
+  // 深夜単価が空欄のときに使われる自動の単価（残業時給 ÷ 1.25 × 0.25。サーバーと同じ丸め）
+  const autoNightRate = Math.round(Math.round(ovrOtRate / 1.25) * 0.25);
 
   useEffect(() => {
     if (!dobValue) return;
@@ -697,6 +701,34 @@ function EmpFormFields({
           → 適用: {ovrOtRate > 0
             ? `個人 ${ovrOtRate.toLocaleString()}円/時（早出残業手当・深夜手当に自動反映）`
             : "未設定（早出残業手当・深夜手当は自動で入りません）"}
+        </p>
+        <FormMessage /></FormItem>
+    )} />
+  );
+
+  // 深夜単価は、残業時給と基礎が違う社員のための個別設定（空欄なら残業時給から自動）。
+  const lateNightRateField = (
+    <FormField control={f.control} name="lateNightHourlyRate" render={({ field }) => (
+      <FormItem><FormLabel className="text-xs font-medium">深夜 単価（円/時）</FormLabel>
+        <FormControl>
+          <div className="flex items-center gap-1">
+            <TipInput type="number" min={0} step={1} placeholder="自動"
+              tip={"深夜手当の1時間あたりの単価。\n" +
+                "入力すると 深夜手当 = この単価 × 深夜時間 で計算します。\n" +
+                "空欄のときは 残業時給 ÷ 1.25 × 0.25 で自動計算します。\n" +
+                "残業の単価と深夜の単価の基礎が違う社員だけ入力してください。"}
+              {...field} value={field.value ? field.value : ""}
+              onChange={(e) => field.onChange(e.target.value === "" ? 0 : Number(e.target.value))}
+              className="text-right bg-white dark:bg-slate-900/40" />
+            <span className="text-xs text-muted-foreground shrink-0">円/時</span>
+          </div>
+        </FormControl>
+        <p className={`text-[11px] mt-1 ${ovrNightRate > 0 ? "text-amber-800 dark:text-amber-300 font-semibold" : "text-muted-foreground"}`}>
+          → 適用: {ovrNightRate > 0
+            ? `個人 ${ovrNightRate.toLocaleString()}円/時`
+            : ovrOtRate > 0
+            ? `自動 ${autoNightRate.toLocaleString()}円/時（残業時給 ÷ 1.25 × 0.25）`
+            : "未設定（残業時給も空欄のため、深夜手当は自動で入りません）"}
         </p>
         <FormMessage /></FormItem>
     )} />
@@ -924,6 +956,7 @@ function EmpFormFields({
                     <FormMessage /></FormItem>
                 )} />
                 {overtimeRateField}
+                {lateNightRateField}
               </div>
               <details className="text-xs text-muted-foreground">
                 <summary className="cursor-pointer select-none hover:text-foreground">残業を「分単位」で計算する（任意・上級者向け）</summary>
@@ -967,6 +1000,7 @@ function EmpFormFields({
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {overtimeRateField}
+                {lateNightRateField}
               </div>
             </div>
             )}
@@ -1235,7 +1269,7 @@ function EmployeeMasterTab() {
       dependentCount: 0, hasSpouse: false, standardRemuneration: 0,
       careInsuranceApplied: false, employmentInsuranceApplied: true, pensionAppliedMode: "auto", taxExempt: false,
       scheduledWorkStart: "", scheduledWorkEnd: "",
-      dailyRateWeekday: 0, dailyRateSaturday: 0, overtimeHourlyRate: 0,
+      dailyRateWeekday: 0, dailyRateSaturday: 0, overtimeHourlyRate: 0, lateNightHourlyRate: 0,
       overtimeUnitMinutes: 0, overtimeUnitRate: 0,
     },
   });
@@ -1251,7 +1285,7 @@ function EmployeeMasterTab() {
       dependentCount: 0, hasSpouse: false, standardRemuneration: 0,
       careInsuranceApplied: false, employmentInsuranceApplied: true, pensionAppliedMode: "auto", taxExempt: false,
       scheduledWorkStart: "", scheduledWorkEnd: "",
-      dailyRateWeekday: 0, dailyRateSaturday: 0, overtimeHourlyRate: 0,
+      dailyRateWeekday: 0, dailyRateSaturday: 0, overtimeHourlyRate: 0, lateNightHourlyRate: 0,
       overtimeUnitMinutes: 0, overtimeUnitRate: 0,
     },
   });
@@ -1295,6 +1329,7 @@ function EmployeeMasterTab() {
       dailyRateWeekday: (emp as unknown as { dailyRateWeekday?: number }).dailyRateWeekday ?? 0,
       dailyRateSaturday: (emp as unknown as { dailyRateSaturday?: number }).dailyRateSaturday ?? 0,
       overtimeHourlyRate: (emp as unknown as { overtimeHourlyRate?: number }).overtimeHourlyRate ?? 0,
+      lateNightHourlyRate: (emp as unknown as { lateNightHourlyRate?: number }).lateNightHourlyRate ?? 0,
       overtimeUnitMinutes: (emp as unknown as { overtimeUnitMinutes?: number | null }).overtimeUnitMinutes ?? 0,
       overtimeUnitRate: (emp as unknown as { overtimeUnitRate?: number }).overtimeUnitRate ?? 0,
     });

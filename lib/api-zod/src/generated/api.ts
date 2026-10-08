@@ -237,6 +237,12 @@ export const ListEmployeesResponseItem = zod.object({
     .describe(
       "個人 残業時給（>0 の場合は採用、残業時間×単価で計算、1.25倍はかけない）",
     ),
+  lateNightHourlyRate: zod
+    .number()
+    .optional()
+    .describe(
+      "個人 深夜単価（>0 の場合は 深夜時間×単価。0 は残業時給から自動）",
+    ),
   overtimeUnitMinutes: zod
     .number()
     .nullish()
@@ -291,6 +297,10 @@ export const CreateEmployeeBody = zod.object({
     .number()
     .optional()
     .describe("個人 残業時給（>0 で採用、残業時間×単価で計算）"),
+  lateNightHourlyRate: zod
+    .number()
+    .optional()
+    .describe("個人 深夜単価（>0 で 深夜時間×単価。0 は残業時給から自動）"),
   overtimeUnitMinutes: zod
     .number()
     .nullish()
@@ -373,6 +383,12 @@ export const GetEmployeeResponse = zod.object({
     .optional()
     .describe(
       "個人 残業時給（>0 の場合は採用、残業時間×単価で計算、1.25倍はかけない）",
+    ),
+  lateNightHourlyRate: zod
+    .number()
+    .optional()
+    .describe(
+      "個人 深夜単価（>0 の場合は 深夜時間×単価。0 は残業時給から自動）",
     ),
   overtimeUnitMinutes: zod
     .number()
@@ -464,6 +480,12 @@ export const UpdateEmployeeBody = zod.object({
     .describe(
       "個人 残業時給（>0 の場合は採用、残業時間×単価で計算、1.25倍はかけない）",
     ),
+  lateNightHourlyRate: zod
+    .number()
+    .optional()
+    .describe(
+      "個人 深夜単価（>0 の場合は 深夜時間×単価。0 は残業時給から自動）",
+    ),
   overtimeUnitMinutes: zod
     .number()
     .nullish()
@@ -540,6 +562,12 @@ export const UpdateEmployeeResponse = zod.object({
     .optional()
     .describe(
       "個人 残業時給（>0 の場合は採用、残業時間×単価で計算、1.25倍はかけない）",
+    ),
+  lateNightHourlyRate: zod
+    .number()
+    .optional()
+    .describe(
+      "個人 深夜単価（>0 の場合は 深夜時間×単価。0 は残業時給から自動）",
     ),
   overtimeUnitMinutes: zod
     .number()

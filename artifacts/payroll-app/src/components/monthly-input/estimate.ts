@@ -52,6 +52,11 @@ export function lateNightPremiumPerHour(overtimeHourlyRate: number): number {
   return Math.round(Math.round(overtimeHourlyRate / 1.25) * 0.25);
 }
 
+/** 深夜の単価。個人の深夜単価があればそれ、無ければ残業単価から求める（サーバ側 lateNightRateFor と同じ）。 */
+export function lateNightRateFor(personalLateNightRate: number | null | undefined, overtimeHourlyRate: number): number {
+  return (personalLateNightRate ?? 0) > 0 ? personalLateNightRate! : lateNightPremiumPerHour(overtimeHourlyRate);
+}
+
 /**
  * 厚生年金適用判定（サーバー側 resolvePensionApplied と同ロジック）
  * - pensionApplied が true/false → その値をそのまま使用
@@ -166,7 +171,7 @@ export function computeQuickEstimate(
       ? effectiveWeekdayRate / 8
       : monthlyHours > 0 ? baseSalary / monthlyHours : 0;
     // 深夜手当は残業単価から素の時給を復元して25%（サーバ側 calculatePayroll と同じ）
-    lateNightPay = Math.floor(lateNightPremiumPerHour(empOtRate) * lateNightHours);
+    lateNightPay = Math.floor(lateNightRateFor((emp as { lateNightHourlyRate?: number }).lateNightHourlyRate, empOtRate) * lateNightHours);
     holidayPay = roundJapanese(hourlyRate * HOLIDAY_RATE_R8 * holidayWorkDays * 8);
   } else {
     // 標準計算: 日給÷8 or 月給÷月平均 × 割増率（令和8年 内蔵定数）

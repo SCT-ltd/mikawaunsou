@@ -1467,6 +1467,9 @@ components:
         overtimeHourlyRate:
           type: number
           description: 個人 残業時給（>0 の場合は採用、残業時間×単価で計算、1.25倍はかけない）
+        lateNightHourlyRate:
+          type: number
+          description: 個人 深夜単価（>0 の場合は 深夜時間×単価。0 は残業時給から自動）
         overtimeUnitMinutes:
           type: integer
           nullable: true
@@ -1566,6 +1569,9 @@ components:
         overtimeHourlyRate:
           type: number
           description: 個人 残業時給（>0 で採用、残業時間×単価で計算）
+        lateNightHourlyRate:
+          type: number
+          description: 個人 深夜単価（>0 で 深夜時間×単価。0 は残業時給から自動）
         overtimeUnitMinutes:
           type: integer
           nullable: true
@@ -1657,6 +1663,9 @@ components:
         overtimeHourlyRate:
           type: number
           description: 個人 残業時給（>0 の場合は採用、残業時間×単価で計算、1.25倍はかけない）
+        lateNightHourlyRate:
+          type: number
+          description: 個人 深夜単価（>0 の場合は 深夜時間×単価。0 は残業時給から自動）
         overtimeUnitMinutes:
           type: integer
           nullable: true

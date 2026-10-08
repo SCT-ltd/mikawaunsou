@@ -55,6 +55,15 @@ export function lateNightPremiumPerHour(overtimeHourlyRate: number): number {
   return Math.round(Math.round(overtimeHourlyRate / 1.25) * 0.25);
 }
 
+/**
+ * 深夜手当の1時間あたりの単価。
+ * 社員マスタに個人の深夜単価があればそれを使い、無ければ残業単価から求める。
+ * （残業単価と深夜単価の基礎が違う社員がいる。例: 残業 1,750円/h・深夜 393円/h）
+ */
+export function lateNightRateFor(personalLateNightRate: number | null | undefined, overtimeHourlyRate: number): number {
+  return (personalLateNightRate ?? 0) > 0 ? personalLateNightRate! : lateNightPremiumPerHour(overtimeHourlyRate);
+}
+
 export interface CustomAllowanceItem {
   allowanceDefinitionId: number;
   allowanceName: string;
@@ -128,6 +137,8 @@ export interface PayrollCalculationInput {
    * overtimePay = overtimeHours × empOvertimeHourlyRate （1.25倍はかけず単価そのもの）
    */
   empOvertimeHourlyRate?: number;
+  /** 個人 深夜単価（円/時）。>0 のときは残業単価からの自動計算より優先する */
+  empLateNightHourlyRate?: number;
   /**
    * 残業を n 分単位で切り上げ計算する場合の単位（分）
    * 例: 10 → 10分未満でも 1 単位として計上
@@ -287,8 +298,8 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
   }
   // 深夜手当: 個人残業時給が設定されていれば、そこから復元した素の時給の25%を使う。
   // （設定が無い社員だけ従来どおり 基本給ベースの時給 × 0.25）
-  const lateNightPay = (input.empOvertimeHourlyRate ?? 0) > 0
-    ? Math.floor(lateNightPremiumPerHour(input.empOvertimeHourlyRate!) * lateNightHours)
+  const lateNightPay = (input.empLateNightHourlyRate ?? 0) > 0 || (input.empOvertimeHourlyRate ?? 0) > 0
+    ? Math.floor(lateNightRateFor(input.empLateNightHourlyRate, input.empOvertimeHourlyRate ?? 0) * lateNightHours)
     : roundJapanese(hourlyRate * 0.25 * lateNightHours);
   // 休日手当（holidayWorkDays）は従来どおり 日当 × 1.35 × 日数。
   // 日曜・祝日手当（sundayWorkHours）は 2026-08 から「時間 × 日曜時給（既定1,655円/h）」。
