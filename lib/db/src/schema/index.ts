@@ -9,3 +9,4 @@ export * from "./messages";
 export * from "./users";
 export * from "./sessions";
 export * from "./calendar";
+export * from "./insurance";

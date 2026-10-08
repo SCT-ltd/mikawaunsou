@@ -1,33 +1,39 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Reorder, useDragControls } from "framer-motion";
 import {
   useGetEmployeeAllowances,
   getGetEmployeeAllowancesQueryKey,
-  useUpdateEmployeeAllowances,
   useListAllowanceDefinitions,
   getListAllowanceDefinitionsQueryKey,
   useGetEmployeeDeductions,
   getGetEmployeeDeductionsQueryKey,
-  useUpdateEmployeeDeductions,
   useListDeductionDefinitions,
   getListDeductionDefinitionsQueryKey,
-  useUpdateEmployee,
   useGetCompany,
   getListEmployeesQueryKey,
+  useListPayrolls,
+  getListPayrollsQueryKey,
+  // 自動保存はアンマウント時（社員切替）にも書き込むため、フックではなく素の関数を使う
+  updateEmployeeAllowances as apiUpdateAllowances,
+  updateEmployeeDeductions as apiUpdateDeductions,
+  updateEmployee as apiUpdateEmployee,
+  calculatePayroll as apiCalculatePayroll,
 } from "@workspace/api-client-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { Save, Plus, X, GripVertical, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
+import { Plus, X, GripVertical, ChevronDown, ChevronUp, Loader2, Check, AlertCircle, Lock } from "lucide-react";
 import {
   EmployeeExt,
   CompanySettings,
   roundJapanese,
   resolvePensionApplied,
   calculateIncomeTaxFromOfficialTable,
+  lateNightRateFor,
 } from "./estimate";
+import { round50sen } from "@/lib/tax-tables-reiwa8";
+import { formatRatePercent, useMonthInsurance } from "@/lib/insurance-rates";
 
 /**
  * 手当・控除タブ。
@@ -65,11 +71,14 @@ function AllowanceReorderItem({
   definitions,
   onChange,
   onRemove,
+  autoNote,
 }: {
   row: AllowanceRow;
   definitions: { id: number; name: string; isTaxable: boolean }[];
   onChange: (uid: string, field: "defId" | "amount", value: number | null) => void;
   onRemove: (uid: string) => void;
+  /** 金額が勤怠から自動で入る手当（有給など）の注記 */
+  autoNote?: string;
 }) {
   const controls = useDragControls();
   const def = definitions.find((d) => d.id === row.defId);
@@ -99,6 +108,9 @@ function AllowanceReorderItem({
             ))}
           </SelectContent>
         </Select>
+        {autoNote && (
+          <div className="text-[10px] text-muted-foreground px-1">{autoNote}</div>
+        )}
       </div>
 
       {def ? (
@@ -200,11 +212,28 @@ function DeductionReorderItem({
 export function AllowancePanel({
   employee,
   monthlyData,
+  year,
+  month,
+  hasMonthlyRecord = false,
 }: {
   employee: EmployeeExt;
-  monthlyData?: { workDays: number; saturdayWorkDays: number; sundayWorkDays: number };
+  /**
+   * この社員のこの月の月次実績が保存済みか。未保存の月は、開いただけでは自動反映も
+   * 自動保存もしない（勤怠が全部0なので、0円で手当マスタを上書きしてしまうため）。
+   */
+  hasMonthlyRecord?: boolean;
+  /** 再計算する対象月。省略すると保存しても給与明細は更新されない */
+  year?: number;
+  month?: number;
+  monthlyData?: {
+    workDays: number;
+    saturdayWorkDays: number;
+    sundayWorkHours: number;
+    paidLeaveDays: number;
+    overtimeHours: number;
+    lateNightHours: number;
+  };
 }) {
-  const { toast } = useToast();
   const queryClient = useQueryClient();
   const employeeId = employee.id;
 
@@ -224,9 +253,35 @@ export function AllowancePanel({
   });
   const { data: companyData } = useGetCompany();
   const company = companyData as CompanySettings | undefined;
-  const updateAllowances = useUpdateEmployeeAllowances();
-  const updateDeductions = useUpdateEmployeeDeductions();
-  const updateEmployee = useUpdateEmployee();
+  const monthInsurance = useMonthInsurance(
+    year ?? new Date().getFullYear(),
+    month ?? new Date().getMonth() + 1,
+  );
+  // この月の給与明細が確定済みか。確定済みの月は手当・控除を「表示のみ」にする。
+  // 手当は年月を持たない社員マスタの1レコードなので、自動保存のまま過去の確定月を
+  // 開くと、その月の勤怠から計算した金額でマスタが上書きされ、未確定の月が壊れる。
+  const payrollParams = { year: year ?? 0, month: month ?? 0 };
+  const { data: monthPayrolls, isSuccess: payrollsLoaded } = useListPayrolls(payrollParams, {
+    query: { enabled: year != null && month != null, queryKey: getListPayrollsQueryKey(payrollParams) },
+  });
+  const payrollStatusKnown = year == null || month == null || payrollsLoaded;
+  const isConfirmed = !!monthPayrolls?.some(
+    (p) => p.employeeId === employeeId && p.status === "confirmed"
+  );
+
+  // 画面を開いただけで書き込まないための判定。
+  // 手当は月をまたいで共有されるので、実績未入力の月を開いただけで勤怠0から計算した
+  // 0円が自動保存されると、今月分の手当が消える。
+  //
+  // 「勤怠から金額を出す（自動反映）」と「保存する」は条件を分ける。
+  // 手当を1つ手で直しただけで自動反映まで走ると、実績の無い月では勤怠連動の手当が
+  // 全部0円→行ごと削除になる（実ブラウザ検証で発覚）。
+  //   - 自動反映してよい : その月の実績が保存済み、またはこの画面で勤怠を変更した
+  //   - 保存してよい     : 上記に加えて、手当・控除を手で変更したとき
+  const [touchedAttendance, setTouchedAttendance] = useState(false);
+  const [touchedManual, setTouchedManual] = useState(false);
+  const allowAutoFill = hasMonthlyRecord || touchedAttendance;
+  const allowWrite = allowAutoFill || touchedManual;
 
   const [rows, setRows] = useState<AllowanceRow[]>([{ uid: genUid(), defId: null, amount: 0 }]);
   const [baseSalaryInput, setBaseSalaryInput] = useState(0);
@@ -236,16 +291,110 @@ export function AllowancePanel({
   const [rowsReady, setRowsReady] = useState(false);
 
   const isDaily = employee.salaryType === "daily";
+  // 実効単価（個人単価があればそれ、無ければ会社共通）
+  const rateWeekday = (employee.dailyRateWeekday ?? 0) > 0
+    ? (employee.dailyRateWeekday ?? 0)
+    : (company?.dailyWageWeekday ?? 9808);
+  const rateSaturday = (employee.dailyRateSaturday ?? 0) > 0
+    ? (employee.dailyRateSaturday ?? 0)
+    : (company?.dailyWageSaturday ?? 12260);
+  const rateSundayHour = company?.hourlyWageSunday ?? 1655;
+
+  // 基本給は「平日日数 × 平日日当」だけ。土曜・日曜分は休日出勤手当に入れる。
+  // 本番データで裏付け済み: 岡田 平日17d×9,808=166,736、玉川 平日18d×9,808=176,544 が
+  // それぞれ実際の基本給と一致する（給与明細一覧側の手当パネルと同じ式）。
+  // 以前ここだけ土曜・日曜も足していたため、明細一覧側で保存した場合と金額が食い違い、
+  // かつ休日出勤手当と土曜分が二重計上になっていた。
   const computedDailyBaseSalary =
     isDaily && company
-      ? Math.round(
-          (monthlyData?.workDays ?? 0) * (company.dailyWageWeekday ?? 9808) +
-            (monthlyData?.saturdayWorkDays ?? 0) * (company.dailyWageSaturday ?? 12260) +
-            (monthlyData?.sundayWorkDays ?? 0) * (company.dailyWageWeekday ?? 9808) * 1.35
-        )
+      ? Math.round((monthlyData?.workDays ?? 0) * rateWeekday)
       : null;
 
-  // pinned な手当IDを安定した文字列キーにして effect の依存を安定化する。
+  // ── 勤怠から金額が決まる手当の自動反映 ──────────────────────────────
+  // 事務所は「時間（日数）× 単価」を電卓で出して金額欄に手入力していた。手当は年月を
+  // 持たない社員マスタの1レコードなので、翌月も前月の金額が残り続ける（実際に7月分の
+  // 早出残業手当85,496円・深夜手当1,266円が8月にそのまま残り、クライアントから
+  // 「残業39.5h×2,111=83,385のはずが85,496になる」と報告された）。
+  // 月次実績から金額を導出して、手計算と持ち越しの両方を無くす。
+  const paidLeaveDays  = monthlyData?.paidLeaveDays  ?? 0;
+  const overtimeHours  = monthlyData?.overtimeHours  ?? 0;
+  const lateNightHours = monthlyData?.lateNightHours ?? 0;
+
+  function defIdOfName(keyword: string): number | null {
+    return allowanceDefinitions.find((d) => d.name.includes(keyword))?.id ?? null;
+  }
+
+  // 有給の単価は平日日当と同じ
+  const paidLeaveRate = rateWeekday;
+  // 残業の単価: 社員マスタの「残業 時給（円/時）」。未設定(0)の社員は自動反映しない
+  // （0円で上書きして手入力を消さないため）。
+  const overtimeRate = employee.overtimeHourlyRate ?? 0;
+  // 深夜の単価: 社員マスタの「深夜 単価」があればそれ。無ければ残業時給から自動（÷1.25×0.25）。
+  const personalNightRate = (employee as { lateNightHourlyRate?: number }).lateNightHourlyRate ?? 0;
+  const overtimeDefId = defIdOfName("早出残業手当");
+  const lateNightDefId = defIdOfName("深夜手当");
+
+  const defIdOf = defIdOfName;
+
+  /** 勤怠から金額が決まる手当。defId が null（手当が未定義）のものは対象外。 */
+  const autoRows = useMemo(() => {
+    const rowsOut: { defId: number; amount: number; note: string }[] = [];
+    const push = (defId: number | null, amount: number, note: string) => {
+      if (defId !== null) rowsOut.push({ defId, amount, note });
+    };
+
+    push(
+      defIdOf("有給"),
+      Math.round(paidLeaveRate * paidLeaveDays),
+      `勤怠の有給 ${paidLeaveDays}日 × ${paidLeaveRate.toLocaleString("ja-JP")}円（自動）`
+    );
+
+    // 休日出勤手当 = 土曜日数 × 土曜日当 ＋ 日曜・祝日時間 × 日曜時給。
+    // 本番データで裏付け済み: 岡田 2d×12,260+0h = 24,520、
+    // 玉川 2d×12,260+5.5h×1,655 = 33,623 が、いずれも事務所の手入力額と一致する。
+    const saturdayDays = monthlyData?.saturdayWorkDays ?? 0;
+    const sundayHours = monthlyData?.sundayWorkHours ?? 0;
+    push(
+      defIdOf("休日出勤手当"),
+      Math.round(saturdayDays * rateSaturday + sundayHours * rateSundayHour),
+      `勤怠の土曜 ${saturdayDays}日 × ${rateSaturday.toLocaleString("ja-JP")}円` +
+        ` ＋ 日曜祝日 ${sundayHours}h × ${rateSundayHour.toLocaleString("ja-JP")}円（自動）`
+    );
+
+    if (overtimeRate > 0) {
+      // 残業手当 = 残業時間 × 残業時給。労基法37条3項に合わせ60時間超は ×1.20 追加。
+      const OT_THRESHOLD = 60;
+      const overtimePay = overtimeHours <= OT_THRESHOLD
+        ? Math.round(overtimeRate * overtimeHours)
+        : Math.round(overtimeRate * OT_THRESHOLD) +
+          Math.round(overtimeRate * 1.20 * (overtimeHours - OT_THRESHOLD));
+      push(
+        defIdOf("早出残業手当"),
+        overtimePay,
+        `勤怠の残業 ${overtimeHours}h × ${overtimeRate.toLocaleString("ja-JP")}円（自動）`
+      );
+
+    }
+    if (overtimeRate > 0 || personalNightRate > 0) {
+      // 深夜手当 = 深夜時間 × 深夜単価（個人の深夜単価。無ければ 残業時給 ÷ 1.25 × 0.25）
+      const perHour = lateNightRateFor(personalNightRate, overtimeRate);
+      push(
+        defIdOf("深夜手当"),
+        Math.round(perHour * lateNightHours),
+        `勤怠の深夜 ${lateNightHours}h × ${perHour.toLocaleString("ja-JP")}円（自動）`
+      );
+    }
+    return rowsOut;
+  }, [
+    allowanceDefinitions, paidLeaveRate, paidLeaveDays,
+    monthlyData?.saturdayWorkDays, monthlyData?.sundayWorkHours, rateSaturday, rateSundayHour,
+    overtimeRate, overtimeHours, lateNightHours, personalNightRate,
+  ]);
+
+  /** 自動反映の対象と金額が変わったときだけ effect を走らせるための安定キー */
+  const autoRowsKey = autoRows.map((r) => `${r.defId}:${r.amount}`).join(",");
+
+  // pinned な手当IDを安定した文字列キーにして依存を安定化する。
   // allowanceDefinitions は `= []` デフォルトのためロード中に毎レンダー参照が変わり、
   // これを直接 effect 依存にすると setRows → 再レンダー → effect の無限ループになる。
   const pinnedIdsKey = useMemo(
@@ -257,7 +406,12 @@ export function AllowancePanel({
     [allowanceDefinitions]
   );
 
+  // 行の初期化は、手当データと手当定義が揃った時点で1回だけ確定する。
+  // 自動保存のたびに手当を再取得するので、毎回作り直すと入力中の行が新しい uid で
+  // 置き換わり、フォーカスが外れて打鍵が消える。
+  const rowsInitRef = useRef(false);
   useEffect(() => {
+    if (rowsInitRef.current) return;
     const base: AllowanceRow[] = (employeeAllowances && employeeAllowances.length > 0)
       ? employeeAllowances.map((a) => ({ uid: genUid(), defId: a.allowanceDefinitionId, amount: a.amount }))
       : [];
@@ -269,43 +423,88 @@ export function AllowancePanel({
       .map((id) => ({ uid: genUid(), defId: id, amount: 0 }));
     const merged = [...base, ...pinnedRows];
     setRows(merged.length > 0 ? merged : [{ uid: genUid(), defId: null, amount: 0 }]);
-    // 手当データが到着してから初期化した場合のみ ready（ロード中の暫定初期化では立てない）
-    if (employeeAllowances !== undefined) setRowsReady(true);
-  }, [employeeAllowances, employeeId, pinnedIdsKey]);
+    // 手当データと手当定義（固定表示の手当）が揃ってから ready にし、以後は作り直さない
+    if (employeeAllowances !== undefined && !isAllowDefsLoading) {
+      setRowsReady(true);
+      rowsInitRef.current = true;
+    }
+  }, [employeeAllowances, employeeId, pinnedIdsKey, isAllowDefsLoading]);
 
+  // 勤怠が変わったら対象手当の金額を入れ直す（時間・日数が0なら0にする＝持ち越しを断つ）。
+  // 依存は autoRowsKey（対象と金額）だけなので、金額欄を手で直した後に再レンダーしても
+  // 上書きしない。
   useEffect(() => {
-    if (employeeDeductions && employeeDeductions.length > 0) {
+    if (!rowsReady || !payrollStatusKnown || isConfirmed || !allowAutoFill || autoRows.length === 0) return;
+    setRows((prev) => {
+      let next = prev;
+      for (const auto of autoRows) {
+        const idx = next.findIndex((r) => r.defId === auto.defId);
+        if (idx >= 0) {
+          if (next[idx].amount === auto.amount) continue;
+          if (next === prev) next = [...prev];
+          next[idx] = { ...next[idx], amount: auto.amount };
+          continue;
+        }
+        if (auto.amount === 0) continue;
+        // 行がまだ無ければ足す（空行しか無い場合はその行を使う）
+        if (next === prev) next = [...prev];
+        const row = { uid: genUid(), defId: auto.defId, amount: auto.amount };
+        const blank = next.findIndex((r) => r.defId === null && !r.amount);
+        if (blank >= 0) next[blank] = row;
+        else next.push(row);
+      }
+      return next;
+    });
+    // autoRows は autoRowsKey から導出されるので依存はキーだけでよい
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rowsReady, payrollStatusKnown, isConfirmed, allowAutoFill, autoRowsKey]);
+
+  const dedInitRef = useRef(false);
+  useEffect(() => {
+    if (dedInitRef.current || employeeDeductions === undefined) return;
+    if (employeeDeductions.length > 0) {
       setDeductionRows(employeeDeductions.map((d) => ({ uid: genUid(), defId: d.deductionDefinitionId, amount: d.amount })));
     } else {
       setDeductionRows([{ uid: genUid(), defId: null, amount: 0 }]);
     }
+    dedInitRef.current = true;
   }, [employeeDeductions, employeeId]);
 
+  const baseInitRef = useRef(false);
   useEffect(() => {
-    if (isDaily && computedDailyBaseSalary !== null) {
+    // 日給制は勤怠（平日日数）から導出する表示専用の値なので、常に追従させる。
+    // ただし確定済みの月は保存されている値をそのまま見せる。
+    if (isDaily && computedDailyBaseSalary !== null && payrollStatusKnown && !isConfirmed && allowAutoFill) {
       setBaseSalaryInput(computedDailyBaseSalary);
-    } else {
-      setBaseSalaryInput(employee.baseSalary ?? 0);
+      return;
     }
-  }, [employee.baseSalary, employeeId, isDaily, computedDailyBaseSalary]);
+    // 月給・時給は手入力なので、初回だけDBの値を入れる（自動保存後の再取得で上書きしない）
+    if (baseInitRef.current) return;
+    setBaseSalaryInput(employee.baseSalary ?? 0);
+    baseInitRef.current = true;
+  }, [employee.baseSalary, isDaily, computedDailyBaseSalary, payrollStatusKnown, isConfirmed, allowAutoFill]);
 
   const handleAllowanceChange = useCallback(
     (uid: string, field: "defId" | "amount", value: number | null) => {
+      setTouchedManual(true);
       setRows((prev) => prev.map((r) => (r.uid === uid ? { ...r, [field]: value ?? 0 } : r)));
     },
     []
   );
   const handleRemoveAllowance = useCallback((uid: string) => {
+    setTouchedManual(true);
     setRows((prev) => prev.filter((r) => r.uid !== uid));
   }, []);
 
   const handleDeductionChange = useCallback(
     (uid: string, field: "defId" | "amount", value: number | null) => {
+      setTouchedManual(true);
       setDeductionRows((prev) => prev.map((r) => (r.uid === uid ? { ...r, [field]: value ?? 0 } : r)));
     },
     []
   );
   const handleRemoveDeduction = useCallback((uid: string) => {
+    setTouchedManual(true);
     setDeductionRows((prev) => prev.filter((r) => r.uid !== uid));
   }, []);
 
@@ -317,13 +516,23 @@ export function AllowancePanel({
     return s + (def && !def.isTaxable ? (r.amount || 0) : 0);
   }, 0);
 
-  const healthRate = company?.healthInsuranceEmployeeRate ?? 0.05;
-  const pensionRate = company?.pensionEmployeeRate ?? 0.0915;
-  const eiRate = company?.employmentInsuranceRate ?? 0.0005;
+  // 保険料はサーバの手入力固定（manual）計算と同じ式: 標準報酬月額（未設定なら総支給）× その月の料率。
+  // 料率・標準報酬月額はマスターの履歴から「この明細の年月」に効く値を使う。
+  // （以前は会社設定の古い料率 × 総支給で概算しており、明細の金額と合っていなかった）
+  const { rates: monthRates } = monthInsurance;
+  const healthRate = employee.careInsuranceApplied ? monthRates.healthWithCareEmployeeRate : monthRates.healthEmployeeRate;
+  const pensionRate = monthRates.pensionEmployeeRate;
+  const eiRate = monthRates.employmentInsuranceRate;
+  const isInsuranceExempt = employee.taxExempt === true;
+  const stdRemuneration = monthInsurance.standardRemunerationOf(employee.id, employee.standardRemuneration);
+  const insBase = stdRemuneration > 0 ? stdRemuneration : grandTotal;
 
-  const isPensionApplied = resolvePensionApplied(employee);
-  const healthInsurance = roundJapanese(grandTotal * healthRate);
-  const pensionInsurance = isPensionApplied ? roundJapanese(grandTotal * pensionRate) : 0;
+  const isPensionApplied = resolvePensionApplied(employee, year, month);
+  const healthInsurance = isInsuranceExempt ? 0 : round50sen(insBase * healthRate);
+  const childcareSupport = isInsuranceExempt ? 0 : round50sen(insBase * monthRates.childcareEmployeeRate);
+  const pensionInsurance = isInsuranceExempt || !isPensionApplied
+    ? 0
+    : round50sen(Math.min(insBase, monthRates.pensionMaxStandard) * pensionRate);
   // 雇用保険の計算基礎から除外する手当合計（「雇用保険の対象外」ON の手当のみ。交通費は含めない）
   const empInsExcludedTotal = rows.reduce((s, r) => {
     const def = allowanceDefinitions.find(d => d.id === r.defId);
@@ -331,13 +540,13 @@ export function AllowancePanel({
   }, 0);
   // 雇用保険: （総支給 − 除外対象手当）× 料率。携帯代等の実費手当のみ計算基礎から除く。
   const employmentInsurance =
-    employee.employmentInsuranceApplied !== false
-      ? roundJapanese((grandTotal - empInsExcludedTotal) * eiRate)
+    !isInsuranceExempt && employee.employmentInsuranceApplied !== false
+      ? round50sen((grandTotal - empInsExcludedTotal) * eiRate)
       : 0;
-  const totalInsurance = healthInsurance + pensionInsurance + employmentInsurance;
+  const totalInsurance = healthInsurance + childcareSupport + pensionInsurance + employmentInsurance;
 
   const afterInsuranceSalary = Math.max(0, grandTotal - totalInsurance - nonTaxableAllowancesTotal);
-  const incomeTax = calculateIncomeTaxFromOfficialTable(
+  const incomeTax = isInsuranceExempt ? 0 : calculateIncomeTaxFromOfficialTable(
     afterInsuranceSalary,
     employee.dependentCount ?? 0,
     employee.hasSpouse ?? false,
@@ -374,27 +583,149 @@ export function AllowancePanel({
   const fmt = (v: number) =>
     v > 0 ? `¥${v.toLocaleString("ja-JP")}` : v === 0 ? "¥0" : "—";
 
-  const handleSave = async () => {
+  // ── 自動保存 ─────────────────────────────────────────────────────
+  // 「手当・控除を保存」ボタンは廃止。画面に出ている内容＝保存されている内容、にする。
+  // 手入力の変更も、勤怠からの自動反映も、最後の変更から少し待ってまとめて保存し、
+  // 続けて manual モードで給与明細を再計算する。
+  const AUTOSAVE_DELAY_MS = 800;
+
+  /** 今の画面の内容を、保存APIに送る形にしたもの */
+  const payload = useMemo(() => ({
+    allowances: rows
+      .filter((r) => r.defId !== null && r.amount > 0)
+      .map((r) => ({ allowanceDefinitionId: r.defId!, amount: r.amount })),
+    deductions: deductionRows
+      .filter((r) => r.defId !== null)
+      .map((r) => ({ deductionDefinitionId: r.defId!, amount: r.amount || 0 })),
+    baseSalary: baseSalaryInput,
+  }), [rows, deductionRows, baseSalaryInput]);
+  const snapshot = useMemo(() => JSON.stringify(payload), [payload]);
+
+  const [baselineReady, setBaselineReady] = useState(false);
+  const [saveState, setSaveState] = useState<"idle" | "pending" | "saving" | "saved" | "error">("idle");
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const [recalcNote, setRecalcNote] = useState<string | null>(null);
+
+  /** 最後に保存が成功した内容（初期値はDBの内容）。これと画面が違えば保存する */
+  const lastSavedRef = useRef<string | null>(null);
+  const latestRef = useRef({ payload, snapshot });
+  latestRef.current = { payload, snapshot };
+  const timerRef = useRef<number | null>(null);
+  const inFlightRef = useRef(false);
+
+  // DBの内容を「保存済み」の基準にする（payload と同じキー順で組み立てること）。
+  // 画面を開いた直後に勤怠からの自動反映で金額が変わった場合も、基準と違うので保存される。
+  useEffect(() => {
+    if (lastSavedRef.current !== null) return;
+    if (employeeAllowances === undefined || employeeDeductions === undefined) return;
+    lastSavedRef.current = JSON.stringify({
+      allowances: employeeAllowances
+        .filter((a) => a.amount > 0)
+        .map((a) => ({ allowanceDefinitionId: a.allowanceDefinitionId, amount: a.amount })),
+      deductions: employeeDeductions
+        .map((d) => ({ deductionDefinitionId: d.deductionDefinitionId, amount: d.amount || 0 })),
+      baseSalary: employee.baseSalary ?? 0,
+    });
+    setBaselineReady(true);
+  }, [employeeAllowances, employeeDeductions, employee.baseSalary]);
+
+  const canAutoSave = rowsReady && baselineReady && payrollStatusKnown && !isConfirmed && allowWrite;
+
+  // 「実績入力」タブで勤怠を変えた場合も、この画面での変更として扱う（自動反映→保存させる）。
+  // 基準は、パネルの準備が済んだ時点の勤怠。
+  const monthlyKey = JSON.stringify(monthlyData ?? {});
+  const firstMonthlyKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!rowsReady || !baselineReady || !payrollStatusKnown) return;
+    if (firstMonthlyKeyRef.current === null) {
+      firstMonthlyKeyRef.current = monthlyKey;
+      return;
+    }
+    if (monthlyKey !== firstMonthlyKeyRef.current) setTouchedAttendance(true);
+  }, [monthlyKey, rowsReady, baselineReady, payrollStatusKnown]);
+
+  const runSave = useCallback(async (): Promise<void> => {
+    if (inFlightRef.current) return; // 保存中に来た変更は、終わった後に拾い直す
+    const { payload: p, snapshot: snap } = latestRef.current;
+    if (snap === lastSavedRef.current) {
+      setSaveState("saved");
+      return;
+    }
+    inFlightRef.current = true;
+    setSaveState("saving");
+    let ok = false;
     try {
-      const allowancePayload = rows
-        .filter((r) => r.defId !== null && r.amount > 0)
-        .map((r) => ({ allowanceDefinitionId: r.defId!, amount: r.amount }));
-      const deductionPayload = deductionRows
-        .filter((r) => r.defId !== null)
-        .map((r) => ({ deductionDefinitionId: r.defId!, amount: r.amount || 0 }));
       await Promise.all([
-        updateAllowances.mutateAsync({ id: employeeId, data: { allowances: allowancePayload } }),
-        updateDeductions.mutateAsync({ id: employeeId, data: { deductions: deductionPayload } }),
-        updateEmployee.mutateAsync({ id: employeeId, data: { baseSalary: baseSalaryInput } }),
+        apiUpdateAllowances(employeeId, { allowances: p.allowances }),
+        apiUpdateDeductions(employeeId, { deductions: p.deductions }),
+        apiUpdateEmployee(employeeId, { baseSalary: p.baseSalary }),
       ]);
+      lastSavedRef.current = snap;
+      ok = true;
+
+      if (year != null && month != null) {
+        try {
+          await apiCalculatePayroll({ employeeId, year, month, calculationMode: "manual" });
+          setRecalcNote(null);
+        } catch (e) {
+          const status = (e as { status?: number }).status;
+          setRecalcNote(
+            status === 404 ? "この月の月次実績が未保存のため、給与明細はまだ作られていません"
+            : status === 409 ? "給与明細が確定済みのため、明細は再計算されていません"
+            : "手当は保存しましたが、給与明細の再計算に失敗しました"
+          );
+        }
+        queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) });
+      }
       queryClient.invalidateQueries({ queryKey: getGetEmployeeAllowancesQueryKey(employeeId) });
       queryClient.invalidateQueries({ queryKey: getGetEmployeeDeductionsQueryKey(employeeId) });
       queryClient.invalidateQueries({ queryKey: getListEmployeesQueryKey({ active: true }) });
-      toast({ title: "保存しました", description: `${employee.name}の基本給・手当・差引を更新しました。` });
+      setSavedAt(new Date());
     } catch {
-      toast({ title: "エラー", description: "保存に失敗しました。", variant: "destructive" });
+      setSaveState("error");
+    } finally {
+      inFlightRef.current = false;
     }
-  };
+    if (!ok) return;
+    // 保存中にさらに編集されていたら、続けてもう一度保存する
+    if (latestRef.current.snapshot !== lastSavedRef.current) {
+      void runSaveRef.current();
+    } else {
+      setSaveState("saved");
+    }
+  }, [employeeId, year, month, queryClient]);
+  const runSaveRef = useRef(runSave);
+  runSaveRef.current = runSave;
+
+  // 画面の内容が保存済みと違ったら、最後の変更から少し待って保存する
+  useEffect(() => {
+    if (!canAutoSave) return;
+    if (snapshot === lastSavedRef.current) return;
+    setSaveState((st) => (st === "saving" ? st : "pending"));
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    timerRef.current = window.setTimeout(() => {
+      timerRef.current = null;
+      void runSaveRef.current();
+    }, AUTOSAVE_DELAY_MS);
+  }, [snapshot, canAutoSave]);
+
+  // 社員を切り替える（＝このパネルが外れる）ときは、待ち中の保存をすぐ実行する
+  useEffect(() => () => {
+    if (timerRef.current !== null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+      void runSaveRef.current();
+    }
+  }, []);
+
+  // 保存待ち・保存中にタブを閉じようとしたら警告する
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (timerRef.current !== null || inFlightRef.current) e.preventDefault();
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, []);
 
   // 全データ（手当・控除・両定義・会社設定）が揃い、かつ行初期化が済むまでスケルトン表示。
   // 社員切替時の途中状態（金額が順次入る）を見せず、完全に読み込んでから表示する。
@@ -404,7 +735,8 @@ export function AllowancePanel({
     companyData === undefined ||
     isAllowDefsLoading ||
     isDedDefsLoading ||
-    !rowsReady;
+    !rowsReady ||
+    !payrollStatusKnown;
 
   if (panelLoading) {
     return (
@@ -438,8 +770,27 @@ export function AllowancePanel({
     );
   }
 
+  const savedAtLabel = savedAt
+    ? `${String(savedAt.getHours()).padStart(2, "0")}:${String(savedAt.getMinutes()).padStart(2, "0")}`
+    : null;
+
   return (
     <div className="rounded-xl border bg-card overflow-hidden max-w-2xl mx-auto">
+      {isConfirmed && (
+        <div className="px-4 py-2.5 flex items-start gap-2 bg-amber-50 dark:bg-amber-500/10 border-b border-amber-200 dark:border-amber-500/30">
+          <Lock className="h-3.5 w-3.5 mt-0.5 shrink-0 text-amber-700 dark:text-amber-300" />
+          <div className="text-xs text-amber-900 dark:text-amber-200">
+            <div className="font-semibold">この月の給与明細は確定済みのため、表示のみです</div>
+            <div className="mt-0.5">手当・控除を変更するには、給与明細画面で確定を解除してください。</div>
+          </div>
+        </div>
+      )}
+
+      {/* 確定済みの月は入力・並べ替え・行の追加削除をすべて無効にする */}
+      <fieldset
+        disabled={isConfirmed}
+        className={`m-0 p-0 border-0 min-w-0 ${isConfirmed ? "pointer-events-none opacity-70" : ""}`}
+      >
       {/* ── 支給セクション ── */}
       <div className="border-b">
         <div className="px-4 py-2 bg-blue-50/70 dark:bg-blue-500/10 border-b border-blue-100 dark:border-blue-500/25 flex items-center justify-between">
@@ -470,6 +821,7 @@ export function AllowancePanel({
               value={baseSalaryInput || ""}
               onChange={(e) => {
                 const v = e.target.value === "" ? 0 : parseInt(e.target.value, 10);
+                setTouchedManual(true);
                 setBaseSalaryInput(isNaN(v) ? 0 : v);
               }}
               placeholder="0"
@@ -477,6 +829,20 @@ export function AllowancePanel({
           )}
           <span className="w-6 shrink-0" />
         </div>
+
+        {/* 残業時給が未設定の社員への案内。古い月の金額が気付かれずに残るのを防ぐ */}
+        {overtimeRate <= 0 &&
+          (overtimeHours > 0 ||
+            lateNightHours > 0 ||
+            rows.some((r) => (r.defId === overtimeDefId || r.defId === lateNightDefId) && r.amount > 0)) && (
+            <div className="px-4 py-2 border-b border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-xs text-amber-900 dark:text-amber-200">
+              <div className="font-semibold">残業時給が未設定のため、早出残業手当・深夜手当は勤怠から自動計算されていません</div>
+              <div className="mt-0.5">
+                マスター管理 → この社員 →「給与設定」タブの「残業 時給（円/時）」を設定すると、
+                残業{overtimeHours}h・深夜{lateNightHours}hから自動で入るようになります。
+              </div>
+            </div>
+          )}
 
         {/* 列ヘッダー（ドラッグ案内兼用） */}
         <div className="flex items-center gap-1 px-4 py-1.5 bg-muted/30 border-b border-border/40">
@@ -488,7 +854,7 @@ export function AllowancePanel({
           <span className="w-28 shrink-0 text-right pr-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">金額（円）</span>
           <span className="w-6 shrink-0" />
         </div>
-        <Reorder.Group axis="y" values={rows} onReorder={setRows} className="select-none">
+        <Reorder.Group axis="y" values={rows} onReorder={(next) => { setTouchedManual(true); setRows(next); }} className="select-none">
           {rows.map((row) => (
             <AllowanceReorderItem
               key={row.uid}
@@ -496,6 +862,12 @@ export function AllowancePanel({
               definitions={allowanceDefinitions}
               onChange={handleAllowanceChange}
               onRemove={handleRemoveAllowance}
+              autoNote={
+                autoRows.find((a) => a.defId === row.defId)?.note ??
+                (overtimeRate <= 0 && row.defId !== null && (row.defId === overtimeDefId || row.defId === lateNightDefId)
+                  ? "残業時給が未設定のため自動計算されていません（手入力の金額です）"
+                  : undefined)
+              }
             />
           ))}
         </Reorder.Group>
@@ -503,7 +875,7 @@ export function AllowancePanel({
         <div className="px-4 py-2 border-b border-border/60">
           <button
             type="button"
-            onClick={() => setRows((prev) => [...prev, { uid: genUid(), defId: null, amount: 0 }])}
+            onClick={() => { setTouchedManual(true); setRows((prev) => [...prev, { uid: genUid(), defId: null, amount: 0 }]); }}
             className="flex items-center gap-1 text-sm text-primary hover:text-primary/80 transition-colors"
           >
             <Plus className="h-3.5 w-3.5" />
@@ -539,9 +911,10 @@ export function AllowancePanel({
         {showInsuranceDetail && (
           <div className="divide-y divide-border/50">
             {[
-              { label: `健康保険料 (${(healthRate * 100).toFixed(2)}%)`, value: healthInsurance },
-              { label: `厚生年金保険料 (${(pensionRate * 100).toFixed(2)}%)`, value: pensionInsurance },
-              { label: `雇用保険料 (${(eiRate * 100).toFixed(2)}%)`, value: employmentInsurance },
+              { label: `健康保険料 (${formatRatePercent(healthRate)}${employee.careInsuranceApplied ? "・介護込み" : ""})`, value: healthInsurance },
+              { label: `子ども・子育て支援金 (${formatRatePercent(monthRates.childcareEmployeeRate)})`, value: childcareSupport },
+              { label: `厚生年金保険料 (${formatRatePercent(pensionRate)})`, value: pensionInsurance },
+              { label: `雇用保険料 (${formatRatePercent(eiRate)})`, value: employmentInsurance },
               { label: "保険料控除後の金額", value: afterInsuranceSalary, highlight: true },
             ].map(({ label, value, highlight }) => (
               <div
@@ -576,7 +949,7 @@ export function AllowancePanel({
         ))}
 
         {/* その他差引（Reorder） */}
-        <Reorder.Group axis="y" values={deductionRows} onReorder={setDeductionRows} className="select-none">
+        <Reorder.Group axis="y" values={deductionRows} onReorder={(next) => { setTouchedManual(true); setDeductionRows(next); }} className="select-none">
           {deductionRows.map((row) => (
             <DeductionReorderItem
               key={row.uid}
@@ -591,7 +964,7 @@ export function AllowancePanel({
         <div className="px-4 py-2 border-b border-border/60">
           <button
             type="button"
-            onClick={() => setDeductionRows((prev) => [...prev, { uid: genUid(), defId: null, amount: 0 }])}
+            onClick={() => { setTouchedManual(true); setDeductionRows((prev) => [...prev, { uid: genUid(), defId: null, amount: 0 }]); }}
             className="flex items-center gap-1 text-sm text-primary hover:text-primary/80 transition-colors"
           >
             <Plus className="h-3.5 w-3.5" />
@@ -621,20 +994,54 @@ export function AllowancePanel({
         </div>
       </div>
 
-      {/* ── 保存ボタン ── */}
-      <div className="border-t px-4 py-3 bg-card">
-        <Button
-          className="w-full gap-2"
-          onClick={handleSave}
-          disabled={updateAllowances.isPending || updateDeductions.isPending || updateEmployee.isPending}
-        >
-          <Save className="h-4 w-4" />
-          {updateAllowances.isPending ? "保存中..." : "手当・控除を保存"}
-        </Button>
-        <p className="text-[10px] text-muted-foreground mt-1.5 text-center">
-          社員マスタへ保存されます（月次実績の一括保存とは別）
-        </p>
+      </fieldset>
+
+      {/* ── 自動保存の状態（保存ボタンは廃止） ── */}
+      <div className="border-t px-4 py-2.5 bg-card flex items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-1.5 min-w-0">
+          {isConfirmed ? (
+            <>
+              <Lock className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-muted-foreground">確定済み（表示のみ）</span>
+            </>
+          ) : saveState === "saving" ? (
+            <>
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />
+              <span className="text-blue-700 dark:text-blue-300">保存中…</span>
+            </>
+          ) : saveState === "pending" ? (
+            <>
+              <Loader2 className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-muted-foreground">変更を保存します…</span>
+            </>
+          ) : saveState === "error" ? (
+            <>
+              <AlertCircle className="h-3.5 w-3.5 text-red-600 dark:text-red-400" />
+              <span className="text-red-700 dark:text-red-400 font-semibold">保存に失敗しました</span>
+            </>
+          ) : saveState === "saved" ? (
+            <>
+              <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span className="text-emerald-700 dark:text-emerald-300">
+                自動保存しました{savedAtLabel ? `（${savedAtLabel}）` : ""}
+              </span>
+            </>
+          ) : (
+            <>
+              <Check className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-muted-foreground">変更は自動で保存されます</span>
+            </>
+          )}
+        </div>
+        {saveState === "error" && !isConfirmed && (
+          <Button size="sm" variant="outline" className="h-7" onClick={() => void runSaveRef.current()}>
+            再試行
+          </Button>
+        )}
       </div>
+      {recalcNote && !isConfirmed && (
+        <div className="px-4 pb-2.5 text-[11px] text-muted-foreground">{recalcNote}</div>
+      )}
     </div>
   );
 }

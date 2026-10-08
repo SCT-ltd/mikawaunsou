@@ -15,6 +15,7 @@ import messagesRouter from "./messages";
 import usersRouter from "./users";
 import authRouter from "./auth";
 import calendarRouter from "./calendar";
+import insuranceRouter from "./insurance";
 import { requireAdmin } from "../lib/auth-middleware";
 
 const router: IRouter = Router();
@@ -105,6 +106,8 @@ router.use("/users", requireAdmin);
 router.use("/monthly-records", requireAdmin);
 router.use("/dashboard", requireAdmin);
 router.use("/journal-entries", requireAdmin);
+// 標準報酬月額（全社員分）は admin 専用。/employees/:id/standard-remuneration-history は上の "/employees" で admin。
+router.use("/standard-remuneration", requireAdmin);
 
 // 全ルーターを通常マウント（個別エンドポイントの requireAdmin は各ファイル側で対応）
 router.use(companyRouter);     // PUT /company のみ admin（ファイル側）
@@ -118,6 +121,7 @@ router.use(allowancesRouter);  // /*-definitions の POST/PUT/DELETE は admin�
 router.use(attendanceRouter);  // monthly-summary, gps-locations, location/live GET は admin（ファイル側）
 router.use(absencesRouter);    // 現状認証のみ（owner設計後に強化）
 router.use(messagesRouter);    // conversations, broadcast は admin（ファイル側）
+router.use(insuranceRouter);   // 保険料率マスターの GET はログインのみ、POST/PUT/DELETE は admin（ファイル側）
 
 export { requireAdmin };
 export default router;

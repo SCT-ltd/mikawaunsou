@@ -25,6 +25,8 @@ tags:
     description: 手当マスタ
   - name: deduction-definitions
     description: 差引マスタ
+  - name: insurance
+    description: 保険料率マスター・標準報酬月額の履歴
 
 paths:
   /healthz:
@@ -782,6 +784,194 @@ paths:
                 items:
                   $ref: "#/components/schemas/EmployeeDeduction"
 
+
+  # ── 保険料率マスター（年度ごとの料率の履歴）──────────────────────────────────
+  /insurance-rate-periods:
+    get:
+      operationId: listInsuranceRatePeriods
+      tags: [insurance]
+      summary: 保険料率の履歴一覧（適用開始の古い順。空なら初期行を作って返す）
+      responses:
+        "200":
+          description: 料率の履歴
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InsuranceRatePeriod"
+    post:
+      operationId: createInsuranceRatePeriod
+      tags: [insurance]
+      summary: 保険料率の行を追加
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InsuranceRatePeriodBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InsuranceRatePeriod"
+
+  /insurance-rate-periods/{id}:
+    put:
+      operationId: updateInsuranceRatePeriod
+      tags: [insurance]
+      summary: 保険料率の行を更新
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InsuranceRatePeriodBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InsuranceRatePeriod"
+    delete:
+      operationId: deleteInsuranceRatePeriod
+      tags: [insurance]
+      summary: 保険料率の行を削除（最後の1行は削除不可）
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Deleted
+
+  /insurance-rates/effective:
+    get:
+      operationId: getEffectiveInsuranceRates
+      tags: [insurance]
+      summary: 給与明細の年月に適用される保険料率
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: 適用される料率
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EffectiveInsuranceRates"
+
+  # ── 標準報酬月額の履歴 ──────────────────────────────────────────────────────
+  /employees/{id}/standard-remuneration-history:
+    get:
+      operationId: listStandardRemunerationHistory
+      tags: [insurance]
+      summary: 社員の標準報酬月額の履歴（適用開始の新しい順）
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: 履歴
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StandardRemunerationHistory"
+    post:
+      operationId: createStandardRemunerationHistory
+      tags: [insurance]
+      summary: 社員の標準報酬月額の履歴を追加（同じ適用開始の年月は上書き）
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateStandardRemunerationHistoryBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StandardRemunerationHistory"
+
+  /employees/{id}/standard-remuneration-history/{historyId}:
+    delete:
+      operationId: deleteStandardRemunerationHistory
+      tags: [insurance]
+      summary: 社員の標準報酬月額の履歴を削除
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: historyId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /standard-remuneration/effective:
+    get:
+      operationId: listEffectiveStandardRemuneration
+      tags: [insurance]
+      summary: 全社員の、給与明細の年月に使う標準報酬月額
+      parameters:
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: month
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: 社員ごとの標準報酬月額
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EffectiveStandardRemuneration"
+
+  /standard-remuneration/bulk:
+    post:
+      operationId: bulkCreateStandardRemunerationHistory
+      tags: [insurance]
+      summary: 標準報酬月額の一括登録（定時決定など。同じ適用開始の年月は上書き）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkStandardRemunerationBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StandardRemunerationHistory"
+
 # ── コンポーネント ────────────────────────────────────────────────────────────
 components:
   parameters:
@@ -793,6 +983,251 @@ components:
         type: integer
 
   schemas:
+    InsuranceRatePeriod:
+      type: object
+      description: 保険料率の履歴の1行。料率は保険料額表の「合計」の率（本人は半分）。雇用保険だけ本人負担の率。
+      properties:
+        id:
+          type: integer
+        effectiveYear:
+          type: integer
+          description: 適用開始（給与明細の年）
+        effectiveMonth:
+          type: integer
+          description: 適用開始（給与明細の月）
+        healthInsuranceRate:
+          type: number
+          description: 健康保険料率（合計。例 0.0985）
+        careInsuranceRate:
+          type: number
+          description: 介護保険料率（合計。例 0.0162）
+        childcareSupportRate:
+          type: number
+          description: 子ども・子育て支援金率（合計。例 0.0023）
+        pensionRate:
+          type: number
+          description: 厚生年金保険料率（合計。例 0.183）
+        employmentInsuranceRate:
+          type: number
+          description: 雇用保険料率（本人負担。例 0.005）
+        pensionMaxStandard:
+          type: integer
+          description: 厚生年金の標準報酬月額の上限
+        note:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - effectiveYear
+        - effectiveMonth
+        - healthInsuranceRate
+        - careInsuranceRate
+        - childcareSupportRate
+        - pensionRate
+        - employmentInsuranceRate
+        - pensionMaxStandard
+        - createdAt
+        - updatedAt
+
+    InsuranceRatePeriodBody:
+      type: object
+      properties:
+        effectiveYear:
+          type: integer
+        effectiveMonth:
+          type: integer
+        healthInsuranceRate:
+          type: number
+        careInsuranceRate:
+          type: number
+        childcareSupportRate:
+          type: number
+        pensionRate:
+          type: number
+        employmentInsuranceRate:
+          type: number
+        pensionMaxStandard:
+          type: integer
+        note:
+          type: string
+          nullable: true
+      required:
+        - effectiveYear
+        - effectiveMonth
+        - healthInsuranceRate
+        - careInsuranceRate
+        - childcareSupportRate
+        - pensionRate
+        - employmentInsuranceRate
+
+    EffectiveInsuranceRates:
+      type: object
+      description: 給与明細の年月に適用される料率（合計の率と、折半した本人負担率）
+      properties:
+        periodId:
+          type: integer
+          nullable: true
+        effectiveYear:
+          type: integer
+          nullable: true
+        effectiveMonth:
+          type: integer
+          nullable: true
+        healthInsuranceRate:
+          type: number
+        careInsuranceRate:
+          type: number
+        childcareSupportRate:
+          type: number
+        pensionRate:
+          type: number
+        employmentInsuranceRate:
+          type: number
+        pensionMaxStandard:
+          type: integer
+        note:
+          type: string
+          nullable: true
+        healthEmployeeRate:
+          type: number
+          description: 健康保険（本人）
+        healthWithCareEmployeeRate:
+          type: number
+          description: 健康保険＋介護保険（本人）
+        childcareEmployeeRate:
+          type: number
+          description: 子ども・子育て支援金（本人）
+        pensionEmployeeRate:
+          type: number
+          description: 厚生年金（本人）
+      required:
+        - healthInsuranceRate
+        - careInsuranceRate
+        - childcareSupportRate
+        - pensionRate
+        - employmentInsuranceRate
+        - pensionMaxStandard
+        - healthEmployeeRate
+        - healthWithCareEmployeeRate
+        - childcareEmployeeRate
+        - pensionEmployeeRate
+
+    StandardRemunerationHistory:
+      type: object
+      properties:
+        id:
+          type: integer
+        employeeId:
+          type: integer
+        effectiveYear:
+          type: integer
+        effectiveMonth:
+          type: integer
+        amount:
+          type: number
+        reason:
+          type: string
+          description: teiji（定時決定）/ zuiji（随時改定）/ shikaku（資格取得）/ other
+        note:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - employeeId
+        - effectiveYear
+        - effectiveMonth
+        - amount
+        - reason
+        - createdAt
+        - updatedAt
+
+    CreateStandardRemunerationHistoryBody:
+      type: object
+      properties:
+        effectiveYear:
+          type: integer
+        effectiveMonth:
+          type: integer
+        amount:
+          type: number
+        reason:
+          type: string
+          enum: [teiji, zuiji, shikaku, other]
+        note:
+          type: string
+          nullable: true
+      required:
+        - effectiveYear
+        - effectiveMonth
+        - amount
+
+    BulkStandardRemunerationBody:
+      type: object
+      properties:
+        effectiveYear:
+          type: integer
+        effectiveMonth:
+          type: integer
+        reason:
+          type: string
+          enum: [teiji, zuiji, shikaku, other]
+        note:
+          type: string
+          nullable: true
+        entries:
+          type: array
+          items:
+            type: object
+            properties:
+              employeeId:
+                type: integer
+              amount:
+                type: number
+            required:
+              - employeeId
+              - amount
+      required:
+        - effectiveYear
+        - effectiveMonth
+        - entries
+
+    EffectiveStandardRemuneration:
+      type: object
+      properties:
+        employeeId:
+          type: integer
+        standardRemuneration:
+          type: number
+          description: その月に使う標準報酬月額（0 = 未設定）
+        historyId:
+          type: integer
+          nullable: true
+          description: 履歴の行から来たときのID。社員マスタの初期値のときは null
+        effectiveYear:
+          type: integer
+          nullable: true
+        effectiveMonth:
+          type: integer
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+      required:
+        - employeeId
+        - standardRemuneration
+
     SetCalendarOverrideBody:
       type: object
       properties:
@@ -1032,6 +1467,9 @@ components:
         overtimeHourlyRate:
           type: number
           description: 個人 残業時給（>0 の場合は採用、残業時間×単価で計算、1.25倍はかけない）
+        lateNightHourlyRate:
+          type: number
+          description: 個人 深夜単価（>0 の場合は 深夜時間×単価。0 は残業時給から自動）
         overtimeUnitMinutes:
           type: integer
           nullable: true
@@ -1131,6 +1569,9 @@ components:
         overtimeHourlyRate:
           type: number
           description: 個人 残業時給（>0 で採用、残業時間×単価で計算）
+        lateNightHourlyRate:
+          type: number
+          description: 個人 深夜単価（>0 で 深夜時間×単価。0 は残業時給から自動）
         overtimeUnitMinutes:
           type: integer
           nullable: true
@@ -1222,6 +1663,9 @@ components:
         overtimeHourlyRate:
           type: number
           description: 個人 残業時給（>0 の場合は採用、残業時間×単価で計算、1.25倍はかけない）
+        lateNightHourlyRate:
+          type: number
+          description: 個人 深夜単価（>0 の場合は 深夜時間×単価。0 は残業時給から自動）
         overtimeUnitMinutes:
           type: integer
           nullable: true
@@ -1268,13 +1712,19 @@ components:
           description: 配送件数
         absenceDays:
           type: number
-          description: 欠勤日数
+          description: 欠勤日数（有給は含まない）
+        paidLeaveDays:
+          type: number
+          description: 有給休暇の日数（0.5=半休）。欠勤控除の対象外
         saturdayWorkDays:
           type: number
           description: 土曜出勤日数
         sundayWorkDays:
           type: number
-          description: 日曜出勤日数（日当×1.35で計算）
+          description: 日曜出勤日数（過去データ互換。金額計算には使わない）
+        sundayWorkHours:
+          type: number
+          description: 日曜・祝日の出勤時間（会社設定 hourlyWageSunday × この時間で計算）
         notes:
           type: string
         actualWorkHours:
@@ -1324,11 +1774,17 @@ components:
           type: integer
         absenceDays:
           type: number
+        paidLeaveDays:
+          type: number
+          description: 有給休暇の日数（0.5=半休）。欠勤控除の対象外
         saturdayWorkDays:
           type: number
         sundayWorkDays:
           type: number
-          description: 日曜出勤日数（日当×1.35で計算）
+          description: 日曜出勤日数（過去データ互換。金額計算には使わない）
+        sundayWorkHours:
+          type: number
+          description: 日曜・祝日の出勤時間（会社設定 hourlyWageSunday × この時間で計算）
         notes:
           type: string
         actualWorkHours:
@@ -1363,11 +1819,17 @@ components:
           type: integer
         absenceDays:
           type: number
+        paidLeaveDays:
+          type: number
+          description: 有給休暇の日数（0.5=半休）。欠勤控除の対象外
         saturdayWorkDays:
           type: number
         sundayWorkDays:
           type: number
-          description: 日曜出勤日数（日当×1.35で計算）
+          description: 日曜出勤日数（過去データ互換。金額計算には使わない）
+        sundayWorkHours:
+          type: number
+          description: 日曜・祝日の出勤時間（会社設定 hourlyWageSunday × この時間で計算）
         actualWorkHours:
           type: number
           description: 実働時間（時給制・事務員用、30分切り上げ後の合計時間）
@@ -1470,12 +1932,42 @@ components:
           type: number
         holidayWorkDays:
           type: number
-          description: 休日出勤日数（月次実績の「日曜/祝日」列を表示用に保存）
+          description: 休日出勤日数（過去データ互換。表示用）
+        holidayWorkHours:
+          type: number
+          description: 日曜・祝日の出勤時間（月次実績の sundayWorkHours を表示用に保存）
+        paidLeaveDays:
+          type: number
+          description: 有給休暇の日数（月次実績の paidLeaveDays を表示用に保存）
         saturdayWorkDays:
           type: number
           description: 土曜出勤日数（表示用）
         workDays:
           type: number
+        appliedStandardRemuneration:
+          type: number
+          nullable: true
+          description: 保険料の計算に使った標準報酬月額（この項目が入る前の明細は null）
+        appliedHealthInsuranceRate:
+          type: number
+          nullable: true
+          description: 計算に使った健康保険料率（合計）
+        appliedCareInsuranceRate:
+          type: number
+          nullable: true
+          description: 計算に使った介護保険料率（合計。対象外の社員は 0）
+        appliedChildcareSupportRate:
+          type: number
+          nullable: true
+          description: 計算に使った子ども・子育て支援金率（合計）
+        appliedPensionRate:
+          type: number
+          nullable: true
+          description: 計算に使った厚生年金保険料率（合計）
+        appliedEmploymentInsuranceRate:
+          type: number
+          nullable: true
+          description: 計算に使った雇用保険料率（本人負担）
         createdAt:
           type: string
           format: date-time

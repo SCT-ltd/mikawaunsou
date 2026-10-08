@@ -21,6 +21,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Plus, X, GripVertical, ChevronDown, Check } from "lucide-react";
 import { Reorder, useDragControls } from "framer-motion";
 import { calculateIncomeTaxReiwa8, round50sen } from "@/lib/tax-tables-reiwa8";
+import { formatRatePercent, useMonthInsurance } from "@/lib/insurance-rates";
 
 function roundJapanese(amount: number): number {
   return Math.floor(amount);
@@ -64,7 +65,16 @@ const RESERVED_PAY_ITEM_NAMES = new Set([
 
 interface Props {
   employee: Employee;
-  monthlyData?: { workDays: number; saturdayWorkDays: number; sundayWorkDays: number };
+  monthlyData?: {
+    workDays: number;
+    saturdayWorkDays: number;
+    sundayWorkHours: number;
+    paidLeaveDays: number;
+    overtimeHours: number;
+    lateNightHours: number;
+    /** 時給制の実働時間（30分切り上げ後の月合計）。時給 × これ が基本給になる。 */
+    actualWorkHours?: number;
+  };
   onDirtyChange?: (isDirty: boolean) => void;
   year?: number;
   month?: number;
@@ -456,6 +466,11 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
     query: { enabled: !!employeeId, queryKey: getGetEmployeeDeductionsQueryKey(employeeId), staleTime: 60_000, refetchOnMount: true }
   });
   const { data: company } = useGetCompany();
+  // 年月の指定が無いときは今月として扱う（resolvePensionApplied と同じ）
+  const monthInsurance = useMonthInsurance(
+    year ?? new Date().getFullYear(),
+    month ?? new Date().getMonth() + 1,
+  );
   const updateAllowances = useUpdateEmployeeAllowances();
   const updateDeductions = useUpdateEmployeeDeductions();
   const updateEmployee = useUpdateEmployee();
@@ -568,14 +583,23 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
     ? Math.round((monthlyData?.workDays ?? 0) * effectiveDailyRate)
     : null;
 
+  // 時給制はマスターの「基本給」欄が時給。基本給は 時給 × 実働時間（サーバーの計算と同じ）。
+  // そのまま出すと、時給（例 1,500円）が1か月分の基本給・総支給として表示されてしまう。
+  const isHourly = employee.salaryType === "hourly";
+  const hourlyRate = employee.baseSalary ?? 0;
+  const hourlyHours = monthlyData?.actualWorkHours ?? 0;
+  const computedHourlyBaseSalary = isHourly ? Math.round(hourlyRate * hourlyHours) : null;
+
   useEffect(() => {
     // 日給制は当月の月次実績から常に再計算（マスター employee.baseSalary は無視）
     if (isDaily && computedDailyBaseSalary !== null) {
       setBaseSalaryInput(computedDailyBaseSalary);
+    } else if (computedHourlyBaseSalary !== null) {
+      setBaseSalaryInput(computedHourlyBaseSalary);
     } else {
       setBaseSalaryInput(employee.baseSalary ?? 0);
     }
-  }, [employee.baseSalary, employeeId, isDaily, computedDailyBaseSalary]);
+  }, [employee.baseSalary, employeeId, isDaily, computedDailyBaseSalary, computedHourlyBaseSalary]);
 
   const handleSave = async () => {
     try {
@@ -589,7 +613,9 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
       await Promise.all([
         updateAllowances.mutateAsync({ id: employeeId, data: { allowances: allowancePayload } }),
         updateDeductions.mutateAsync({ id: employeeId, data: { deductions: deductionPayload } }),
-        updateEmployee.mutateAsync({ id: employeeId, data: { baseSalary: baseSalaryInput } }),
+        // 時給制では画面の基本給は「時給 × 実働時間」の計算結果。これをマスターへ書くと
+        // 時給が月額で上書きされてしまうので、時給制のときは基本給を保存しない。
+        ...(isHourly ? [] : [updateEmployee.mutateAsync({ id: employeeId, data: { baseSalary: baseSalaryInput } })]),
       ]);
 
       const savedAllowances = allowancePayload.map((item, idx) => {
@@ -670,29 +696,28 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
   const allowancesTotal = rows.reduce((s, r) => s + (r.amount || 0), 0);
   const grandTotal = baseSalaryInput + allowancesTotal;
 
-  const pensionRate = company?.pensionEmployeeRate ?? 0.0915;
-  const empInsRate = (company?.employmentInsuranceRate ?? 0) > 0
-    ? company!.employmentInsuranceRate
-    : 0.0005;
-
-  const HEALTH_RATE_NO_CARE  = 0.04925;
-  const HEALTH_RATE_WITH_CARE = 0.05735;
-  const CHILDCARE_RATE = 0.00115;
+  // 料率・標準報酬月額は、マスターの履歴から「この明細の年月」に効く値（サーバの計算と同じ）
+  const pensionRate = monthInsurance.rates.pensionEmployeeRate;
+  const empInsRate = monthInsurance.rates.employmentInsuranceRate;
+  const CHILDCARE_RATE = monthInsurance.rates.childcareEmployeeRate;
 
   const appliedHealthRate = employee.careInsuranceApplied === true
-    ? HEALTH_RATE_WITH_CARE
-    : HEALTH_RATE_NO_CARE;
+    ? monthInsurance.rates.healthWithCareEmployeeRate
+    : monthInsurance.rates.healthEmployeeRate;
 
-  const empSR = (employee as unknown as { standardRemuneration?: number }).standardRemuneration ?? 0;
+  const empSR = monthInsurance.standardRemunerationOf(
+    employee.id,
+    (employee as unknown as { standardRemuneration?: number }).standardRemuneration,
+  );
   const insBase = empSR > 0 ? empSR : grandTotal;
 
   const isTaxExemptEmployee = employee.taxExempt === true;
 
   const healthInsurance = isTaxExemptEmployee ? 0 : round50sen(insBase * appliedHealthRate);
-  const childcareSupportApplicable = !(year !== undefined && month !== undefined && (year < 2026 || (year === 2026 && month <= 3)));
-  const childcareSupportContribution = (isTaxExemptEmployee || !childcareSupportApplicable) ? 0 : round50sen(insBase * CHILDCARE_RATE);
+  // 子育て支援金の開始前の月は、料率の履歴で率が 0 になっている
+  const childcareSupportContribution = isTaxExemptEmployee ? 0 : round50sen(insBase * CHILDCARE_RATE);
   const isPensionApplied = resolvePensionApplied(employee, year, month);
-  const pensionInsurance = (isTaxExemptEmployee || !isPensionApplied) ? 0 : round50sen(Math.min(insBase, 650_000) * pensionRate);
+  const pensionInsurance = (isTaxExemptEmployee || !isPensionApplied) ? 0 : round50sen(Math.min(insBase, monthInsurance.rates.pensionMaxStandard) * pensionRate);
 
   const nonTaxableAllowancesTotal = rows.reduce((s, r) => {
     const def = allowanceDefinitions?.find(d => d.id === r.defId);
@@ -773,16 +798,25 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
           {isDaily && (
             <span className="ml-1.5 text-muted-foreground" style={{ fontSize: "9px" }}>日給制（手動設定可）</span>
           )}
+          {isHourly && (
+            <span className="ml-1.5 text-muted-foreground" style={{ fontSize: "9px" }}>
+              時給 {hourlyRate.toLocaleString()}円 × 実働 {hourlyHours}時間（月次実績入力で変更）
+            </span>
+          )}
         </div>
         <div className={COL_TAX}>
           <span className="inline-block px-1 py-0.5 rounded border font-medium bg-red-50 text-red-700 border-red-200 leading-none" style={{ fontSize: "9px" }}>課税</span>
         </div>
         <div className={COL_AMOUNT}>
-          <AmountInput
-            value={baseSalaryInput}
-            onChange={(v) => { setBaseSalaryInput(v); markDirty(); }}
-            inputRef={(el) => { (baseSalaryRef as React.MutableRefObject<HTMLInputElement | null>).current = el; }}
-          />
+          {isHourly ? (
+            <span className="block text-right text-xs tabular-nums pr-2">{baseSalaryInput.toLocaleString()}</span>
+          ) : (
+            <AmountInput
+              value={baseSalaryInput}
+              onChange={(v) => { setBaseSalaryInput(v); markDirty(); }}
+              inputRef={(el) => { (baseSalaryRef as React.MutableRefObject<HTMLInputElement | null>).current = el; }}
+            />
+          )}
         </div>
         <div className={COL_DEL} />
       </div>
@@ -935,11 +969,11 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
       )}
       {company && (
         <div className="mt-1 px-3 py-2 bg-muted/40 border rounded text-xs text-muted-foreground">
-          適用料率：健保 {(appliedHealthRate * 100).toFixed(3)}%
+          適用料率（本人負担）：健保 {formatRatePercent(appliedHealthRate)}
           {employee.careInsuranceApplied && <span className="text-amber-600">（介護込）</span>}
-          {childcareSupportApplicable ? "・子育て支援金 0.115%" : "・子育て支援金 0%（3月以前）"}・厚年 {(pensionRate * 100).toFixed(2)}%・雇保 {(empInsRate * 100).toFixed(1)}%
+          ・子育て支援金 {formatRatePercent(CHILDCARE_RATE)}・厚年 {formatRatePercent(pensionRate)}・雇保 {formatRatePercent(empInsRate)}
           {empSR > 0 && (
-            <span className="ml-2 text-blue-600">（健保・厚年{childcareSupportApplicable ? "・支援金" : ""}は標準報酬月額 {empSR.toLocaleString("ja-JP")} 円ベース）</span>
+            <span className="ml-2 text-blue-600">（健保・厚年・支援金は標準報酬月額 {empSR.toLocaleString("ja-JP")} 円ベース）</span>
           )}
         </div>
       )}

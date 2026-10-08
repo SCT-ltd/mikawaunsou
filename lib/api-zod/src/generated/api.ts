@@ -237,6 +237,12 @@ export const ListEmployeesResponseItem = zod.object({
     .describe(
       "個人 残業時給（>0 の場合は採用、残業時間×単価で計算、1.25倍はかけない）",
     ),
+  lateNightHourlyRate: zod
+    .number()
+    .optional()
+    .describe(
+      "個人 深夜単価（>0 の場合は 深夜時間×単価。0 は残業時給から自動）",
+    ),
   overtimeUnitMinutes: zod
     .number()
     .nullish()
@@ -291,6 +297,10 @@ export const CreateEmployeeBody = zod.object({
     .number()
     .optional()
     .describe("個人 残業時給（>0 で採用、残業時間×単価で計算）"),
+  lateNightHourlyRate: zod
+    .number()
+    .optional()
+    .describe("個人 深夜単価（>0 で 深夜時間×単価。0 は残業時給から自動）"),
   overtimeUnitMinutes: zod
     .number()
     .nullish()
@@ -373,6 +383,12 @@ export const GetEmployeeResponse = zod.object({
     .optional()
     .describe(
       "個人 残業時給（>0 の場合は採用、残業時間×単価で計算、1.25倍はかけない）",
+    ),
+  lateNightHourlyRate: zod
+    .number()
+    .optional()
+    .describe(
+      "個人 深夜単価（>0 の場合は 深夜時間×単価。0 は残業時給から自動）",
     ),
   overtimeUnitMinutes: zod
     .number()
@@ -464,6 +480,12 @@ export const UpdateEmployeeBody = zod.object({
     .describe(
       "個人 残業時給（>0 の場合は採用、残業時間×単価で計算、1.25倍はかけない）",
     ),
+  lateNightHourlyRate: zod
+    .number()
+    .optional()
+    .describe(
+      "個人 深夜単価（>0 の場合は 深夜時間×単価。0 は残業時給から自動）",
+    ),
   overtimeUnitMinutes: zod
     .number()
     .nullish()
@@ -541,6 +563,12 @@ export const UpdateEmployeeResponse = zod.object({
     .describe(
       "個人 残業時給（>0 の場合は採用、残業時間×単価で計算、1.25倍はかけない）",
     ),
+  lateNightHourlyRate: zod
+    .number()
+    .optional()
+    .describe(
+      "個人 深夜単価（>0 の場合は 深夜時間×単価。0 は残業時給から自動）",
+    ),
   overtimeUnitMinutes: zod
     .number()
     .nullish()
@@ -588,12 +616,22 @@ export const ListMonthlyRecordsResponseItem = zod.object({
   holidayWorkDays: zod.number().describe("休日出勤数"),
   drivingDistanceKm: zod.number().describe("走行距離（km）"),
   deliveryCases: zod.number().describe("配送件数"),
-  absenceDays: zod.number().describe("欠勤日数"),
+  absenceDays: zod.number().describe("欠勤日数（有給は含まない）"),
+  paidLeaveDays: zod
+    .number()
+    .optional()
+    .describe("有給休暇の日数（0.5=半休）。欠勤控除の対象外"),
   saturdayWorkDays: zod.number().optional().describe("土曜出勤日数"),
   sundayWorkDays: zod
     .number()
     .optional()
-    .describe("日曜出勤日数（日当×1.35で計算）"),
+    .describe("日曜出勤日数（過去データ互換。金額計算には使わない）"),
+  sundayWorkHours: zod
+    .number()
+    .optional()
+    .describe(
+      "日曜・祝日の出勤時間（会社設定 hourlyWageSunday × この時間で計算）",
+    ),
   notes: zod.string().optional(),
   actualWorkHours: zod
     .number()
@@ -620,11 +658,21 @@ export const CreateMonthlyRecordBody = zod.object({
   drivingDistanceKm: zod.number(),
   deliveryCases: zod.number(),
   absenceDays: zod.number(),
+  paidLeaveDays: zod
+    .number()
+    .optional()
+    .describe("有給休暇の日数（0.5=半休）。欠勤控除の対象外"),
   saturdayWorkDays: zod.number().optional(),
   sundayWorkDays: zod
     .number()
     .optional()
-    .describe("日曜出勤日数（日当×1.35で計算）"),
+    .describe("日曜出勤日数（過去データ互換。金額計算には使わない）"),
+  sundayWorkHours: zod
+    .number()
+    .optional()
+    .describe(
+      "日曜・祝日の出勤時間（会社設定 hourlyWageSunday × この時間で計算）",
+    ),
   notes: zod.string().optional(),
   actualWorkHours: zod
     .number()
@@ -651,12 +699,22 @@ export const GetMonthlyRecordResponse = zod.object({
   holidayWorkDays: zod.number().describe("休日出勤数"),
   drivingDistanceKm: zod.number().describe("走行距離（km）"),
   deliveryCases: zod.number().describe("配送件数"),
-  absenceDays: zod.number().describe("欠勤日数"),
+  absenceDays: zod.number().describe("欠勤日数（有給は含まない）"),
+  paidLeaveDays: zod
+    .number()
+    .optional()
+    .describe("有給休暇の日数（0.5=半休）。欠勤控除の対象外"),
   saturdayWorkDays: zod.number().optional().describe("土曜出勤日数"),
   sundayWorkDays: zod
     .number()
     .optional()
-    .describe("日曜出勤日数（日当×1.35で計算）"),
+    .describe("日曜出勤日数（過去データ互換。金額計算には使わない）"),
+  sundayWorkHours: zod
+    .number()
+    .optional()
+    .describe(
+      "日曜・祝日の出勤時間（会社設定 hourlyWageSunday × この時間で計算）",
+    ),
   notes: zod.string().optional(),
   actualWorkHours: zod
     .number()
@@ -681,11 +739,21 @@ export const UpdateMonthlyRecordBody = zod.object({
   drivingDistanceKm: zod.number().optional(),
   deliveryCases: zod.number().optional(),
   absenceDays: zod.number().optional(),
+  paidLeaveDays: zod
+    .number()
+    .optional()
+    .describe("有給休暇の日数（0.5=半休）。欠勤控除の対象外"),
   saturdayWorkDays: zod.number().optional(),
   sundayWorkDays: zod
     .number()
     .optional()
-    .describe("日曜出勤日数（日当×1.35で計算）"),
+    .describe("日曜出勤日数（過去データ互換。金額計算には使わない）"),
+  sundayWorkHours: zod
+    .number()
+    .optional()
+    .describe(
+      "日曜・祝日の出勤時間（会社設定 hourlyWageSunday × この時間で計算）",
+    ),
   actualWorkHours: zod
     .number()
     .optional()
@@ -705,12 +773,22 @@ export const UpdateMonthlyRecordResponse = zod.object({
   holidayWorkDays: zod.number().describe("休日出勤数"),
   drivingDistanceKm: zod.number().describe("走行距離（km）"),
   deliveryCases: zod.number().describe("配送件数"),
-  absenceDays: zod.number().describe("欠勤日数"),
+  absenceDays: zod.number().describe("欠勤日数（有給は含まない）"),
+  paidLeaveDays: zod
+    .number()
+    .optional()
+    .describe("有給休暇の日数（0.5=半休）。欠勤控除の対象外"),
   saturdayWorkDays: zod.number().optional().describe("土曜出勤日数"),
   sundayWorkDays: zod
     .number()
     .optional()
-    .describe("日曜出勤日数（日当×1.35で計算）"),
+    .describe("日曜出勤日数（過去データ互換。金額計算には使わない）"),
+  sundayWorkHours: zod
+    .number()
+    .optional()
+    .describe(
+      "日曜・祝日の出勤時間（会社設定 hourlyWageSunday × この時間で計算）",
+    ),
   notes: zod.string().optional(),
   actualWorkHours: zod
     .number()
@@ -776,9 +854,45 @@ export const ListPayrollsResponseItem = zod.object({
   lateNightHours: zod.number(),
   holidayWorkDays: zod
     .number()
-    .describe("休日出勤日数（月次実績の「日曜\/祝日」列を表示用に保存）"),
+    .describe("休日出勤日数（過去データ互換。表示用）"),
+  holidayWorkHours: zod
+    .number()
+    .optional()
+    .describe(
+      "日曜・祝日の出勤時間（月次実績の sundayWorkHours を表示用に保存）",
+    ),
+  paidLeaveDays: zod
+    .number()
+    .optional()
+    .describe("有給休暇の日数（月次実績の paidLeaveDays を表示用に保存）"),
   saturdayWorkDays: zod.number().optional().describe("土曜出勤日数（表示用）"),
   workDays: zod.number(),
+  appliedStandardRemuneration: zod
+    .number()
+    .nullish()
+    .describe(
+      "保険料の計算に使った標準報酬月額（この項目が入る前の明細は null）",
+    ),
+  appliedHealthInsuranceRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った健康保険料率（合計）"),
+  appliedCareInsuranceRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った介護保険料率（合計。対象外の社員は 0）"),
+  appliedChildcareSupportRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った子ども・子育て支援金率（合計）"),
+  appliedPensionRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った厚生年金保険料率（合計）"),
+  appliedEmploymentInsuranceRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った雇用保険料率（本人負担）"),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -841,9 +955,45 @@ export const CalculatePayrollResponse = zod.object({
   lateNightHours: zod.number(),
   holidayWorkDays: zod
     .number()
-    .describe("休日出勤日数（月次実績の「日曜\/祝日」列を表示用に保存）"),
+    .describe("休日出勤日数（過去データ互換。表示用）"),
+  holidayWorkHours: zod
+    .number()
+    .optional()
+    .describe(
+      "日曜・祝日の出勤時間（月次実績の sundayWorkHours を表示用に保存）",
+    ),
+  paidLeaveDays: zod
+    .number()
+    .optional()
+    .describe("有給休暇の日数（月次実績の paidLeaveDays を表示用に保存）"),
   saturdayWorkDays: zod.number().optional().describe("土曜出勤日数（表示用）"),
   workDays: zod.number(),
+  appliedStandardRemuneration: zod
+    .number()
+    .nullish()
+    .describe(
+      "保険料の計算に使った標準報酬月額（この項目が入る前の明細は null）",
+    ),
+  appliedHealthInsuranceRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った健康保険料率（合計）"),
+  appliedCareInsuranceRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った介護保険料率（合計。対象外の社員は 0）"),
+  appliedChildcareSupportRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った子ども・子育て支援金率（合計）"),
+  appliedPensionRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った厚生年金保険料率（合計）"),
+  appliedEmploymentInsuranceRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った雇用保険料率（本人負担）"),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -902,9 +1052,45 @@ export const GetPayrollResponse = zod.object({
   lateNightHours: zod.number(),
   holidayWorkDays: zod
     .number()
-    .describe("休日出勤日数（月次実績の「日曜\/祝日」列を表示用に保存）"),
+    .describe("休日出勤日数（過去データ互換。表示用）"),
+  holidayWorkHours: zod
+    .number()
+    .optional()
+    .describe(
+      "日曜・祝日の出勤時間（月次実績の sundayWorkHours を表示用に保存）",
+    ),
+  paidLeaveDays: zod
+    .number()
+    .optional()
+    .describe("有給休暇の日数（月次実績の paidLeaveDays を表示用に保存）"),
   saturdayWorkDays: zod.number().optional().describe("土曜出勤日数（表示用）"),
   workDays: zod.number(),
+  appliedStandardRemuneration: zod
+    .number()
+    .nullish()
+    .describe(
+      "保険料の計算に使った標準報酬月額（この項目が入る前の明細は null）",
+    ),
+  appliedHealthInsuranceRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った健康保険料率（合計）"),
+  appliedCareInsuranceRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った介護保険料率（合計。対象外の社員は 0）"),
+  appliedChildcareSupportRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った子ども・子育て支援金率（合計）"),
+  appliedPensionRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った厚生年金保険料率（合計）"),
+  appliedEmploymentInsuranceRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った雇用保険料率（本人負担）"),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -970,9 +1156,45 @@ export const UpdatePayrollResponse = zod.object({
   lateNightHours: zod.number(),
   holidayWorkDays: zod
     .number()
-    .describe("休日出勤日数（月次実績の「日曜\/祝日」列を表示用に保存）"),
+    .describe("休日出勤日数（過去データ互換。表示用）"),
+  holidayWorkHours: zod
+    .number()
+    .optional()
+    .describe(
+      "日曜・祝日の出勤時間（月次実績の sundayWorkHours を表示用に保存）",
+    ),
+  paidLeaveDays: zod
+    .number()
+    .optional()
+    .describe("有給休暇の日数（月次実績の paidLeaveDays を表示用に保存）"),
   saturdayWorkDays: zod.number().optional().describe("土曜出勤日数（表示用）"),
   workDays: zod.number(),
+  appliedStandardRemuneration: zod
+    .number()
+    .nullish()
+    .describe(
+      "保険料の計算に使った標準報酬月額（この項目が入る前の明細は null）",
+    ),
+  appliedHealthInsuranceRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った健康保険料率（合計）"),
+  appliedCareInsuranceRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った介護保険料率（合計。対象外の社員は 0）"),
+  appliedChildcareSupportRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った子ども・子育て支援金率（合計）"),
+  appliedPensionRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った厚生年金保険料率（合計）"),
+  appliedEmploymentInsuranceRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った雇用保険料率（本人負担）"),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -1031,9 +1253,45 @@ export const ConfirmPayrollResponse = zod.object({
   lateNightHours: zod.number(),
   holidayWorkDays: zod
     .number()
-    .describe("休日出勤日数（月次実績の「日曜\/祝日」列を表示用に保存）"),
+    .describe("休日出勤日数（過去データ互換。表示用）"),
+  holidayWorkHours: zod
+    .number()
+    .optional()
+    .describe(
+      "日曜・祝日の出勤時間（月次実績の sundayWorkHours を表示用に保存）",
+    ),
+  paidLeaveDays: zod
+    .number()
+    .optional()
+    .describe("有給休暇の日数（月次実績の paidLeaveDays を表示用に保存）"),
   saturdayWorkDays: zod.number().optional().describe("土曜出勤日数（表示用）"),
   workDays: zod.number(),
+  appliedStandardRemuneration: zod
+    .number()
+    .nullish()
+    .describe(
+      "保険料の計算に使った標準報酬月額（この項目が入る前の明細は null）",
+    ),
+  appliedHealthInsuranceRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った健康保険料率（合計）"),
+  appliedCareInsuranceRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った介護保険料率（合計。対象外の社員は 0）"),
+  appliedChildcareSupportRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った子ども・子育て支援金率（合計）"),
+  appliedPensionRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った厚生年金保険料率（合計）"),
+  appliedEmploymentInsuranceRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った雇用保険料率（本人負担）"),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -1092,9 +1350,45 @@ export const UnconfirmPayrollResponse = zod.object({
   lateNightHours: zod.number(),
   holidayWorkDays: zod
     .number()
-    .describe("休日出勤日数（月次実績の「日曜\/祝日」列を表示用に保存）"),
+    .describe("休日出勤日数（過去データ互換。表示用）"),
+  holidayWorkHours: zod
+    .number()
+    .optional()
+    .describe(
+      "日曜・祝日の出勤時間（月次実績の sundayWorkHours を表示用に保存）",
+    ),
+  paidLeaveDays: zod
+    .number()
+    .optional()
+    .describe("有給休暇の日数（月次実績の paidLeaveDays を表示用に保存）"),
   saturdayWorkDays: zod.number().optional().describe("土曜出勤日数（表示用）"),
   workDays: zod.number(),
+  appliedStandardRemuneration: zod
+    .number()
+    .nullish()
+    .describe(
+      "保険料の計算に使った標準報酬月額（この項目が入る前の明細は null）",
+    ),
+  appliedHealthInsuranceRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った健康保険料率（合計）"),
+  appliedCareInsuranceRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った介護保険料率（合計。対象外の社員は 0）"),
+  appliedChildcareSupportRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った子ども・子育て支援金率（合計）"),
+  appliedPensionRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った厚生年金保険料率（合計）"),
+  appliedEmploymentInsuranceRate: zod
+    .number()
+    .nullish()
+    .describe("計算に使った雇用保険料率（本人負担）"),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -1479,3 +1773,221 @@ export const UpdateEmployeeDeductionsResponseItem = zod.object({
 export const UpdateEmployeeDeductionsResponse = zod.array(
   UpdateEmployeeDeductionsResponseItem,
 );
+
+/**
+ * @summary 保険料率の履歴一覧（適用開始の古い順。空なら初期行を作って返す）
+ */
+export const ListInsuranceRatePeriodsResponseItem = zod
+  .object({
+    id: zod.number(),
+    effectiveYear: zod.number().describe("適用開始（給与明細の年）"),
+    effectiveMonth: zod.number().describe("適用開始（給与明細の月）"),
+    healthInsuranceRate: zod
+      .number()
+      .describe("健康保険料率（合計。例 0.0985）"),
+    careInsuranceRate: zod.number().describe("介護保険料率（合計。例 0.0162）"),
+    childcareSupportRate: zod
+      .number()
+      .describe("子ども・子育て支援金率（合計。例 0.0023）"),
+    pensionRate: zod.number().describe("厚生年金保険料率（合計。例 0.183）"),
+    employmentInsuranceRate: zod
+      .number()
+      .describe("雇用保険料率（本人負担。例 0.005）"),
+    pensionMaxStandard: zod.number().describe("厚生年金の標準報酬月額の上限"),
+    note: zod.string().nullish(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+  })
+  .describe(
+    "保険料率の履歴の1行。料率は保険料額表の「合計」の率（本人は半分）。雇用保険だけ本人負担の率。",
+  );
+export const ListInsuranceRatePeriodsResponse = zod.array(
+  ListInsuranceRatePeriodsResponseItem,
+);
+
+/**
+ * @summary 保険料率の行を追加
+ */
+export const CreateInsuranceRatePeriodBody = zod.object({
+  effectiveYear: zod.number(),
+  effectiveMonth: zod.number(),
+  healthInsuranceRate: zod.number(),
+  careInsuranceRate: zod.number(),
+  childcareSupportRate: zod.number(),
+  pensionRate: zod.number(),
+  employmentInsuranceRate: zod.number(),
+  pensionMaxStandard: zod.number().optional(),
+  note: zod.string().nullish(),
+});
+
+/**
+ * @summary 保険料率の行を更新
+ */
+export const UpdateInsuranceRatePeriodParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateInsuranceRatePeriodBody = zod.object({
+  effectiveYear: zod.number(),
+  effectiveMonth: zod.number(),
+  healthInsuranceRate: zod.number(),
+  careInsuranceRate: zod.number(),
+  childcareSupportRate: zod.number(),
+  pensionRate: zod.number(),
+  employmentInsuranceRate: zod.number(),
+  pensionMaxStandard: zod.number().optional(),
+  note: zod.string().nullish(),
+});
+
+export const UpdateInsuranceRatePeriodResponse = zod
+  .object({
+    id: zod.number(),
+    effectiveYear: zod.number().describe("適用開始（給与明細の年）"),
+    effectiveMonth: zod.number().describe("適用開始（給与明細の月）"),
+    healthInsuranceRate: zod
+      .number()
+      .describe("健康保険料率（合計。例 0.0985）"),
+    careInsuranceRate: zod.number().describe("介護保険料率（合計。例 0.0162）"),
+    childcareSupportRate: zod
+      .number()
+      .describe("子ども・子育て支援金率（合計。例 0.0023）"),
+    pensionRate: zod.number().describe("厚生年金保険料率（合計。例 0.183）"),
+    employmentInsuranceRate: zod
+      .number()
+      .describe("雇用保険料率（本人負担。例 0.005）"),
+    pensionMaxStandard: zod.number().describe("厚生年金の標準報酬月額の上限"),
+    note: zod.string().nullish(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+  })
+  .describe(
+    "保険料率の履歴の1行。料率は保険料額表の「合計」の率（本人は半分）。雇用保険だけ本人負担の率。",
+  );
+
+/**
+ * @summary 保険料率の行を削除（最後の1行は削除不可）
+ */
+export const DeleteInsuranceRatePeriodParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary 給与明細の年月に適用される保険料率
+ */
+export const GetEffectiveInsuranceRatesQueryParams = zod.object({
+  year: zod.coerce.number(),
+  month: zod.coerce.number(),
+});
+
+export const GetEffectiveInsuranceRatesResponse = zod
+  .object({
+    periodId: zod.number().nullish(),
+    effectiveYear: zod.number().nullish(),
+    effectiveMonth: zod.number().nullish(),
+    healthInsuranceRate: zod.number(),
+    careInsuranceRate: zod.number(),
+    childcareSupportRate: zod.number(),
+    pensionRate: zod.number(),
+    employmentInsuranceRate: zod.number(),
+    pensionMaxStandard: zod.number(),
+    note: zod.string().nullish(),
+    healthEmployeeRate: zod.number().describe("健康保険（本人）"),
+    healthWithCareEmployeeRate: zod
+      .number()
+      .describe("健康保険＋介護保険（本人）"),
+    childcareEmployeeRate: zod
+      .number()
+      .describe("子ども・子育て支援金（本人）"),
+    pensionEmployeeRate: zod.number().describe("厚生年金（本人）"),
+  })
+  .describe("給与明細の年月に適用される料率（合計の率と、折半した本人負担率）");
+
+/**
+ * @summary 社員の標準報酬月額の履歴（適用開始の新しい順）
+ */
+export const ListStandardRemunerationHistoryParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListStandardRemunerationHistoryResponseItem = zod.object({
+  id: zod.number(),
+  employeeId: zod.number(),
+  effectiveYear: zod.number(),
+  effectiveMonth: zod.number(),
+  amount: zod.number(),
+  reason: zod
+    .string()
+    .describe(
+      "teiji（定時決定）\/ zuiji（随時改定）\/ shikaku（資格取得）\/ other",
+    ),
+  note: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListStandardRemunerationHistoryResponse = zod.array(
+  ListStandardRemunerationHistoryResponseItem,
+);
+
+/**
+ * @summary 社員の標準報酬月額の履歴を追加（同じ適用開始の年月は上書き）
+ */
+export const CreateStandardRemunerationHistoryParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const CreateStandardRemunerationHistoryBody = zod.object({
+  effectiveYear: zod.number(),
+  effectiveMonth: zod.number(),
+  amount: zod.number(),
+  reason: zod.enum(["teiji", "zuiji", "shikaku", "other"]).optional(),
+  note: zod.string().nullish(),
+});
+
+/**
+ * @summary 社員の標準報酬月額の履歴を削除
+ */
+export const DeleteStandardRemunerationHistoryParams = zod.object({
+  id: zod.coerce.number(),
+  historyId: zod.coerce.number(),
+});
+
+/**
+ * @summary 全社員の、給与明細の年月に使う標準報酬月額
+ */
+export const ListEffectiveStandardRemunerationQueryParams = zod.object({
+  year: zod.coerce.number(),
+  month: zod.coerce.number(),
+});
+
+export const ListEffectiveStandardRemunerationResponseItem = zod.object({
+  employeeId: zod.number(),
+  standardRemuneration: zod
+    .number()
+    .describe("その月に使う標準報酬月額（0 = 未設定）"),
+  historyId: zod
+    .number()
+    .nullish()
+    .describe("履歴の行から来たときのID。社員マスタの初期値のときは null"),
+  effectiveYear: zod.number().nullish(),
+  effectiveMonth: zod.number().nullish(),
+  reason: zod.string().nullish(),
+});
+export const ListEffectiveStandardRemunerationResponse = zod.array(
+  ListEffectiveStandardRemunerationResponseItem,
+);
+
+/**
+ * @summary 標準報酬月額の一括登録（定時決定など。同じ適用開始の年月は上書き）
+ */
+export const BulkCreateStandardRemunerationHistoryBody = zod.object({
+  effectiveYear: zod.number(),
+  effectiveMonth: zod.number(),
+  reason: zod.enum(["teiji", "zuiji", "shikaku", "other"]).optional(),
+  note: zod.string().nullish(),
+  entries: zod.array(
+    zod.object({
+      employeeId: zod.number(),
+      amount: zod.number(),
+    }),
+  ),
+});
