@@ -283,7 +283,28 @@ const styles = {
   },
 };
 
+// 2人/A4（compact）では、明細全体を zoom で拡大して文字を大きくする。拡大率は「欄の中身が
+// 横にはみ出さない」範囲で決まるので、横幅を食う所（差引支給額の大きな数字・セルの左右余白・
+// 欄の幅の配分）を詰めておくと、その分だけ全体を大きく刷れる。
+const compactStyles = {
+  ...styles,
+  mainGrid: { ...styles.mainGrid, gridTemplateColumns: "1.12fr 1.4fr 1.62fr 1.2fr", gap: "2pt" },
+  td: { ...styles.td, padding: "1.2pt 2.5pt" },
+  tdRight: { ...styles.tdRight, padding: "1.2pt 2.5pt" },
+  totalTd: { ...styles.totalTd, padding: "1.5pt 2.5pt" },
+  totalTdRight: { ...styles.totalTdRight, padding: "1.5pt 2.5pt" },
+  summaryTd: { ...styles.summaryTd, padding: "1.5pt 2.5pt" },
+  summaryTdRight: { ...styles.summaryTdRight, padding: "1.5pt 2.5pt" },
+  netBox: { ...styles.netBox, padding: "4pt 3pt", margin: "4pt 3pt" },
+  netValue: { ...styles.netValue, fontSize: "12.5pt", letterSpacing: "0" },
+  headerLeft: { ...styles.headerLeft, minWidth: "130pt" },
+  headerRight: { ...styles.headerRight, minWidth: "86pt" },
+  // 末尾の一文は拡大すると2行に折り返すので、少し小さくして1行に収める
+  footer: { ...styles.footer, fontSize: "6.5pt", padding: "2pt 6pt", gap: "6pt", whiteSpace: "nowrap" as const },
+};
+
 export function ClassicContent({ payroll, companyName, employeeAllowances, employeeDeductions, employee, compact }: ClassicPayslipProps) {
+  const S = compact ? compactStyles : styles;
   const isBW = !!(payroll.useBluewingLogic as boolean);
   const childcare = payroll.childcareSupportContribution ?? 0;
   const isTaxExempt = !!(employee as Record<string, unknown> | undefined)?.taxExempt;
@@ -392,65 +413,67 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
   return (
     <div
       data-print-target="payslip-classic"
-      style={compact ? { ...styles.root, zoom: 1.0, height: "auto" } : styles.root}
+      style={compact ? { ...S.root, height: "auto" } : S.root}
     >
       {/* ── ヘッダー ── */}
-      <div style={styles.header} data-fit-box>
-        <div style={styles.headerLeft}>
-          <div style={{ ...styles.infoRow, marginBottom: "2pt" }}>
-            <span style={{ ...styles.infoLabel, minWidth: "40pt" }}>会社名</span>
-            <span style={{ ...styles.infoValue, fontSize: "9pt" }}>{companyName}</span>
+      <div style={S.header} data-fit-box>
+        <div style={S.headerLeft}>
+          <div style={{ ...S.infoRow, marginBottom: "2pt" }}>
+            <span style={{ ...S.infoLabel, minWidth: "40pt" }}>会社名</span>
+            <span style={{ ...S.infoValue, fontSize: "9pt" }}>{companyName}</span>
           </div>
-          <div style={styles.infoRow}>
-            <span style={styles.infoLabel}>氏名</span>
-            <span style={{ ...styles.infoValue, fontSize: "10pt" }}>{payroll.employeeName}　様</span>
+          <div style={S.infoRow}>
+            <span style={S.infoLabel}>氏名</span>
+            <span style={{ ...S.infoValue, fontSize: "10pt" }}>{payroll.employeeName}　様</span>
           </div>
-          <div style={styles.infoRow}>
-            <span style={styles.infoLabel}>社員番号</span>
-            <span style={styles.infoValue}>{payroll.employeeCode}</span>
+          <div style={S.infoRow}>
+            <span style={S.infoLabel}>社員番号</span>
+            <span style={S.infoValue}>{payroll.employeeCode}</span>
           </div>
-          <div style={styles.infoRow}>
-            <span style={styles.infoLabel}>所属</span>
-            <span style={styles.infoValue}>{department || "—"}</span>
-          </div>
-          <div style={{ ...styles.infoRow, marginTop: "1pt" }}>
+          {!(compact && !department) && (
+            <div style={S.infoRow}>
+              <span style={S.infoLabel}>所属</span>
+              <span style={S.infoValue}>{department || "—"}</span>
+            </div>
+          )}
+          <div style={{ ...S.infoRow, marginTop: "1pt" }}>
             <span style={{ fontSize: "7pt", color: "#888" }}>
               {payroll.status === "confirmed" ? "【確定済】" : "【仮計算・未確定】"}
             </span>
           </div>
         </div>
 
-        <div style={styles.headerCenter}>
-          <div style={styles.headerMonth}>{payrollMonthStr}分</div>
-          <div style={styles.headerTitle}>給 与 支 給 明 細 書</div>
+        <div style={S.headerCenter}>
+          <div style={S.headerMonth}>{payrollMonthStr}分</div>
+          <div style={S.headerTitle}>給 与 支 給 明 細 書</div>
         </div>
 
-        <div style={styles.headerRight}>
+        <div style={S.headerRight}>
           <div style={{ display: "flex", flexDirection: "column" as const, gap: "2pt", alignItems: "flex-end" }}>
-            <div style={styles.infoRow}>
-              <span style={{ ...styles.infoLabel, minWidth: "40pt" }}>発行日</span>
-              <span style={styles.infoValue}>{issuedDate}</span>
+            <div style={S.infoRow}>
+              <span style={{ ...S.infoLabel, minWidth: "40pt" }}>発行日</span>
+              <span style={S.infoValue}>{issuedDate}</span>
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "flex-start", gap: "4pt", marginTop: "2pt" }}>
             <span style={{ fontSize: "7pt", color: "#888" }}>受領印</span>
-            <div style={styles.hankoBox}></div>
+            <div style={S.hankoBox}></div>
           </div>
         </div>
       </div>
 
       {/* ── メイン 4 カラム ── */}
-      <div style={styles.mainGrid}>
+      <div style={S.mainGrid}>
 
         {/* A. 勤怠欄 */}
-        <div style={styles.block} data-fit-box>
-          <div style={styles.blockTitle}>勤　怠</div>
-          <table style={styles.table}>
+        <div style={S.block} data-fit-box>
+          <div style={S.blockTitle}>勤　怠</div>
+          <table style={S.table}>
             <tbody>
               {attendanceItems.map(item => (
                 <tr key={item.label}>
-                  <td style={styles.td}>{item.label}</td>
-                  <td style={{ ...styles.tdRight, fontWeight: "bold" }}>{item.value}</td>
+                  <td style={S.td}>{item.label}</td>
+                  <td style={{ ...S.tdRight, fontWeight: "bold" }}>{item.value}</td>
                 </tr>
               ))}
             </tbody>
@@ -458,40 +481,40 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
         </div>
 
         {/* B. 支給欄 */}
-        <div style={styles.block} data-fit-box>
-          <div style={styles.blockTitle}>支　給</div>
-          <table style={styles.table}>
+        <div style={S.block} data-fit-box>
+          <div style={S.blockTitle}>支　給</div>
+          <table style={S.table}>
             <tbody>
               {allPayItems.map((item, idx) => (
                 <tr key={`pay-${idx}`}>
-                  <td style={styles.td}>
+                  <td style={S.td}>
                     {item.label}
-                    {item.nonTaxable && <span style={styles.nonTaxBadge}>非課税</span>}
+                    {item.nonTaxable && <span style={S.nonTaxBadge}>非課税</span>}
                   </td>
-                  <td style={styles.tdRight}>{formatCurrency(item.value)}</td>
+                  <td style={S.tdRight}>{formatCurrency(item.value)}</td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr>
-                <td style={styles.totalTd}>支給合計</td>
-                <td style={styles.totalTdRight}>{formatCurrency(payroll.grossSalary)}</td>
+                <td style={S.totalTd}>支給合計</td>
+                <td style={S.totalTdRight}>{formatCurrency(payroll.grossSalary)}</td>
               </tr>
             </tfoot>
           </table>
         </div>
 
         {/* C. 控除欄 */}
-        <div style={styles.block} data-fit-box>
-          <div style={styles.blockTitle}>控　除</div>
-          <table style={styles.table}>
+        <div style={S.block} data-fit-box>
+          <div style={S.blockTitle}>控　除</div>
+          <table style={S.table}>
             <tbody>
               {deductionItems.map((item, idx) => (
                 <tr key={`ded-${idx}`}>
-                  <td style={styles.td}>{item.label}</td>
-                  <td style={styles.tdRight}>
+                  <td style={S.td}>{item.label}</td>
+                  <td style={S.tdRight}>
                     {item.exempt
-                      ? <span style={styles.nonTaxBadge}>非課税</span>
+                      ? <span style={S.nonTaxBadge}>非課税</span>
                       : formatCurrency(item.value)}
                   </td>
                 </tr>
@@ -499,45 +522,45 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
             </tbody>
             <tfoot>
               <tr>
-                <td style={styles.totalTd}>控除合計</td>
-                <td style={styles.totalTdRight}>{formatCurrency(payroll.totalDeductions)}</td>
+                <td style={S.totalTd}>控除合計</td>
+                <td style={S.totalTdRight}>{formatCurrency(payroll.totalDeductions)}</td>
               </tr>
             </tfoot>
           </table>
         </div>
 
         {/* D. 集計欄 */}
-        <div style={styles.block} data-fit-box>
-          <div style={styles.blockTitle}>集　計</div>
+        <div style={S.block} data-fit-box>
+          <div style={S.blockTitle}>集　計</div>
 
-          <div style={styles.netBox}>
-            <div style={styles.netLabel}>差 引 支 給 額</div>
-            <div style={styles.netValue}>{formatCurrency(payroll.netSalary)}</div>
+          <div style={S.netBox}>
+            <div style={S.netLabel}>差 引 支 給 額</div>
+            <div style={S.netValue}>{formatCurrency(payroll.netSalary)}</div>
           </div>
 
-          <table style={styles.summaryTable}>
+          <table style={S.summaryTable}>
             <tbody>
               <tr>
-                <td style={styles.summaryTd}>支給合計</td>
-                <td style={{ ...styles.summaryTdRight, fontWeight: "bold" }}>{formatCurrency(payroll.grossSalary)}</td>
+                <td style={S.summaryTd}>支給合計</td>
+                <td style={{ ...S.summaryTdRight, fontWeight: "bold" }}>{formatCurrency(payroll.grossSalary)}</td>
               </tr>
               <tr>
-                <td style={styles.summaryTd}>控除合計</td>
-                <td style={{ ...styles.summaryTdRight, fontWeight: "bold" }}>{formatCurrency(payroll.totalDeductions)}</td>
+                <td style={S.summaryTd}>控除合計</td>
+                <td style={{ ...S.summaryTdRight, fontWeight: "bold" }}>{formatCurrency(payroll.totalDeductions)}</td>
               </tr>
               <tr>
-                <td style={styles.summaryTd}>課税支給額</td>
-                <td style={styles.summaryTdRight}>{formatCurrency(taxableTotal)}</td>
+                <td style={S.summaryTd}>課税支給額</td>
+                <td style={S.summaryTdRight}>{formatCurrency(taxableTotal)}</td>
               </tr>
               {nonTaxableTotal > 0 && (
                 <tr>
-                  <td style={styles.summaryTd}>非課税支給額</td>
-                  <td style={styles.summaryTdRight}>{formatCurrency(nonTaxableTotal)}</td>
+                  <td style={S.summaryTd}>非課税支給額</td>
+                  <td style={S.summaryTdRight}>{formatCurrency(nonTaxableTotal)}</td>
                 </tr>
               )}
               <tr>
-                <td style={styles.summaryTd}>振込支給額</td>
-                <td style={{ ...styles.summaryTdRight, fontWeight: "bold" }}>{formatCurrency(payroll.netSalary)}</td>
+                <td style={S.summaryTd}>振込支給額</td>
+                <td style={{ ...S.summaryTdRight, fontWeight: "bold" }}>{formatCurrency(payroll.netSalary)}</td>
               </tr>
             </tbody>
           </table>
@@ -552,9 +575,9 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
       </div>
 
       {/* ── フッター ── */}
-      <div style={styles.footer}>
+      <div style={S.footer} data-fit-box>
         <span>今月もお疲れさまでした。本明細書に関するお問い合わせは給与担当者までご連絡ください。</span>
-        <span style={{ fontSize: "7pt", color: "#888" }}>三川運送株式会社　給与システム</span>
+        <span style={{ fontSize: compact ? "6pt" : "7pt", color: "#888" }}>三川運送株式会社　給与システム</span>
       </div>
     </div>
   );
