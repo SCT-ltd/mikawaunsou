@@ -794,7 +794,10 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
             「{duplicateAllowanceNames.join("・")}」は給与計算で自動的に支給される項目です。
             同名のカスタム手当が付いているため、明細で二重表示・総支給の二重計上になります。
             この明細は自動計算で作られています。
-            <span className="font-medium">「手入力固定」を押して計算し直すと、手当の行の金額だけが支給額になり、二重になりません。</span>
+            <span className="font-medium">「手入力固定」で計算し直すと、手当の行にある金額だけが支給額になり、二重にはなりません。</span>
+            ただし、自動計算で出ていた項目（時間外手当・休日手当・業績手当など）は0円になります。
+            必要な金額が下の手当の行にすべて入っているか確かめてから押してください。
+            押したあとは総支給額を見比べ、足りない項目があれば手当の行に足してください。
           </p>
         </div>
       )}

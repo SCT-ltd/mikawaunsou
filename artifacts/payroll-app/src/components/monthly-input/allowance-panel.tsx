@@ -235,7 +235,10 @@ export function AllowancePanel({
   // 手当・控除は「この月」の内容を読み書きする（ほかの月の内容を書き換えない）
   const targetYear = year ?? new Date().getFullYear();
   const targetMonth = month ?? new Date().getMonth() + 1;
-  const { data: monthItems } = useMonthItems(employeeId, targetYear, targetMonth, { staleTime: 0, refetchOnMount: true });
+  // 取り直しが済むまでは使わない。手元に残っている古い内容で行を作ると、保存した直後に
+  // ほかの社員へ移って戻ったとき、保存前の金額に巻き戻って見えていた。
+  const { data: monthItemsRaw, isFetchedAfterMount } = useMonthItems(employeeId, targetYear, targetMonth, { staleTime: 0, refetchOnMount: "always" });
+  const monthItems = isFetchedAfterMount ? monthItemsRaw : undefined;
   const legacyRows = useMemo(() => toLegacyRows(monthItems, employeeId), [monthItems, employeeId]);
   const employeeAllowances = legacyRows.allowances;
   const employeeDeductions = legacyRows.deductions;
@@ -663,11 +666,13 @@ export function AllowancePanel({
     let ok = false;
     try {
       // 手当・控除・基本給を、この月の内容として1回で保存する（途中で失敗して半端に残らない）
-      await saveMonthItems(employeeId, targetYear, targetMonth, {
+      const saved = await saveMonthItems(employeeId, targetYear, targetMonth, {
         allowances: p.allowances,
         deductions: p.deductions,
         ...(isHourly ? {} : { baseSalary: p.baseSalary }),
       });
+      // 保存した内容を手元の控えにもすぐ入れる（このパネルが外れた後でも古い内容が残らない）
+      queryClient.setQueryData(monthItemsQueryKey(employeeId, targetYear, targetMonth), saved);
       lastSavedRef.current = snap;
       ok = true;
 
