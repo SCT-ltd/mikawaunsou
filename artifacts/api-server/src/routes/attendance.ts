@@ -4,6 +4,7 @@ import { paramStr } from "../lib/params";
 import { asc, eq, and, gte, lte, sql } from "drizzle-orm";
 import { ABSENCE_DAYS } from "./absences";
 import { requireAdmin, requireOwnerOrAdmin, requireAttendanceRecordOwnerOrAdmin } from "../lib/auth-middleware";
+import { driverAccess, PIN_REQUIRED_BODY } from "../lib/driver-token";
 
 const router = Router();
 
@@ -176,9 +177,20 @@ router.get("/attendance/today", async (req, res) => {
 });
 
 // ── 社員の今日の打刻一覧 ─────────────────────────────
-router.get("/attendance/employee/:employeeId/today", requireOwnerOrAdmin(req => parseInt(paramStr(req.params.employeeId), 10)), async (req, res) => {
+router.get("/attendance/employee/:employeeId/today", async (req, res, next) => {
+  // ログイン中は従来の owner チェック。未ログイン（QR ページ）はここで本人確認の有無を見る。
+  if (req.session?.userId) {
+    return requireOwnerOrAdmin(r => parseInt(paramStr(r.params.employeeId), 10))(req, res, next);
+  }
+  return next();
+}, async (req, res) => {
   const employeeId = parseInt(paramStr(req.params.employeeId), 10);
   const today = todayJST();
+  // QR ページは暗証番号の入力前にもこの API で「いま出勤中か」を出している。
+  // 本人確認の済んでいない端末には、状態の判定に要る項目（種別と時刻）だけを返し、
+  // 打刻した場所・メモ・メーターは返さない。
+  const access = req.session?.userId ? "verified" : await driverAccess(req, employeeId);
+  if (access === "not-found") return res.status(404).json({ error: "社員が見つかりません。" });
 
   const records = await db
     .select()
@@ -189,6 +201,11 @@ router.get("/attendance/employee/:employeeId/today", requireOwnerOrAdmin(req => 
     ))
     .orderBy(attendanceRecordsTable.recordedAt);
 
+  if (access !== "verified") {
+    return res.json(records.map(r => ({
+      id: r.id, employeeId: r.employeeId, eventType: r.eventType, recordedAt: r.recordedAt, workDate: r.workDate,
+    })));
+  }
   return res.json(records);
 });
 
@@ -216,11 +233,15 @@ router.post("/attendance/record", async (req, res) => {
 
   let employeeId: number;
   if (!req.session?.userId) {
-    // 未ログイン公開フロー（QRページ）：body.employeeId を必須・そのまま採用
+    // 未ログイン公開フロー（QRページ）：暗証番号を確かめた端末だけが、その社員として打刻できる。
+    // （暗証番号が未設定の社員は確かめようがないので従来どおり受ける）
     if (!bodyEmployeeId || Number.isNaN(Number(bodyEmployeeId))) {
       return res.status(400).json({ error: "employeeId は必須です" });
     }
     employeeId = Number(bodyEmployeeId);
+    const access = await driverAccess(req, employeeId);
+    if (access === "not-found") return res.status(404).json({ error: "社員が見つかりません。" });
+    if (access === "denied") return res.status(401).json(PIN_REQUIRED_BODY);
   } else if (req.session.role === "admin") {
     if (!bodyEmployeeId || Number.isNaN(Number(bodyEmployeeId))) {
       return res.status(400).json({ error: "employeeId は必須です" });
@@ -260,7 +281,12 @@ router.post("/attendance/record", async (req, res) => {
 
   // クライアントからrecordedAtが送られた場合はそのタイムスタンプを使用し、
   // workDateはそのJST日付から算出する。送られない場合は現在時刻を使用。
-  const now = recordedAtStr ? new Date(recordedAtStr) : new Date();
+  // 打刻の時刻を指定できるのは、ログインしている人（管理者による修正・追加）だけ。
+  // QR ページからの打刻は、サーバーが受け取った時刻で記録する（過去の時刻の打刻を作らせない）。
+  const now = recordedAtStr && req.session?.userId ? new Date(recordedAtStr) : new Date();
+  if (Number.isNaN(now.getTime())) {
+    return res.status(400).json({ error: "打刻の日時が正しくありません" });
+  }
 
   // 未来の打刻を拒否（1分の余裕を持たせる）
   if (now.getTime() > Date.now() + 60 * 1000) {
@@ -541,7 +567,7 @@ router.get("/attendance/employee/:employeeId", requireOwnerOrAdmin(req => parseI
 });
 
 // ── 社員の月間打刻履歴 ───────────────────────────────
-router.get("/attendance/employee/:employeeId/month", requireOwnerOrAdmin(req => parseInt(paramStr(req.params.employeeId), 10)), async (req, res) => {
+router.get("/attendance/employee/:employeeId/month", requireOwnerOrAdmin(req => parseInt(paramStr(req.params.employeeId), 10), { requirePin: true }), async (req, res) => {
   const employeeId = parseInt(paramStr(req.params.employeeId), 10);
   const year = parseInt(req.query.year as string, 10) || new Date().getFullYear();
   const month = parseInt(req.query.month as string, 10) || (new Date().getMonth() + 1);

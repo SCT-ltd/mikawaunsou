@@ -203,7 +203,11 @@ export default function PayrollList() {
         if (existing?.status === "confirmed") continue;
 
         try {
-          await calculatePayroll.mutateAsync({ data: { employeeId: emp.id, year, month } });
+          // 明細がまだ無い社員は、月次実績入力の「保存して計算」と同じ手入力固定で作る。
+          // 既にある明細は、作ったときの計算方法のまま計算し直す（方法を送らなければサーバーが引き継ぐ）。
+          await calculatePayroll.mutateAsync({
+            data: existing ? { employeeId: emp.id, year, month } : { employeeId: emp.id, year, month, calculationMode: "manual" },
+          });
           success++;
         } catch (err: unknown) {
           let msg = "不明なエラー";

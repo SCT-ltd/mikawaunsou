@@ -674,6 +674,8 @@ export default function DriverPage() {
       );
       if (res.ok) {
         setPinVerified(true);
+        // 暗証番号の確認前は、打刻の一部の項目しか返らない。確認できたら全項目を取り直す。
+        fetchData();
       } else {
         setPinError(true);
         setPinInput("");

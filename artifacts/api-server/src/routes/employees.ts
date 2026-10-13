@@ -14,8 +14,15 @@ import {
   employeeDeductionsTable,
 } from "@workspace/db";
 import { asc, eq } from "drizzle-orm";
+import { issueDriverToken } from "../lib/driver-token";
 
 const router = Router();
+
+// 暗証番号の照合の回数制限（社員＋接続元ごと）。api は1プロセスなのでメモリで足りる。
+const PIN_MAX_FAILURES = 5;
+const PIN_WINDOW_MS = 10 * 60 * 1000;
+const PIN_LOCK_MS = 10 * 60 * 1000;
+const pinAttempts = new Map<string, { failures: number; firstFailureAt: number; lockedUntil: number }>();
 
 /**
  * 社員行から機密の `pin` を除去し、代わりに `hasPin`（設定有無）を付与する。
@@ -111,6 +118,19 @@ router.get("/employees/:id", async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, id));
   if (!emp) return res.status(404).json({ error: "社員が見つかりません。" });
+  // この経路は QR 打刻ページのためにログインなしで開けてある。管理者以外には、打刻画面の
+  // 表示に要る項目だけを返す（以前は基本給・標準報酬・住民税・生年月日まで返していた）。
+  if (req.session?.role !== "admin") {
+    return res.json({
+      id: emp.id,
+      employeeCode: emp.employeeCode,
+      name: emp.name,
+      department: emp.department,
+      isOfficeStaff: emp.isOfficeStaff,
+      scheduledWorkStart: emp.scheduledWorkStart,
+      scheduledWorkEnd: emp.scheduledWorkEnd,
+    });
+  }
   return res.json(sanitizeEmployee(emp));
 });
 
@@ -238,12 +258,37 @@ router.delete("/employees/:id/pin", async (req, res) => {
 // PIN照合（ドライバー用）
 router.post("/employees/:id/pin/verify", async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const { pin } = req.body;
+  const { pin } = req.body ?? {};
   const [emp] = await db.select({ pin: employeesTable.pin }).from(employeesTable).where(eq(employeesTable.id, id));
   if (!emp) return res.status(404).json({ error: "社員が見つかりません。" });
   if (!emp.pin) return res.json({ ok: true, pinRequired: false });
+
+  // 4桁（1万通り）なので、回数を制限しないと総当たりで当てられる。
+  const now = Date.now();
+  const key = `${id}|${req.header("cf-connecting-ip") || req.ip || "unknown"}`;
+  for (const [k, a] of pinAttempts) {
+    if (a.lockedUntil < now && now - a.firstFailureAt > PIN_WINDOW_MS) pinAttempts.delete(k);
+  }
+  const attempt = pinAttempts.get(key);
+  if (attempt && attempt.lockedUntil > now) {
+    const minutes = Math.ceil((attempt.lockedUntil - now) / 60000);
+    return res.status(429).json({ error: `暗証番号を続けて間違えたため、あと${minutes}分は入力できません。` });
+  }
+
   const ok = emp.pin === String(pin);
-  return res.json({ ok, pinRequired: true });
+  if (!ok) {
+    const a = attempt && now - attempt.firstFailureAt <= PIN_WINDOW_MS
+      ? attempt
+      : { failures: 0, firstFailureAt: now, lockedUntil: 0 };
+    a.failures += 1;
+    if (a.failures >= PIN_MAX_FAILURES) a.lockedUntil = now + PIN_LOCK_MS;
+    pinAttempts.set(key, a);
+    return res.json({ ok: false, pinRequired: true });
+  }
+  pinAttempts.delete(key);
+  // 合った端末に印を渡す。以後の打刻・履歴・メッセージの API はこの印を見て本人と判断する。
+  issueDriverToken(res, id, emp.pin);
+  return res.json({ ok: true, pinRequired: true });
 });
 
 // PIN設定有無の確認（ドライバー用）

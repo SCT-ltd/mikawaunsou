@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from "express";
 import { db, attendanceRecordsTable } from "@workspace/db";
 import { paramStr } from "./params";
 import { eq } from "drizzle-orm";
+import { driverAccess, PIN_REQUIRED_BODY, PIN_NOT_SET_BODY } from "./driver-token";
 
 /**
  * 管理者専用ガード。
@@ -47,14 +48,21 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction) {
  */
 export function requireOwnerOrAdmin(
   getEmployeeIdFromReq: (req: Request) => number | null | undefined,
+  /** requirePin: 暗証番号が未設定の社員には応えない（履歴・メッセージの読み取り用） */
+  opts: { requirePin?: boolean } = {},
 ) {
-  return (req: Request, res: Response, next: NextFunction) => {
-    // 未ログインは公開フロー（QR打刻など）として通過させる。
-    // 既存の打刻フローは元々ログイン不要だったため、後方互換のためここで通す。
-    // 「ログイン中のドライバーが他人になりすますのを防ぐ」owner チェックの本来の役割は
-    // ログイン状態のときに引き続き機能する。
+  return async (req: Request, res: Response, next: NextFunction) => {
+    // 未ログイン＝QR 打刻ページからの公開フロー。
+    // 以前は無条件で通していたため、社員番号（連番）を差し替えるだけで他人の打刻・位置・
+    // メッセージを読み書きできた。暗証番号を確かめた端末（driver-token の印）だけを通す。
+    // 暗証番号が未設定の社員は確かめようがないので、打刻に要る操作だけ従来どおり通し、
+    // 履歴やメッセージの読み取り（requirePin）は断る。
     if (!req.session?.userId) {
-      return next();
+      const access = await driverAccess(req, Number(getEmployeeIdFromReq(req)));
+      if (access === "verified") return next();
+      if (access === "no-pin") return opts.requirePin ? res.status(403).json(PIN_NOT_SET_BODY) : next();
+      if (access === "not-found") return res.status(404).json({ error: "社員が見つかりません。" });
+      return res.status(401).json(PIN_REQUIRED_BODY);
     }
 
     if (req.session.role === "admin") {

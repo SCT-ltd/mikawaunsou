@@ -432,10 +432,17 @@ const INSURANCE_GRADES: [number, number, number, boolean][] = [
   [1_355_000, Infinity,  1_390_000, false],
 ];
 
-/** 社会保険料の端数処理: 50銭未満切捨て・50銭以上切上げ */
+/**
+ * 給与から天引きする保険料（本人負担分）の端数処理: 50銭以下は切り捨て、50銭を超えたら切り上げ。
+ *
+ * 以前は「50銭以上で切り上げ」になっていて、50銭ちょうどの等級（例: 標準報酬17万円の健康保険
+ * 8,372.5円）で1円多く引いていた。
+ * 料率を掛けた結果は 8372.499999… のように誤差を含むことがあるので、いったん銭の整数に直してから比べる。
+ */
 export function round50sen(x: number): number {
-  const frac = x - Math.floor(x);
-  return frac < 0.5 ? Math.floor(x) : Math.ceil(x);
+  const sen = Math.round(x * 100);
+  const yen = Math.floor(sen / 100);
+  return sen - yen * 100 <= 50 ? yen : yen + 1;
 }
 
 /** 報酬月額から標準報酬月額と厚生年金適用可否を返す */
