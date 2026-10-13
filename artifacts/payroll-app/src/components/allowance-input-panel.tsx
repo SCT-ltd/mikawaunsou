@@ -1,14 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
-  useGetEmployeeAllowances,
-  getGetEmployeeAllowancesQueryKey,
-  useUpdateEmployeeAllowances,
   useListAllowanceDefinitions,
-  useGetEmployeeDeductions,
-  getGetEmployeeDeductionsQueryKey,
-  useUpdateEmployeeDeductions,
   useListDeductionDefinitions,
-  useUpdateEmployee,
   useGetCompany,
   getListEmployeesQueryKey,
   getListPayrollsQueryKey,
@@ -22,6 +15,7 @@ import { Plus, X, GripVertical, ChevronDown, Check } from "lucide-react";
 import { Reorder, useDragControls } from "framer-motion";
 import { calculateIncomeTaxReiwa8, round50sen } from "@/lib/tax-tables-reiwa8";
 import { formatRatePercent, useMonthInsurance } from "@/lib/insurance-rates";
+import { useMonthItems, saveMonthItems, monthItemsQueryKey, toLegacyRows, MonthItemsError } from "@/lib/month-items";
 
 function roundJapanese(amount: number): number {
   return Math.floor(amount);
@@ -458,22 +452,28 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
   const employeeId = employee.id;
 
   const { data: allowanceDefinitions } = useListAllowanceDefinitions({ activeOnly: true });
-  const { data: employeeAllowances, isFetching: isAllowancesFetching, dataUpdatedAt: allowancesUpdatedAt } = useGetEmployeeAllowances(employeeId, {
-    query: { enabled: !!employeeId, queryKey: getGetEmployeeAllowancesQueryKey(employeeId), staleTime: 60_000, refetchOnMount: true }
-  });
+  // 手当・控除は「この明細の月」の内容を読み書きする。
+  // 以前は月を持たない社員ごとの手当を表示・保存していたため、過去の月を開くと今の手当が出て、
+  // 保存するとほかの月の内容まで書き換わっていた。
+  const targetYear = year ?? new Date().getFullYear();
+  const targetMonth = month ?? new Date().getMonth() + 1;
+  const { data: monthItems, isFetching: isAllowancesFetching, dataUpdatedAt: allowancesUpdatedAt } =
+    useMonthItems(employeeId, targetYear, targetMonth, { staleTime: 60_000, refetchOnMount: true });
+  const legacyRows = useMemo(() => toLegacyRows(monthItems, employeeId), [monthItems, employeeId]);
+  const employeeAllowances = legacyRows.allowances;
+  const employeeDeductions = legacyRows.deductions;
+  const isDeductionsFetching = isAllowancesFetching;
+  const deductionsUpdatedAt = allowancesUpdatedAt;
+  /** この月の明細が確定済み。手当・控除は見るだけにする（直すときは先に確定を解除）。 */
+  const locked = !!monthItems?.locked;
+  const [saving, setSaving] = useState(false);
   const { data: deductionDefinitions } = useListDeductionDefinitions({ activeOnly: true });
-  const { data: employeeDeductions, isFetching: isDeductionsFetching, dataUpdatedAt: deductionsUpdatedAt } = useGetEmployeeDeductions(employeeId, {
-    query: { enabled: !!employeeId, queryKey: getGetEmployeeDeductionsQueryKey(employeeId), staleTime: 60_000, refetchOnMount: true }
-  });
   const { data: company } = useGetCompany();
   // 年月の指定が無いときは今月として扱う（resolvePensionApplied と同じ）
   const monthInsurance = useMonthInsurance(
     year ?? new Date().getFullYear(),
     month ?? new Date().getMonth() + 1,
   );
-  const updateAllowances = useUpdateEmployeeAllowances();
-  const updateDeductions = useUpdateEmployeeDeductions();
-  const updateEmployee = useUpdateEmployee();
   const calculatePayroll = useCalculatePayroll();
 
   const [rows, setRows] = useState<AllowanceRow[]>([{ uid: newUid(), defId: null, amount: 0 }]);
@@ -592,16 +592,21 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
 
   useEffect(() => {
     // 日給制は当月の月次実績から常に再計算（マスター employee.baseSalary は無視）
-    if (isDaily && computedDailyBaseSalary !== null) {
+    if (isDaily && monthItems?.exists && monthItems.baseSalary != null) {
+      // その月に保存した基本給（手で直した額を含む）を優先する
+      setBaseSalaryInput(monthItems.baseSalary);
+    } else if (isDaily && computedDailyBaseSalary !== null) {
       setBaseSalaryInput(computedDailyBaseSalary);
     } else if (computedHourlyBaseSalary !== null) {
       setBaseSalaryInput(computedHourlyBaseSalary);
     } else {
       setBaseSalaryInput(employee.baseSalary ?? 0);
     }
-  }, [employee.baseSalary, employeeId, isDaily, computedDailyBaseSalary, computedHourlyBaseSalary]);
+  }, [employee.baseSalary, employeeId, isDaily, computedDailyBaseSalary, computedHourlyBaseSalary, monthItems?.exists, monthItems?.baseSalary]);
 
   const handleSave = async () => {
+    if (locked || saving) return;
+    setSaving(true);
     try {
       const allowancePayload = rows
         .filter(r => r.defId !== null && r.amount > 0)
@@ -610,13 +615,14 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
         .filter(r => r.defId !== null)
         .map(r => ({ deductionDefinitionId: r.defId!, amount: r.amount || 0 }));
 
-      await Promise.all([
-        updateAllowances.mutateAsync({ id: employeeId, data: { allowances: allowancePayload } }),
-        updateDeductions.mutateAsync({ id: employeeId, data: { deductions: deductionPayload } }),
-        // 時給制では画面の基本給は「時給 × 実働時間」の計算結果。これをマスターへ書くと
-        // 時給が月額で上書きされてしまうので、時給制のときは基本給を保存しない。
-        ...(isHourly ? [] : [updateEmployee.mutateAsync({ id: employeeId, data: { baseSalary: baseSalaryInput } })]),
-      ]);
+      // 手当・控除・基本給を、この月の内容として1回で保存する。
+      // 時給制の基本給は「時給 × 実働時間」の計算結果なので送らない（マスターの時給を上書きしない）。
+      const saved = await saveMonthItems(employeeId, targetYear, targetMonth, {
+        allowances: allowancePayload,
+        deductions: deductionPayload,
+        ...(isHourly ? {} : { baseSalary: baseSalaryInput }),
+      });
+      queryClient.setQueryData(monthItemsQueryKey(employeeId, targetYear, targetMonth), saved);
 
       const savedAllowances = allowancePayload.map((item, idx) => {
         const def = (allowanceDefinitions as { id: number; name: string; isTaxable: boolean }[] | undefined)
@@ -631,7 +637,7 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
           sortOrder: idx,
         };
       });
-      queryClient.setQueryData(getGetEmployeeAllowancesQueryKey(employeeId), savedAllowances);
+      void savedAllowances;
 
       const savedDeductions = deductionPayload.map((item, idx) => {
         const def = (deductionDefinitions as { id: number; name: string }[] | undefined)
@@ -645,7 +651,7 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
           sortOrder: idx,
         };
       });
-      queryClient.setQueryData(getGetEmployeeDeductionsQueryKey(employeeId), savedDeductions);
+      void savedDeductions;
 
       queryClient.invalidateQueries({ queryKey: getListEmployeesQueryKey({ active: true }) });
 
@@ -667,8 +673,15 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
 
       toast({ title: "保存・再計算しました", description: `${employee.name}の明細を更新しました。` });
       markClean();
-    } catch {
-      toast({ title: "エラー", description: "保存に失敗しました。", variant: "destructive" });
+    } catch (e) {
+      if (e instanceof MonthItemsError && e.status === 409) {
+        queryClient.invalidateQueries({ queryKey: monthItemsQueryKey(employeeId, targetYear, targetMonth) });
+        toast({ title: "確定済みのため保存できません", description: "この月の給与明細は確定済みです。直すときは、先に「確定解除」を押してください。", variant: "destructive" });
+      } else {
+        toast({ title: "エラー", description: e instanceof MonthItemsError ? e.message : "保存に失敗しました。", variant: "destructive" });
+      }
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -980,12 +993,17 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
 
       {/* 保存ボタン */}
       <div className="border-t pt-3 mt-2">
+        {locked && (
+          <p className="mb-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            この月は確定済みです。表示しているのは確定したときの手当・控除で、変更はできません。直すときは、先に上の「確定解除」を押してください。
+          </p>
+        )}
         <Button
           className="w-full"
           onClick={handleSave}
-          disabled={updateAllowances.isPending || updateDeductions.isPending || updateEmployee.isPending}
+          disabled={saving || locked}
         >
-          {isDirty ? "💾 保存（未保存の変更あり）" : "保存"}
+          {locked ? "確定済み（変更できません）" : saving ? "保存中…" : isDirty ? "💾 保存（未保存の変更あり）" : "保存"}
         </Button>
       </div>
     </div>

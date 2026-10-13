@@ -3,6 +3,7 @@ import { db, allowanceDefinitionsTable, employeeAllowancesTable, deductionDefini
 import { paramStr } from "../lib/params";
 import { eq, and, ne } from "drizzle-orm";
 import { requireAdmin } from "../lib/auth-middleware";
+import { getMonthItems, saveMonthItems, isMonthLocked, MonthLockedError } from "../lib/month-items";
 
 const router = Router();
 
@@ -109,6 +110,12 @@ router.get("/employees/:id/allowances", async (req, res) => {
 });
 
 router.put("/employees/:id/allowances", requireAdmin, async (req, res) => {
+  // 手当・控除は月ごとに保存するようになった（PUT /employees/:id/month-items）。
+  // この窓口は入れ替え前の古い画面だけが呼ぶ。そのまま受けると「保存したのに計算に入らない」
+  // 状態になるので、断って再読み込みを促す。
+  {
+    return res.status(409).json({ error: "画面が古い版です。ページを再読み込みしてから、もう一度保存してください。" });
+  }
   const employeeId = parseInt(paramStr(req.params.id), 10);
   const { allowances } = req.body as { allowances: Array<{ allowanceDefinitionId: number; amount: number }> };
 
@@ -249,6 +256,12 @@ router.get("/employees/:id/deductions", async (req, res) => {
 });
 
 router.put("/employees/:id/deductions", requireAdmin, async (req, res) => {
+  // 手当・控除は月ごとに保存するようになった（PUT /employees/:id/month-items）。
+  // この窓口は入れ替え前の古い画面だけが呼ぶ。そのまま受けると「保存したのに計算に入らない」
+  // 状態になるので、断って再読み込みを促す。
+  {
+    return res.status(409).json({ error: "画面が古い版です。ページを再読み込みしてから、もう一度保存してください。" });
+  }
   const employeeId = parseInt(paramStr(req.params.id), 10);
   const { deductions } = req.body as { deductions: Array<{ deductionDefinitionId: number; amount: number }> };
 
@@ -286,6 +299,72 @@ router.put("/employees/:id/deductions", requireAdmin, async (req, res) => {
   });
 
   return res.json(result);
+});
+
+
+// ── 月ごとの手当・控除（社員 × 年月）────────────────────────────────
+// 画面（月次実績入力・給与明細）と印刷は、こちらを使う。
+// 上の /employees/:id/allowances・deductions は月を持たない従来の置き場で、
+// 「まだ控えの無い月の初期値」としてだけ使う（lib/month-items.ts）。
+function parseYearMonth(q: Record<string, unknown>): { year: number; month: number } | null {
+  const year = Number(q["year"]);
+  const month = Number(q["month"]);
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) return null;
+  if (!Number.isInteger(month) || month < 1 || month > 12) return null;
+  return { year, month };
+}
+
+router.get("/employees/:id/month-items", async (req, res) => {
+  const employeeId = parseInt(paramStr(req.params.id), 10);
+  const ym = parseYearMonth(req.query as Record<string, unknown>);
+  if (Number.isNaN(employeeId) || !ym) return res.status(400).json({ error: "社員と年月の指定が正しくありません。" });
+  const [items, locked] = await Promise.all([
+    getMonthItems(employeeId, ym.year, ym.month),
+    isMonthLocked(employeeId, ym.year, ym.month),
+  ]);
+  return res.json({ ...items, locked, year: ym.year, month: ym.month });
+});
+
+router.put("/employees/:id/month-items", requireAdmin, async (req, res) => {
+  const employeeId = parseInt(paramStr(req.params.id), 10);
+  const ym = parseYearMonth(req.query as Record<string, unknown>);
+  if (Number.isNaN(employeeId) || !ym) return res.status(400).json({ error: "社員と年月の指定が正しくありません。" });
+
+  const body = (req.body ?? {}) as { allowances?: unknown; deductions?: unknown; baseSalary?: unknown };
+  const amountOk = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 100_000_000;
+  const allowances: Array<{ allowanceDefinitionId: number; amount: number }> = [];
+  for (const raw of Array.isArray(body.allowances) ? body.allowances : []) {
+    const r = raw as { allowanceDefinitionId?: unknown; amount?: unknown };
+    if (!Number.isInteger(r.allowanceDefinitionId) || !amountOk(r.amount)) {
+      return res.status(400).json({ error: "手当の金額が正しくありません（0以上の数値で入力してください）。" });
+    }
+    allowances.push({ allowanceDefinitionId: r.allowanceDefinitionId as number, amount: r.amount });
+  }
+  const deductions: Array<{ deductionDefinitionId: number; amount: number }> = [];
+  for (const raw of Array.isArray(body.deductions) ? body.deductions : []) {
+    const r = raw as { deductionDefinitionId?: unknown; amount?: unknown };
+    if (!Number.isInteger(r.deductionDefinitionId) || !amountOk(r.amount)) {
+      return res.status(400).json({ error: "控除の金額が正しくありません（0以上の数値で入力してください）。" });
+    }
+    deductions.push({ deductionDefinitionId: r.deductionDefinitionId as number, amount: r.amount });
+  }
+  if (body.baseSalary !== undefined && !amountOk(body.baseSalary)) {
+    return res.status(400).json({ error: "基本給が正しくありません（0以上の数値で入力してください）。" });
+  }
+
+  try {
+    const items = await saveMonthItems(employeeId, ym.year, ym.month, {
+      allowances,
+      deductions,
+      baseSalary: body.baseSalary as number | undefined,
+    });
+    return res.json({ ...items, locked: false, year: ym.year, month: ym.month });
+  } catch (e) {
+    if (e instanceof MonthLockedError) {
+      return res.status(409).json({ error: "この月の給与明細は確定済みのため、手当・控除は変更できません。直すときは先に確定を解除してください。" });
+    }
+    throw e;
+  }
 });
 
 export default router;

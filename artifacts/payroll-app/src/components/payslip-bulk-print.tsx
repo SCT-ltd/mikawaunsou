@@ -1,11 +1,6 @@
 import { useState, useEffect, useRef, useCallback, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import {
-  useGetEmployeeAllowances,
-  useGetEmployeeDeductions,
-  getGetEmployeeAllowancesQueryKey,
-  getGetEmployeeDeductionsQueryKey,
-} from "@workspace/api-client-react";
+import { useMonthItems, toLegacyRows } from "@/lib/month-items";
 import { ClassicContent } from "./payslip-print-classic";
 import type { ClassicPayslipProps } from "./payslip-print-classic";
 
@@ -124,12 +119,12 @@ function BulkItem({
   variant?: "full" | "stack";
 }) {
   const empId = (payroll.employeeId as number) ?? 0;
-  const { data: allowances, isSuccess: aOk } = useGetEmployeeAllowances(empId, {
-    query: { enabled: empId > 0, queryKey: getGetEmployeeAllowancesQueryKey(empId) },
-  });
-  const { data: deductions, isSuccess: dOk } = useGetEmployeeDeductions(empId, {
-    query: { enabled: empId > 0, queryKey: getGetEmployeeDeductionsQueryKey(empId) },
-  });
+  // 内訳は「その明細の月」の手当・控除から作る。
+  // 以前は印刷した時点の手当を使っていたため、過去の月を刷り直すと内訳だけが今の金額になり、
+  // 合計と合わなかった。印刷の直前に必ず取り直す（staleTime 0）。
+  const { data: monthItems, isSuccess: aOk } = useMonthItems(empId, payroll.year, payroll.month, { staleTime: 0, refetchOnMount: "always" });
+  const dOk = aOk;
+  const { allowances, deductions } = toLegacyRows(monthItems, empId);
   const notifiedRef = useRef(false);
 
   useEffect(() => {
