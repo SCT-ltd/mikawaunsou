@@ -1,12 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Reorder, useDragControls } from "framer-motion";
 import {
-  useGetEmployeeAllowances,
-  getGetEmployeeAllowancesQueryKey,
   useListAllowanceDefinitions,
   getListAllowanceDefinitionsQueryKey,
-  useGetEmployeeDeductions,
-  getGetEmployeeDeductionsQueryKey,
   useListDeductionDefinitions,
   getListDeductionDefinitionsQueryKey,
   useGetCompany,
@@ -14,9 +10,6 @@ import {
   useListPayrolls,
   getListPayrollsQueryKey,
   // 自動保存はアンマウント時（社員切替）にも書き込むため、フックではなく素の関数を使う
-  updateEmployeeAllowances as apiUpdateAllowances,
-  updateEmployeeDeductions as apiUpdateDeductions,
-  updateEmployee as apiUpdateEmployee,
   calculatePayroll as apiCalculatePayroll,
 } from "@workspace/api-client-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -34,6 +27,7 @@ import {
 } from "./estimate";
 import { round50sen } from "@/lib/tax-tables-reiwa8";
 import { formatRatePercent, useMonthInsurance } from "@/lib/insurance-rates";
+import { useMonthItems, saveMonthItems, monthItemsQueryKey, toLegacyRows, MonthItemsError } from "@/lib/month-items";
 
 /**
  * 手当・控除タブ。
@@ -232,25 +226,28 @@ export function AllowancePanel({
     paidLeaveDays: number;
     overtimeHours: number;
     lateNightHours: number;
+    /** 時給制の実働時間（月合計）。時給 × これ が基本給になる。 */
+    actualWorkHours?: number;
   };
 }) {
   const queryClient = useQueryClient();
   const employeeId = employee.id;
+  // 手当・控除は「この月」の内容を読み書きする（ほかの月の内容を書き換えない）
+  const targetYear = year ?? new Date().getFullYear();
+  const targetMonth = month ?? new Date().getMonth() + 1;
+  const { data: monthItems } = useMonthItems(employeeId, targetYear, targetMonth, { staleTime: 0, refetchOnMount: true });
+  const legacyRows = useMemo(() => toLegacyRows(monthItems, employeeId), [monthItems, employeeId]);
+  const employeeAllowances = legacyRows.allowances;
+  const employeeDeductions = legacyRows.deductions;
 
   const { data: allowanceDefinitions = [], isLoading: isAllowDefsLoading } = useListAllowanceDefinitions(
     { activeOnly: true },
     { query: { queryKey: getListAllowanceDefinitionsQueryKey({ activeOnly: true }), staleTime: 0, refetchOnMount: true } }
   );
-  const { data: employeeAllowances } = useGetEmployeeAllowances(employeeId, {
-    query: { enabled: !!employeeId, queryKey: getGetEmployeeAllowancesQueryKey(employeeId), staleTime: 0, refetchOnMount: true },
-  });
   const { data: deductionDefinitions = [], isLoading: isDedDefsLoading } = useListDeductionDefinitions(
     { activeOnly: true },
     { query: { queryKey: getListDeductionDefinitionsQueryKey({ activeOnly: true }), staleTime: 0, refetchOnMount: true } }
   );
-  const { data: employeeDeductions } = useGetEmployeeDeductions(employeeId, {
-    query: { enabled: !!employeeId, queryKey: getGetEmployeeDeductionsQueryKey(employeeId), staleTime: 0, refetchOnMount: true },
-  });
   const { data: companyData } = useGetCompany();
   const company = companyData as CompanySettings | undefined;
   const monthInsurance = useMonthInsurance(
@@ -265,7 +262,7 @@ export function AllowancePanel({
     query: { enabled: year != null && month != null, queryKey: getListPayrollsQueryKey(payrollParams) },
   });
   const payrollStatusKnown = year == null || month == null || payrollsLoaded;
-  const isConfirmed = !!monthPayrolls?.some(
+  const isConfirmed = !!monthItems?.locked || !!monthPayrolls?.some(
     (p) => p.employeeId === employeeId && p.status === "confirmed"
   );
 
@@ -291,6 +288,7 @@ export function AllowancePanel({
   const [rowsReady, setRowsReady] = useState(false);
 
   const isDaily = employee.salaryType === "daily";
+  const isHourly = employee.salaryType === "hourly";
   // 実効単価（個人単価があればそれ、無ければ会社共通）
   const rateWeekday = (employee.dailyRateWeekday ?? 0) > 0
     ? (employee.dailyRateWeekday ?? 0)
@@ -478,11 +476,19 @@ export function AllowancePanel({
       setBaseSalaryInput(computedDailyBaseSalary);
       return;
     }
-    // 月給・時給は手入力なので、初回だけDBの値を入れる（自動保存後の再取得で上書きしない）
+    // 時給制は「時給 × 実働時間」を見せるだけ（マスターの基本給欄は時給そのもの。
+    // そのまま出すと時給が1か月分の基本給に見え、打ち替えるとマスターの時給が書き換わっていた）。
+    if (isHourly) {
+      setBaseSalaryInput(Math.round((employee.baseSalary ?? 0) * (monthlyData?.actualWorkHours ?? 0)));
+      return;
+    }
+    // 月給は手入力なので、初回だけDBの値を入れる（自動保存後の再取得で上書きしない）。
+    // 日給で確定済み・実績未入力の月は、その月に保存してある基本給を見せる。
     if (baseInitRef.current) return;
-    setBaseSalaryInput(employee.baseSalary ?? 0);
+    if (monthItems === undefined) return;
+    setBaseSalaryInput(isDaily ? (monthItems.baseSalary ?? employee.baseSalary ?? 0) : (employee.baseSalary ?? 0));
     baseInitRef.current = true;
-  }, [employee.baseSalary, isDaily, computedDailyBaseSalary, payrollStatusKnown, isConfirmed, allowAutoFill]);
+  }, [employee.baseSalary, isDaily, isHourly, computedDailyBaseSalary, payrollStatusKnown, isConfirmed, allowAutoFill, monthItems, monthlyData?.actualWorkHours]);
 
   const handleAllowanceChange = useCallback(
     (uid: string, field: "defId" | "amount", value: number | null) => {
@@ -597,8 +603,9 @@ export function AllowancePanel({
     deductions: deductionRows
       .filter((r) => r.defId !== null)
       .map((r) => ({ deductionDefinitionId: r.defId!, amount: r.amount || 0 })),
-    baseSalary: baseSalaryInput,
-  }), [rows, deductionRows, baseSalaryInput]);
+    // 時給制の基本給は計算結果の表示なので、保存の対象にしない（0で固定して差分に出さない）
+    baseSalary: isHourly ? 0 : baseSalaryInput,
+  }), [rows, deductionRows, baseSalaryInput, isHourly]);
   const snapshot = useMemo(() => JSON.stringify(payload), [payload]);
 
   const [baselineReady, setBaselineReady] = useState(false);
@@ -624,10 +631,10 @@ export function AllowancePanel({
         .map((a) => ({ allowanceDefinitionId: a.allowanceDefinitionId, amount: a.amount })),
       deductions: employeeDeductions
         .map((d) => ({ deductionDefinitionId: d.deductionDefinitionId, amount: d.amount || 0 })),
-      baseSalary: employee.baseSalary ?? 0,
+      baseSalary: isHourly ? 0 : isDaily ? (monthItems?.baseSalary ?? employee.baseSalary ?? 0) : (employee.baseSalary ?? 0),
     });
     setBaselineReady(true);
-  }, [employeeAllowances, employeeDeductions, employee.baseSalary]);
+  }, [employeeAllowances, employeeDeductions, employee.baseSalary, isHourly, isDaily, monthItems]);
 
   const canAutoSave = rowsReady && baselineReady && payrollStatusKnown && !isConfirmed && allowWrite;
 
@@ -655,11 +662,12 @@ export function AllowancePanel({
     setSaveState("saving");
     let ok = false;
     try {
-      await Promise.all([
-        apiUpdateAllowances(employeeId, { allowances: p.allowances }),
-        apiUpdateDeductions(employeeId, { deductions: p.deductions }),
-        apiUpdateEmployee(employeeId, { baseSalary: p.baseSalary }),
-      ]);
+      // 手当・控除・基本給を、この月の内容として1回で保存する（途中で失敗して半端に残らない）
+      await saveMonthItems(employeeId, targetYear, targetMonth, {
+        allowances: p.allowances,
+        deductions: p.deductions,
+        ...(isHourly ? {} : { baseSalary: p.baseSalary }),
+      });
       lastSavedRef.current = snap;
       ok = true;
 
@@ -677,11 +685,15 @@ export function AllowancePanel({
         }
         queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) });
       }
-      queryClient.invalidateQueries({ queryKey: getGetEmployeeAllowancesQueryKey(employeeId) });
-      queryClient.invalidateQueries({ queryKey: getGetEmployeeDeductionsQueryKey(employeeId) });
+      queryClient.invalidateQueries({ queryKey: monthItemsQueryKey(employeeId, targetYear, targetMonth) });
       queryClient.invalidateQueries({ queryKey: getListEmployeesQueryKey({ active: true }) });
       setSavedAt(new Date());
-    } catch {
+    } catch (e) {
+      // 409 ＝ ほかの人がこの月を確定した。取り直して「確定済み」の表示に切り替える。
+      if (e instanceof MonthItemsError && e.status === 409) {
+        queryClient.invalidateQueries({ queryKey: monthItemsQueryKey(employeeId, targetYear, targetMonth) });
+        if (year != null && month != null) queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) });
+      }
       setSaveState("error");
     } finally {
       inFlightRef.current = false;
@@ -693,7 +705,7 @@ export function AllowancePanel({
     } else {
       setSaveState("saved");
     }
-  }, [employeeId, year, month, queryClient]);
+  }, [employeeId, year, month, targetYear, targetMonth, isHourly, queryClient]);
   const runSaveRef = useRef(runSave);
   runSaveRef.current = runSave;
 
@@ -805,11 +817,16 @@ export function AllowancePanel({
             {isDaily && (
               <div className="text-[10px] text-muted-foreground">日給制（勤怠より自動計算）</div>
             )}
+            {isHourly && (
+              <div className="text-[10px] text-muted-foreground">
+                時給 {(employee.baseSalary ?? 0).toLocaleString("ja-JP")}円 × 実働 {monthlyData?.actualWorkHours ?? 0}時間
+              </div>
+            )}
           </div>
           <span className="shrink-0 w-10 text-center px-1 py-0.5 rounded border text-[10px] bg-red-50 text-red-700 border-red-200 dark:bg-red-500/15 dark:text-red-300 dark:border-red-500/30">
             課税
           </span>
-          {isDaily ? (
+          {isDaily || isHourly ? (
             <div className="w-28 text-right text-sm font-semibold text-blue-700 dark:text-blue-300 amount shrink-0">
               {baseSalaryInput.toLocaleString("ja-JP")}
             </div>

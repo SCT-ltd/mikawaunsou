@@ -672,7 +672,7 @@ export default function MonthlyInput() {
                       </TabsContent>
                       <TabsContent value="allowance" className="mt-0 data-[state=inactive]:hidden" forceMount>
                         <AllowancePanel
-                          key={selectedEmployee.id}
+                          key={`${selectedEmployee.id}-${year}-${month}`}
                           employee={selectedEmployee}
                           year={year}
                           month={month}
@@ -684,6 +684,7 @@ export default function MonthlyInput() {
                             paidLeaveDays: Number(edits[selectedEmployee.id]?.paidLeaveDays) || 0,
                             overtimeHours: Number(edits[selectedEmployee.id]?.overtimeHours) || 0,
                             lateNightHours: Number(edits[selectedEmployee.id]?.lateNightHours) || 0,
+                            actualWorkHours: Number(edits[selectedEmployee.id]?.actualWorkHours) || 0,
                           }}
                         />
                       </TabsContent>

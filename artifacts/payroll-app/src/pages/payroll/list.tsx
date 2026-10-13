@@ -12,14 +12,11 @@ import {
   useUnconfirmPayroll,
   useListMonthlyRecords,
   useGetCompany,
-  useGetEmployeeAllowances,
-  getGetEmployeeAllowancesQueryKey,
-  useGetEmployeeDeductions,
-  getGetEmployeeDeductionsQueryKey,
   Payroll,
 } from "@workspace/api-client-react";
 import { PayslipPrintClassic } from "@/components/payslip-print-classic";
 import { PayslipBulkPrint } from "@/components/payslip-bulk-print";
+import { useMonthItems, toLegacyRows } from "@/lib/month-items";
 import { RichMonthPicker } from "@/components/rich-month-picker";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -113,12 +110,13 @@ export default function PayrollList() {
   const unconfirmPayroll = useUnconfirmPayroll();
 
   const selectedEmployeeId = selectedPayroll?.employeeId ?? 0;
-  const { data: printEmployeeAllowances, isFetching: allowancesFetching } = useGetEmployeeAllowances(selectedEmployeeId, {
-    query: { enabled: !!selectedPayroll?.employeeId, queryKey: getGetEmployeeAllowancesQueryKey(selectedEmployeeId) },
-  });
-  const { data: printEmployeeDeductions, isFetching: deductionsFetching } = useGetEmployeeDeductions(selectedEmployeeId, {
-    query: { enabled: !!selectedPayroll?.employeeId, queryKey: getGetEmployeeDeductionsQueryKey(selectedEmployeeId) },
-  });
+  // 印刷の内訳は「その明細の月」の手当・控除（右パネルの保存で同じキャッシュが更新される）
+  const { data: printMonthItems, isFetching: allowancesFetching } = useMonthItems(
+    selectedEmployeeId, selectedPayroll?.year, selectedPayroll?.month,
+    { enabled: !!selectedPayroll?.employeeId },
+  );
+  const deductionsFetching = allowancesFetching;
+  const { allowances: printEmployeeAllowances, deductions: printEmployeeDeductions } = toLegacyRows(printMonthItems, selectedEmployeeId);
 
   // 初回ロード時（デスクトップのみ）先頭給与を自動選択（一度きり。閉じるボタンを機能させる）
   const didInitSelectRef = useRef(false);
@@ -138,7 +136,7 @@ export default function PayrollList() {
     try {
       await confirmPayroll.mutateAsync({ id: selectedPayrollId });
       queryClient.invalidateQueries({ queryKey: getGetPayrollQueryKey(selectedPayrollId) });
-      queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) });
+      queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) }); queryClient.invalidateQueries({ queryKey: ["month-items"] });
       toast({ title: "給与確定", description: "給与明細を確定済みに変更しました。" });
     } catch {
       toast({ title: "エラー", description: "確定に失敗しました。", variant: "destructive" });
@@ -150,7 +148,7 @@ export default function PayrollList() {
     try {
       await unconfirmPayroll.mutateAsync({ id: selectedPayrollId });
       queryClient.invalidateQueries({ queryKey: getGetPayrollQueryKey(selectedPayrollId) });
-      queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) });
+      queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) }); queryClient.invalidateQueries({ queryKey: ["month-items"] });
       toast({ title: "確定を解除しました", description: "未確定（draft）に戻しました。再計算・訂正ができます。" });
     } catch {
       toast({ title: "エラー", description: "確定解除に失敗しました。", variant: "destructive" });
@@ -224,7 +222,7 @@ export default function PayrollList() {
         }
       }
 
-      queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) });
+      queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) }); queryClient.invalidateQueries({ queryKey: ["month-items"] });
 
       if (errorList.length > 0) {
         setCalcErrors(errorList);
@@ -258,7 +256,7 @@ export default function PayrollList() {
     try {
       await calculatePayroll.mutateAsync({ data: { employeeId: selectedPayroll.employeeId, year, month } });
       queryClient.invalidateQueries({ queryKey: getGetPayrollQueryKey(selectedPayroll.id) });
-      queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) });
+      queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) }); queryClient.invalidateQueries({ queryKey: ["month-items"] });
       toast({ title: "計算完了", description: `${selectedPayroll.employeeName}の給与計算が完了しました。` });
     } catch {
       toast({ title: "エラー", description: "計算に失敗しました。月次実績を確認してください。", variant: "destructive" });
@@ -271,7 +269,7 @@ export default function PayrollList() {
     try {
       await calculatePayroll.mutateAsync({ data: { employeeId: selectedPayroll.employeeId, year, month, calculationMode: "manual" } });
       queryClient.invalidateQueries({ queryKey: getGetPayrollQueryKey(selectedPayroll.id) });
-      queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) });
+      queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) }); queryClient.invalidateQueries({ queryKey: ["month-items"] });
       toast({ title: "手入力固定で計算完了", description: "マスター基本給と手当設定で給与を再計算しました。" });
     } catch {
       toast({ title: "エラー", description: "計算に失敗しました。", variant: "destructive" });

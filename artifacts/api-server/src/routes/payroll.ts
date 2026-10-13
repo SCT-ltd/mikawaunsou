@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db, payrollsTable, employeesTable, monthlyRecordsTable, companyTable, allowanceDefinitionsTable, employeeAllowancesTable, employeeDeductionsTable, deductionDefinitionsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { calculatePayroll, calculateBluewingPayroll, roundJapanese, lateNightRateFor } from "../lib/payroll-calculator";
+import { ensureMonthItems, getMonthItems } from "../lib/month-items";
 import { calculateInsuranceAndTax, EMP_INS_RATE_R8 } from "../lib/tax-tables-reiwa8";
 import { getEffectiveInsuranceRates, getEffectiveStandardRemuneration, type EffectiveInsuranceRates } from "../lib/insurance-settings";
 
@@ -135,31 +136,27 @@ router.post("/payroll/calculate", async (req, res) => {
   const empInsRate = insuranceRates.employmentInsuranceRate;
   const stdRemuneration = (await getEffectiveStandardRemuneration(emp, year, month)).standardRemuneration;
 
-  // カスタム手当を取得
-  const customAllowanceDefs = await db.select().from(allowanceDefinitionsTable)
-    .where(eq(allowanceDefinitionsTable.isActive, true));
-  const empAllowanceRows = await db.select().from(employeeAllowancesTable)
-    .where(eq(employeeAllowancesTable.employeeId, employeeId));
-  const customAllowances = customAllowanceDefs.map(def => {
-    const row = empAllowanceRows.find(r => r.allowanceDefinitionId === def.id);
-    return {
-      allowanceDefinitionId: def.id,
-      allowanceName: def.name,
-      isTaxable: def.isTaxable,
-      excludeFromEmploymentInsurance: def.excludeFromEmploymentInsurance ?? false,
-      amount: row?.amount ?? 0,
-    };
-  }).filter(a => a.amount > 0);
+  // 手当・控除は「その月」の内容を使う（lib/month-items.ts）。
+  // 以前は月を持たない社員ごとの手当を読んでいたため、ほかの月の作業で書き換わった金額が
+  // そのまま計算に入っていた。その月の控えがまだ無ければ、ここで今の内容から作る。
+  const monthItems = await ensureMonthItems(emp, year, month);
+  const customAllowances = monthItems.allowances
+    .map(a => ({
+      allowanceDefinitionId: a.allowanceDefinitionId,
+      allowanceName: a.allowanceName,
+      isTaxable: a.isTaxable,
+      excludeFromEmploymentInsurance: a.excludeFromEmploymentInsurance,
+      amount: a.amount,
+    }))
+    .filter(a => a.amount > 0);
 
   // 雇用保険の計算基礎から除外する手当合計（携帯代など「雇用保険の対象外」ON の手当）
   const empInsExcludedTotal = customAllowances
     .filter(a => a.excludeFromEmploymentInsurance)
     .reduce((s, a) => s + a.amount, 0);
 
-  // 積立金・カスタム控除を取得
-  const empDeductionRows = await db.select().from(employeeDeductionsTable)
-    .where(eq(employeeDeductionsTable.employeeId, employeeId));
-  const customDeductionsTotal = empDeductionRows.reduce((sum, r) => sum + (r.amount ?? 0), 0);
+  // 積立金・カスタム控除（その月の内容）
+  const customDeductionsTotal = monthItems.deductions.reduce((sum, r) => sum + (r.amount ?? 0), 0);
 
   // ────────────────────────────────────────────────────────────────
   // 手入力固定モード（calculationMode = "manual"）
@@ -169,8 +166,12 @@ router.post("/payroll/calculate", async (req, res) => {
     // 時給制はマスターの「基本給」欄が時給なので、実働時間を掛けて月の基本給にする。
     // 掛けないと時給そのもの（例 1,500円）が1か月分の基本給として明細に出てしまう。
     // 月給・日給はこれまでどおりマスターの金額をそのまま使う。
+    // 日給制の基本給は月ごとに違う（勤怠から計算、または手で直した額）ので、その月の控えを使う。
+    // マスターの基本給は「最後に保存した月」の額で、ほかの月には当てはまらない。
     const manualBaseSalary = emp.salaryType === "hourly"
       ? roundJapanese((emp.baseSalary ?? 0) * (record.actualWorkHours ?? 0))
+      : emp.salaryType === "daily"
+      ? (monthItems.baseSalary ?? emp.baseSalary ?? 0)
       : (emp.baseSalary ?? 0);
     const manualCustomAllowancesTotal = customAllowances.reduce((s, a) => s + a.amount, 0);
     const manualNonTaxableTotal = customAllowances.filter(a => !a.isTaxable).reduce((s, a) => s + a.amount, 0);
@@ -616,6 +617,21 @@ router.put("/payroll/:id", async (req, res) => {
 
 router.post("/payroll/:id/confirm", async (req, res) => {
   const id = parseInt(req.params.id, 10);
+  // 確定する前に、その月の手当・控除の控えを作っておく（確定後は内訳が変わらないようにする）。
+  // 月ごとの控えを持つ前に計算した明細は控えが無い。いまの手当・控除の合計が明細の合計と
+  // 同じときだけ、その内容を控えにする（違う場合は当時の内訳が分からないので作らない）。
+  const [target] = await db.select().from(payrollsTable).where(eq(payrollsTable.id, id));
+  if (target) {
+    const items = await getMonthItems(target.employeeId, target.year, target.month);
+    if (!items.exists) {
+      const aSum = items.allowances.filter(a => a.amount > 0).reduce((t, a) => t + a.amount, 0);
+      const dSum = items.deductions.reduce((t, d) => t + d.amount, 0);
+      const [targetEmp] = await db.select().from(employeesTable).where(eq(employeesTable.id, target.employeeId));
+      if (targetEmp && aSum === (target.customAllowancesTotal ?? 0) && dSum === (target.customDeductionsTotal ?? 0)) {
+        await ensureMonthItems({ id: targetEmp.id, salaryType: targetEmp.salaryType, baseSalary: target.baseSalary }, target.year, target.month);
+      }
+    }
+  }
   const [updated] = await db.update(payrollsTable)
     .set({ status: "confirmed", updatedAt: new Date() })
     .where(eq(payrollsTable.id, id))
