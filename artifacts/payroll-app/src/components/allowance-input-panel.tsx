@@ -72,6 +72,8 @@ interface Props {
   onDirtyChange?: (isDirty: boolean) => void;
   year?: number;
   month?: number;
+  /** この明細を作った計算方法（"manual" / "auto" / "bluewing_auto"）。二重計上の警告を出すかの判断に使う。 */
+  calculationMode?: string | null;
 }
 
 type AllowanceRow = { uid: string; defId: number | null; amount: number };
@@ -446,7 +448,7 @@ function DisplayRow({
   );
 }
 
-export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year, month }: Props) {
+export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year, month, calculationMode }: Props) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const employeeId = employee.id;
@@ -769,8 +771,13 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
   const isBwEmployee = !!(employee as unknown as { useBluewingLogic?: boolean }).useBluewingLogic;
   const fmt = (v: number) => v >= 0 ? v.toLocaleString("ja-JP") : "—";
 
-  // 自動計算項目と同名のカスタム手当（＝二重計上の恐れ）を検知
-  const duplicateAllowanceNames = Array.from(new Set(
+  // 自動計算項目と同名のカスタム手当（＝二重計上の恐れ）を検知。
+  // 二重になるのは、明細を「自動計算」で作ったときだけ（残業などをシステムが計算し、同じ名前の手当も足すため）。
+  // 「保存して計算」（手入力固定）で作った明細では、システムは残業などを計算せず、この手当の行が
+  // そのまま支給額になる。以前は計算方法を見ずに警告していたため、全員に「この行を削除して」と出て、
+  // 従うと残業代・深夜手当・休日出勤手当が消えていた。
+  const autoCalculated = calculationMode === "auto" || calculationMode === "bluewing_auto";
+  const duplicateAllowanceNames = !autoCalculated ? [] : Array.from(new Set(
     rows
       .map(r => (allowanceDefinitions as { id: number; name: string }[] | undefined)?.find(d => d.id === r.defId)?.name)
       .filter((n): n is string => !!n && RESERVED_PAY_ITEM_NAMES.has(n))
@@ -786,7 +793,8 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
           <p className="mt-0.5">
             「{duplicateAllowanceNames.join("・")}」は給与計算で自動的に支給される項目です。
             同名のカスタム手当が付いているため、明細で二重表示・総支給の二重計上になります。
-            <span className="font-medium">この行を削除して「再計算」してください。</span>
+            この明細は自動計算で作られています。
+            <span className="font-medium">「手入力固定」を押して計算し直すと、手当の行の金額だけが支給額になり、二重になりません。</span>
           </p>
         </div>
       )}
