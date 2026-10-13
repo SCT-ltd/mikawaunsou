@@ -9,8 +9,11 @@ import {
   employeeMonthSetsTable,
   employeeMonthAllowancesTable,
   employeeMonthDeductionsTable,
+  monthlyRecordsTable,
+  companyTable,
 } from "@workspace/db";
 import { and, eq, gt, or } from "drizzle-orm";
+import { lateNightRateFor } from "./payroll-calculator";
 
 /**
  * 月ごとの手当・控除（schema/month_items.ts）を読み書きする。
@@ -180,6 +183,177 @@ async function writeMonthRows(
   }
 }
 
+// ────────────────────────────────────────────────────────────────
+// 勤怠から金額が決まる手当（有給・休日出勤・早出残業・深夜）と、日給制の基本給
+//
+// これらは「月次実績入力」の手当・控除の画面（ブラウザ）だけが計算していた。そのため、
+// その画面を開かずに計算した社員（まとめて保存・給与明細の一括計算）は、前の月の金額の
+// まま明細が作られていた。同じ式をここに置き、計算のたびに勤怠から入れ直す。
+// 式は components/monthly-input/allowance-panel.tsx と同じにしておくこと。
+// ────────────────────────────────────────────────────────────────
+
+export interface AttendanceForAuto {
+  workDays: number | null;
+  saturdayWorkDays: number | null;
+  sundayWorkHours: number | null;
+  paidLeaveDays: number | null;
+  overtimeHours: number | null;
+  lateNightHours: number | null;
+}
+export interface EmployeeForAuto {
+  id: number;
+  salaryType: string | null;
+  baseSalary: number | null;
+  dailyRateWeekday?: number | null;
+  dailyRateSaturday?: number | null;
+  overtimeHourlyRate?: number | null;
+  lateNightHourlyRate?: number | null;
+}
+export interface CompanyForAuto {
+  dailyWageWeekday?: number | null;
+  dailyWageSaturday?: number | null;
+  hourlyWageSunday?: number | null;
+}
+/** base＝日給制の基本給（日給制でなければ null）。a＝手当ID→金額。 */
+export interface AutoValues {
+  base: number | null;
+  a: Record<string, number>;
+}
+
+export function deriveAutoValues(
+  emp: EmployeeForAuto,
+  rec: AttendanceForAuto,
+  company: CompanyForAuto,
+  /** 有効な手当の定義（並び順どおり） */
+  activeDefs: Array<{ id: number; name: string }>,
+): AutoValues {
+  const rateWeekday = (emp.dailyRateWeekday ?? 0) > 0 ? emp.dailyRateWeekday! : (company.dailyWageWeekday ?? 9808);
+  const rateSaturday = (emp.dailyRateSaturday ?? 0) > 0 ? emp.dailyRateSaturday! : (company.dailyWageSaturday ?? 12260);
+  const rateSundayHour = company.hourlyWageSunday ?? 1655;
+  const overtimeRate = emp.overtimeHourlyRate ?? 0;
+  const personalNightRate = emp.lateNightHourlyRate ?? 0;
+  const workDays = rec.workDays ?? 0;
+  const saturdayDays = rec.saturdayWorkDays ?? 0;
+  const sundayHours = rec.sundayWorkHours ?? 0;
+  const paidLeaveDays = rec.paidLeaveDays ?? 0;
+  const overtimeHours = rec.overtimeHours ?? 0;
+  const lateNightHours = rec.lateNightHours ?? 0;
+
+  const a: Record<string, number> = {};
+  const put = (keyword: string, amount: number) => {
+    const def = activeDefs.find((d) => d.name.includes(keyword));
+    if (def) a[String(def.id)] = amount;
+  };
+  put("有給", Math.round(rateWeekday * paidLeaveDays));
+  put("休日出勤手当", Math.round(saturdayDays * rateSaturday + sundayHours * rateSundayHour));
+  // 残業時給が未設定の社員は入れ直さない（手で入れた金額を0円で消さないため）
+  if (overtimeRate > 0) {
+    const OT_THRESHOLD = 60;
+    put("早出残業手当", overtimeHours <= OT_THRESHOLD
+      ? Math.round(overtimeRate * overtimeHours)
+      : Math.round(overtimeRate * OT_THRESHOLD) + Math.round(overtimeRate * 1.20 * (overtimeHours - OT_THRESHOLD)));
+  }
+  if (overtimeRate > 0 || personalNightRate > 0) {
+    put("深夜手当", Math.round(lateNightRateFor(personalNightRate, overtimeRate) * lateNightHours));
+  }
+  return { base: emp.salaryType === "daily" ? Math.round(workDays * rateWeekday) : null, a };
+}
+
+/** 勤怠がまだ無いときに保存された月の印。勤怠が入ったら、作りたてと同じに全部入れ直す。 */
+const AUTO_PENDING = JSON.stringify({ pending: true });
+
+function parseAuto(raw: string | null | undefined): AutoValues | "pending" | null {
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw) as { pending?: boolean; base?: unknown; a?: unknown };
+    if (v.pending) return "pending";
+    if (v.a && typeof v.a === "object") return { base: typeof v.base === "number" ? v.base : null, a: v.a as Record<string, number> };
+  } catch { /* 壊れた値は「控えなし」として扱う */ }
+  return null;
+}
+
+async function activeAllowanceDefs(ex: Executor) {
+  const defs = await ex.select().from(allowanceDefinitionsTable)
+    .orderBy(allowanceDefinitionsTable.sortOrder, allowanceDefinitionsTable.id);
+  return defs.filter((d) => d.isActive);
+}
+
+/**
+ * 給与計算（手入力固定）の直前に呼ぶ。その月の手当・控除を返す。
+ *
+ *   - その月の控えが無い：直近の月の内容を元に作る。勤怠で決まる手当と日給の基本給は、
+ *     この月の勤怠から計算した金額にする（前の月の金額を持ち越さない）。
+ *   - 控えがある：勤怠が変わっていたら、手で直していない行だけを入れ直す。
+ *     「手で直していない」＝今の金額が、前回勤怠から出した金額（auto_values）と同じ。
+ *     手で直した金額は変えない。
+ *   - 控えはあるが auto_values が無い（この仕組みの前に作られた月）：金額には触らず、
+ *     今の勤怠から出した金額を控えるだけにする。
+ */
+export async function syncMonthItemsWithAttendance(
+  emp: EmployeeForAuto,
+  rec: AttendanceForAuto,
+  company: CompanyForAuto,
+  year: number,
+  month: number,
+): Promise<MonthItems> {
+  return db.transaction(async (tx) => {
+    const defs = await activeAllowanceDefs(tx);
+    const auto = deriveAutoValues(emp, rec, company, defs);
+    const autoJson = JSON.stringify(auto);
+    const [set] = await tx.select().from(employeeMonthSetsTable)
+      .where(sameMonth(employeeMonthSetsTable, emp.id, year, month));
+    const current = await getMonthItems(emp.id, year, month, tx);
+    const prev = set ? parseAuto(set.autoValues) : "pending";
+
+    if (set && prev === null) {
+      await tx.update(employeeMonthSetsTable).set({ autoValues: autoJson }).where(eq(employeeMonthSetsTable.id, set.id));
+      return current;
+    }
+
+    const applyAll = prev === "pending";
+    const allowances = current.allowances.map((x) => ({ ...x }));
+    let changed = !set;
+    for (const [key, amount] of Object.entries(auto.a)) {
+      const defId = Number(key);
+      const idx = allowances.findIndex((x) => x.allowanceDefinitionId === defId);
+      const cur = idx >= 0 ? allowances[idx].amount : 0;
+      if (!applyAll) {
+        const before = (prev as AutoValues).a[key];
+        if (before === undefined || cur !== before) continue; // 手で直した行・前回の控えが無い行は変えない
+      }
+      if (cur === amount) continue;
+      changed = true;
+      if (idx >= 0) {
+        if (amount > 0) allowances[idx].amount = amount;
+        else allowances.splice(idx, 1);
+      } else if (amount > 0) {
+        const def = defs.find((d) => d.id === defId)!;
+        allowances.push({
+          allowanceDefinitionId: def.id,
+          allowanceName: def.name,
+          isTaxable: def.isTaxable,
+          excludeFromEmploymentInsurance: def.excludeFromEmploymentInsurance ?? false,
+          amount,
+          sortOrder: allowances.length,
+        });
+      }
+    }
+
+    let base: number | null | undefined = undefined; // undefined＝変えない
+    if (!set) {
+      base = auto.base;
+    } else if (auto.base !== null) {
+      const untouched = applyAll || (prev as AutoValues).base === current.baseSalary;
+      if (untouched && current.baseSalary !== auto.base) { base = auto.base; changed = true; }
+    }
+
+    if (changed) await writeMonthRows(tx, emp.id, year, month, base, allowances, current.deductions);
+    await tx.update(employeeMonthSetsTable).set({ autoValues: autoJson })
+      .where(sameMonth(employeeMonthSetsTable, emp.id, year, month));
+    return getMonthItems(emp.id, year, month, tx);
+  });
+}
+
 export class MonthLockedError extends Error {
   constructor() { super("month locked"); }
 }
@@ -205,7 +379,7 @@ export async function saveMonthItems(
   return db.transaction(async (tx) => {
     if (await isMonthLocked(employeeId, year, month, tx)) throw new MonthLockedError();
 
-    const [emp] = await tx.select({ salaryType: employeesTable.salaryType }).from(employeesTable).where(eq(employeesTable.id, employeeId));
+    const [emp] = await tx.select().from(employeesTable).where(eq(employeesTable.id, employeeId));
     const [aDefs, dDefs] = await Promise.all([
       tx.select().from(allowanceDefinitionsTable),
       tx.select().from(deductionDefinitionsTable),
@@ -235,6 +409,18 @@ export async function saveMonthItems(
     const isDaily = emp?.salaryType === "daily";
     const monthBase = isDaily && input.baseSalary !== undefined ? input.baseSalary : undefined;
     await writeMonthRows(tx, employeeId, year, month, monthBase, allowances, deductions);
+
+    // いまの勤怠から出した金額を控える（次の計算で「手で直した行かどうか」を見分けるため）。
+    // 勤怠がまだ無い月は、勤怠が入ったときに全部入れ直す印を付ける。
+    const [rec] = await tx.select().from(monthlyRecordsTable)
+      .where(and(eq(monthlyRecordsTable.employeeId, employeeId), eq(monthlyRecordsTable.year, year), eq(monthlyRecordsTable.month, month)));
+    let autoValues = AUTO_PENDING;
+    if (rec && emp) {
+      const [company] = await tx.select().from(companyTable).limit(1);
+      autoValues = JSON.stringify(deriveAutoValues(emp, rec, company ?? {}, await activeAllowanceDefs(tx)));
+    }
+    await tx.update(employeeMonthSetsTable).set({ autoValues })
+      .where(sameMonth(employeeMonthSetsTable, employeeId, year, month));
 
     if (!(await hasLaterSet(tx, employeeId, year, month))) {
       await tx.delete(employeeAllowancesTable).where(eq(employeeAllowancesTable.employeeId, employeeId));

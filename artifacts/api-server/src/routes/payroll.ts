@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db, payrollsTable, employeesTable, monthlyRecordsTable, companyTable, allowanceDefinitionsTable, employeeAllowancesTable, employeeDeductionsTable, deductionDefinitionsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { calculatePayroll, calculateBluewingPayroll, roundJapanese, lateNightRateFor } from "../lib/payroll-calculator";
-import { ensureMonthItems, getMonthItems } from "../lib/month-items";
+import { ensureMonthItems, getMonthItems, syncMonthItemsWithAttendance } from "../lib/month-items";
 import { calculateInsuranceAndTax, EMP_INS_RATE_R8 } from "../lib/tax-tables-reiwa8";
 import { getEffectiveInsuranceRates, getEffectiveStandardRemuneration, type EffectiveInsuranceRates } from "../lib/insurance-settings";
 
@@ -139,7 +139,13 @@ router.post("/payroll/calculate", async (req, res) => {
   // 手当・控除は「その月」の内容を使う（lib/month-items.ts）。
   // 以前は月を持たない社員ごとの手当を読んでいたため、ほかの月の作業で書き換わった金額が
   // そのまま計算に入っていた。その月の控えがまだ無ければ、ここで今の内容から作る。
-  const monthItems = await ensureMonthItems(emp, year, month);
+  // 手入力固定では、勤怠で決まる手当（有給・休日出勤・早出残業・深夜）と日給の基本給を、
+  // ここでこの月の勤怠から入れ直す（手で直した金額は変えない）。以前は画面だけが計算していたため、
+  // 画面を開かずに計算した社員は前の月の金額のままになっていた。
+  // 自動計算の2つは残業などを自分で計算するので、従来どおり手当の行はそのまま使う。
+  const monthItems = calculationMode === "manual"
+    ? await syncMonthItemsWithAttendance(emp, record, company as { dailyWageWeekday?: number; dailyWageSaturday?: number; hourlyWageSunday?: number }, year, month)
+    : await ensureMonthItems(emp, year, month);
   const customAllowances = monthItems.allowances
     .map(a => ({
       allowanceDefinitionId: a.allowanceDefinitionId,
