@@ -113,8 +113,12 @@ router.post("/payroll/calculate", async (req, res) => {
   // 事務所が manual で組み立てた明細が BW/標準の自動計算で上書きされ、
   // 手当ベースの支給額が消えてしまう（実際に 2026-08 の明細が manual → bluewing_auto に
   // 化けていた）。既存が無い新規のときだけ "auto" にフォールバックする。
+  //
+  // 明細がまだ無い社員は "manual"（月次実績入力の「保存して計算」と同じ方法）で作る。
+  // 以前は "auto" だったため、給与明細の「一括計算」で初めて作られた明細だけが自動計算になり、
+  // 残業代が「時間外手当」と手当マスターの「早出残業手当」の両方に入って二重になっていた。
   const calculationMode: string =
-    req.body.calculationMode ?? existingPayrollForGuard?.calculationMode ?? "auto";
+    req.body.calculationMode ?? existingPayrollForGuard?.calculationMode ?? "manual";
 
   const companyRows = await db.select().from(companyTable).limit(1);
   const company = companyRows[0] ?? {

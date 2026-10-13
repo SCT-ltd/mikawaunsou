@@ -4,6 +4,7 @@ import { paramStr } from "../lib/params";
 import { db, messagesTable, pushSubscriptionsTable, employeesTable } from "@workspace/db";
 import { eq, and, desc, asc, isNull, sql } from "drizzle-orm";
 import { requireAdmin, requireOwnerOrAdmin } from "../lib/auth-middleware";
+import { driverAccess, PIN_REQUIRED_BODY, PIN_NOT_SET_BODY } from "../lib/driver-token";
 
 const router = Router();
 
@@ -178,7 +179,7 @@ router.get("/messages/conversations", requireAdmin, async (_req, res) => {
 });
 
 // ── ドライバーの未読件数（事務所→ドライバー） ─────────
-router.get("/messages/:employeeId/unread-count", requireOwnerOrAdmin(req => parseInt(paramStr(req.params["employeeId"]), 10)), async (req, res) => {
+router.get("/messages/:employeeId/unread-count", requireOwnerOrAdmin(req => parseInt(paramStr(req.params["employeeId"]), 10), { requirePin: true }), async (req, res) => {
   const employeeId = parseInt(paramStr(req.params["employeeId"]), 10);
   if (isNaN(employeeId)) return res.status(400).json({ error: "Invalid employeeId" });
   const rows = await db
@@ -193,7 +194,7 @@ router.get("/messages/:employeeId/unread-count", requireOwnerOrAdmin(req => pars
 });
 
 // ── メッセージ取得 ─────────────────────────────────────
-router.get("/messages/:employeeId", requireOwnerOrAdmin(req => parseInt(paramStr(req.params["employeeId"]), 10)), async (req, res) => {
+router.get("/messages/:employeeId", requireOwnerOrAdmin(req => parseInt(paramStr(req.params["employeeId"]), 10), { requirePin: true }), async (req, res) => {
   const employeeId = parseInt(paramStr(req.params["employeeId"]), 10);
   if (isNaN(employeeId)) return res.status(400).json({ error: "Invalid employeeId" });
   const messages = await db
@@ -207,10 +208,14 @@ router.get("/messages/:employeeId", requireOwnerOrAdmin(req => parseInt(paramStr
 // ── 既読処理 ───────────────────────────────────────────
 // reader='office' → employeeからのメッセージを既読
 // reader='employee' → officeからのメッセージを既読
-router.post("/messages/:employeeId/read", requireOwnerOrAdmin(req => parseInt(paramStr(req.params["employeeId"]), 10)), async (req, res) => {
+router.post("/messages/:employeeId/read", requireOwnerOrAdmin(req => parseInt(paramStr(req.params["employeeId"]), 10), { requirePin: true }), async (req, res) => {
   const employeeId = parseInt(paramStr(req.params["employeeId"]), 10);
   if (isNaN(employeeId)) return res.status(400).json({ error: "Invalid employeeId" });
-  const { reader } = req.body as { reader: "office" | "employee" };
+  // 事務所側として既読にできるのは管理者だけ。QR ページ（未ログイン）やドライバーは
+  // 本文で reader:"office" と名乗っても、事務所からのメッセージ（自分あて）しか既読にできない。
+  const reader: "office" | "employee" = req.session?.role === "admin"
+    ? (req.body as { reader: "office" | "employee" })?.reader
+    : "employee";
 
   if (!reader || (reader !== "office" && reader !== "employee")) {
     return res.status(400).json({ error: "reader は 'office' または 'employee' を指定してください" });
@@ -251,8 +256,11 @@ router.post("/messages", async (req, res) => {
     content?: string;
   };
 
-  if (!content?.trim()) {
+  if (typeof content !== "string" || !content.trim()) {
     return res.status(400).json({ error: "メッセージ内容が必要です" });
+  }
+  if (content.length > 2000) {
+    return res.status(400).json({ error: "メッセージは2,000文字までです" });
   }
 
   let employeeId: number;
@@ -265,6 +273,11 @@ router.post("/messages", async (req, res) => {
     }
     employeeId = Number(bodyEmployeeId);
     sender = "employee";
+    // 社員番号を差し替えるだけで他人の名前で事務所へ送れたため、暗証番号を確かめた端末に限る。
+    const access = await driverAccess(req, employeeId);
+    if (access === "not-found") return res.status(404).json({ error: "社員が見つかりません。" });
+    if (access === "no-pin") return res.status(403).json(PIN_NOT_SET_BODY);
+    if (access === "denied") return res.status(401).json(PIN_REQUIRED_BODY);
   } else if (req.session.role === "admin") {
     if (!bodyEmployeeId || Number.isNaN(Number(bodyEmployeeId))) {
       return res.status(400).json({ error: "送信先の employeeId が必要です" });
@@ -339,8 +352,11 @@ router.post("/messages", async (req, res) => {
 // ── 一斉送信 ───────────────────────────────────────────
 router.post("/messages/broadcast", requireAdmin, async (req, res) => {
   const { content, employeeIds } = req.body as { content: string; employeeIds?: number[] };
-  if (!content?.trim()) {
+  if (typeof content !== "string" || !content.trim()) {
     return res.status(400).json({ error: "メッセージ内容が必要です" });
+  }
+  if (content.length > 2000) {
+    return res.status(400).json({ error: "メッセージは2,000文字までです" });
   }
 
   const allActive = await db

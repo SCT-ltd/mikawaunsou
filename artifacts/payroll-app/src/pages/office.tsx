@@ -165,7 +165,9 @@ export default function OfficePage() {
   async function checkPin() {
     try {
       const data = await apiFetch(`/employees/${employeeId}/pin/status`);
-      setHasPinSet(data?.hasPinSet ?? false);
+      // サーバーが返す項目名は pinSet。以前は hasPinSet を見ていたため常に「未設定」と判断し、
+      // 暗証番号を設定していても入力なしで打刻画面に入れていた。
+      setHasPinSet(data?.pinSet ?? false);
     } catch { setHasPinSet(false); }
   }
 
@@ -205,13 +207,16 @@ export default function OfficePage() {
     setPinLoading(true);
     setPinError(null);
     try {
-      await apiFetch(`/employees/${employeeId}/pin/verify`, {
+      // 間違った暗証番号でもサーバーは 200（ok:false）を返す。以前は結果を見ずに通していた。
+      const result = await apiFetch(`/employees/${employeeId}/pin/verify`, {
         method: "POST",
         body: JSON.stringify({ pin: pinInput }),
       });
+      if (!result?.ok) { setPinError("PINが正しくありません"); return; }
       setPinVerified(true);
+      fetchData();
     } catch {
-      setPinError("PINが正しくありません");
+      setPinError("PINを確認できませんでした。続けて間違えると、しばらく入力できなくなります");
     } finally {
       setPinLoading(false);
     }
