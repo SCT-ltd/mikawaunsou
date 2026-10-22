@@ -85,14 +85,27 @@ function applyStackZoom(portalEl: HTMLElement): number {
   // 3人目の見出しだけが1ページ目の下に載り、本体が次のページへ送られていた。
   let used = 0;
   let count = 0;
+  const starts: boolean[] = [];
   items.forEach((el, i) => {
     const h = heights[i];
     const startNew = count > 0 && (count >= 2 || used + h > MM_PRINTABLE_HEIGHT * ZOOM_SAFETY);
     if (startNew) { used = 0; count = 0; }
     el.style.breakBefore = startNew ? "page" : "";
     el.style.pageBreakBefore = startNew ? "always" : "";
+    starts.push(i === 0 || startNew);
     used += h;
     count += 1;
+  });
+
+  // 同じ紙に2人並ぶときは、2人目を用紙のちょうど半分から始める（上下の明細の間を空け、
+  // 半分に切りやすくする）。以前は1人目のすぐ下に5mmで詰めて並べていたため、間が狭く
+  // 紙の下半分が丸ごと余っていた。margin は zoom で拡大されるので zoom で割って指定する。
+  items.forEach((el, i) => {
+    const pairedBelow = i + 1 < items.length && !starts[i + 1];
+    if (!pairedBelow) { el.style.marginBottom = `${MM_ITEM_GAP}mm`; return; }
+    const contentMm = heights[i] - MM_ITEM_GAP * zoom;
+    const gapMm = Math.max(MM_ITEM_GAP * zoom, MM_HALF_PAGE - contentMm);
+    el.style.marginBottom = `${(gapMm / zoom).toFixed(2)}mm`;
   });
   return zoom;
 }
