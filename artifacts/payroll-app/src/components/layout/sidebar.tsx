@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
+import { LATEST_KEY } from "@/lib/changelog";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useUnread } from "@/context/unread-context";
@@ -17,6 +19,7 @@ import { X, Truck,
   History,
   BookOpen,
   Scale,
+  Sparkles,
 } from "lucide-react";
 
 const navigation = [
@@ -45,6 +48,17 @@ export function Sidebar({ onClose }: SidebarProps) {
   const [location, navigate] = useLocation();
   const { totalUnreadCount } = useUnread();
   const { requestNavigate } = useNavigationGuard();
+
+  // アップデートを見ていなければ点を出す（見たかどうかはこの端末に覚える）
+  const readSeen = () => { try { return localStorage.getItem("mk_updates_seen") === LATEST_KEY; } catch { return true; } };
+  const [seen, setSeen] = useState(readSeen);
+  useEffect(() => {
+    const on = () => setSeen(readSeen());
+    window.addEventListener("mk-updates-seen", on);
+    window.addEventListener("storage", on);
+    return () => { window.removeEventListener("mk-updates-seen", on); window.removeEventListener("storage", on); };
+  }, []);
+  const updatesActive = location.startsWith("/updates");
 
   const handleNav = (href: string) => {
     requestNavigate(href, navigate);
@@ -123,6 +137,24 @@ export function Sidebar({ onClose }: SidebarProps) {
             })}
           </nav>
         </TooltipProvider>
+      </div>
+      <div className="border-t border-sidebar-border p-2">
+        <button
+          type="button"
+          onClick={() => handleNav("/updates")}
+          className={cn(
+            "w-full group flex items-center rounded-md px-2 py-2 text-sm font-medium transition-colors text-left",
+            updatesActive ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground",
+          )}
+          title="このシステムに加えた変更の一覧"
+        >
+          <div className="relative mr-3 shrink-0">
+            <Sparkles className="h-5 w-5 text-sidebar-foreground/70" aria-hidden="true" />
+            {!seen && <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-red-500" aria-label="新しいアップデートがあります" />}
+          </div>
+          アップデート
+          {!seen && <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-500 text-white">NEW</span>}
+        </button>
       </div>
     </div>
   );

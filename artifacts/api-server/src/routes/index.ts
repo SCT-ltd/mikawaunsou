@@ -23,7 +23,8 @@ import auditRouter from "./audit";
 import officeToolsRouter from "./office_tools";
 import payrollLawRouter from "./payroll-law";
 import { requireAdmin } from "../lib/auth-middleware";
-import { audit } from "../lib/audit";
+import { audit, takeSnap, changesOf, redact, employeeName } from "../lib/audit";
+import { findSpec } from "../lib/audit-catalog";
 
 const router: IRouter = Router();
 
@@ -107,23 +108,81 @@ router.use(async (req: Request, res: Response, next: NextFunction) => {
 //
 // 注意: router.use(mw, subRouter) と書くと subRouter がパスなしマウントの場合
 //        全リクエストで mw が走り、別のルーターの処理まで巻き込んでしまうため使わない。
-// ── 操作の記録：管理画面からの書き込みを、成功したものだけすべて残す ───────────────
-// （確定・確定解除・ユーザー・暗証番号などは各ルートで中身つきで残しているので、ここでは除く）
-const AUDIT_SKIP = /^\/(auth\/|payroll\/\d+\/(confirm|unconfirm)$|users(\/|$)|employees\/\d+\/(pin|qr-key)|alerts\/read|push\/subscribe|messages(\/|$)|attendance\/location\/live$|office-tools\/(bank-accounts|transfer-settings))/;
-// ↑ 振込口座・振込元は口座番号が入るので、ここでは残さない（ルート側で下3桁だけ残している）
-const SECRET_KEYS = /pin|password|secret|token|key|auth|p256dh|endpoint/i;
-function redact(v: unknown, depth = 0): unknown {
-  if (depth > 4 || v === null || typeof v !== "object") return v;
-  if (Array.isArray(v)) return v.slice(0, 50).map((x) => redact(x, depth + 1));
-  return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, SECRET_KEYS.test(k) ? "（伏せ字）" : redact(x, depth + 1)]));
-}
-router.use((req: Request, res: Response, next: NextFunction) => {
-  if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS" || !req.session?.userId || AUDIT_SKIP.test(req.path)) return next();
-  res.on("finish", () => {
-    if (res.statusCode >= 400) return;
-    const body = JSON.stringify(redact(req.body ?? {}));
-    void audit(req, `${req.method} ${req.path.replace(/\/\d+/g, "/:id")}`, req.path, { query: req.query, body: body.length > 4000 ? body.slice(0, 4000) + "…" : JSON.parse(body) });
-  });
+// ── 操作の記録：書き込みはすべて、だれが・何を・どう変えたか（前→後）まで残す ───────────────
+// どの窓口が何の操作かは lib/audit-catalog.ts の辞書。辞書に無い書き込みも「POST /パス」で必ず残る。
+// QR の打刻ページ（ログインなし）からの操作は社員の名前で残す。断られた操作（403・409 など）も残す。
+// 個人の情報やお金が入ったファイルの書き出し（CSV）も、だれがいつ持ち出したかを残す。
+const lastAt = new Map<string, number>();
+router.use(async (req: Request, res: Response, next: NextFunction) => {
+  if (req.method === "HEAD" || req.method === "OPTIONS") return next();
+  const hit = findSpec(req.method, req.path);
+  if (req.method === "GET" && !hit) return next();
+  if (hit && (hit.spec.skip || hit.spec.manual)) return next();
+  const loggedIn = !!req.session?.userId;
+  if (!loggedIn && !hit?.spec.driver) return next();
+  const spec = hit?.spec, m = hit?.m;
+  let before: unknown = null;
+  if (spec?.snap && m) { try { before = await takeSnap(spec.snap, m, req); } catch { before = null; } }
+  let resBody: unknown;
+  const json = res.json.bind(res);
+  res.json = (b: unknown) => { resBody = b; return json(b); };
+  res.on("finish", () => { void (async () => {
+    const st = res.statusCode;
+    if (st === 401 || st === 404 || st === 304 || (req.method === "GET" && st >= 400)) return;
+    // 200 でも { ok: false } は失敗（暗証番号の間違いなど）。断られた操作として 400 で残す
+    const rbOk = !(resBody && typeof resBody === "object" && (resBody as Record<string, unknown>)["ok"] === false);
+    const ok = st < 400 && rbOk;
+    const stRec = ok ? st : st < 400 ? 400 : st;
+    const action = `${req.method} ${req.path.replace(/\/\d+/g, "/:id")}`;
+    let after: unknown = null;
+    if (ok && spec?.snap && m && req.method !== "DELETE" && req.method !== "GET") { try { after = await takeSnap(spec.snap, m, req); } catch { after = null; } }
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const rb = (resBody && typeof resBody === "object" ? resBody : {}) as Record<string, unknown>;
+    const row = (v: unknown) => (v && typeof v === "object" && !Array.isArray(v) && !(v as Record<string, unknown>)["__group"] ? (v as Record<string, unknown>) : null);
+    let employeeId = (spec?.emp && m ? spec.emp(m, req) : null)
+      ?? (Number(row(after)?.["employee_id"] ?? row(before)?.["employee_id"]) || null)
+      ?? (Number(b["employeeId"]) || null) ?? (Number(rb["employeeId"]) || null);
+    if (!employeeId && /^\/employees\/(\d+)/.test(req.path)) employeeId = Number(/^\/employees\/(\d+)/.exec(req.path)![1]);
+    if (!employeeId && req.method === "POST" && req.path === "/employees" && ok) employeeId = Number(rb["id"]) || null;
+    // 続けて何度も来る操作（点検の保存・本人確認）は一定の間は1件にまとめる。断られたものはまとめない
+    const actorKey = req.session?.userId ? `u${req.session.userId}` : `e${employeeId}`;
+    if (ok && spec?.throttleSec) {
+      const key = `${actorKey}|${action}|${req.path}`;
+      const t = lastAt.get(key) ?? 0;
+      if (Date.now() - t < spec.throttleSec * 1000) return;
+      lastAt.set(key, Date.now());
+      if (lastAt.size > 5000) lastAt.clear();
+    }
+    const detail: Record<string, unknown> = {};
+    if (!spec?.quiet) {
+      if (spec?.snap) {
+        if (req.method === "DELETE") { if (before) detail["before"] = before; }
+        else if (req.method === "GET") { /* 書き出し：中身は残さない */ }
+        else if (ok) {
+          const ch = changesOf(before, after);
+          if (Object.keys(ch).length) detail["changes"] = ch;
+          else if (!before && after) detail["created"] = after;
+          else detail["changes"] = {};
+        }
+      }
+      if (!spec?.snap || !ok) {
+        if (req.method !== "GET") {
+          const body = JSON.stringify(redact(b));
+          detail["body"] = body.length > 4000 ? body.slice(0, 4000) + "…" : JSON.parse(body);
+        }
+      }
+      if (req.method === "POST" && ok && !spec?.snap && rb["id"] !== undefined) detail["id"] = rb["id"];
+      if (req.query && Object.keys(req.query).length) detail["query"] = redact({ ...req.query });
+    }
+    if (!ok && typeof rb["error"] === "string") detail["error"] = rb["error"];
+    const name = await employeeName(employeeId);
+    const label = spec ? (typeof spec.label === "function" ? spec.label(req, m!) : spec.label) : action;
+    const who = loggedIn ? undefined : name ? `社員：${name}（QR打刻ページ）` : "QR打刻ページ";
+    const summary = label + (name ? `（${name}）` : "") + (ok ? "" : stRec === 403 ? "【権限がなく断られました】" : "【できませんでした】");
+    await audit(req, action, req.path, Object.keys(detail).length ? detail : undefined, {
+      summary, category: spec?.category ?? "その他", employeeId, status: stRec, actor: who,
+    });
+  })(); });
   return next();
 });
 

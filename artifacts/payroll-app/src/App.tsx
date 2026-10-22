@@ -26,6 +26,7 @@ import RealtimeMapPage from "@/pages/realtime-map";
 import MessagesPage from "@/pages/messages";
 import UserManagement from "@/pages/users";
 import AuditPage from "@/pages/audit";
+import UpdatesPage from "@/pages/updates";
 import PayrollLawPage from "@/pages/payroll-law";
 
 const queryClient = new QueryClient({
@@ -72,6 +73,7 @@ function ProtectedRoutes() {
       <Route path="/messages" component={MessagesPage} />
       <Route path="/users" component={UserManagement} />
       <Route path="/audit" component={AuditPage} />
+      <Route path="/updates" component={UpdatesPage} />
       <Route path="/payroll-law" component={PayrollLawPage} />
       <Route component={NotFound} />
     </Switch>

@@ -20,7 +20,19 @@ export const auditLogsTable = pgTable("audit_logs", {
   detail: text("detail"),
   /** 接続元 */
   ip: text("ip"),
+  /** 日本語の一文（例「打刻を修正（社員名）」） */
+  summary: text("summary"),
+  /** 分類（勤怠・給与・社員・マスター・設定・ユーザー・メッセージ・ログイン・書き出し） */
+  category: text("category"),
+  /** 応答の番号（200 台＝できた。400 台＝断られた） */
+  status: integer("status"),
+  /** 対象の社員 */
+  employeeId: integer("employee_id"),
+  /** 端末 */
+  userAgent: text("user_agent"),
 }, (t) => [
   index("audit_logs_at").on(t.at),
   index("audit_logs_target").on(t.target),
+  index("audit_logs_category").on(t.category),
+  index("audit_logs_employee").on(t.employeeId),
 ]);

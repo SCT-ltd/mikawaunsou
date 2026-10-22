@@ -67,6 +67,10 @@ router.post("/auth/login", async (req, res) => {
     attempts.set(key, a);
 
     const remaining = MAX_FAILURES - a.failures;
+    // 失敗も残す（パスワードは残さない。打たれたユーザー名だけ）
+    const uname = String(username).slice(0, 64);
+    await audit(req, "auth.login.fail", user ? `user:${user.id}` : null, { username: uname, reason: user ? "パスワードが違う" : "そのユーザー名は無い", locked: a.lockedUntil > now },
+      { actor: "ログイン画面", status: a.lockedUntil > now ? 429 : 401, summary: `ログインに失敗（ユーザー名「${uname}」${a.lockedUntil > now ? "・回数の上限でロック" : ""}）` });
     if (a.lockedUntil > now) {
       res.setHeader("Retry-After", String(Math.ceil(LOCK_MS / 1000)));
       return res.status(429).json({
@@ -104,7 +108,8 @@ router.post("/auth/login", async (req, res) => {
   });
 });
 
-router.post("/auth/logout", (req, res) => {
+router.post("/auth/logout", async (req, res) => {
+  if (req.session?.userId) await audit(req, "auth.logout", `user:${req.session.userId}`);
   req.session.destroy((err) => {
     if (err) {
       return res.status(500).json({ error: "ログアウトに失敗しました" });
