@@ -4,7 +4,7 @@ import { AppLayout } from "@/components/layout/app-layout";
 import { Button } from "@/components/ui/button";
 import {
   RefreshCw, Pencil, Trash2, Save,
-  ChevronLeft, ChevronRight, CalendarDays, Users,
+  ChevronLeft, ChevronRight, CalendarDays, Users, List, GanttChart,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -24,13 +24,13 @@ import {
   addDays,
   toTimeInput,
   RichDatePicker,
-  SummaryStats,
   isNextDayOf,
   toIsoAt,
 } from "@/components/attendance/shared";
 import { Link } from "wouter";
 import { EmployeeList, filterAttendance } from "@/components/attendance/employee-list";
 import { DetailPanel } from "@/components/attendance/detail-panel";
+import { StatusFilter, TimelineView, attentionOf, type FilterKey } from "@/components/attendance/board";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -51,6 +51,13 @@ export default function AttendancePage() {
 
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
+  /** 状態で絞り込む（全員／出勤中／…／要確認） */
+  const [statusFilter, setStatusFilter] = useState<FilterKey>("all");
+  /** 見え方：一覧（左に社員・右に詳細）／タイムライン（全員の1日を帯で並べる）。端末に覚えておく */
+  const [view, setViewState] = useState<"list" | "timeline">(() => {
+    try { return localStorage.getItem("mk_att_view") === "timeline" ? "timeline" : "list"; } catch { return "list"; }
+  });
+  const setView = (v: "list" | "timeline") => { setViewState(v); try { localStorage.setItem("mk_att_view", v); } catch { /* ignore */ } };
 
   // QR ダイアログ
   const [qrEmployee, setQrEmployee] = useState<EmployeeStatus["employee"] | null>(null);
@@ -123,7 +130,11 @@ export default function AttendancePage() {
   }, []);
 
   /* ── 選択社員（data から常に最新を導出）─────────── */
-  const filtered = useMemo(() => filterAttendance(data, search), [data, search]);
+  const live = isToday;
+  const searched = useMemo(() => filterAttendance(data, search), [data, search]);
+  // 17人ほどなので毎回数え直してよい（要確認は時刻で変わる＝打ち忘れ・休憩の長さ）
+  const filtered = searched.filter((d) =>
+    statusFilter === "all" ? true : statusFilter === "attention" ? attentionOf(d, now, live).length > 0 : d.status === statusFilter);
   const selected = useMemo(
     () => data.find((d) => d.employee.id === selectedId) ?? null,
     [data, selectedId]
@@ -135,7 +146,8 @@ export default function AttendancePage() {
   useEffect(() => {
     if (didInitSelectRef.current || data.length === 0) return;
     didInitSelectRef.current = true;
-    if (selectedId === null && window.matchMedia("(min-width: 768px)").matches) {
+    // タイムラインのときは、詳細を横に並べられる広い画面だけ（狭いと帯が隠れる）
+    if (selectedId === null && window.matchMedia(view === "timeline" ? "(min-width: 1280px)" : "(min-width: 768px)").matches) {
       setSelectedId(data[0].employee.id);
     }
   }, [data, selectedId]);
@@ -366,12 +378,14 @@ export default function AttendancePage() {
   }, [fetchData, selectedDate]);
 
   /* ── 集計 ──────────────────────────── */
-  const counts = useMemo(() => ({
-    working: data.filter((d) => d.status === "出勤中").length,
-    breaking: data.filter((d) => d.status === "休憩中").length,
-    absent: data.filter((d) => d.status === "未出勤").length,
-    left: data.filter((d) => d.status === "退勤済").length,
-  }), [data]);
+  const counts: Record<FilterKey, number> = {
+    all: searched.length,
+    "出勤中": searched.filter((d) => d.status === "出勤中").length,
+    "休憩中": searched.filter((d) => d.status === "休憩中").length,
+    "退勤済": searched.filter((d) => d.status === "退勤済").length,
+    "未出勤": searched.filter((d) => d.status === "未出勤").length,
+    attention: searched.filter((d) => attentionOf(d, now, live).length > 0).length,
+  };
 
   const qrAttendancePath = qrEmployee?.isOfficeStaff ? "office" : "driver";
   // QRは「公開ホスト」を指さなければならない。管理画面は Cloudflare Access の背後にあるため、
@@ -413,10 +427,10 @@ export default function AttendancePage() {
             </div>
             <div className="flex flex-wrap items-center gap-2 ml-auto">
               {/* 日付ナビゲーション */}
-              <div className="flex items-center rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden">
+              <div className="flex items-center rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden dark:border-slate-700 dark:bg-slate-900">
                 <button
                   onClick={() => setSelectedDate((d) => addDays(d, -1))}
-                  className="px-2.5 py-2 hover:bg-slate-50 text-slate-500 hover:text-slate-800 transition-colors border-r border-slate-100"
+                  className="px-2.5 py-2 hover:bg-slate-50 text-slate-500 hover:text-slate-800 transition-colors border-r border-slate-100 dark:border-slate-800 dark:hover:bg-slate-800 dark:text-slate-400 dark:hover:text-slate-100"
                   title="前の日"
                 >
                   <ChevronLeft className="h-4 w-4" />
@@ -438,7 +452,7 @@ export default function AttendancePage() {
                       }
                       setCalendarOpen((o) => !o);
                     }}
-                    className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors min-w-[180px] text-center flex items-center justify-center gap-1.5 jp-tight"
+                    className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors min-w-[180px] text-center flex items-center justify-center gap-1.5 jp-tight dark:text-slate-100 dark:hover:bg-slate-800"
                   >
                     <CalendarDays className="h-3.5 w-3.5 text-slate-400" />
                     {formatDateJP(selectedDate)}
@@ -461,7 +475,7 @@ export default function AttendancePage() {
                 <button
                   onClick={() => setSelectedDate((d) => addDays(d, 1))}
                   disabled={isToday}
-                  className="px-2.5 py-2 hover:bg-slate-50 text-slate-500 hover:text-slate-800 transition-colors border-l border-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="px-2.5 py-2 hover:bg-slate-50 text-slate-500 hover:text-slate-800 transition-colors border-l border-slate-100 disabled:opacity-30 disabled:cursor-not-allowed dark:border-slate-800 dark:hover:bg-slate-800 dark:text-slate-400 dark:hover:text-slate-100"
                   title="次の日"
                 >
                   <ChevronRight className="h-4 w-4" />
@@ -481,8 +495,18 @@ export default function AttendancePage() {
             </div>
           </div>
 
-          {/* 集計サマリー */}
-          <SummaryStats counts={counts} />
+          {/* 状態で絞り込む札＋見え方の切り替え */}
+          <div className="flex flex-col-reverse sm:flex-row sm:items-center gap-2">
+            <div className="flex-1 min-w-0"><StatusFilter value={statusFilter} onChange={setStatusFilter} counts={counts} /></div>
+            <div className="shrink-0 self-end sm:self-auto flex items-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-0.5" role="tablist" aria-label="見え方">
+              {([["list", "一覧", List], ["timeline", "タイムライン", GanttChart]] as const).map(([v, label, Icon]) => (
+                <button key={v} type="button" role="tab" aria-selected={view === v} onClick={() => setView(v)}
+                  className={`inline-flex items-center gap-1 h-7 px-2.5 rounded-md text-xs font-semibold transition-colors ${view === v ? "bg-indigo-600 text-white" : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100"}`}>
+                  <Icon className="h-3.5 w-3.5" />{label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* ── 2ペイン本体 ── */}
@@ -499,22 +523,40 @@ export default function AttendancePage() {
           <div className="flex-1 min-h-0 flex md:gap-4">
             {/* 左ペイン: 社員リスト */}
             <div
-              className={`${selectedId !== null ? "hidden md:flex" : "flex"} w-full md:w-80 lg:w-96 shrink-0 flex-col min-h-0 rounded-xl border bg-card overflow-hidden`}
+              className={view === "timeline"
+                ? `${selectedId !== null ? "hidden xl:flex" : "flex"} flex-1 min-w-0 flex-col min-h-0 rounded-xl border bg-card overflow-hidden`
+                : `${selectedId !== null ? "hidden md:flex" : "flex"} w-full md:w-80 lg:w-[23rem] shrink-0 flex-col min-h-0 rounded-xl border bg-card overflow-hidden`}
             >
-              <EmployeeList
-                data={data}
-                filtered={filtered}
-                selectedId={selectedId}
-                onSelect={setSelectedId}
-                now={now}
-                absences={absences}
-                search={search}
-                onSearchChange={setSearch}
-              />
+              {view === "timeline" ? (
+                <TimelineView
+                  rows={filtered}
+                  now={now}
+                  live={live}
+                  workDate={selectedDate}
+                  selectedId={selectedId}
+                  onSelect={setSelectedId}
+                  absences={absences}
+                />
+              ) : (
+                <EmployeeList
+                  data={data}
+                  filtered={filtered}
+                  selectedId={selectedId}
+                  onSelect={setSelectedId}
+                  now={now}
+                  absences={absences}
+                  search={search}
+                  onSearchChange={setSearch}
+                  live={live}
+                  workDate={selectedDate}
+                />
+              )}
             </div>
 
             {/* 右ペイン: 詳細 */}
-            <div className={`${selectedId === null ? "hidden md:flex" : "flex"} flex-1 min-w-0 flex-col min-h-0`}>
+            <div className={view === "timeline"
+              ? `${selectedId === null ? "hidden xl:flex" : "flex"} w-full xl:w-[27rem] shrink-0 flex-col min-h-0`
+              : `${selectedId === null ? "hidden md:flex" : "flex"} flex-1 min-w-0 flex-col min-h-0`}>
               {selected ? (
                 <div className="flex flex-col h-full min-h-0 rounded-xl border bg-card overflow-hidden">
                   <DetailPanel

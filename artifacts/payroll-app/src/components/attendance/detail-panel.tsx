@@ -5,8 +5,9 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  X, Plus, Trash2, Pencil, GripVertical, CalendarOff, QrCode, ArrowLeft,
+  X, Plus, Trash2, Pencil, GripVertical, CalendarOff, QrCode, ArrowLeft, AlertTriangle,
 } from "lucide-react";
+import { attentionOf, dayTotals, DayBar, HourScale, segmentsOf, windowFor } from "./board";
 import {
   EmployeeStatus,
   AttendanceRecord,
@@ -112,6 +113,10 @@ export function DetailPanel({
   const breakMs = breakTotalMs(selected.records, now);
   const elapMs = elapsedMs(selected.clockInTime, now);
   const showElapsed = selected.status !== "未出勤" && selected.status !== "退勤済";
+  const totals = dayTotals(selected.records, now, isToday);
+  const daySegs = segmentsOf(selected.records, now, isToday);
+  const dayWin = windowFor(selected.workDate ?? selected.records[0]?.workDate ?? new Date(now.getTime() + 9 * 3600000).toISOString().slice(0, 10), daySegs);
+  const attention = attentionOf(selected, now, isToday);
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -165,23 +170,37 @@ export function DetailPanel({
       {/* ── スクロール本体 ── */}
       <div className="flex-1 min-h-0 overflow-y-auto">
         {/* 情報カード */}
-        <div className="px-4 py-4 border-b border-slate-100">
-          <div className="grid grid-cols-3 gap-2.5">
-            <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-3">
-              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">出勤時刻</p>
-              <p className="text-lg font-bold amount text-slate-800">{fmt(selected.clockInTime)}</p>
+        <div className="px-4 py-4 border-b border-slate-100 dark:border-slate-800">
+          {/* 要確認（いま事務所が見るべきこと） */}
+          {attention.length > 0 && (
+            <div className="mb-3 rounded-lg border border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/30 px-3 py-2 flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
+              <p className="text-xs font-semibold text-red-700 dark:text-red-300 leading-relaxed">{attention.join("　／　")}</p>
             </div>
-            <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-3">
-              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">経過時間</p>
-              <p className={`text-lg font-bold amount ${elapMs >= 10 * 3600000 ? "text-red-600" : elapMs >= 8 * 3600000 ? "text-orange-500" : "text-slate-800"}`}>
-                {showElapsed ? elapsedStr(selected.clockInTime, now) : "—"}
-              </p>
-            </div>
-            <div className="rounded-xl bg-amber-50 border border-amber-100 px-3 py-3">
-              <p className="text-[10px] font-semibold text-amber-500 uppercase tracking-wider mb-1">休憩合計</p>
-              <p className="text-lg font-bold amount text-amber-700">{breakMs > 0 ? msToStr(breakMs) : "—"}</p>
-            </div>
+          )}
+          {/* 時刻と時間を1行に */}
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(6.5rem,1fr))] gap-px rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 overflow-hidden">
+            {[
+              ["出勤", fmt(totals.clockIn), ""],
+              ["退勤", totals.clockOut ? fmt(totals.clockOut) : showElapsed ? "勤務中" : "—", showElapsed ? "text-emerald-600 text-sm" : ""],
+              [showElapsed ? "経過" : "拘束", showElapsed ? elapsedStr(selected.clockInTime, now) : totals.restraintMin > 0 ? minToStr(totals.restraintMin) : "—",
+                showElapsed && elapMs >= 10 * 3600000 ? "text-red-600" : showElapsed && elapMs >= 8 * 3600000 ? "text-orange-500" : ""],
+              ["休憩", breakMs > 0 ? msToStr(breakMs) : "—", "text-amber-700 dark:text-amber-300"],
+              ["実働", totals.restraintMin > 0 ? minToStr(totals.workMin) : "—", "text-indigo-700 dark:text-indigo-300"],
+            ].map(([label, value, tone]) => (
+              <div key={label} className="px-2.5 py-2 min-w-0 bg-slate-50 dark:bg-slate-900">
+                <p className="text-[10px] font-semibold text-slate-400 tracking-wider">{label}</p>
+                <p className={`text-[15px] font-bold amount whitespace-nowrap text-slate-800 dark:text-slate-100 ${tone}`}>{value}</p>
+              </div>
+            ))}
           </div>
+          {/* 1日の帯 */}
+          {daySegs.length > 0 && (
+            <div className="mt-3">
+              <HourScale win={dayWin} />
+              <DayBar segs={daySegs} win={dayWin} now={now} live={isToday} height="h-4" />
+            </div>
+          )}
 
           {/* 最新の発着地 */}
           {(() => {

@@ -1,20 +1,22 @@
 import { useRef, useEffect } from "react";
 import { Input } from "@/components/ui/input";
-import { Search, Clock } from "lucide-react";
+import { Search, AlertTriangle } from "lucide-react";
 import {
   EmployeeStatus,
   AbsenceRecord,
+  Status,
   ABSENCE_LABELS,
   ABSENCE_COLORS,
   STATUS_STYLE,
   Avatar,
-  StatusBadge,
   fmt,
   elapsedStr,
   elapsedMs,
   elapsedColor,
+  minToStr,
   todayJST,
 } from "./shared";
+import { attentionOf, dayTotals, DayBar, segmentsOf, windowFor } from "./board";
 
 export function filterAttendance(data: EmployeeStatus[], search: string): EmployeeStatus[] {
   const q = search.trim().toLowerCase();
@@ -27,8 +29,12 @@ export function filterAttendance(data: EmployeeStatus[], search: string): Employ
   );
 }
 
-// 点検のバッジ。全項目に答えるまでは「未点検」（以前は1つもつけていなくても「点検OK」と出ていた）
-function ChecklistBadge({ d }: { d: EmployeeStatus }) {
+/** 並べる順（いま動いている人を上に） */
+export const STATUS_ORDER: Status[] = ["出勤中", "休憩中", "退勤済", "未出勤"];
+
+/** 点検のしるし（運転の人だけ）。全項目に答えるまでは「未点検」 */
+function inspectionTag(d: EmployeeStatus): { text: string; tone: string } | null {
+  if (d.employee.isOfficeStaff) return null;
   let insp: { checked: number; total: number; ng: string[]; complete: boolean } | null = d.inspection ?? null;
   if (!insp) {
     const clockInRec = d.records.find((r) => r.eventType === "clock_in" && r.checklistNgItems);
@@ -39,22 +45,10 @@ function ChecklistBadge({ d }: { d: EmployeeStatus }) {
       } catch { /* 古い形 */ }
     }
   }
-  const alcoholDetected = (d.alcohol ?? []).some((a) => a.detected);
-  const kaizen = d.compliance?.flags.some((f) => f.level === "danger");
-  return (
-    <>
-      {insp && insp.ng.length > 0 ? (
-        <span className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-full border bg-red-50 text-red-700 border-red-200">⚠️ 点検NG {insp.ng.length}</span>
-      ) : insp && insp.complete ? (
-        <span className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200">✅ 点検OK</span>
-      ) : !d.employee.isOfficeStaff && d.status !== "未出勤" ? (
-        <span className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-full border bg-amber-50 text-amber-700 border-amber-200">未点検{insp ? ` ${insp.checked}/${insp.total}` : ""}</span>
-      ) : null}
-      {alcoholDetected && <span className="inline-block text-[10px] font-bold px-1.5 py-0.5 rounded-full border bg-red-100 text-red-700 border-red-300">🍺 検知</span>}
-      {kaizen && <span className="inline-block text-[10px] font-bold px-1.5 py-0.5 rounded-full border bg-red-50 text-red-700 border-red-200">改善基準超え</span>}
-      {(d.pendingCorrections ?? 0) > 0 && <span className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-full border bg-sky-50 text-sky-700 border-sky-200">修正申請 {d.pendingCorrections}</span>}
-    </>
-  );
+  if (insp && insp.ng.length > 0) return { text: `点検NG ${insp.ng.length}`, tone: "bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-300 dark:border-red-500/30" };
+  if (insp && insp.complete) return { text: "点検OK", tone: "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/30" };
+  if (d.status !== "未出勤") return { text: `未点検${insp ? ` ${insp.checked}/${insp.total}` : ""}`, tone: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30" };
+  return null;
 }
 
 export function EmployeeList({
@@ -66,6 +60,8 @@ export function EmployeeList({
   absences,
   search,
   onSearchChange,
+  live = true,
+  workDate,
 }: {
   data: EmployeeStatus[];
   filtered: EmployeeStatus[];
@@ -75,6 +71,9 @@ export function EmployeeList({
   absences: AbsenceRecord[];
   search: string;
   onSearchChange: (s: string) => void;
+  /** 今日を見ているか（過去の日は「いま」まで伸ばさない） */
+  live?: boolean;
+  workDate?: string;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -83,6 +82,11 @@ export function EmployeeList({
     const el = listRef.current?.querySelector<HTMLElement>(`[data-emp-id="${selectedId}"]`);
     el?.scrollIntoView({ block: "nearest" });
   }, [selectedId]);
+
+  // 状態ごとにまとめる（出勤中→休憩中→退勤済→未出勤）。同じ状態の中は元の並び（社員コード順）
+  const groups = STATUS_ORDER.map((st) => ({ st, rows: filtered.filter((d) => d.status === st) })).filter((g) => g.rows.length > 0);
+  // 1日の帯は全員同じ時間の幅にそろえる（並べて比べられるように）
+  const win = windowFor(workDate ?? todayJST(), filtered.flatMap((d) => segmentsOf(d.records, now, live)));
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -105,92 +109,90 @@ export function EmployeeList({
         {filtered.length === 0 ? (
           <div className="py-10 text-center text-sm text-muted-foreground">該当する社員がいません</div>
         ) : (
-          filtered.map((d) => {
-            const ms = elapsedMs(d.clockInTime, now);
-            const isActive = d.status === "出勤中" || d.status === "休憩中";
-            const selected = d.employee.id === selectedId;
-            const empAbsences = absences.filter((a) => a.employeeId === d.employee.id);
+          groups.map((g) => (
+            <section key={g.st}>
+              <div className="sticky top-0 z-[1] flex items-center gap-1.5 px-3 py-1 text-[11px] font-bold text-muted-foreground bg-muted/70 backdrop-blur border-b border-border/50">
+                <span className={`w-1.5 h-1.5 rounded-full ${STATUS_STYLE[g.st].dot}`} />
+                {g.st}
+                <span className="amount font-semibold">{g.rows.length}</span>
+              </div>
+              {g.rows.map((d) => {
+                const ms = elapsedMs(d.clockInTime, now);
+                const isActive = d.status === "出勤中" || d.status === "休憩中";
+                const selected = d.employee.id === selectedId;
+                const empAbsences = absences.filter((a) => a.employeeId === d.employee.id);
+                const att = attentionOf(d, now, live);
+                const insp = inspectionTag(d);
+                const t = dayTotals(d.records, now, live);
+                const segs = segmentsOf(d.records, now, live);
+                const fromPrevDay = d.workDate && d.workDate < todayJST() && d.status !== "未出勤";
 
-            return (
-              <button
-                key={d.employee.id}
-                type="button"
-                data-emp-id={d.employee.id}
-                onClick={() => onSelect(d.employee.id)}
-                className={`w-full text-left px-3 py-2.5 border-b border-border/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-inset ${
-                  selected
-                    ? "bg-indigo-50 border-l-[3px] border-l-indigo-500"
-                    : `border-l-[3px] border-l-transparent hover:bg-muted/40 ${STATUS_STYLE[d.status].tint}`
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="relative shrink-0">
-                    <Avatar name={d.employee.name} />
-                    {d.status === "出勤中" && (
-                      <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white" />
-                    )}
-                    {d.status === "休憩中" && (
-                      <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-amber-400 border-2 border-white" />
-                    )}
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className={`text-sm font-semibold truncate jp-tight ${selected ? "text-indigo-900" : ""}`}>
-                        {d.employee.name}
-                      </span>
-                      <span className="text-[10px] text-muted-foreground/70 font-mono shrink-0">{d.employee.employeeCode}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                      <StatusBadge status={d.status} />
-                      {d.clockInTime && (
-                        <span className="text-[11px] text-slate-500 amount">{fmt(d.clockInTime)}</span>
-                      )}
-                      {isActive && (
-                        <span className={`text-[11px] font-semibold amount ${elapsedColor(ms)}`}>
-                          {elapsedStr(d.clockInTime, now)}
-                        </span>
-                      )}
-                    </div>
-                    {d.workDate && d.workDate < todayJST() && d.status !== "未出勤" && (
-                      <p className="text-[10px] text-indigo-600 mt-0.5">前の日（{Number(d.workDate.slice(5, 7))}/{Number(d.workDate.slice(8, 10))}）から続く勤務</p>
-                    )}
-                    {(empAbsences.length > 0 || d.records.length > 0 || d.inspection || (d.pendingCorrections ?? 0) > 0) && (
-                      <div className="flex items-center gap-1 mt-1 flex-wrap">
-                        {empAbsences.map((a) => (
-                          <span key={a.id} className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${ABSENCE_COLORS[a.absenceType]}`}>
-                            {ABSENCE_LABELS[a.absenceType]}
-                          </span>
-                        ))}
-                        <ChecklistBadge d={d} />
+                return (
+                  <button
+                    key={d.employee.id}
+                    type="button"
+                    data-emp-id={d.employee.id}
+                    onClick={() => onSelect(d.employee.id)}
+                    className={`w-full text-left px-3 py-2 border-b border-border/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-inset border-l-[3px] ${
+                      selected ? "bg-indigo-50 border-l-indigo-500 dark:bg-indigo-500/10" : "border-l-transparent hover:bg-muted/40"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="relative shrink-0">
+                        <Avatar name={d.employee.name} size="sm" />
+                        <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-slate-900 ${STATUS_STYLE[d.status].dot}`} />
                       </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className={`text-sm font-semibold truncate jp-tight ${selected ? "text-indigo-900 dark:text-indigo-200" : ""}`}>{d.employee.name}</span>
+                          {att.length > 0 && <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" aria-label={att.join("、")} />}
+                        </div>
+                        <div className="flex items-center gap-1 mt-0.5 min-w-0 overflow-hidden">
+                          <span className="text-[11px] text-muted-foreground truncate leading-tight shrink min-w-0">
+                            {d.employee.department || d.employee.employeeCode}
+                            {fromPrevDay && <span className="text-indigo-600 dark:text-indigo-300">・前日から</span>}
+                          </span>
+                          {empAbsences.map((a) => (
+                            <span key={a.id} className={`shrink-0 text-[10px] font-semibold px-1.5 rounded-full border leading-4 ${ABSENCE_COLORS[a.absenceType]}`}>{ABSENCE_LABELS[a.absenceType]}</span>
+                          ))}
+                          {insp && <span className={`shrink-0 text-[10px] font-semibold px-1.5 rounded-full border leading-4 ${insp.tone}`}>{insp.text}</span>}
+                          {att.filter((x) => !x.startsWith("点検")).map((x) => (
+                            <span key={x} className="shrink-0 text-[10px] font-bold px-1.5 rounded-full border leading-4 bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-300 dark:border-red-500/30">{x}</span>
+                          ))}
+                        </div>
+                      </div>
+                      {/* 右：時刻と時間 */}
+                      <div className="shrink-0 text-right leading-tight">
+                        {t.clockIn ? (
+                          <>
+                            <p className="text-[13px] font-semibold amount text-slate-700 dark:text-slate-200">
+                              {fmt(t.clockIn)}<span className="text-slate-300 mx-0.5">〜</span>{t.clockOut ? fmt(t.clockOut) : ""}
+                            </p>
+                            <p className={`text-[11px] amount ${isActive ? `font-semibold ${elapsedColor(ms)}` : "text-muted-foreground"}`}>
+                              {isActive ? elapsedStr(d.clockInTime, now) : `実働 ${minToStr(t.workMin)}`}
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-xs text-slate-300 dark:text-slate-600">—</p>
+                        )}
+                      </div>
+                    </div>
+                    {/* 1日の帯（打刻がある人だけ） */}
+                    {segs.length > 0 && (
+                      <div className="mt-1 pl-[2.375rem]"><DayBar segs={segs} win={win} now={now} live={live} height="h-1.5" ticks={false} /></div>
                     )}
-                  </div>
-
-                  {/* 打刻数 */}
-                  <div className="shrink-0 flex flex-col items-center gap-0.5">
-                    {d.records.length > 0 ? (
-                      <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold amount">
-                        {d.records.length}
-                      </span>
-                    ) : (
-                      <span className="text-slate-300 text-sm">—</span>
-                    )}
-                    <span className="text-[9px] text-muted-foreground/60 flex items-center gap-0.5">
-                      <Clock className="h-2.5 w-2.5" />打刻
-                    </span>
-                  </div>
-                </div>
-              </button>
-            );
-          })
+                  </button>
+                );
+              })}
+            </section>
+          ))
         )}
       </div>
 
       {/* フッター（合計） */}
-      <div className="px-3 py-2 border-t bg-muted/30 shrink-0 flex items-center justify-between text-xs">
-        <span className="text-muted-foreground">社員</span>
-        <span className="font-semibold amount">{data.length}名</span>
+      <div className="px-3 py-1.5 border-t bg-muted/30 shrink-0 flex items-center justify-between text-xs">
+        <span className="text-muted-foreground">{filtered.length === data.length ? "社員" : `${data.length}名中`}</span>
+        <span className="font-semibold amount">{filtered.length}名</span>
       </div>
     </div>
   );
