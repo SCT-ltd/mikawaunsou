@@ -175,7 +175,8 @@ export function GpsAddressLink({ lat, lng }: { lat: number; lng: number }) {
     }
     fetch(
       `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=ja`,
-      { headers: { "Accept-Language": "ja" } }
+      // 住所の取得も地図と同じく、サイト名（ドメイン）を送らないと断られる
+      { headers: { "Accept-Language": "ja" }, referrerPolicy: "strict-origin-when-cross-origin" }
     )
       .then(r => r.json())
       .then(data => {
