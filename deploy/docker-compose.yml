@@ -160,8 +160,9 @@ services:
           echo "[backup] FAILED at $$ts" >&2
           return 1
         }
-        # 起動したときに今日の分が無ければすぐ取る
-        if ! ls /backups/mikawa-$$(date +%Y%m%d)-*.dump > /dev/null 2>&1; then take || true; fi
+        # 起動したときに今日の分（中身のあるもの）が無ければすぐ取る。失敗して残った0バイトのファイルは数えない
+        find /backups -name "mikawa-*.dump" -size -1k -delete 2>/dev/null
+        if ! find /backups -name "mikawa-$(date +%Y%m%d)-*.dump" -size +1k | grep -q .; then take || true; fi
         while true; do
           now=$$(date +%s); next=$$(date -d "$$(date +%Y-%m-%d) 03:00" +%s 2>/dev/null || echo $$((now + 86400)))
           [ $$next -le $$now ] && next=$$((next + 86400))
