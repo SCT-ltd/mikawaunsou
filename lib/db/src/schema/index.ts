@@ -14,3 +14,4 @@ export * from "./month_items";
 export * from "./alerts";
 export * from "./audit";
 export * from "./transfer";
+export * from "./payroll_law";

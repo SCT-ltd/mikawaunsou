@@ -20,6 +20,7 @@ import insuranceRouter from "./insurance";
 import alertsRouter from "./alerts";
 import auditRouter from "./audit";
 import officeToolsRouter from "./office_tools";
+import payrollLawRouter from "./payroll-law";
 import { requireAdmin } from "../lib/auth-middleware";
 import { audit } from "../lib/audit";
 
@@ -126,6 +127,7 @@ router.use((req: Request, res: Response, next: NextFunction) => {
 
 router.use("/payroll", requireAdmin);
 router.use("/payrolls", requireAdmin);
+router.use("/payroll-law", requireAdmin);
 
 // /employees は基本 admin 専用だが、QR打刻ページ（/driver/:id 公開ルート）が叩く
 // 以下の3つだけはログイン不要・admin 不要で通す（元々公開だった仕様の維持）：
@@ -171,6 +173,7 @@ router.use(insuranceRouter);
 router.use(alertsRouter);      // 従業員のお知らせ（すべて admin・ファイル側）
 router.use(calendarRouter);    // カレンダー（見るのはログインした人、変えるのは管理者）
 router.use(officeToolsRouter); // 確定前チェック・振込口座・全銀の書き出し
+router.use(payrollLawRouter);  // 給与計算と法令の画面（"/payroll-law" プレフィックスで admin）
 router.use(auditRouter);       // 操作の記録（管理者だけ）   // 保険料率マスターの GET はログインのみ、POST/PUT/DELETE は admin（ファイル側）
 
 export { requireAdmin };

@@ -15,6 +15,7 @@ import {
   EMP_INS_RATE_R8,
   type EmployeeInsuranceRates,
 } from "./tax-tables-reiwa8";
+import { bluewingCalc, type WithholdingProfile } from "@workspace/tax-tables-reiwa8/core";
 
 /**
  * 端数処理：50銭以下切り捨て、50銭超え切り上げ
@@ -151,8 +152,17 @@ export interface PayrollCalculationInput {
   overtimeUnitRate?: number;
   // Custom allowances
   customAllowances?: CustomAllowanceItem[];
-  /** 全額非課税フラグ（true=社会保険・所得税・住民税すべて控除なし、手取り=総支給）*/
+  /** 全額非課税フラグ（true=社会保険・所得税・住民税すべて控除なし、手取り=総支給）。下の3つの印があればそちらを使う */
   taxExempt?: boolean;
+  socialInsuranceExempt?: boolean;
+  employmentInsuranceExempt?: boolean;
+  incomeTaxExempt?: boolean;
+  /** 健康保険を引くか（75歳以上は false）*/
+  healthApplied?: boolean;
+  /** 源泉税の甲欄・乙欄、本人の障害者など */
+  withholding?: WithholdingProfile;
+  /** 健康保険料と子育て支援金の端数処理 */
+  rounding?: "separate" | "combined";
   /** デバッグ用トレースログを出力するか（省略時 false）*/
   enableTrace?: boolean;
   /** トレースログ出力時の期待値（照合用）*/
@@ -160,6 +170,8 @@ export interface PayrollCalculationInput {
 }
 
 export interface PayrollCalculationResult {
+  /** 保険料の計算に使った標準報酬月額 */
+  insuranceBase: number;
   baseSalary: number;
   /** 土曜出勤分（日給制標準: 土曜出勤日数×土曜日当）。基本給からは別出し。*/
   saturdayPay: number;
@@ -359,7 +371,8 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
   // standard_remuneration > 0 → その値を直接使用
   // standard_remuneration = 0 → grossSalary を計算基礎とする
   // ────────────────────────────────────────────────────────────────
-  const insBase = (standardRemuneration ?? 0) > 0 ? standardRemuneration : grossSalary;
+  // 未設定（0）なら core が総支給を等級表に当てはめる
+  const insBase = standardRemuneration ?? 0;
 
   // 非課税手当（通勤手当＋非課税カスタム手当）
   // transportationAllowance は非課税扱い（月15万以内の通勤手当）
@@ -381,6 +394,12 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     pensionApplied,
     employmentInsuranceApplied,
     employmentInsuranceOverride: input.employmentInsuranceOverride,
+    healthApplied: input.healthApplied,
+    socialInsuranceExempt: input.socialInsuranceExempt ?? input.taxExempt === true,
+    employmentInsuranceExempt: input.employmentInsuranceExempt ?? input.taxExempt === true,
+    incomeTaxExempt: input.incomeTaxExempt ?? input.taxExempt === true,
+    withholding: input.withholding,
+    rounding: input.rounding,
     residentTax,
     customDeductionsTotal: 0,
     employmentInsuranceRate,
@@ -389,15 +408,13 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     traceExpectedIncomeTax: input.traceExpectedIncomeTax,
   });
 
-  // 全額非課税の場合は社会保険料・雇用保険・所得税を0にする（住民税は引き続き控除）
-  const isExempt = input.taxExempt === true;
-
-  const healthInsurance             = isExempt ? 0 : ins.healthInsurance;
-  const childcareSupportContribution = isExempt ? 0 : ins.childcareSupportContribution;
-  const pension                     = isExempt ? 0 : ins.pension;
+  // 止める印（社保・雇用保険・源泉税）は calculateInsuranceAndTax の中で効かせている（住民税は引き続き控除）
+  const healthInsurance             = ins.healthInsurance;
+  const childcareSupportContribution = ins.childcareSupportContribution;
+  const pension                     = ins.pension;
   const socialInsurance             = healthInsurance + childcareSupportContribution + pension;
-  const employmentInsurance         = isExempt ? 0 : ins.employmentInsurance;
-  const incomeTax                   = isExempt ? 0 : ins.incomeTax;
+  const employmentInsurance         = ins.employmentInsurance;
+  const incomeTax                   = ins.incomeTax;
   const effectiveResidentTax        = residentTax;
 
   // 控除合計（社保＋雇保＋源泉＋住民税）
@@ -409,6 +426,7 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
   const netSalary = roundJapanese(grossSalary - totalDeductions);
 
   return {
+    insuranceBase: ins.insuranceBase,
     baseSalary,
     saturdayPay,
     overtimePay,
@@ -467,48 +485,20 @@ export interface BluewingPayrollResult {
   grossSalary: number;
 }
 
-export function calculateBluewingPayroll(input: BluewingPayrollInput): BluewingPayrollResult {
-  const {
-    bluewingSalesAmount,
-    commissionRate,
-    fixedOvertimeHours,
-    overtimeHours,
-    overtimeUnitPrice,
-    baseSalary,
-    fixedAllowancesTotal,
-    holidayPay,
-    fixedOvertimeAmount,
-    lateNightPay,
-  } = input;
-
-  // 超過残業（固定時間を超えた分）
-  const actualOvertimeHours = Math.max(0, overtimeHours - fixedOvertimeHours);
-  const actualOvertimePay   = Math.round(actualOvertimeHours * overtimeUnitPrice);
-
-  // 公式A: 超過残業代の売上比率を歩合率から差し引いた実効歩合率 × 売上
-  const otRatio      = bluewingSalesAmount > 0
-    ? Math.round((actualOvertimePay / bluewingSalesAmount) * 1000) / 1000  // 小数第3位まで
-    : 0;
-  const adjustedRate = Math.max(0, commissionRate - otRatio);
-  const solutionA    = Math.floor(bluewingSalesAmount * adjustedRate);
-
-  // 公式B: 基本給 + 各手当 + 休日出勤 + 深夜手当（固定残業代・超過残業代は含まない）
-  const solutionB = Math.floor(baseSalary + fixedAllowancesTotal + holidayPay + lateNightPay);
-
-  // 解答C = A - B → プラスのときのみ業績手当
-  const solutionC            = solutionA - solutionB;
-  const performanceAllowance = Math.max(0, solutionC);
-
-  // 総支給 = 固定残業代 + 超過残業代 + 解答B + 業績手当
-  const grossSalary = Math.floor(fixedOvertimeAmount + actualOvertimePay + solutionB + performanceAllowance);
-
+export function calculateBluewingPayroll(
+  input: BluewingPayrollInput,
+  opts: { v2?: boolean; over60?: boolean } = {},
+): BluewingPayrollResult & { over60Premium: number } {
+  // 式は共有の payroll-core.ts（画面の概算と同じ）。opts は会社設定の④⑤（既定 OFF＝今までの式）。
+  const r = bluewingCalc(input, opts);
   return {
-    actualOvertimeHours,
-    actualOvertimePay,
-    solutionA,
-    solutionB,
-    solutionC,
-    performanceAllowance,
-    grossSalary,
+    actualOvertimeHours: r.actualOvertimeHours,
+    actualOvertimePay: r.actualOvertimePay,
+    over60Premium: r.over60Premium,
+    solutionA: r.solutionA,
+    solutionB: r.solutionB,
+    solutionC: r.solutionC,
+    performanceAllowance: r.performanceAllowance,
+    grossSalary: r.grossSalary,
   };
 }

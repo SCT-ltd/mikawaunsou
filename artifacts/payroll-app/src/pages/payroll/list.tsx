@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { AllowanceInputPanel } from "@/components/allowance-input-panel";
+import { PayrollWarnings } from "@/components/payroll/payroll-warnings";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { formatMonth } from "@/lib/format";
@@ -878,6 +879,8 @@ export default function PayrollList() {
                     ) : !selectedPayroll ? (
                       <div className="py-12 text-center text-muted-foreground">データが見つかりません</div>
                     ) : selectedEmployee ? (
+                      <>
+                      <PayrollWarnings payroll={selectedPayroll} />
                       <AllowanceInputPanel
                         key={selectedPayroll.id}
                         employee={selectedEmployee}
@@ -902,6 +905,7 @@ export default function PayrollList() {
                         onSaveStateChange={setPanelSave}
                         readOnly={!canWrite}
                       />
+                      </>
                     ) : (
                       <div className="py-12 text-center text-muted-foreground">社員データが見つかりません</div>
                     )}

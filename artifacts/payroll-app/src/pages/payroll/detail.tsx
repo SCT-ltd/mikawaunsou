@@ -16,6 +16,7 @@ import { formatCurrency, formatMonth, formatHours } from "@/lib/format";
 import { ChevronLeft, CheckCircle2, FileText } from "lucide-react";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useCanWrite } from "@/lib/use-can-write";
+import { PayrollWarnings } from "@/components/payroll/payroll-warnings";
 
 export default function PayrollDetail() {
   const { id } = useParams();
@@ -78,6 +79,7 @@ export default function PayrollDetail() {
   return (
     <AppLayout>
       <div className="space-y-6 max-w-4xl mx-auto">
+        <PayrollWarnings payroll={payroll} />
         {/* Print only styles should be added in a real app, here we simulate the button actions */}
         <div className="flex items-center justify-between print:hidden">
           <div className="flex items-center gap-4">

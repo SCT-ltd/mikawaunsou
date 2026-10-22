@@ -27,6 +27,8 @@
 
 - 実装済み: 令和8年版（calibration 補正方式は廃止）
 
+- 2026-10-24: **給与の式の共有の置き場 `src/payroll-core.ts`（`@workspace/tax-tables-reiwa8/core`）を追加**。保険料・源泉税（`calcStatutoryDeductions`）・勤怠で決まる手当（`deriveAutoRows`）・ブルーウィング（`bluewingCalc`）・年齢の節目・通勤手当の非課税の上限・有給・賞与・仕訳をここに集め、サーバーと画面の両方が使う。会社設定のスイッチ（`PayRules`）は既定 OFF＝以前の式と1円も変わらない（`test/payroll-core.test.ts` が以前の式を写して突き合わせている）。試験は `pnpm run test`。
+
 ## 決定事項
 
 - 2026-07-02 このファイル作成（tax-tables-reiwa8 階層の overview 初版）

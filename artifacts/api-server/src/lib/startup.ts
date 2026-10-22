@@ -34,6 +34,23 @@ const REQUIRED: Array<[string, string]> = [
   // 2026-10-24-batch-c.sql（振込）
   ["employee_bank_accounts", "holder_kana"],
   ["transfer_settings", "consignor_code"],
+  // 2026-10-24-batch-d.sql（給与計算と法令）
+  ["company", "rule_premium_base_includes_allowances"],
+  ["company", "minimum_wage_hourly"],
+  ["company", "bonus_tax_rate_table"],
+  ["employees", "social_insurance_exempt"],
+  ["employees", "health_insurance_mode"],
+  ["employees", "tax_column"],
+  ["employees", "retirement_date"],
+  ["monthly_records", "rest_day_overtime_hours"],
+  ["allowance_definitions", "include_in_premium_base"],
+  ["payrolls", "health_insurance_amount"],
+  ["payrolls", "calc_warnings"],
+  ["resident_tax_schedules", "collect_month"],
+  ["paid_leave_adjustments", "days"],
+  ["bonus_payments", "income_tax"],
+  ["yearend_declarations", "data"],
+  ["employment_insurance_settlements", "apply_month"],
 ];
 
 export async function startupChecks(): Promise<void> {

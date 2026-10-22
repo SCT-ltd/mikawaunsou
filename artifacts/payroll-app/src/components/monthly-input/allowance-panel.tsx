@@ -25,7 +25,7 @@ import {
   calculateIncomeTaxFromOfficialTable,
   lateNightRateFor,
 } from "./estimate";
-import { round50sen } from "@/lib/tax-tables-reiwa8";
+import { panelAutoRows, panelDeductions, panelCommuteExcess } from "@/lib/payroll-shared";
 import { formatRatePercent, useMonthInsurance } from "@/lib/insurance-rates";
 import { useMonthItems, saveMonthItems, monthItemsQueryKey, toLegacyRows, MonthItemsError } from "@/lib/month-items";
 import { useToast } from "@/hooks/use-toast";
@@ -367,64 +367,16 @@ export function AllowancePanel({
 
   const defIdOf = defIdOfName;
 
-  /** 勤怠から金額が決まる手当。defId が null（手当が未定義）のものは対象外。 */
-  const autoRows = useMemo(() => {
-    const rowsOut: { defId: number; amount: number; note: string }[] = [];
-    const push = (defId: number | null, amount: number, note: string) => {
-      if (defId !== null) rowsOut.push({ defId, amount, note });
-    };
-
-    push(
-      defIdOf("有給"),
-      Math.round(paidLeaveRate * paidLeaveDays),
-      `勤怠の有給 ${paidLeaveDays}日 × ${paidLeaveRate.toLocaleString("ja-JP")}円（自動）`
-    );
-
-    // 休日出勤手当 = 土曜日数 × 土曜日当 ＋ 日曜・祝日時間 × 日曜時給。
-    // 本番データで裏付け済み: 岡田 2d×12,260+0h = 24,520、
-    // 玉川 2d×12,260+5.5h×1,655 = 33,623 が、いずれも事務所の手入力額と一致する。
-    // 割増は日曜だけ1.35倍、土曜と祝日は1.25倍（会社の決まり・2026-10）。
-    // 祝日は土曜と同じ日当（平日日当×1.25）で日数を掛ける。以前は祝日も日曜の時給で数えていた。
-    const saturdayDays = monthlyData?.saturdayWorkDays ?? 0;
-    const sundayHours = monthlyData?.sundayWorkHours ?? 0;
-    const holidayDays = monthlyData?.holidayWorkDays ?? 0;
-    push(
-      defIdOf("休日出勤手当"),
-      Math.round((saturdayDays + holidayDays) * rateSaturday + sundayHours * rateSundayHour),
-      `勤怠の土曜 ${saturdayDays}日` + (holidayDays > 0 ? `＋祝日 ${holidayDays}日` : "") +
-        ` × ${rateSaturday.toLocaleString("ja-JP")}円` +
-        ` ＋ 日曜 ${sundayHours}h × ${rateSundayHour.toLocaleString("ja-JP")}円（自動）`
-    );
-
-    if (overtimeRate > 0) {
-      // 残業手当 = 残業時間 × 残業時給。労基法37条3項に合わせ60時間超は ×1.20 追加。
-      const OT_THRESHOLD = 60;
-      const overtimePay = overtimeHours <= OT_THRESHOLD
-        ? Math.round(overtimeRate * overtimeHours)
-        : Math.round(overtimeRate * OT_THRESHOLD) +
-          Math.round(overtimeRate * 1.20 * (overtimeHours - OT_THRESHOLD));
-      push(
-        defIdOf("早出残業手当"),
-        overtimePay,
-        `勤怠の残業 ${overtimeHours}h × ${overtimeRate.toLocaleString("ja-JP")}円（自動）`
-      );
-
-    }
-    if (overtimeRate > 0 || personalNightRate > 0) {
-      // 深夜手当 = 深夜時間 × 深夜単価（個人の深夜単価。無ければ 残業時給 ÷ 1.25 × 0.25）
-      const perHour = lateNightRateFor(personalNightRate, overtimeRate);
-      push(
-        defIdOf("深夜手当"),
-        Math.round(perHour * lateNightHours),
-        `勤怠の深夜 ${lateNightHours}h × ${perHour.toLocaleString("ja-JP")}円（自動）`
-      );
-    }
-    return rowsOut;
-  }, [
-    allowanceDefinitions, paidLeaveRate, paidLeaveDays,
-    monthlyData?.saturdayWorkDays, monthlyData?.sundayWorkHours, monthlyData?.holidayWorkDays, rateSaturday, rateSundayHour,
-    overtimeRate, overtimeHours, lateNightHours, personalNightRate,
-  ]);
+  /**
+   * 勤怠から金額が決まる手当。defId が null（手当が未定義）のものは対象外。
+   * 式はサーバー（lib/month-items.ts）と同じ共有の関数（lib/payroll-shared.ts → payroll-core.ts）。
+   * 有給＝平日日当×日数、休日出勤＝（土曜＋祝日）×土曜日当＋日曜時間×日曜時給、
+   * 早出残業＝残業時給×時間（60時間超は×1.20を追加）、深夜＝深夜単価×時間。会社設定のスイッチで変わる。
+   */
+  const autoRows = useMemo(
+    () => panelAutoRows(employee, monthlyData as unknown as Record<string, unknown> | undefined, company, allowanceDefinitions as Array<{ id: number; name: string; includeInPremiumBase?: boolean }>, rows),
+    [employee, monthlyData, company, allowanceDefinitions, rows],
+  );
 
   /** 自動反映の対象と金額が変わったときだけ effect を走らせるための安定キー */
   const autoRowsKey = autoRows.map((r) => `${r.defId}:${r.amount}`).join(",");
@@ -570,12 +522,7 @@ export function AllowancePanel({
   const stdRemuneration = monthInsurance.standardRemunerationOf(employee.id, employee.standardRemuneration);
   const insBase = stdRemuneration > 0 ? stdRemuneration : grandTotal;
 
-  const isPensionApplied = resolvePensionApplied(employee, year, month);
-  const healthInsurance = isInsuranceExempt ? 0 : round50sen(insBase * healthRate);
-  const childcareSupport = isInsuranceExempt ? 0 : round50sen(insBase * monthRates.childcareEmployeeRate);
-  const pensionInsurance = isInsuranceExempt || !isPensionApplied
-    ? 0
-    : round50sen(Math.min(insBase, monthRates.pensionMaxStandard) * pensionRate);
+  void insBase;
   // 雇用保険の計算基礎から除外する手当合計（「雇用保険の対象外」ON の手当のみ。交通費は含めない）
   const empInsExcludedTotal = rows.reduce((s, r) => {
     const def = allowanceDefinitions.find(d => d.id === r.defId);
@@ -584,20 +531,25 @@ export function AllowancePanel({
   // 雇用保険: （総支給 − 除外対象手当）× 料率。携帯代等の実費手当のみ計算基礎から除く。
   // 給与明細の右パネルで雇用保険料を手で決めてあれば、その額（ここでは変えない・保存でも送らない）
   const empInsOverride = monthItems?.employmentInsuranceOverride ?? null;
-  const employmentInsurance = empInsOverride != null
-    ? empInsOverride
-    : !isInsuranceExempt && employee.employmentInsuranceApplied !== false
-      ? round50sen((grandTotal - empInsExcludedTotal) * eiRate)
-      : 0;
+  // 保険料・源泉税はサーバーと同じ共有の式（標準報酬が未設定なら総支給を等級表に当てはめる・75歳/70歳・止める印・乙欄・通勤手当の上限）
+  const commuteExcess = panelCommuteExcess(employee, rows.map((r) => {
+    const def = allowanceDefinitions.find(d => d.id === r.defId);
+    return { name: def?.name, isTaxable: def?.isTaxable, amount: r.amount };
+  }));
+  const ded = panelDeductions({
+    employee, company, rates: monthRates, year: targetYear, month: targetMonth,
+    standardRemuneration: stdRemuneration, grossSalary: grandTotal,
+    nonTaxableAllowances: nonTaxableAllowancesTotal - commuteExcess,
+    employmentInsuranceExcluded: empInsExcludedTotal, employmentInsuranceOverride: empInsOverride,
+  });
+  const healthInsurance = ded.healthInsurance;
+  const childcareSupport = ded.childcareSupportContribution;
+  const pensionInsurance = ded.pension;
+  const employmentInsurance = ded.employmentInsurance;
   const totalInsurance = healthInsurance + childcareSupport + pensionInsurance + employmentInsurance;
-
-  const afterInsuranceSalary = Math.max(0, grandTotal - totalInsurance - nonTaxableAllowancesTotal);
-  const incomeTax = isInsuranceExempt ? 0 : calculateIncomeTaxFromOfficialTable(
-    afterInsuranceSalary,
-    employee.dependentCount ?? 0,
-    employee.hasSpouse ?? false,
-  );
-  const residentTax = employee.residentTax ?? 0;
+  const incomeTax = ded.incomeTax;
+  const afterInsuranceSalary = Math.max(0, ded.afterInsuranceSalary);
+  const residentTax = (monthItems as { residentTax?: number } | undefined)?.residentTax ?? employee.residentTax ?? 0;
   const customDeductionsTotal = deductionRows.reduce((s, r) => s + (r.amount || 0), 0);
   const totalDeductions = roundJapanese(totalInsurance + incomeTax + residentTax + customDeductionsTotal);
   const netSalary = roundJapanese(grandTotal - totalDeductions);
@@ -987,6 +939,10 @@ export function AllowancePanel({
             {showInsuranceDetail ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
           </div>
         </button>
+
+        {ded.error && (
+          <div className="px-4 py-2 text-xs text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-500/10 border-b border-red-100 dark:border-red-500/25">{ded.error}</div>
+        )}
 
         {showInsuranceDetail && (
           <div className="divide-y divide-border/50">

@@ -16,6 +16,7 @@ import { X, Truck,
   Users,
   History,
   BookOpen,
+  Scale,
 } from "lucide-react";
 
 const navigation = [
@@ -27,6 +28,7 @@ const navigation = [
   { name: "月次実績入力",       href: "/monthly-input", icon: CalendarDays,    description: "月次の売上・走行距離などの実績を入力します", highlight: "amber" },
   { name: "給与明細",           href: "/payroll",       icon: FileText,        description: "給与明細の作成・確認・印刷をします",         highlight: "violet" },
   { name: "仕訳（会計）",       href: "/journal",       icon: BookOpen,        description: "給与の振替伝票（仕訳）を確認し、会計ソフト用のCSVを出します" },
+  { name: "給与と法令",         href: "/payroll-law",  icon: Scale,           description: "有給・住民税・算定/月変・賞与・退職・賃金台帳・年末調整の準備・雇用保険の不足" },
   { name: "カレンダー",         href: "/calendar",      icon: CalendarRange,   description: "シフト・スケジュールを管理します" },
   { name: "マスター管理",       href: "/allowances",    icon: Tag,             description: "手当・控除定義などのマスターデータを管理します" },
   { name: "ユーザー管理",       href: "/users",         icon: Users,           description: "システムユーザーの追加・編集・権限設定をします" },

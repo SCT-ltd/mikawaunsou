@@ -258,6 +258,9 @@ export function RecordForm({
           <Field label="深夜" unit={hasUnit ? "回" : "h"} hint={unitHint ?? "深夜割増（+0.25）を加算"}>
             {hasUnit ? unitInput("lateNightHours") : numInput("lateNightHours", { step: "0.5" })}
           </Field>
+          <Field label="土曜・祝日の8時間超" unit="h" hint="会社設定②が入のときだけ残業として払う（日曜は入れない）">
+            {numInput("restDayOvertimeHours", { step: "0.25" })}
+          </Field>
         </div>
       </section>
 

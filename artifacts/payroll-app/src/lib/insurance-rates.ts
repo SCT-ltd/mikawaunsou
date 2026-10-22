@@ -46,6 +46,9 @@ export interface MonthInsurance {
   rates: EmployeeInsuranceRates;
   /** その月に使う標準報酬月額。履歴が無ければ社員マスタの初期値（fallback）を返す */
   standardRemunerationOf: (employeeId: number, fallback: number | undefined) => number;
+  /** この基準の明細の年月（年齢の節目の判定に使う） */
+  year?: number;
+  month?: number;
 }
 
 /** 保険料率の取得キー（料率・標準報酬月額を変更したら invalidate する）*/
@@ -78,7 +81,7 @@ export function useMonthInsurance(year: number | undefined, month: number | unde
     return row ? row.standardRemuneration : (fallback ?? 0);
   };
 
-  return { rates, standardRemunerationOf };
+  return { rates, standardRemunerationOf, year, month };
 }
 
 // ── 表示・入力の変換 ────────────────────────────────────────────────────

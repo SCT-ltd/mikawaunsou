@@ -14,6 +14,7 @@ import {
   getInsuranceGrade,
   PENSION_MAX_STD,
 } from "@workspace/tax-tables-reiwa8";
+import { calcStatutoryDeductions, type WithholdingProfile } from "@workspace/tax-tables-reiwa8/core";
 
 // 社会保険の等級表・端数処理は共有ライブラリに集約。従来この module が公開していた
 // getInsuranceGrade / PENSION_MAX_STD は後方互換のため再エクスポートする。
@@ -282,6 +283,16 @@ export interface InsuranceTaxInput {
    * 省略時は令和8年度の内蔵定数を使う。
    */
   insuranceRates?: EmployeeInsuranceRates;
+  /** 健康保険（介護・子育て支援金を含む）を引くか。省略時 true（75歳以上は false） */
+  healthApplied?: boolean;
+  /** 社会保険・雇用保険・源泉税を止める印（旧「全額非課税」を分けたもの） */
+  socialInsuranceExempt?: boolean;
+  employmentInsuranceExempt?: boolean;
+  incomeTaxExempt?: boolean;
+  /** 源泉税の甲欄・乙欄、本人の障害者・寡婦・ひとり親・勤労学生など（扶養人数に足す分） */
+  withholding?: WithholdingProfile;
+  /** 健康保険料と子育て支援金の端数処理 */
+  rounding?: "separate" | "combined";
   /** デバッグ用トレースログを出力するか（省略時 false）*/
   enableTrace?: boolean;
   /** トレースログ出力時の期待値（照合用）*/
@@ -306,6 +317,8 @@ export const DEFAULT_EMPLOYEE_INSURANCE_RATES_R8: EmployeeInsuranceRates = {
 };
 
 export interface InsuranceTaxResult {
+  /** 保険料の計算に使った標準報酬月額（未設定の人は総支給を等級表に当てはめた額）*/
+  insuranceBase: number;
   /** 健康保険料（介護保険込みまたはなし）*/
   healthInsurance: number;
   /** 子ども・子育て支援金（健保とは別の控除）*/
@@ -340,6 +353,8 @@ export interface InsuranceTaxResult {
  *   源泉所得税            = 月額表甲欄テーブル参照（社保等控除後給与・扶養人数）
  */
 export function calculateInsuranceAndTax(input: InsuranceTaxInput): InsuranceTaxResult {
+  // 式の本体は共有の lib/tax-tables-reiwa8/src/payroll-core.ts（画面の概算と同じ関数）。
+  // 標準報酬月額が 0（未設定）の人は、総支給額を等級表に当てはめた額で計算する（core の insuranceBaseFor）。
   const {
     standardRemuneration,
     grossSalary,
@@ -356,111 +371,44 @@ export function calculateInsuranceAndTax(input: InsuranceTaxInput): InsuranceTax
     employmentInsuranceRate = EMP_INS_RATE_R8,
     insuranceRates = DEFAULT_EMPLOYEE_INSURANCE_RATES_R8,
     enableTrace = false,
-    traceExpectedIncomeTax,
   } = input;
 
-  // 健康保険料：標準報酬月額 × 料率（介護保険の有無で料率変更）
-  // （料率は保険料率マスターの月ごとの値。省略時は令和8年度: 健保 9.85%、介護込み 11.47%）
-  const healthEmployeeRate = careInsuranceApplied
-    ? insuranceRates.healthWithCareEmployeeRate
-    : insuranceRates.healthEmployeeRate;
-  const healthInsurance = round50sen(standardRemuneration * healthEmployeeRate);
+  const r = calcStatutoryDeductions({
+    standardRemuneration,
+    grossSalary,
+    nonTaxableAllowances,
+    employmentInsuranceExcluded: employmentInsuranceExcludedAllowances,
+    careInsuranceApplied,
+    pensionApplied,
+    healthApplied: input.healthApplied,
+    employmentInsuranceApplied,
+    employmentInsuranceOverride,
+    employmentInsuranceRate,
+    rates: insuranceRates,
+    socialInsuranceExempt: input.socialInsuranceExempt,
+    employmentInsuranceExempt: input.employmentInsuranceExempt,
+    incomeTaxExempt: input.incomeTaxExempt,
+    withholding: { dependentCount, hasSpouse, ...(input.withholding ?? {}) },
+    rounding: input.rounding,
+  });
 
-  // 子ども・子育て支援金：標準報酬月額 × 支援金率 ÷ 2（令和8年度 0.23%。開始前の月は 0%）
-  const childcareSupportContribution = round50sen(standardRemuneration * insuranceRates.childcareEmployeeRate);
-
-  // 厚生年金保険料：min(標準報酬月額, 上限) × 厚年率 ÷ 2（令和8年度 18.3%・上限 650,000）
-  const pensionBase = Math.min(standardRemuneration, insuranceRates.pensionMaxStandard);
-  const pension = pensionApplied
-    ? round50sen(pensionBase * insuranceRates.pensionEmployeeRate)
-    : 0;
-
-  // 雇用保険料：（総支給額 − 除外対象手当）× 雇用保険率
-  // 除外対象は「雇用保険の対象外」フラグが立った手当のみ（携帯代など実費弁償）。
-  // 通勤手当（交通費）は非課税でも賃金に含めるため除外しない。
-  // 例) 総支給163,652 に携帯代2,000 が含まれる場合、161,652 × 0.0005 = 80.826 → 81。
-  // 手で決めた額があればそれを使う（給与明細の右パネルで入力。所得税の計算基礎にも同じ額が入る）
-  const employmentInsurance = employmentInsuranceOverride != null
-    ? Math.round(employmentInsuranceOverride)
-    : employmentInsuranceApplied
-    ? round50sen((grossSalary - employmentInsuranceExcludedAllowances) * employmentInsuranceRate)
-    : 0;
-
-  // 社会保険料等合計
-  const socialInsuranceTotal = healthInsurance + childcareSupportContribution + pension + employmentInsurance;
-
-  // 課税対象額（社保等控除後の給与等の金額）
-  // 子育て支援金を含む場合（現行計算方式）
-  const taxableSalaryForIncomeTaxIncludingChildcareSupport = grossSalary
-    - nonTaxableAllowances
-    - healthInsurance
-    - childcareSupportContribution
-    - pension
-    - employmentInsurance;
-
-  // 子育て支援金を含まない場合（参考値）
-  const taxableSalaryForIncomeTaxExcludingChildcareSupport = grossSalary
-    - nonTaxableAllowances
-    - healthInsurance
-    - pension
-    - employmentInsurance;
-
-  // 子育て支援金は社会保険料等の一部として源泉所得税の計算基礎から控除する
-  // （令和8年運用：CSCも社会保険料控除の対象として「社会保険料等控除後の給与等の金額」に含める）
-  const afterInsuranceSalary = taxableSalaryForIncomeTaxIncludingChildcareSupport;
-
-  // 源泉所得税：令和8年月額表甲欄テーブル参照（@workspace/tax-tables-reiwa8 使用）
-  // 扶養親族等の数 = dependentCount + (hasSpouse ? 1 : 0)
-  const dependentEquivalentCount = dependentCount + (hasSpouse ? 1 : 0);
-  const afterInsuranceSalaryInt = Math.max(0, Math.floor(afterInsuranceSalary));
-  const matchedRow = _lookupRow(REIWA8_TABLE, afterInsuranceSalaryInt);
-  const matchedIncomeTaxBracket = matchedRow[0];
-  const incomeTax = calculateIncomeTaxReiwa8MonthlyKou(afterInsuranceSalary, dependentEquivalentCount);
-
-  // トレースログ（enableTrace が true の場合のみ出力）
   if (enableTrace) {
-    console.log("[TAMAGAWA_INCOME_TAX_TRACE]", {
-      grossSalary,
-      nonTaxableAllowances,
-      healthInsurance,
-      pension,
-      employmentInsurance,
-      childcareSupportContribution,
-      taxableSalaryForIncomeTaxExcludingChildcareSupport,
-      taxableSalaryForIncomeTaxIncludingChildcareSupport,
-      dependentCount,
-      hasSpouse,
-      dependentEquivalentCount,
-      incomeTaxTableYear: "R8",
-      incomeTaxTableType: "甲欄",
-      matchedIncomeTaxBracket,
-      calculatedIncomeTax: incomeTax,
-      expectedFromClient: traceExpectedIncomeTax ?? 10220,
-    });
+    console.log("[INCOME_TAX_TRACE]", { grossSalary, nonTaxableAllowances, ...r });
   }
 
-  // 控除合計
-  const totalDeductions = healthInsurance
-    + childcareSupportContribution
-    + pension
-    + employmentInsurance
-    + incomeTax
-    + residentTax
-    + (customDeductionsTotal ?? 0);
-
-  // 差引支給額
-  const netSalary = grossSalary - totalDeductions;
-
+  const socialInsuranceTotal = r.healthInsurance + r.childcareSupportContribution + r.pension + r.employmentInsurance;
+  const totalDeductions = socialInsuranceTotal + r.incomeTax + residentTax + (customDeductionsTotal ?? 0);
   return {
-    healthInsurance,
-    childcareSupportContribution,
-    pension,
-    employmentInsurance,
+    insuranceBase: r.insuranceBase,
+    healthInsurance: r.healthInsurance,
+    childcareSupportContribution: r.childcareSupportContribution,
+    pension: r.pension,
+    employmentInsurance: r.employmentInsurance,
     socialInsuranceTotal,
-    afterInsuranceSalary,
-    incomeTax,
+    afterInsuranceSalary: r.afterInsuranceSalary,
+    incomeTax: r.incomeTax,
     residentTax,
     totalDeductions,
-    netSalary,
+    netSalary: grossSalary - totalDeductions,
   };
 }

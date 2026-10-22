@@ -5,6 +5,47 @@ import { requireAdmin } from "../lib/auth-middleware";
 
 const router = Router();
 
+/**
+ * 給与計算の切り替え（スイッチ）・最低賃金など、2026-10-24 に足した会社設定。
+ * 型の合わないものは受け取らない（スイッチは true/false、数値は 0 以上）。
+ */
+const RULE_BOOLEANS = [
+  "rulePremiumBaseIncludesAllowances", "ruleRestDayOvertime", "ruleOver60IncludesRestDays",
+  "ruleBluewingPerformanceV2", "ruleBluewingOver60", "ruleCommissionPremium",
+  "rulePaidLeaveBySalaryType", "ruleHourlyHolidayNoDouble", "ruleAbsenceDeduction",
+] as const;
+function pickRuleFields(body: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const k of RULE_BOOLEANS) if (typeof body[k] === "boolean") out[k] = body[k];
+  if (["fixed22", "monthlyAverage", "scheduledDays"].includes(String(body.absenceDeductionMethod))) out.absenceDeductionMethod = body.absenceDeductionMethod;
+  if (["separate", "combined"].includes(String(body.healthChildcareRounding))) out.healthChildcareRounding = body.healthChildcareRounding;
+  if (["closing", "payment"].includes(String(body.journalDateBasis))) out.journalDateBasis = body.journalDateBasis;
+  for (const k of ["scheduledHoursPerDay", "minimumWageHourly", "childContributionRate"]) {
+    const v = Number(body[k]);
+    if (body[k] !== undefined && Number.isFinite(v) && v >= 0) out[k] = v;
+  }
+  const sm = Number(body.overtimeYearStartMonth);
+  if (Number.isInteger(sm) && sm >= 1 && sm <= 12) out.overtimeYearStartMonth = sm;
+  if (body.minimumWageEffectiveDate !== undefined) {
+    const d = String(body.minimumWageEffectiveDate ?? "");
+    out.minimumWageEffectiveDate = /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null;
+  }
+  if (body.bonusTaxRateTable !== undefined) {
+    // 形を確かめてから保存する（[{from:number, rates:number[8]}]）。空なら消す。
+    const raw = body.bonusTaxRateTable;
+    if (raw === null || raw === "") out.bonusTaxRateTable = null;
+    else {
+      try {
+        const t = typeof raw === "string" ? JSON.parse(raw) : raw;
+        if (Array.isArray(t) && t.every((r) => Number.isFinite(Number(r?.from)) && Array.isArray(r?.rates) && r.rates.length === 8 && r.rates.every((x: unknown) => Number.isFinite(Number(x)) && Number(x) >= 0 && Number(x) < 1))) {
+          out.bonusTaxRateTable = JSON.stringify(t.map((r: { from: number; rates: number[] }) => ({ from: Number(r.from), rates: r.rates.map(Number) })));
+        }
+      } catch { /* 形が違うものは保存しない */ }
+    }
+  }
+  return out;
+}
+
 router.get("/company", async (req, res) => {
   const rows = await db.select().from(companyTable).limit(1);
   if (rows.length === 0) {
@@ -61,6 +102,7 @@ router.put("/company", requireAdmin, async (req, res) => {
       ...(body.dailyWageWeekday !== undefined && { dailyWageWeekday: body.dailyWageWeekday }),
       ...(body.dailyWageSaturday !== undefined && { dailyWageSaturday: body.dailyWageSaturday }),
       ...(body.hourlyWageSunday !== undefined && { hourlyWageSunday: body.hourlyWageSunday }),
+      ...pickRuleFields(body),
       updatedAt: new Date(),
     })
     .where(eq(companyTable.id, rows[0].id))

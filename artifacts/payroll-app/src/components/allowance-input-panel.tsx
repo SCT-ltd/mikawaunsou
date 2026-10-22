@@ -13,7 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { Plus, X, GripVertical, ChevronDown, Check } from "lucide-react";
 import { Reorder, useDragControls } from "framer-motion";
-import { calculateIncomeTaxReiwa8, round50sen } from "@/lib/tax-tables-reiwa8";
+import { panelDeductions, panelCommuteExcess } from "@/lib/payroll-shared";
 import { formatRatePercent, useMonthInsurance } from "@/lib/insurance-rates";
 import { useMonthItems, saveMonthItems, monthItemsQueryKey, toLegacyRows, MonthItemsError } from "@/lib/month-items";
 import { SaveStatus, type SaveState } from "@/components/save-status";
@@ -783,15 +783,8 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
     employee.id,
     (employee as unknown as { standardRemuneration?: number }).standardRemuneration,
   );
-  const insBase = empSR > 0 ? empSR : grandTotal;
-
   const isTaxExemptEmployee = employee.taxExempt === true;
-
-  const healthInsurance = isTaxExemptEmployee ? 0 : round50sen(insBase * appliedHealthRate);
-  // 子育て支援金の開始前の月は、料率の履歴で率が 0 になっている
-  const childcareSupportContribution = isTaxExemptEmployee ? 0 : round50sen(insBase * CHILDCARE_RATE);
-  const isPensionApplied = resolvePensionApplied(employee, year, month);
-  const pensionInsurance = (isTaxExemptEmployee || !isPensionApplied) ? 0 : round50sen(Math.min(insBase, monthInsurance.rates.pensionMaxStandard) * pensionRate);
+  void appliedHealthRate; void pensionRate; void CHILDCARE_RATE;
 
   const nonTaxableAllowancesTotal = rows.reduce((s, r) => {
     const def = allowanceDefinitions?.find(d => d.id === r.defId);
@@ -806,26 +799,42 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
 
   // 雇用保険料：（総支給 − 除外対象手当）× 料率。携帯代等の実費手当のみ計算基礎から除く。
   // 手で入れた額があればそれを使う（空欄なら自動）。
-  const employmentInsuranceAuto = (isTaxExemptEmployee || employee.employmentInsuranceApplied === false)
-    ? 0
-    : round50sen((grandTotal - empInsExcludedTotal) * empInsRate);
   const empInsManual = empInsInput.trim() === "" ? null : Math.max(0, Math.round(Number(empInsInput.replace(/[,，円¥￥\s]/g, "")) || 0));
-  const employmentInsurance = empInsManual ?? employmentInsuranceAuto;
+  // 保険料・源泉税はサーバーと同じ共有の式（lib/payroll-shared.ts → payroll-core.ts）。
+  // 標準報酬が未設定なら総支給を等級表に当てはめる・75歳/70歳・止める印・乙欄・通勤手当の非課税の上限。
+  const commuteExcess = panelCommuteExcess(employee, rows.map((r) => {
+    const def = allowanceDefinitions?.find(d => d.id === r.defId);
+    return { name: def?.name, isTaxable: def?.isTaxable, amount: r.amount };
+  }));
+  const dedInput = {
+    employee, company,
+    rates: monthInsurance.rates,
+    year: year ?? new Date().getFullYear(),
+    month: month ?? new Date().getMonth() + 1,
+    standardRemuneration: empSR,
+    grossSalary: grandTotal,
+    nonTaxableAllowances: nonTaxableAllowancesTotal - commuteExcess,
+    employmentInsuranceExcluded: empInsExcludedTotal,
+  };
+  const ded = panelDeductions({ ...dedInput, employmentInsuranceOverride: empInsManual });
+  const employmentInsuranceAuto = panelDeductions({ ...dedInput, employmentInsuranceOverride: null }).employmentInsurance;
+  void empInsRate;
+  const healthInsurance = ded.healthInsurance;
+  const childcareSupportContribution = ded.childcareSupportContribution;
+  const pensionInsurance = ded.pension;
+  const employmentInsurance = ded.employmentInsurance;
   /** 雇用保険料の欄に数字以外が入っている（このまま保存させない）*/
   const empInsInvalid = empInsInput.trim() !== "" && !/^\d+$/.test(empInsInput.replace(/[,，円¥￥\s]/g, "").replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)));
 
   const totalInsurance = healthInsurance + childcareSupportContribution + pensionInsurance + employmentInsurance;
 
-  const incomeTaxBase = Math.max(0,
-    grandTotal - nonTaxableAllowancesTotal - healthInsurance - childcareSupportContribution - pensionInsurance - employmentInsurance
-  );
   const afterInsuranceSalary = Math.max(0,
     grandTotal - healthInsurance - childcareSupportContribution - pensionInsurance - employmentInsurance
   );
-  const dependentEquivCount = (employee.dependentCount ?? 0) + ((employee.hasSpouse ?? false) ? 1 : 0);
-  const incomeTax = isTaxExemptEmployee ? 0 : calculateIncomeTaxReiwa8(incomeTaxBase, dependentEquivCount);
+  const incomeTax = ded.incomeTax;
 
-  const residentTax = employee.residentTax ?? 0;
+  // 住民税はその月の分（法令の画面で12か月分を入れた人はその額。無ければ社員マスターの月額）
+  const residentTax = (monthItems as { residentTax?: number } | undefined)?.residentTax ?? employee.residentTax ?? 0;
   const customDeductionsTotal = deductionRows.reduce((s, r) => s + (r.amount || 0), 0);
   const otherDeductionFixed = (employee as unknown as { otherDeductionMonthly?: number }).otherDeductionMonthly ?? 0;
 

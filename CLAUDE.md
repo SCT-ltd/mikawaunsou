@@ -59,7 +59,7 @@ pwsh -File scripts/dev.ps1                     # ← local dev: loads .env.local
 
 `scripts/dev.ps1` is the local launcher (it replaced the Replit run button). It reads `.env.local`, builds and starts the api-server on `PORT` (8080), then runs the Vite dev server on `FRONT_PORT` (5173). To run the two halves separately, export the env vars yourself and use `pnpm --filter @workspace/api-server run build && … run start` and `pnpm --filter @workspace/payroll-app run dev`.
 
-**There is no test suite** (no vitest/jest/node:test). `pnpm run typecheck` is the verification step — run it after non-trivial changes.
+`pnpm run test` runs the pure-function tests (`lib/tax-tables-reiwa8/test`, `artifacts/api-server/test`; node:test bundled with the api-server's esbuild — no new dependency). `pnpm run typecheck` is still the main gate — run both after non-trivial changes. The payroll formulas shared by server and screens live in `lib/tax-tables-reiwa8/src/payroll-core.ts`.
 
 DB schema changes are applied by hand with the SQL files in `deploy/migrations/` (since 2026-10; `drizzle-kit push` is disabled because it can drop production tables/columns). Keep `lib/db/src/schema/` in sync with them.
 

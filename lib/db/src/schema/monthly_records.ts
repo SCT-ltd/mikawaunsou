@@ -31,6 +31,11 @@ export const monthlyRecordsTable = pgTable("monthly_records", {
   overtimeUnitPrice: doublePrecision("overtime_unit_price").notNull().default(2111),
   bluewingSalesAmount: doublePrecision("bluewing_sales_amount").notNull().default(0),
   actualWorkHours: doublePrecision("actual_work_hours").notNull().default(0),
+  /**
+   * 土曜・祝日に1日8時間を超えて働いた時間の合計。会社設定「②」が ON のときだけ残業として払う。
+   * 日曜は「時間 × 日曜時給」で全部の時間を払っているので入れない（入れると二重になる）。
+   */
+  restDayOvertimeHours: doublePrecision("rest_day_overtime_hours").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [

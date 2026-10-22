@@ -72,6 +72,8 @@ function recordPayload(ed: RowData | undefined) {
     notes: String(e.notes || ""),
     bluewingSalesAmount: Number(e.bluewingSalesAmount) || 0,
     actualWorkHours: Number(e.actualWorkHours) || 0,
+    // 土曜・祝日の8時間超（会社設定②）。勤怠からの一括反映でもここに入る
+    restDayOvertimeHours: Number(e.restDayOvertimeHours) || 0,
   };
 }
 
@@ -341,7 +343,7 @@ export default function MonthlyInput() {
           workDays: 0, overtimeHours: 0, lateNightHours: 0,
           holidayWorkDays: 0, drivingDistanceKm: 0, deliveryCases: 0,
           absenceDays: 0, paidLeaveDays: 0, saturdayWorkDays: 0, sundayWorkDays: 0, sundayWorkHours: 0, notes: "",
-          bluewingSalesAmount: 0, actualWorkHours: 0,
+          bluewingSalesAmount: 0, actualWorkHours: 0, restDayOvertimeHours: 0,
         };
       }
     });
@@ -889,7 +891,8 @@ export default function MonthlyInput() {
                             overtimeHours: Number(edits[selectedEmployee.id]?.overtimeHours) || 0,
                             lateNightHours: Number(edits[selectedEmployee.id]?.lateNightHours) || 0,
                             actualWorkHours: Number(edits[selectedEmployee.id]?.actualWorkHours) || 0,
-                          }}
+                            restDayOvertimeHours: Number(edits[selectedEmployee.id]?.restDayOvertimeHours) || 0,
+                          } as never}
                         />
                       </TabsContent>
                     </div>

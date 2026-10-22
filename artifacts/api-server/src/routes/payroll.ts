@@ -5,15 +5,13 @@ import { audit } from "../lib/audit";
 import { calculatePayroll, calculateBluewingPayroll, roundJapanese, lateNightRateFor } from "../lib/payroll-calculator";
 import { ensureMonthItems, getMonthItems, syncMonthItemsWithAttendance } from "../lib/month-items";
 import { calculateInsuranceAndTax, EMP_INS_RATE_R8 } from "../lib/tax-tables-reiwa8";
+import { absenceDeductionFor, OtsuTableMissingError } from "@workspace/tax-tables-reiwa8/core";
+import { loadPayrollContext, commuteExcessOf, payrollWarnings } from "../lib/payroll-context";
 import { getEffectiveInsuranceRates, getEffectiveStandardRemuneration, type EffectiveInsuranceRates } from "../lib/insurance-settings";
 
 const router = Router();
 
-/**
- * 厚生年金適用判定
- * - emp.pensionApplied が null の場合: 生年月日から計算月時点の年齢を算出し、70歳以上なら false
- * - emp.pensionApplied が true/false の場合: その値をそのまま使用（手動オーバーライド）
- */
+// 厚生年金・健康保険の年齢の判定は payroll-core.ts の pensionAppliedFor / healthAppliedFor（lib/payroll-context.ts から呼ぶ）
 /**
  * 明細に残す「計算に使った保険の基準」。料率・標準報酬月額は月ごとに履歴から解決するため、
  * どの値で計算したかを payrolls に複写しておく（4つの保存経路すべてで使う）。
@@ -33,22 +31,6 @@ function appliedInsuranceSnapshot(
     appliedPensionRate: rates.pensionRate,
     appliedEmploymentInsuranceRate: rates.employmentInsuranceRate,
   };
-}
-
-function resolvePensionApplied(emp: typeof employeesTable.$inferSelect, year: number, month: number): boolean {
-  if (emp.pensionApplied !== null && emp.pensionApplied !== undefined) {
-    return emp.pensionApplied;
-  }
-  // 70歳に達した日（誕生日の前日）の月から引かない。以前は「その月の1日時点の年齢」で見ていたため、
-  // 到達した月の分も引いていた（例：10月12日生まれ→10月11日に到達→10月分から引かない）。
-  const dob = emp.dateOfBirth;
-  if (!dob) return true;
-  const y = year, m = month;
-  const p = String(dob).split(/[-/]/).map(Number);
-  if (p.length < 3 || p.some((n) => !Number.isFinite(n))) return true;
-  const reach = new Date(Date.UTC(p[0]! + 70, p[1]! - 1, p[2]!));
-  reach.setUTCDate(reach.getUTCDate() - 1);
-  return y * 12 + (m - 1) < reach.getUTCFullYear() * 12 + reach.getUTCMonth();
 }
 
 function buildPayrollResponse(p: typeof payrollsTable.$inferSelect, emp: typeof employeesTable.$inferSelect) {
@@ -125,19 +107,32 @@ router.post("/payroll/calculate", async (req, res) => {
     req.body.calculationMode ?? existingPayrollForGuard?.calculationMode ?? "manual";
 
   const companyRows = await db.select().from(companyTable).limit(1);
-  const company = companyRows[0] ?? {
+  const company = (companyRows[0] ?? {
     monthlyAverageWorkHours: 160,
     employmentInsuranceRate: EMP_INS_RATE_R8,
-  };
+  }) as Partial<typeof companyTable.$inferSelect> & { monthlyAverageWorkHours: number };
 
   // 日曜・祝日の時給（会社設定。既定 1,655円/h）。2026-08 から日曜出勤は「時間 × この単価」。
-  const sundayHourlyRate = (company as { hourlyWageSunday?: number }).hourlyWageSunday ?? 1655;
+  const sundayHourlyRate = company.hourlyWageSunday ?? 1655;
 
   // 保険料率（健保・介護・子育て支援金・厚年・雇用保険）と標準報酬月額は、
   // マスターの履歴から「この明細の年月」に効く値を使う。
   const insuranceRates = await getEffectiveInsuranceRates(year, month);
   const empInsRate = insuranceRates.employmentInsuranceRate;
   const stdRemuneration = (await getEffectiveStandardRemuneration(emp, year, month)).standardRemuneration;
+
+  // 法令まわりの前提（スイッチ・75歳/70歳・止める印・甲欄乙欄・その月の住民税）。lib/payroll-context.ts
+  const ctx = await loadPayrollContext(emp, company, year, month);
+  const residentTax = ctx.residentTax;
+  const deductionFlags = {
+    healthApplied: ctx.healthApplied,
+    pensionApplied: ctx.pensionApplied,
+    socialInsuranceExempt: ctx.socialInsuranceExempt,
+    employmentInsuranceExempt: ctx.employmentInsuranceExempt,
+    incomeTaxExempt: ctx.incomeTaxExempt,
+    withholding: ctx.withholding,
+    rounding: ctx.rules.healthChildcareRounding,
+  };
 
   // 手当・控除は「その月」の内容を使う（lib/month-items.ts）。
   // 以前は月を持たない社員ごとの手当を読んでいたため、ほかの月の作業で書き換わった金額が
@@ -147,7 +142,7 @@ router.post("/payroll/calculate", async (req, res) => {
   // 画面を開かずに計算した社員は前の月の金額のままになっていた。
   // 自動計算の2つは残業などを自分で計算するので、従来どおり手当の行はそのまま使う。
   const monthItems = calculationMode === "manual"
-    ? await syncMonthItemsWithAttendance(emp, record, company as { dailyWageWeekday?: number; dailyWageSaturday?: number; hourlyWageSunday?: number }, year, month)
+    ? await syncMonthItemsWithAttendance(emp, record, company, year, month)
     : await ensureMonthItems(emp, year, month);
   const customAllowances = monthItems.allowances
     .map(a => ({
@@ -164,8 +159,21 @@ router.post("/payroll/calculate", async (req, res) => {
     .filter(a => a.excludeFromEmploymentInsurance)
     .reduce((s, a) => s + a.amount, 0);
 
+  // 通勤手当のうち、非課税の上限（マイカー通勤の距離ごとの額）を超えた分は課税にする。
+  // 社員マスターで通勤の手段を入れていない人は 0（今までどおり全額非課税）。
+  const commuteExcess = commuteExcessOf(emp, customAllowances);
+
+  // 割増の基礎・最低賃金の比較に入れる手当（手当マスターの「割増の基礎に入れる」）
+  const premiumDefIds = new Set((await db.select({ id: allowanceDefinitionsTable.id, on: allowanceDefinitionsTable.includeInPremiumBase }).from(allowanceDefinitionsTable)).filter((d) => d.on).map((d) => d.id));
+  const includedAllowances = customAllowances.filter((a) => premiumDefIds.has(a.allowanceDefinitionId)).reduce((s, a) => s + a.amount, 0);
+
   // 積立金・カスタム控除（その月の内容）
   const customDeductionsTotal = monthItems.deductions.reduce((sum, r) => sum + (r.amount ?? 0), 0);
+
+  const warningsJson = (extra: string[] = []) => {
+    const w = [...payrollWarnings(emp, company, year, month, { includedAllowances, calculationMode }), ...extra];
+    return w.length ? JSON.stringify(w) : null;
+  };
 
   // ────────────────────────────────────────────────────────────────
   // 手入力固定モード（calculationMode = "manual"）
@@ -182,10 +190,14 @@ router.post("/payroll/calculate", async (req, res) => {
       : emp.salaryType === "daily"
       ? (monthItems.baseSalary ?? emp.baseSalary ?? 0)
       : (emp.baseSalary ?? 0);
+    // ⑨ 月給の人の欠勤控除（会社設定のスイッチが ON のときだけ。既定は今までどおり 0）
+    const manualAbsenceDeduction = emp.salaryType === "fixed"
+      ? absenceDeductionFor(manualBaseSalary, record.absenceDays ?? 0, ctx.rules, ctx.scheduledDaysInMonth)
+      : 0;
     const manualCustomAllowancesTotal = customAllowances.reduce((s, a) => s + a.amount, 0);
     const manualNonTaxableTotal = customAllowances.filter(a => !a.isTaxable).reduce((s, a) => s + a.amount, 0);
     const manualTransportation = emp.transportationAllowance ?? 0;
-    const manualNonTaxableAllowances = manualTransportation + manualNonTaxableTotal;
+    const manualNonTaxableAllowances = manualTransportation + manualNonTaxableTotal - commuteExcess;
 
     const manualGrossSalary = roundJapanese(
       manualBaseSalary +
@@ -195,34 +207,38 @@ router.post("/payroll/calculate", async (req, res) => {
       (emp.positionAllowance ?? 0) +
       (emp.familyAllowance ?? 0) +
       (emp.earlyOvertimeAllowance ?? 0) +
-      manualCustomAllowancesTotal
+      manualCustomAllowancesTotal -
+      manualAbsenceDeduction
     );
 
-    const manualInsBase = stdRemuneration > 0 ? stdRemuneration : manualGrossSalary;
+    let manualIns;
+    try {
+      manualIns = calculateInsuranceAndTax({
+        standardRemuneration: stdRemuneration,
+        grossSalary: manualGrossSalary,
+        nonTaxableAllowances: manualNonTaxableAllowances,
+        employmentInsuranceExcludedAllowances: empInsExcludedTotal,
+        dependentCount: emp.dependentCount ?? 0,
+        hasSpouse: emp.hasSpouse ?? false,
+        careInsuranceApplied: emp.careInsuranceApplied ?? false,
+        employmentInsuranceApplied: emp.employmentInsuranceApplied ?? true,
+        residentTax,
+        customDeductionsTotal,
+        employmentInsuranceRate: empInsRate,
+        employmentInsuranceOverride: monthItems.employmentInsuranceOverride,
+        insuranceRates,
+        ...deductionFlags,
+      });
+    } catch (e) {
+      if (e instanceof OtsuTableMissingError) return res.status(400).json({ error: `${emp.name}さんは乙欄（扶養控除等申告書なし）ですが、乙欄の税額表が入っていないため計算できません。` });
+      throw e;
+    }
 
-    const manualIns = calculateInsuranceAndTax({
-      standardRemuneration: manualInsBase,
-      grossSalary: manualGrossSalary,
-      nonTaxableAllowances: manualNonTaxableAllowances,
-      employmentInsuranceExcludedAllowances: empInsExcludedTotal,
-      dependentCount: emp.dependentCount ?? 0,
-      hasSpouse: emp.hasSpouse ?? false,
-      careInsuranceApplied: emp.careInsuranceApplied ?? false,
-      pensionApplied: resolvePensionApplied(emp, year, month),
-      employmentInsuranceApplied: emp.employmentInsuranceApplied ?? true,
-      residentTax: emp.residentTax ?? 0,
-      customDeductionsTotal,
-      employmentInsuranceRate: empInsRate,
-      employmentInsuranceOverride: monthItems.employmentInsuranceOverride,
-      insuranceRates,
-    });
-
-    const isManualExempt = emp.taxExempt === true;
-    const manualSocialInsurance = isManualExempt ? 0 : (manualIns.healthInsurance + manualIns.childcareSupportContribution + manualIns.pension);
-    const manualChildcare = isManualExempt ? 0 : manualIns.childcareSupportContribution;
-    const manualEmpIns = isManualExempt ? 0 : manualIns.employmentInsurance;
-    const manualIncomeTax = isManualExempt ? 0 : manualIns.incomeTax;
-    const manualResidentTax = emp.residentTax ?? 0;
+    const manualSocialInsurance = manualIns.healthInsurance + manualIns.childcareSupportContribution + manualIns.pension;
+    const manualChildcare = manualIns.childcareSupportContribution;
+    const manualEmpIns = manualIns.employmentInsurance;
+    const manualIncomeTax = manualIns.incomeTax;
+    const manualResidentTax = residentTax;
     const manualTotalDeductions = roundJapanese(
       manualSocialInsurance + manualEmpIns + manualIncomeTax + manualResidentTax + customDeductionsTotal
       + (emp.otherDeductionMonthly ?? 0) // その他控除（積立金等）: フロント/仕様書に合わせ控除合計へ算入
@@ -243,7 +259,7 @@ router.post("/payroll/calculate", async (req, res) => {
       familyAllowance: emp.familyAllowance ?? 0,
       earlyOvertimeAllowance: emp.earlyOvertimeAllowance ?? 0,
       customAllowancesTotal: manualCustomAllowancesTotal,
-      absenceDeduction: 0,
+      absenceDeduction: manualAbsenceDeduction,
       grossSalary: manualGrossSalary,
       socialInsurance: manualSocialInsurance,
       childcareSupportContribution: manualChildcare,
@@ -264,7 +280,10 @@ router.post("/payroll/calculate", async (req, res) => {
       paidLeaveDays: record.paidLeaveDays ?? 0,
       saturdayWorkDays: record.saturdayWorkDays ?? 0,
       useBluewingLogic: false,
-      ...appliedInsuranceSnapshot(insuranceRates, manualInsBase, emp.careInsuranceApplied ?? false),
+      healthInsuranceAmount: manualIns.healthInsurance,
+      pensionAmount: manualIns.pension,
+      calcWarnings: warningsJson(),
+      ...appliedInsuranceSnapshot(insuranceRates, manualIns.insuranceBase, emp.careInsuranceApplied ?? false),
     };
 
     const existingManual = await db.select().from(payrollsTable)
@@ -342,37 +361,42 @@ router.post("/payroll/calculate", async (req, res) => {
       holidayPay,
       fixedOvertimeAmount: emp.bluewingFixedOvertimeAmount ?? 0,
       lateNightPay: bwLateNightPay,
-    });
+    }, { v2: ctx.rules.bluewingPerformanceV2, over60: ctx.rules.bluewingOver60 });
 
     const grossSalary = bwResult.grossSalary;
-    const bwInsBase = stdRemuneration > 0 ? stdRemuneration : grossSalary;
 
     // 非課税手当合計: 通勤手当 + isTaxable=false のカスタム手当（例: 交通費）
     const bwNonTaxableCustom = customAllowances
       .filter(a => !a.isTaxable)
       .reduce((sum, a) => sum + a.amount, 0);
-    const bwNonTaxableAllowances = (emp.transportationAllowance ?? 0) + bwNonTaxableCustom;
+    const bwNonTaxableAllowances = (emp.transportationAllowance ?? 0) + bwNonTaxableCustom - commuteExcess;
 
-    const bwIns = calculateInsuranceAndTax({
-      standardRemuneration: bwInsBase,
-      grossSalary,
-      nonTaxableAllowances: bwNonTaxableAllowances,
-      employmentInsuranceExcludedAllowances: empInsExcludedTotal,
-      dependentCount: emp.dependentCount ?? 0,
-      hasSpouse: emp.hasSpouse ?? false,
-      careInsuranceApplied: emp.careInsuranceApplied ?? false,
-      pensionApplied: resolvePensionApplied(emp, year, month),
-      employmentInsuranceApplied: emp.employmentInsuranceApplied ?? true,
-      residentTax: emp.residentTax ?? 0,
-      customDeductionsTotal,
-      employmentInsuranceRate: empInsRate,
-      employmentInsuranceOverride: monthItems.employmentInsuranceOverride,
-      insuranceRates,
-    });
+    let bwIns;
+    try {
+      bwIns = calculateInsuranceAndTax({
+        standardRemuneration: stdRemuneration,
+        grossSalary,
+        nonTaxableAllowances: bwNonTaxableAllowances,
+        employmentInsuranceExcludedAllowances: empInsExcludedTotal,
+        dependentCount: emp.dependentCount ?? 0,
+        hasSpouse: emp.hasSpouse ?? false,
+        careInsuranceApplied: emp.careInsuranceApplied ?? false,
+        employmentInsuranceApplied: emp.employmentInsuranceApplied ?? true,
+        residentTax,
+        customDeductionsTotal,
+        employmentInsuranceRate: empInsRate,
+        employmentInsuranceOverride: monthItems.employmentInsuranceOverride,
+        insuranceRates,
+        ...deductionFlags,
+      });
+    } catch (e) {
+      if (e instanceof OtsuTableMissingError) return res.status(400).json({ error: `${emp.name}さんは乙欄（扶養控除等申告書なし）ですが、乙欄の税額表が入っていないため計算できません。` });
+      throw e;
+    }
 
     const socialInsurance = bwIns.healthInsurance + bwIns.childcareSupportContribution + bwIns.pension;
     const totalDeductions = roundJapanese(
-      socialInsurance + bwIns.employmentInsurance + bwIns.incomeTax + (emp.residentTax ?? 0) + customDeductionsTotal
+      socialInsurance + bwIns.employmentInsurance + bwIns.incomeTax + residentTax + customDeductionsTotal
       + (emp.otherDeductionMonthly ?? 0) // その他控除（積立金等）: フロント/仕様書に合わせ控除合計へ算入
     );
     const netSalary = roundJapanese(grossSalary - totalDeductions);
@@ -397,7 +421,7 @@ router.post("/payroll/calculate", async (req, res) => {
       childcareSupportContribution: bwIns.childcareSupportContribution,
       employmentInsurance: bwIns.employmentInsurance,
       incomeTax: bwIns.incomeTax,
-      residentTax: emp.residentTax ?? 0,
+      residentTax,
       totalDeductions,
       netSalary,
       workDays: record.workDays ?? 0,
@@ -415,7 +439,10 @@ router.post("/payroll/calculate", async (req, res) => {
       performanceAllowance: bwResult.performanceAllowance,
       customDeductionsTotal,
       calculationMode: "bluewing_auto",
-      ...appliedInsuranceSnapshot(insuranceRates, bwInsBase, emp.careInsuranceApplied ?? false),
+      healthInsuranceAmount: bwIns.healthInsurance,
+      pensionAmount: bwIns.pension,
+      calcWarnings: warningsJson(),
+      ...appliedInsuranceSnapshot(insuranceRates, bwIns.insuranceBase, emp.careInsuranceApplied ?? false),
     };
 
     const existingBw = await db.select().from(payrollsTable)
@@ -449,55 +476,63 @@ router.post("/payroll/calculate", async (req, res) => {
   // ────────────────────────────────────────────────────────────────
   // 標準ロジック
   // ────────────────────────────────────────────────────────────────
-  const result = calculatePayroll({
-    baseSalary: emp.baseSalary,
-    salaryType: emp.salaryType,
-    dailyRateWeekday: company.dailyWageWeekday,
-    dailyRateSaturday: company.dailyWageSaturday,
-    transportationAllowance: emp.transportationAllowance,
-    safetyDrivingAllowance: emp.safetyDrivingAllowance,
-    longDistanceAllowance: emp.longDistanceAllowance,
-    positionAllowance: emp.positionAllowance,
-    familyAllowance: emp.familyAllowance,
-    earlyOvertimeAllowance: emp.earlyOvertimeAllowance,
-    commissionRatePerKm: emp.commissionRatePerKm,
-    commissionRatePerCase: emp.commissionRatePerCase,
-    dependentCount: emp.dependentCount,
-    hasSpouse: emp.hasSpouse,
-    standardRemuneration: stdRemuneration,
-    careInsuranceApplied: emp.careInsuranceApplied ?? false,
-    employmentInsuranceApplied: emp.employmentInsuranceApplied ?? true,
-    pensionApplied: resolvePensionApplied(emp, year, month),
-    employmentInsuranceRate: empInsRate,
-    employmentInsuranceOverride: monthItems.employmentInsuranceOverride,
-    insuranceRates,
-    residentTax: emp.residentTax,
-    monthlyAverageWorkHours: company.monthlyAverageWorkHours,
-    workDays: record.workDays,
-    saturdayWorkDays: record.saturdayWorkDays,
-    sundayWorkHours: record.sundayWorkHours ?? 0,
-    sundayHourlyRate,
-    overtimeHours: record.overtimeHours,
-    lateNightHours: record.lateNightHours,
-    holidayWorkDays: record.holidayWorkDays,
-    drivingDistanceKm: record.drivingDistanceKm,
-    deliveryCases: record.deliveryCases,
-    absenceDays: record.absenceDays,
-    actualWorkHours: record.actualWorkHours ?? 0,
-    empDailyRateWeekday: emp.dailyRateWeekday ?? 0,
-    empDailyRateSaturday: emp.dailyRateSaturday ?? 0,
-    empOvertimeHourlyRate: emp.overtimeHourlyRate ?? 0,
-    empLateNightHourlyRate: emp.lateNightHourlyRate ?? 0,
-    overtimeUnitMinutes: emp.overtimeUnitMinutes ?? null,
-    overtimeUnitRate: emp.overtimeUnitRate ?? 0,
-    taxExempt: emp.taxExempt ?? false,
-    customAllowances,
-  });
+  let result;
+  try {
+    result = calculatePayroll({
+      baseSalary: emp.baseSalary,
+      salaryType: emp.salaryType,
+      dailyRateWeekday: company.dailyWageWeekday ?? 9808,
+      dailyRateSaturday: company.dailyWageSaturday ?? 12260,
+      transportationAllowance: emp.transportationAllowance,
+      safetyDrivingAllowance: emp.safetyDrivingAllowance,
+      longDistanceAllowance: emp.longDistanceAllowance,
+      positionAllowance: emp.positionAllowance,
+      familyAllowance: emp.familyAllowance,
+      earlyOvertimeAllowance: emp.earlyOvertimeAllowance,
+      commissionRatePerKm: emp.commissionRatePerKm,
+      commissionRatePerCase: emp.commissionRatePerCase,
+      dependentCount: emp.dependentCount,
+      hasSpouse: emp.hasSpouse,
+      standardRemuneration: stdRemuneration,
+      careInsuranceApplied: emp.careInsuranceApplied ?? false,
+      employmentInsuranceApplied: emp.employmentInsuranceApplied ?? true,
+      employmentInsuranceRate: empInsRate,
+      employmentInsuranceOverride: monthItems.employmentInsuranceOverride,
+      insuranceRates,
+      residentTax,
+      monthlyAverageWorkHours: company.monthlyAverageWorkHours,
+      workDays: record.workDays,
+      saturdayWorkDays: record.saturdayWorkDays,
+      sundayWorkHours: record.sundayWorkHours ?? 0,
+      sundayHourlyRate,
+      overtimeHours: record.overtimeHours,
+      lateNightHours: record.lateNightHours,
+      holidayWorkDays: record.holidayWorkDays,
+      drivingDistanceKm: record.drivingDistanceKm,
+      deliveryCases: record.deliveryCases,
+      absenceDays: record.absenceDays,
+      actualWorkHours: record.actualWorkHours ?? 0,
+      empDailyRateWeekday: emp.dailyRateWeekday ?? 0,
+      empDailyRateSaturday: emp.dailyRateSaturday ?? 0,
+      empOvertimeHourlyRate: emp.overtimeHourlyRate ?? 0,
+      empLateNightHourlyRate: emp.lateNightHourlyRate ?? 0,
+      overtimeUnitMinutes: emp.overtimeUnitMinutes ?? null,
+      overtimeUnitRate: emp.overtimeUnitRate ?? 0,
+      taxExempt: emp.taxExempt ?? false,
+      customAllowances: customAllowances.map((a) => a),
+      ...deductionFlags,
+    });
+  } catch (e) {
+    if (e instanceof OtsuTableMissingError) return res.status(400).json({ error: `${emp.name}さんは乙欄（扶養控除等申告書なし）ですが、乙欄の税額表が入っていないため計算できません。` });
+    throw e;
+  }
+  // 通勤手当の非課税の上限を超えた分は、標準の自動計算では源泉税に入れていない（manual・BW だけ）。
+  // 自動計算は本番では使っていないため、超過があるときは注意として残す。
+  const stdExtraWarnings = commuteExcess > 0 ? [`通勤手当のうち ${commuteExcess.toLocaleString("ja-JP")}円 が非課税の上限を超えていますが、自動計算では源泉税に反映していません。`] : [];
 
-  // 標準報酬月額が未設定(0)の社員はエンジン内で総支給を計算基礎にしている
   const stdSnapshot = appliedInsuranceSnapshot(
     insuranceRates,
-    stdRemuneration > 0 ? stdRemuneration : result.grossSalary,
+    result.insuranceBase,
     emp.careInsuranceApplied ?? false,
   );
 
@@ -508,7 +543,49 @@ router.post("/payroll/calculate", async (req, res) => {
   );
   const stdNetSalary = roundJapanese(result.grossSalary - stdTotalDeductions);
 
-  // Upsert payroll
+  const stdData = {
+    baseSalary: result.baseSalary,
+    saturdayPay: result.saturdayPay,
+    overtimePay: result.overtimePay,
+    lateNightPay: result.lateNightPay,
+    // 休日出勤手当の表示行は「休日(holidayWorkDays)＋日曜(sundayWorkDays)」分を合算。
+    // grossSalary は不変（エンジンが両者を別々に既に合算済み）。
+    holidayPay: (result.holidayPay ?? 0) + (result.sundayPay ?? 0),
+    commissionPay: result.commissionPay,
+    transportationAllowance: result.transportationAllowance,
+    safetyDrivingAllowance: result.safetyDrivingAllowance,
+    longDistanceAllowance: result.longDistanceAllowance,
+    positionAllowance: result.positionAllowance,
+    familyAllowance: result.familyAllowance,
+    earlyOvertimeAllowance: result.earlyOvertimeAllowance,
+    customAllowancesTotal: result.customAllowancesTotal,
+    absenceDeduction: result.absenceDeduction,
+    grossSalary: result.grossSalary,
+    socialInsurance: result.socialInsurance,
+    childcareSupportContribution: result.childcareSupportContribution,
+    employmentInsurance: result.employmentInsurance,
+    incomeTax: result.incomeTax,
+    residentTax: result.residentTax,
+    totalDeductions: stdTotalDeductions,
+    netSalary: stdNetSalary,
+    overtimeHours: record.overtimeHours,
+    lateNightHours: record.lateNightHours,
+    // 表示用: 「日曜/祝日」列を休日として保存（時間が主、日数は過去データ互換）、土曜日数も保存
+    holidayWorkDays: record.sundayWorkDays,
+    holidayWorkHours: record.sundayWorkHours ?? 0,
+    publicHolidayWorkDays: record.holidayWorkDays ?? 0,
+    paidLeaveDays: record.paidLeaveDays ?? 0,
+    saturdayWorkDays: record.saturdayWorkDays,
+    workDays: record.workDays,
+    customDeductionsTotal,
+    calculationMode: "auto",
+    healthInsuranceAmount: result.healthInsurance,
+    pensionAmount: result.pension,
+    calcWarnings: warningsJson(stdExtraWarnings),
+    ...stdSnapshot,
+  };
+
+  // Upsert payroll（確定済みの行は書き換えない）
   const existing = await db.select().from(payrollsTable)
     .where(and(
       eq(payrollsTable.employeeId, employeeId),
@@ -519,91 +596,22 @@ router.post("/payroll/calculate", async (req, res) => {
   let payroll;
   if (existing.length > 0) {
     [payroll] = await db.update(payrollsTable).set({
-      baseSalary: result.baseSalary,
-      saturdayPay: result.saturdayPay,
-      overtimePay: result.overtimePay,
-      lateNightPay: result.lateNightPay,
-      // 休日出勤手当の表示行は「休日(holidayWorkDays)＋日曜(sundayWorkDays)」分を合算。
-      // grossSalary は不変（エンジンが両者を別々に既に合算済み）。
-      holidayPay: (result.holidayPay ?? 0) + (result.sundayPay ?? 0),
-      commissionPay: result.commissionPay,
-      transportationAllowance: result.transportationAllowance,
-      safetyDrivingAllowance: result.safetyDrivingAllowance,
-      longDistanceAllowance: result.longDistanceAllowance,
-      positionAllowance: result.positionAllowance,
-      familyAllowance: result.familyAllowance,
-      earlyOvertimeAllowance: result.earlyOvertimeAllowance,
-      customAllowancesTotal: result.customAllowancesTotal,
-      absenceDeduction: result.absenceDeduction,
-      grossSalary: result.grossSalary,
-      socialInsurance: result.socialInsurance,
-      childcareSupportContribution: result.childcareSupportContribution,
-      employmentInsurance: result.employmentInsurance,
-      incomeTax: result.incomeTax,
-      residentTax: result.residentTax,
-      totalDeductions: stdTotalDeductions,
-      netSalary: stdNetSalary,
-      overtimeHours: record.overtimeHours,
-      lateNightHours: record.lateNightHours,
-      // 表示用: 「日曜/祝日」列を休日として保存（時間が主、日数は過去データ互換）、土曜日数も保存
-      holidayWorkDays: record.sundayWorkDays,
-      holidayWorkHours: record.sundayWorkHours ?? 0,
-      publicHolidayWorkDays: record.holidayWorkDays ?? 0,
-      paidLeaveDays: record.paidLeaveDays ?? 0,
-      saturdayWorkDays: record.saturdayWorkDays,
-      workDays: record.workDays,
-      customDeductionsTotal,
-      calculationMode: "auto",
-      ...stdSnapshot,
+      ...stdData,
       status: "draft",
       updatedAt: new Date(),
-    }).where(eq(payrollsTable.id, existing[0].id)).returning();
+    }).where(and(eq(payrollsTable.id, existing[0].id), ne(payrollsTable.status, "confirmed"))).returning();
+    if (!payroll) return res.status(409).json({ error: "確定済みの給与明細は再計算できません。" });
   } else {
     [payroll] = await db.insert(payrollsTable).values({
       employeeId,
       year,
       month,
       status: "draft",
-      baseSalary: result.baseSalary,
-      saturdayPay: result.saturdayPay,
-      overtimePay: result.overtimePay,
-      lateNightPay: result.lateNightPay,
-      // 休日出勤手当の表示行は「休日(holidayWorkDays)＋日曜(sundayWorkDays)」分を合算。
-      // grossSalary は不変（エンジンが両者を別々に既に合算済み）。
-      holidayPay: (result.holidayPay ?? 0) + (result.sundayPay ?? 0),
-      commissionPay: result.commissionPay,
-      transportationAllowance: result.transportationAllowance,
-      safetyDrivingAllowance: result.safetyDrivingAllowance,
-      longDistanceAllowance: result.longDistanceAllowance,
-      positionAllowance: result.positionAllowance,
-      familyAllowance: result.familyAllowance,
-      earlyOvertimeAllowance: result.earlyOvertimeAllowance,
-      customAllowancesTotal: result.customAllowancesTotal,
-      absenceDeduction: result.absenceDeduction,
-      grossSalary: result.grossSalary,
-      socialInsurance: result.socialInsurance,
-      childcareSupportContribution: result.childcareSupportContribution,
-      employmentInsurance: result.employmentInsurance,
-      incomeTax: result.incomeTax,
-      residentTax: result.residentTax,
-      totalDeductions: stdTotalDeductions,
-      netSalary: stdNetSalary,
-      overtimeHours: record.overtimeHours,
-      lateNightHours: record.lateNightHours,
-      // 表示用: 「日曜/祝日」列を休日として保存（時間が主、日数は過去データ互換）、土曜日数も保存
-      holidayWorkDays: record.sundayWorkDays,
-      holidayWorkHours: record.sundayWorkHours ?? 0,
-      publicHolidayWorkDays: record.holidayWorkDays ?? 0,
-      paidLeaveDays: record.paidLeaveDays ?? 0,
-      saturdayWorkDays: record.saturdayWorkDays,
-      workDays: record.workDays,
-      customDeductionsTotal,
-      calculationMode: "auto",
-      ...stdSnapshot,
+      ...stdData,
     }).returning();
   }
 
-  return res.json(buildPayrollResponse(payroll, emp));
+  return res.json(buildPayrollResponse(payroll!, emp));
 });
 
 router.get("/payroll/:id", async (req, res) => {

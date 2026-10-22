@@ -90,6 +90,9 @@ router.post("/employees", async (req, res) => {
     employmentInsuranceApplied: body.employmentInsuranceApplied ?? true,
     pensionApplied: body.pensionApplied ?? null,
     taxExempt: body.taxExempt ?? false,
+    socialInsuranceExempt: body.socialInsuranceExempt ?? body.taxExempt ?? false,
+    employmentInsuranceExempt: body.employmentInsuranceExempt ?? body.taxExempt ?? false,
+    incomeTaxExempt: body.incomeTaxExempt ?? body.taxExempt ?? false,
     residentTax: body.residentTax ?? 0,
     dateOfBirth: body.dateOfBirth || null,
     hireDate: body.hireDate,
@@ -188,6 +191,14 @@ router.put("/employees/:id", async (req, res) => {
       ...(body.employmentInsuranceApplied !== undefined && { employmentInsuranceApplied: body.employmentInsuranceApplied }),
       ...('pensionApplied' in body && { pensionApplied: body.pensionApplied ?? null }),
       ...(body.taxExempt !== undefined && { taxExempt: body.taxExempt }),
+      // 旧い画面の「全額非課税」は、分けた3つの印（社保・雇用保険・源泉税）にも同じ値を写す。
+      // 3つを個別に送ってきたとき（法令の画面）はそちらを使う。
+      ...(body.taxExempt !== undefined && body.socialInsuranceExempt === undefined && body.employmentInsuranceExempt === undefined && body.incomeTaxExempt === undefined && {
+        socialInsuranceExempt: body.taxExempt === true, employmentInsuranceExempt: body.taxExempt === true, incomeTaxExempt: body.taxExempt === true,
+      }),
+      ...(typeof body.socialInsuranceExempt === "boolean" && { socialInsuranceExempt: body.socialInsuranceExempt }),
+      ...(typeof body.employmentInsuranceExempt === "boolean" && { employmentInsuranceExempt: body.employmentInsuranceExempt }),
+      ...(typeof body.incomeTaxExempt === "boolean" && { incomeTaxExempt: body.incomeTaxExempt }),
       ...(body.residentTax !== undefined && { residentTax: body.residentTax }),
       ...(body.dateOfBirth !== undefined && { dateOfBirth: body.dateOfBirth || null }),
       ...(body.hireDate !== undefined && { hireDate: body.hireDate }),

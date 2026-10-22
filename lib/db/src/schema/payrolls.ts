@@ -66,6 +66,11 @@ export const payrollsTable = pgTable("payrolls", {
   appliedPensionRate: doublePrecision("applied_pension_rate"),
   /** 雇用保険料率（本人負担）*/
   appliedEmploymentInsuranceRate: doublePrecision("applied_employment_insurance_rate"),
+  /** 健康保険料（介護込み）と厚生年金保険料。印刷はこの値をそのまま出す（この列が入る前の明細は null） */
+  healthInsuranceAmount: doublePrecision("health_insurance_amount"),
+  pensionAmount: doublePrecision("pension_amount"),
+  /** 計算のときに見つかった注意（最低賃金を下回る など）。JSON の文字列の配列 */
+  calcWarnings: text("calc_warnings"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [
