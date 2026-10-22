@@ -42,6 +42,7 @@ function isPublicDriverFlowRequest(req: Request): boolean {
   if (m === "GET"  && /^\/employees\/\d+$/.test(p)) return true;
   if (m === "GET"  && /^\/employees\/\d+\/pin\/status$/.test(p)) return true;
   if (m === "POST" && /^\/employees\/\d+\/pin\/verify$/.test(p)) return true;
+  if (m === "POST" && /^\/employees\/\d+\/pin\/setup$/.test(p)) return true;
   // 打刻フロー
   if (m === "POST" && p === "/attendance/record") return true;
   if (m === "POST" && p === "/attendance/location/live") return true;
@@ -134,12 +135,14 @@ router.use("/payroll-law", requireAdmin);
 //   - GET  /employees/:id              （社員情報の表示）
 //   - GET  /employees/:id/pin/status   （PIN設定有無）
 //   - POST /employees/:id/pin/verify   （PIN認証）
+//   - POST /employees/:id/pin/setup    （暗証番号がまだ無い人が自分で決める）
 router.use("/employees", (req: Request, res: Response, next: NextFunction) => {
   const path = req.path; // ここでは /employees を除いた残り部分（例: "/4", "/4/pin/verify"）
   const isPublicEmployeeRoute =
     (req.method === "GET"  && /^\/\d+$/.test(path)) ||
     (req.method === "GET"  && /^\/\d+\/pin\/status$/.test(path)) ||
-    (req.method === "POST" && /^\/\d+\/pin\/verify$/.test(path));
+    (req.method === "POST" && /^\/\d+\/pin\/verify$/.test(path)) ||
+    (req.method === "POST" && /^\/\d+\/pin\/setup$/.test(path));
   if (isPublicEmployeeRoute) return next();
   return requireAdmin(req, res, next);
 });

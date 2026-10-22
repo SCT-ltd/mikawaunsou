@@ -234,6 +234,10 @@ export default function DriverPage() {
   const [pinLockedUntil, setPinLockedUntil] = useState<number | null>(null);
   const [pinVerifying, setPinVerifying] = useState(false);
   const shakeRef = useRef<HTMLDivElement>(null);
+  /** 暗証番号がまだ無い人は、最初に自分で決める（QR だけでは使えない） */
+  const [pinSetup, setPinSetup] = useState(false);
+  /** 決めるときの1回目の入力（2回目と一致したら登録） */
+  const [pinFirst, setPinFirst] = useState<string | null>(null);
 
   // ── いまの勤務の打刻を取り直す ──
   const fetchData = useCallback(async () => {
@@ -477,8 +481,9 @@ export default function DriverPage() {
     fetchData();
     apiFetch(`/employees/${employeeId}/pin/status`)
       .then((res: { pinSet: boolean; verified?: boolean }) => {
-        if (res.pinSet && !res.verified) setPinRequired(true);
-        else { if (res.pinSet) setPinRequired(true); setPinVerified(true); }
+        if (!res.pinSet) { setPinSetup(true); return; }
+        setPinRequired(true);
+        if (res.verified) setPinVerified(true);
       })
       .catch((e) => {
         if (isQrKeyError(String((e as Error)?.message ?? ""))) setQrKeyMissing(true);
@@ -649,6 +654,60 @@ export default function DriverPage() {
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [pinVerified, employeeId, working]);
+
+  // ── 暗証番号を決める（まだ無い人） ──
+  const handleSetupKey = useCallback(async (key: string) => {
+    if (pinVerifying) return;
+    if (key === "del") { setPinInput(p => p.slice(0, -1)); setPinError(null); return; }
+    const next = pinInput + key;
+    setPinInput(next);
+    setPinError(null);
+    if (next.length < 4) return;
+    if (pinFirst === null) {
+      if (/^(\d)\1{3}$/.test(next) || "0123456789012".includes(next) || "9876543210987".includes(next)) {
+        setPinError("同じ数字の繰り返しや「1234」のような並びは使えません");
+        setPinInput("");
+        return;
+      }
+      setPinFirst(next);
+      setPinInput("");
+      return;
+    }
+    if (next !== pinFirst) {
+      setPinError("1回目と違います。はじめから決め直してください");
+      setPinFirst(null);
+      setPinInput("");
+      return;
+    }
+    setPinVerifying(true);
+    try {
+      const res = await fetch(`${BASE}/api/employees/${employeeId}/pin/setup`, {
+        method: "POST", headers: { "Content-Type": "application/json", ...qrHeaders() }, body: JSON.stringify({ pin: next }),
+      });
+      const body = await res.json().catch(() => ({})) as { ok?: boolean; error?: string; code?: string };
+      if (res.ok && body.ok) {
+        setPinSetup(false);
+        setPinRequired(true);
+        setPinVerified(true);
+        fetchData();
+        return;
+      }
+      if (body.code === "pin-already-set") {
+        // 別の端末で先に決めた／事務所が設定した → 入力の画面へ
+        setPinSetup(false);
+        setPinRequired(true);
+      }
+      setPinError(body.error ?? "決められませんでした。電波の良いところでもう一度入れてください。");
+      setPinFirst(null);
+      setPinInput("");
+    } catch {
+      setPinError("決められませんでした。電波の良いところでもう一度入れてください。");
+      setPinFirst(null);
+      setPinInput("");
+    } finally {
+      setPinVerifying(false);
+    }
+  }, [pinInput, pinFirst, pinVerifying, employeeId, fetchData]);
 
   // ── 暗証番号 ──
   const handlePinKey = useCallback(async (key: string) => {
@@ -935,8 +994,9 @@ export default function DriverPage() {
   }
 
   // ── PIN入力画面 ───────────────────────────────────────────────
-  if (pinRequired && !pinVerified) {
+  if ((pinSetup || pinRequired) && !pinVerified) {
     const keys = ["1","2","3","4","5","6","7","8","9","","0","del"];
+    const onKey = pinSetup ? handleSetupKey : handlePinKey;
     const lockLeft = pinLockedUntil ? Math.max(0, Math.ceil((pinLockedUntil - now.getTime()) / 1000)) : 0;
     const locked = lockLeft > 0;
     return (
@@ -947,7 +1007,14 @@ export default function DriverPage() {
           <p className="text-sm text-muted-foreground">{employee.department}</p>
         </div>
         <div ref={shakeRef} className="mb-6 text-center">
-          <p className="text-sm text-muted-foreground mb-4 font-medium">PINコードを入力してください</p>
+          {pinSetup ? (
+            <div className="mb-4 max-w-[280px]">
+              <p className="text-base font-bold text-gray-800">{pinFirst === null ? "暗証番号（4桁）を決めてください" : "確認のため、もう一度入れてください"}</p>
+              <p className="text-xs text-muted-foreground mt-1 leading-relaxed">QRコードだけでは、他の人がスマホで読み取ると打刻できてしまいます。あなただけが知っている4桁を決めてください。忘れたら事務所に連絡してください。</p>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground mb-4 font-medium">PINコードを入力してください</p>
+          )}
           <div className="flex gap-4 justify-center mb-2">
             {[0,1,2,3].map(i => (
               <div key={i} className={`w-5 h-5 rounded-full border-2 transition-all
@@ -966,7 +1033,7 @@ export default function DriverPage() {
             if (key === "") return <div key={idx} />;
             const isDel = key === "del";
             return (
-              <button key={idx} onClick={() => handlePinKey(key)}
+              <button key={idx} onClick={() => onKey(key)}
                 disabled={locked || pinVerifying || (!isDel && pinInput.length >= 4)}
                 className={`h-16 rounded-2xl text-xl font-bold transition-all active:scale-95 shadow-sm
                   ${isDel ? "bg-gray-200 text-gray-600 hover:bg-gray-300 text-base" : "bg-white border border-gray-200 hover:bg-gray-50 text-gray-800"}
@@ -1254,12 +1321,6 @@ export default function DriverPage() {
             })}
             <div ref={msgBottomRef} />
           </div>
-          {pinVerified && !pinRequired && (
-            <div className="px-3 py-2.5 border-t bg-amber-50 text-amber-900 text-xs leading-relaxed">
-              🔒 暗証番号が設定されていないため、メッセージは使えません。事務所に暗証番号の設定を頼んでください。
-              （出勤・退勤などの打刻はこのまま使えます）
-            </div>
-          )}
           {msgError && <div className="px-3 py-2 border-t bg-red-50 text-red-700 text-xs">{msgError}</div>}
           <div className="px-3 py-3 border-t bg-white flex gap-2 shrink-0">
             <input type="text" value={msgInput} onChange={e => setMsgInput(e.target.value)}

@@ -16,8 +16,8 @@ import {
   employeeMonthAllowancesTable,
   employeeMonthDeductionsTable,
 } from "@workspace/db";
-import { asc, eq } from "drizzle-orm";
-import { issueDriverToken, qrKeyOk, tokenValid, newQrKey, QR_KEY_REQUIRED_BODY } from "../lib/driver-token";
+import { and, asc, eq, isNull } from "drizzle-orm";
+import { issueDriverToken, qrKeyOk, tokenValid, newQrKey, weakPin, QR_KEY_REQUIRED_BODY } from "../lib/driver-token";
 import { hashSecret, verifyPin } from "../lib/password";
 import { audit, diffOf } from "../lib/audit";
 import { isAdminReq } from "../lib/roles";
@@ -272,6 +272,9 @@ router.put("/employees/:id/pin", async (req, res) => {
   if (!pin || !/^\d{4}$/.test(String(pin))) {
     return res.status(400).json({ error: "PINは4桁の数字で入力してください" });
   }
+  if (weakPin(String(pin))) {
+    return res.status(400).json({ error: "同じ数字の繰り返しや「1234」のような並びは使えません" });
+  }
   const [updated] = await db.update(employeesTable)
     .set({ pin: hashSecret(String(pin)), updatedAt: new Date() })
     .where(eq(employeesTable.id, id))
@@ -303,6 +306,30 @@ router.post("/employees/:id/qr-key/rotate", async (req, res) => {
   if (!updated) return res.status(404).json({ error: "社員が見つかりません。" });
   await audit(req, "qrkey.rotate", `employee:${id}`);
   return res.json(updated);
+});
+
+// 暗証番号を本人が決める（打刻ページ・まだ暗証番号が無い人だけ）。
+// QR の合言葉を持つ端末からだけ受け付け、決めたらその端末に印を渡す。
+// すでに暗証番号がある人は変えられない（変えるのは事務所＝PUT /employees/:id/pin）。
+router.post("/employees/:id/pin/setup", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const { pin } = req.body ?? {};
+  const [emp] = await db.select({ pin: employeesTable.pin, qrKey: employeesTable.qrKey }).from(employeesTable).where(eq(employeesTable.id, id));
+  if (!emp) return res.status(404).json({ error: "社員が見つかりません。" });
+  if (!qrKeyOk(req, emp.qrKey)) return res.status(403).json(QR_KEY_REQUIRED_BODY);
+  if (emp.pin) return res.status(409).json({ error: "暗証番号はすでに決まっています。忘れたときは事務所に連絡してください。", code: "pin-already-set" });
+  if (!pin || !/^\d{4}$/.test(String(pin))) return res.status(400).json({ error: "4桁の数字で決めてください" });
+  if (weakPin(String(pin))) return res.status(400).json({ error: "同じ数字の繰り返しや「1234」のような並びは使えません" });
+  const stored = hashSecret(String(pin));
+  // 同時に2台から決めようとしたときに後から上書きしないよう、まだ無いときだけ書く
+  const [updated] = await db.update(employeesTable)
+    .set({ pin: stored, updatedAt: new Date() })
+    .where(and(eq(employeesTable.id, id), isNull(employeesTable.pin)))
+    .returning({ id: employeesTable.id });
+  if (!updated) return res.status(409).json({ error: "暗証番号はすでに決まっています。忘れたときは事務所に連絡してください。", code: "pin-already-set" });
+  await audit(req, "pin.self-set", `employee:${id}`);
+  issueDriverToken(res, id, stored);
+  return res.json({ ok: true });
 });
 
 // PIN照合（ドライバー用）

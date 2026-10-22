@@ -110,10 +110,16 @@ export async function driverAccess(req: Request, employeeId: number): Promise<Dr
   if (!emp) return "not-found";
   // 暗証番号を確かめた端末は、QR の合言葉が無くても本人
   if (emp.pin && tokenValid(req, employeeId, emp.pin)) return "verified";
-  // それ以外は、QR の合言葉（URL の ?k=）を持っている端末だけ。
-  // 以前は社員番号（連番）を差し替えるだけで、暗証番号の無い人の打刻・位置・点検を代わりに書けた。
-  if (!qrKeyOk(req, emp.qrKey)) return "denied";
-  return emp.pin ? "denied" : "no-pin";
+  // それ以外は通さない。以前は暗証番号の無い人を QR の合言葉だけで通していたため、
+  // QR の写真が他人に渡ると、その人として打刻・位置の送信ができた。
+  // 暗証番号の無い人は、打刻ページで最初に決めてもらう（POST /employees/:id/pin/setup）。
+  return "denied";
+}
+
+/** 暗証番号として弱すぎるもの（同じ数字の繰り返し・並び）。設定のときに断る。 */
+export function weakPin(pin: string): boolean {
+  if (/^(\d)\1{3}$/.test(pin)) return true;
+  return "0123456789012".includes(pin) || "9876543210987".includes(pin);
 }
 
 export const QR_KEY_REQUIRED_BODY = { error: "QRコードが新しくなりました。事務所で新しいQRコードを受け取って、読み取り直してください。", code: "qr-key-required" };

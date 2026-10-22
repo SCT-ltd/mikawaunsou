@@ -149,6 +149,8 @@ export default function OfficePage() {
   const [pinError, setPinError] = useState<string | null>(null);
   const [pinLoading, setPinLoading] = useState(false);
   const [hasPinSet, setHasPinSet] = useState<boolean | null>(null);
+  /** 暗証番号を決めるときの確認の入力 */
+  const [pinConfirm, setPinConfirm] = useState("");
   /** 電波が無くて端末に溜めている打刻 */
   const [pending, setPending] = useState<QueuedItem[]>([]);
   /** 押してから1分は取り消せる */
@@ -190,11 +192,13 @@ export default function OfficePage() {
       // サーバーが返す項目名は pinSet。以前は hasPinSet を見ていたため常に「未設定」と判断し、
       // 暗証番号を設定していても入力なしで打刻画面に入れていた。
       setHasPinSet(data?.pinSet ?? false);
-      // 暗証番号が無い人・この端末で確かめ済みの人は、そのまま使える（リアルタイム更新もつなぐ）
-      if (!data?.pinSet || data?.verified) setPinVerified(true);
+      // この端末で確かめ済みの人は、そのまま使える（リアルタイム更新もつなぐ）。
+      // 暗証番号が無い人は、先に自分で決めてもらう（QR だけでは使えない）。
+      if (data?.pinSet && data?.verified) setPinVerified(true);
     } catch (e) {
+      // 電波が悪いだけなら「暗証番号を決める」画面は出さない（入力の画面を出して、確かめるときに分かる）
       if (isQrKeyError(String((e as Error)?.message ?? ""))) setQrKeyMissing(true);
-      setHasPinSet(false);
+      else setHasPinSet(true);
     }
   }
 
@@ -244,6 +248,29 @@ export default function OfficePage() {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pinVerified]);
+
+  /** 暗証番号がまだ無い人が自分で決める（2回入れて一致したら登録） */
+  async function handlePinSetup() {
+    if (!/^\d{4}$/.test(pinInput)) { setPinError("4桁の数字で決めてください"); return; }
+    if (/^(\d)\1{3}$/.test(pinInput) || "0123456789012".includes(pinInput) || "9876543210987".includes(pinInput)) {
+      setPinError("同じ数字の繰り返しや「1234」のような並びは使えません"); return;
+    }
+    if (pinInput !== pinConfirm) { setPinError("2回の入力が違います"); return; }
+    setPinLoading(true);
+    setPinError(null);
+    try {
+      await apiFetch(`/employees/${employeeId}/pin/setup`, { method: "POST", body: JSON.stringify({ pin: pinInput }) });
+      setHasPinSet(true);
+      setPinVerified(true);
+      fetchData();
+    } catch (e) {
+      let msg = "決められませんでした。もう一度お試しください";
+      try { const b = JSON.parse((e as Error).message); if (b?.error) msg = b.error; if (b?.code === "pin-already-set") setHasPinSet(true); } catch { /* ignore */ }
+      setPinError(msg);
+    } finally {
+      setPinLoading(false);
+    }
+  }
 
   async function handlePinSubmit() {
     if (pinInput.length < 4) { setPinError("PINは4桁以上で入力してください"); return; }
@@ -371,6 +398,46 @@ export default function OfficePage() {
   const breakMin = calcBreakMinutes(records);
   const clockInRecord = records.find(r => r.eventType === "clock_in");
   const clockOutRecord = [...records].reverse().find(r => r.eventType === "clock_out");
+
+  // ─── 暗証番号を決める画面（まだ無い人） ─────────────────
+  if (!pinVerified && hasPinSet === false) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-100 to-blue-100 p-4">
+        <div className="w-full max-w-sm bg-white rounded-3xl shadow-xl overflow-hidden">
+          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-8 text-white text-center">
+            <p className="text-4xl mb-2">🏢</p>
+            <h1 className="text-2xl font-bold">{employee.name}</h1>
+            <p className="text-blue-200 text-sm mt-1">{employee.department}　事務</p>
+          </div>
+          <div className="p-6">
+            <p className="text-center text-slate-800 font-bold mb-1">暗証番号（4桁）を決めてください</p>
+            <p className="text-center text-slate-500 text-xs leading-relaxed mb-4">QRコードだけでは、他の人が読み取ると打刻できてしまいます。あなただけが知っている4桁を決めてください。忘れたら事務所に連絡してください。</p>
+            <input
+              type="password" inputMode="numeric" maxLength={4} value={pinInput} autoFocus aria-label="暗証番号"
+              onChange={(e) => { setPinInput(e.target.value.replace(/\D/g, "")); setPinError(null); }}
+              placeholder="••••"
+              className="w-full text-center text-2xl tracking-widest border-2 border-slate-200 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 mb-2"
+            />
+            <input
+              type="password" inputMode="numeric" maxLength={4} value={pinConfirm} aria-label="確認のためもう一度"
+              onChange={(e) => { setPinConfirm(e.target.value.replace(/\D/g, "")); setPinError(null); }}
+              onKeyDown={(e) => { if (e.key === "Enter") handlePinSetup(); }}
+              placeholder="もう一度"
+              className="w-full text-center text-2xl tracking-widest border-2 border-slate-200 rounded-xl px-4 py-3 focus:outline-none focus:border-blue-500 mb-3"
+            />
+            {pinError && <p className="text-red-500 text-sm text-center mb-3">{pinError}</p>}
+            <button
+              onClick={handlePinSetup}
+              disabled={pinLoading || pinInput.length < 4 || pinConfirm.length < 4}
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold text-base disabled:opacity-40 active:scale-95 transition-all"
+            >
+              {pinLoading ? "登録中..." : "この番号に決める"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // ─── PIN画面 ─────────────────────────────────────
   if (!pinVerified && hasPinSet) {

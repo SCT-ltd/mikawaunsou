@@ -193,13 +193,13 @@ export async function computeAlerts(): Promise<EmployeeAlert[]> {
     }
   }
 
-  // ── 暗証番号が未設定（QR の打刻ページでメッセージ・スマホの通知が使えない）──
+  // ── 暗証番号が未設定（QR だけでは打刻できない。次に QR を開いたときに本人が決める）──
   const noPin = emps.filter((e) => !e.pin);
   if (noPin.length > 0) {
     const names = noPin.map((e) => nameOf(e.name).split(" ")[0]).slice(0, 6).join("・");
-    out.push({ key: `nopin:${noPin.map((e) => e.id).join(",")}`, level: "info", href: MASTER,
+    out.push({ key: `nopin:${noPin.map((e) => e.id).join(",")}`, level: "warn", href: MASTER,
       title: `暗証番号が未設定の人が${noPin.length}人います`,
-      body: `${names}${noPin.length > 6 ? " ほか" : ""}。打刻はできますが、事務所とのメッセージとスマホの通知が使えません。社員マスターで設定してください。` });
+      body: `${names}${noPin.length > 6 ? " ほか" : ""}。次に QR コードを開いたときに、本人が4桁を決めるまで打刻できません。事務所で先に決めて伝える場合は、社員マスターで設定してください。` });
   }
 
   // ── 残業（いちばん新しい月の実績・年の累計）── 運転者の年960時間に合わせた文。lib/alerts-payroll.ts
