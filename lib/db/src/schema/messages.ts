@@ -7,6 +7,8 @@ export const messagesTable = pgTable("messages", {
   sender: text("sender").notNull(), // 'office' | 'employee'
   content: text("content").notNull(),
   readAt: timestamp("read_at"),
+  /** 端末が送るごとに作る番号（電波が悪くて送り直したときに二重に届かないように） */
+  clientId: text("client_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

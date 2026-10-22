@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { db, absenceRecordsTable } from "@workspace/db";
-import { eq, and, gte, lte } from "drizzle-orm";
+import { db, absenceRecordsTable, attendanceRecordsTable } from "@workspace/db";
+import { eq, and, gte, lte, isNull } from "drizzle-orm";
 import { isAdminReq } from "../lib/roles";
 
 const router = Router();
@@ -9,6 +9,8 @@ const router = Router();
 export const ABSENCE_DAYS: Record<string, number> = {
   sick:            1.0,
   paid_leave:      1.0,
+  paid_leave_am:   0.5,
+  paid_leave_pm:   0.5,
   bereavement:     1.0,
   morning_half:    0.5,
   afternoon_half:  0.5,
@@ -18,11 +20,21 @@ export const ABSENCE_DAYS: Record<string, number> = {
 export const ABSENCE_LABELS: Record<string, string> = {
   sick:           "病欠",
   paid_leave:     "有給休暇",
+  paid_leave_am:  "有給（午前半日）",
+  paid_leave_pm:  "有給（午後半日）",
   bereavement:    "忌引き",
   morning_half:   "午前休み",
   afternoon_half: "午後休み",
   other:          "その他",
 };
+
+/** 有給休暇か（半日の有給を含む）。有給は欠勤控除の対象にしない */
+export const isPaidLeave = (t: string) => t === "paid_leave" || t === "paid_leave_am" || t === "paid_leave_pm";
+/** 1日まるごとの休みか（半日の休みは出勤があってもよい） */
+export const isFullDayAbsence = (t: string) => (ABSENCE_DAYS[t] ?? 1) >= 1;
+
+/** 日本時間の今日 */
+const todayJst = () => new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
 
 // ── 指定日の欠勤一覧 ─────────────────────────────────────
 // admin: 全員分
@@ -30,7 +42,9 @@ export const ABSENCE_LABELS: Record<string, string> = {
 router.get("/absences", async (req, res) => {
   if (!req.session?.userId) return res.status(401).json({ error: "ログインが必要です" });
 
-  const date = (req.query.date as string) ?? new Date().toISOString().slice(0, 10);
+  // 日付を省いたときは日本時間の今日（以前は UTC の日付になり、朝9時までは前の日を見ていた）
+  const raw = req.query.date as string | undefined;
+  const date = raw && /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : todayJst();
 
   const conditions = [eq(absenceRecordsTable.workDate, date)];
   if (!isAdminReq(req)) {
@@ -95,6 +109,9 @@ router.post("/absences", async (req, res) => {
   if (!absenceType || !workDate) {
     return res.status(400).json({ error: "absenceType, workDate は必須です" });
   }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(workDate)) {
+    return res.status(400).json({ error: "workDate が不正です" });
+  }
   if (!(absenceType in ABSENCE_DAYS)) {
     return res.status(400).json({ error: `absenceType が不正です: ${absenceType}` });
   }
@@ -123,7 +140,19 @@ router.post("/absences", async (req, res) => {
     note: note ?? null,
   }).returning();
 
-  return res.status(201).json(record);
+  // 1日まるごとの休みなのに、その日に出勤の打刻があれば知らせる（登録はする）
+  let warning: string | null = null;
+  if (isFullDayAbsence(absenceType)) {
+    const [att] = await db.select({ id: attendanceRecordsTable.id }).from(attendanceRecordsTable)
+      .where(and(eq(attendanceRecordsTable.employeeId, employeeId), eq(attendanceRecordsTable.workDate, workDate),
+        eq(attendanceRecordsTable.eventType, "clock_in"), isNull(attendanceRecordsTable.voidedAt)));
+    if (att) warning = "この日には出勤の打刻もあります。休みと出勤のどちらが正しいか確かめてください。";
+  }
+  const sameDay = await db.select({ id: absenceRecordsTable.id }).from(absenceRecordsTable)
+    .where(and(eq(absenceRecordsTable.employeeId, employeeId), eq(absenceRecordsTable.workDate, workDate)));
+  if (!warning && sameDay.length > 1) warning = "この日には休みがほかにも登録されています。重なっていないか確かめてください。";
+
+  return res.status(201).json({ ...record, warning });
 });
 
 // ── 欠勤削除 ─────────────────────────────────────────────

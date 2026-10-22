@@ -23,6 +23,9 @@ import {
   GpsAddressLink,
   fmt,
   nowTimeJST,
+  minToStr,
+  METHOD_LABELS,
+  isNextDayOf,
   elapsedStr,
   elapsedMs,
   elapsedColor,
@@ -50,6 +53,7 @@ export function DetailPanel({
   onSaveAbsence,
   onShowQR,
   onClose,
+  onDecideInspection,
 }: {
   selected: EmployeeStatus;
   now: Date;
@@ -60,7 +64,9 @@ export function DetailPanel({
   onSwapRecords: (indexA: number, indexB: number) => void;
   onSwapAbsences: (employeeId: number, indexA: number, indexB: number) => void;
   onDeleteAbsence: (id: number) => void;
-  onAddRecord: (eventType: EventType, time: string) => Promise<string | null>;
+  onAddRecord: (eventType: EventType, time: string, nextDay: boolean) => Promise<string | null>;
+  /** 日常点検の「否」への事務所の処置と、運行してよいかの判断 */
+  onDecideInspection?: (id: number, officeAction: string, decision: "ok" | "ng" | null) => Promise<void>;
   onSaveAbsence: (absenceType: AbsenceType, note: string) => Promise<boolean>;
   onShowQR: (employee: EmployeeStatus["employee"]) => void;
   onClose: () => void;
@@ -79,6 +85,9 @@ export function DetailPanel({
   const [addEventType, setAddEventType] = useState<EventType>("clock_in");
   const [addTime, setAddTime] = useState(() => nowTimeJST());
   const [addError, setAddError] = useState<string | null>(null);
+  /** 日をまたぐ打刻（翌2時の退勤など）。日付は勤務日のまま、時刻だけ翌日にする */
+  const [addNextDay, setAddNextDay] = useState(false);
+  const [inspAction, setInspAction] = useState<string | null>(null);
 
   // 欠勤・休暇フォーム
   const [absenceMode, setAbsenceMode] = useState(false);
@@ -90,7 +99,7 @@ export function DetailPanel({
 
   const handleAdd = async () => {
     setAddError(null);
-    const err = await onAddRecord(addEventType, addTime);
+    const err = await onAddRecord(addEventType, addTime, addNextDay);
     if (err) setAddError(err);
     else setAddMode(false);
   };
@@ -215,35 +224,140 @@ export function DetailPanel({
             );
           })()}
 
-          {/* 日常点検 */}
+          {/* 日常点検：全項目に答えるまでは「未点検」（以前は1つもつけていなくても「異常なし」と出ていた） */}
           {(() => {
-            const clockInRec = selected.records.find((r) => r.eventType === "clock_in" && r.checklistNgItems);
-            if (!clockInRec?.checklistNgItems) return null;
-            let parsed: { total: number; checked: number; ng: string[] } | null = null;
-            try { parsed = JSON.parse(clockInRec.checklistNgItems); } catch { return null; }
-            if (!parsed) return null;
-            const allOk = parsed.ng.length === 0;
+            let insp = selected.inspection ?? null;
+            if (!insp) {
+              const clockInRec = selected.records.find((r) => r.eventType === "clock_in" && r.checklistNgItems);
+              if (clockInRec?.checklistNgItems) {
+                try {
+                  const p = JSON.parse(clockInRec.checklistNgItems) as { total: number; checked: number; ng: string[] };
+                  insp = { id: 0, workDate: clockInRec.workDate, vehicle: null, items: {}, total: p.total, checked: p.checked, ng: p.ng ?? [], complete: p.total > 0 && p.checked >= p.total, officeAction: null, officeDecision: null, decidedBy: null, decidedAt: null, updatedAt: "" };
+                } catch { /* 古い形 */ }
+              }
+            }
+            if (!insp) {
+              if (selected.employee.isOfficeStaff || selected.status === "未出勤") return null;
+              return (
+                <div className="mt-2 rounded-xl border px-3.5 py-3 flex items-center gap-2.5 bg-amber-50/80 border-amber-200">
+                  <span className="text-lg shrink-0">📋</span>
+                  <p className="text-[11px] font-bold text-amber-700">日常点検 未点検（0/21項目）</p>
+                </div>
+              );
+            }
+            const hasNg = insp.ng.length > 0;
+            const tone = hasNg ? "bg-red-50/80 border-red-200" : insp.complete ? "bg-emerald-50/80 border-emerald-100" : "bg-amber-50/80 border-amber-200";
+            const label = hasNg ? `異常${insp.ng.length}件` : insp.complete ? "異常なし" : "未点検";
             return (
-              <div className={`mt-2 rounded-xl border px-3.5 py-3 flex items-start gap-2.5 ${allOk ? "bg-emerald-50/80 border-emerald-100" : "bg-red-50/80 border-red-200"}`}>
-                <span className="text-lg shrink-0">{allOk ? "✅" : "⚠️"}</span>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <p className={`text-[10px] font-bold uppercase tracking-wider leading-none ${allOk ? "text-emerald-600" : "text-red-600"}`}>
-                      日常点検 {allOk ? "異常なし" : `異常${parsed.ng.length}件`}
-                    </p>
-                    <span className="text-[10px] text-slate-400">（{parsed.checked}/{parsed.total}項目）</span>
+              <div className={`mt-2 rounded-xl border px-3.5 py-3 flex items-start gap-2.5 ${tone}`}>
+                <span className="text-lg shrink-0">{hasNg ? "⚠️" : insp.complete ? "✅" : "📋"}</span>
+                <div className="flex-1 min-w-0 space-y-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <p className={`text-[11px] font-bold leading-none ${hasNg ? "text-red-600" : insp.complete ? "text-emerald-600" : "text-amber-700"}`}>日常点検 {label}</p>
+                    <span className="text-[10px] text-slate-400">（{insp.checked}/{insp.total}項目）</span>
+                    {insp.vehicle && <span className="text-[10px] font-semibold text-slate-600 bg-white/70 border px-1.5 rounded">{insp.vehicle}</span>}
                   </div>
-                  {parsed.ng.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {parsed.ng.map((item) => (
+                  {hasNg && (
+                    <div className="flex flex-wrap gap-1">
+                      {insp.ng.map((item) => (
                         <span key={item} className="text-xs bg-red-100 text-red-700 border border-red-200 px-1.5 py-0.5 rounded-full font-medium">{item}</span>
                       ))}
+                    </div>
+                  )}
+                  {hasNg && insp.id > 0 && onDecideInspection && (
+                    <div className="space-y-1.5 pt-1">
+                      <Textarea
+                        value={inspAction ?? insp.officeAction ?? ""}
+                        onChange={(e) => setInspAction(e.target.value)}
+                        placeholder="処置の内容（例：ブレーキを調整した）"
+                        className="h-14 text-xs resize-none bg-white"
+                      />
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <Button size="sm" variant={insp.officeDecision === "ok" ? "default" : "outline"} className="h-7 text-xs" disabled={saving}
+                          onClick={() => { void onDecideInspection(insp!.id, inspAction ?? insp!.officeAction ?? "", "ok"); setInspAction(null); }}>運行してよい</Button>
+                        <Button size="sm" variant={insp.officeDecision === "ng" ? "destructive" : "outline"} className="h-7 text-xs" disabled={saving}
+                          onClick={() => { void onDecideInspection(insp!.id, inspAction ?? insp!.officeAction ?? "", "ng"); setInspAction(null); }}>運行しない</Button>
+                        {insp.officeDecision ? (
+                          <span className="text-[10px] text-slate-500">判断：{insp.officeDecision === "ok" ? "運行してよい" : "運行しない"}（{insp.decidedBy}）</span>
+                        ) : <span className="text-[10px] font-bold text-red-600">事務所の判断がまだです</span>}
+                      </div>
                     </div>
                   )}
                 </div>
               </div>
             );
           })()}
+
+          {/* アルコールチェック（乗る前・乗った後） */}
+          {!selected.employee.isOfficeStaff && (selected.status !== "未出勤" || (selected.alcohol?.length ?? 0) > 0) && (() => {
+            const list = selected.alcohol ?? [];
+            const before = list.filter((a) => a.phase === "before");
+            const after = list.filter((a) => a.phase === "after");
+            const detected = list.some((a) => a.detected);
+            return (
+              <div className={`mt-2 rounded-xl border px-3.5 py-3 flex items-start gap-2.5 ${detected ? "bg-red-50/80 border-red-300" : before.length ? "bg-slate-50 border-slate-200" : "bg-amber-50/80 border-amber-200"}`}>
+                <span className="text-lg shrink-0">🍺</span>
+                <div className="flex-1 min-w-0 text-xs space-y-0.5">
+                  <p className={`text-[11px] font-bold ${detected ? "text-red-700" : "text-slate-600"}`}>アルコールチェック{detected ? "：検知あり（乗務させないでください）" : ""}</p>
+                  {[["乗る前", before], ["乗った後", after]].map(([label, arr]) => {
+                    const a = (arr as typeof list)[(arr as typeof list).length - 1];
+                    return (
+                      <p key={label as string} className={a?.detected ? "text-red-700 font-bold" : a ? "text-slate-700" : "text-amber-700"}>
+                        {label as string}：{a ? `${a.valueMg ?? "-"} mg/L・${METHOD_LABELS[a.method] ?? a.method}・確認 ${a.checker ?? "（未記入）"}・${fmt(a.checkedAt)}` : "まだ"}
+                      </p>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* 日報（退勤のときに残したもの） */}
+          {selected.report && (selected.report.shipper || selected.report.waitingMinutes != null || selected.report.vehicle) && (
+            <div className="mt-2 rounded-xl bg-slate-50 border border-slate-200 px-3.5 py-3 flex items-start gap-2.5">
+              <span className="text-lg shrink-0">📝</span>
+              <div className="text-xs space-y-0.5">
+                <p className="text-[11px] font-bold text-slate-600">日報</p>
+                {selected.report.shipper && <p>荷主：{selected.report.shipper}</p>}
+                {selected.report.waitingMinutes != null && <p>待機時間：{minToStr(selected.report.waitingMinutes)}</p>}
+                {selected.report.vehicle && <p>車両：{selected.report.vehicle}</p>}
+              </div>
+            </div>
+          )}
+
+          {/* 改善基準告示の目安（拘束・休息・連続） */}
+          {selected.compliance && !selected.employee.isOfficeStaff && (() => {
+            const c = selected.compliance!;
+            const has = (code: string) => c.flags.find((f) => f.code.startsWith(code));
+            const cell = (label: string, value: string, flag?: { level: string }) => (
+              <div className={`rounded-lg border px-2.5 py-2 ${flag ? (flag.level === "danger" ? "bg-red-50 border-red-300 text-red-700" : "bg-amber-50 border-amber-300 text-amber-800") : "bg-white border-slate-200 text-slate-700"}`}>
+                <p className="text-[10px] font-semibold opacity-70">{label}</p>
+                <p className="text-sm font-bold amount">{value}</p>
+              </div>
+            );
+            return (
+              <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 py-3">
+                <p className="text-[11px] font-bold text-slate-500 mb-1.5">改善基準の目安（打刻からの推定）</p>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {cell("拘束時間", minToStr(c.restraintMinutes), has("restraint"))}
+                  {cell("前の勤務からの休息", c.restBeforeMinutes === null ? "—" : minToStr(c.restBeforeMinutes), has("rest"))}
+                  {cell("続けて働いた最長", minToStr(c.maxContinuousMinutes), has("cont"))}
+                </div>
+                {c.flags.length > 0 && (
+                  <ul className="mt-1.5 space-y-0.5">
+                    {c.flags.map((f) => <li key={f.code} className={`text-[11px] font-semibold ${f.level === "danger" ? "text-red-600" : "text-amber-700"}`}>● {f.text}</li>)}
+                  </ul>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* 1日休みと出勤が両方ある */}
+          {empAbsences.some((a) => !["morning_half", "afternoon_half", "paid_leave_am", "paid_leave_pm"].includes(a.absenceType)) && selected.records.some((r) => r.eventType === "clock_in") && (
+            <div className="mt-2 rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2.5 text-xs font-semibold text-amber-800">
+              ⚠️ この日は休み（欠勤・有給など）と出勤の両方が入っています。どちらが正しいか確かめてください。
+            </div>
+          )}
         </div>
 
         {/* 打刻・休暇履歴 */}
@@ -251,7 +365,7 @@ export function DetailPanel({
           <div className="flex items-center justify-between mb-4">
             <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">打刻・休暇履歴</p>
             <button
-              onClick={() => { setAddMode(true); setAddTime(nowTimeJST()); setAddEventType("clock_in"); setAddError(null); }}
+              onClick={() => { setAddMode(true); setAddTime(nowTimeJST()); setAddEventType("clock_in"); setAddError(null); setAddNextDay(false); }}
               className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition-colors bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg"
             >
               <Plus className="h-3 w-3" />打刻を追加
@@ -283,12 +397,16 @@ export function DetailPanel({
                   <Input
                     type="time"
                     value={addTime}
-                    max={isToday ? nowTimeJST() : undefined}
+                    max={isToday && !addNextDay ? nowTimeJST() : undefined}
                     onChange={(e) => { setAddTime(e.target.value); setAddError(null); }}
                     className="h-8 text-xs"
                   />
                 </div>
               </div>
+              <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                <input type="checkbox" checked={addNextDay} onChange={(e) => { setAddNextDay(e.target.checked); setAddError(null); }} />
+                翌日の時刻（日をまたいだ退勤など。勤務日は {selected.workDate ?? "この日"} のまま）
+              </label>
               <div className="flex gap-2">
                 <Button size="sm" className="flex-1 h-7 text-xs" onClick={handleAdd} disabled={saving}>
                   <Plus className="h-3 w-3 mr-1" />追加
@@ -340,7 +458,7 @@ export function DetailPanel({
                           <div className="flex items-center justify-between">
                             <div>
                               <p className="text-xs font-semibold jp-tight">{ABSENCE_LABELS[a.absenceType]}</p>
-                              <p className="text-sm font-medium opacity-70">終日</p>
+                              <p className="text-sm font-medium opacity-70">{["morning_half", "afternoon_half", "paid_leave_am", "paid_leave_pm"].includes(a.absenceType) ? "半日" : "終日"}</p>
                               {a.note && <p className="text-xs opacity-60 mt-0.5">{a.note}</p>}
                             </div>
                             <div className="flex items-center gap-0.5">
@@ -398,7 +516,13 @@ export function DetailPanel({
                           <div className="flex items-center justify-between">
                             <div>
                               <p className="text-xs font-semibold jp-tight">{EVENT_LABELS[r.eventType]}</p>
-                              <p className="text-base font-bold amount">{fmt(r.recordedAt)}</p>
+                              <p className="text-base font-bold amount">
+                                {isNextDayOf(r.recordedAt, r.workDate) && <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded px-1 mr-1 align-middle">翌日</span>}
+                                {fmt(r.recordedAt)}
+                                {r.source === "auto" && <span className="ml-1.5 text-[10px] font-semibold text-slate-500 align-middle">（自動で入れた）</span>}
+                                {r.source === "offline" && <span className="ml-1.5 text-[10px] font-semibold text-slate-500 align-middle">（電波が戻ってから届いた）</span>}
+                                {r.source === "correction" && <span className="ml-1.5 text-[10px] font-semibold text-slate-500 align-middle">（修正申請で直した）</span>}
+                              </p>
                               {r.note && <p className="text-xs text-muted-foreground mt-0.5">📍 {r.note}</p>}
                               {r.latitude != null && r.longitude != null && <GpsAddressLink lat={r.latitude} lng={r.longitude} />}
                             </div>
@@ -441,6 +565,8 @@ export function DetailPanel({
                   <SelectContent>
                     <SelectItem value="sick">病欠</SelectItem>
                     <SelectItem value="paid_leave">有給休暇</SelectItem>
+                    <SelectItem value="paid_leave_am">有給（午前半日・0.5日）</SelectItem>
+                    <SelectItem value="paid_leave_pm">有給（午後半日・0.5日）</SelectItem>
                     <SelectItem value="bereavement">忌引き</SelectItem>
                     <SelectItem value="morning_half">午前休み（0.5日）</SelectItem>
                     <SelectItem value="afternoon_half">午後休み（0.5日）</SelectItem>

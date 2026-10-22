@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, date, timestamp, doublePrecision, unique } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, date, timestamp, doublePrecision, unique, boolean } from "drizzle-orm/pg-core";
 import { employeesTable } from "./employees";
 
 export const attendanceRecordsTable = pgTable("attendance_records", {
@@ -13,6 +13,15 @@ export const attendanceRecordsTable = pgTable("attendance_records", {
   latitude: doublePrecision("latitude"),
   longitude: doublePrecision("longitude"),
   checklistNgItems: text("checklist_ng_items"),
+  /** 端末が打刻ごとに作る番号。電波が悪くて送り直したときに、同じ打刻を2回入れないために使う */
+  clientId: text("client_id"),
+  /** 取り消した日時（取り消した打刻は消さずに残し、集計からは外す） */
+  voidedAt: timestamp("voided_at"),
+  voidReason: text("void_reason"),
+  /** 取り消した人（本人／事務所のユーザー名） */
+  voidedBy: text("voided_by"),
+  /** どこから入った打刻か：qr（その場で）／offline（電波が戻ってから）／admin（管理画面）／correction（修正申請の承認）／auto（自動で足したもの） */
+  source: text("source"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -20,8 +29,8 @@ export type AttendanceRecord = typeof attendanceRecordsTable.$inferSelect;
 export type InsertAttendanceRecord = typeof attendanceRecordsTable.$inferInsert;
 
 // 欠勤・休暇記録
-// absenceType: 'sick'=病欠, 'paid_leave'=有給, 'bereavement'=忌引き,
-//              'morning_half'=午前休み, 'afternoon_half'=午後休み, 'other'=その他
+// absenceType: 'sick'=病欠, 'paid_leave'=有給, 'paid_leave_am'=午前の半日有給, 'paid_leave_pm'=午後の半日有給,
+//              'bereavement'=忌引き, 'morning_half'=午前休み, 'afternoon_half'=午後休み, 'other'=その他
 export const absenceRecordsTable = pgTable("absence_records", {
   id: serial("id").primaryKey(),
   employeeId: integer("employee_id").notNull().references(() => employeesTable.id),
@@ -61,3 +70,129 @@ export const attendanceDraftsTable = pgTable("attendance_drafts", {
 
 export type AttendanceDraft = typeof attendanceDraftsTable.$inferSelect;
 export type InsertAttendanceDraft = typeof attendanceDraftsTable.$inferInsert;
+
+/**
+ * 打刻の変更の記録（取り消し・修正・修正申請の承認・自動で足した休憩終了など）。
+ * 打刻は消さずに残し、だれが・いつ・なにを・なぜ変えたかをここに残す。
+ * before / after は打刻の行を JSON にしたもの。
+ */
+export const attendanceRecordLogsTable = pgTable("attendance_record_logs", {
+  id: serial("id").primaryKey(),
+  recordId: integer("record_id"),
+  employeeId: integer("employee_id").notNull(),
+  workDate: date("work_date"),
+  action: text("action").notNull(), // 'cancel' | 'edit' | 'add' | 'correction' | 'auto_break_end' | 'delete'
+  before: text("before"),
+  after: text("after"),
+  actor: text("actor").notNull(),
+  reason: text("reason"),
+  at: timestamp("at").notNull().defaultNow(),
+});
+
+/**
+ * 打刻の修正申請。ドライバーが理由をつけて出し、事務所が承認すると打刻に反映する。
+ * kind: 'add'（打ち忘れを足す）| 'change'（時刻を直す）| 'cancel'（取り消す）
+ */
+export const attendanceCorrectionsTable = pgTable("attendance_corrections", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
+  workDate: date("work_date").notNull(),
+  kind: text("kind").notNull(),
+  eventType: text("event_type"),
+  recordId: integer("record_id"),
+  /** 直したい時刻（add / change のとき） */
+  requestedAt: timestamp("requested_at"),
+  reason: text("reason").notNull(),
+  status: text("status").notNull().default("pending"), // 'pending' | 'approved' | 'rejected'
+  decidedBy: text("decided_by"),
+  decidedAt: timestamp("decided_at"),
+  decisionNote: text("decision_note"),
+  resultRecordId: integer("result_record_id"),
+  clientId: text("client_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+/**
+ * 日常点検（1人1日1件）。出勤の前でも書ける。
+ * items は {項目ID: "良"|"否"} の JSON。全項目に答えるまでは「未点検」。
+ * 事務所は「否」があったときの処置と、運行してよいかの判断を残す。
+ */
+export const dailyInspectionsTable = pgTable("daily_inspections", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
+  workDate: date("work_date").notNull(),
+  vehicle: text("vehicle"),
+  items: text("items").notNull().default("{}"),
+  total: integer("total").notNull().default(0),
+  checked: integer("checked").notNull().default(0),
+  /** 「否」だった項目の名前（JSON の配列） */
+  ng: text("ng").notNull().default("[]"),
+  officeAction: text("office_action"),
+  /** 事務所の判断：'ok'（運行してよい）| 'ng'（運行しない） */
+  officeDecision: text("office_decision"),
+  decidedBy: text("decided_by"),
+  decidedAt: timestamp("decided_at"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => [unique("daily_inspections_emp_date_unique").on(t.employeeId, t.workDate)]);
+
+/** 出勤したあとに点検を書き換えたときの履歴 */
+export const inspectionHistoryTable = pgTable("inspection_history", {
+  id: serial("id").primaryKey(),
+  inspectionId: integer("inspection_id").notNull(),
+  employeeId: integer("employee_id").notNull(),
+  workDate: date("work_date").notNull(),
+  before: text("before"),
+  after: text("after"),
+  actor: text("actor").notNull(),
+  at: timestamp("at").notNull().defaultNow(),
+});
+
+/**
+ * アルコールチェックの記録（運送業の義務・1年間保存）。
+ * 社員を消しても残すため、社員の表とはつながず、名前も控えておく。
+ * phase: 'before'（乗る前）| 'after'（乗った後）
+ * method: 'face'（対面）| 'phone'（電話）| 'video'（ビデオ通話）| 'other'
+ */
+export const alcoholChecksTable = pgTable("alcohol_checks", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  employeeName: text("employee_name").notNull(),
+  workDate: date("work_date").notNull(),
+  phase: text("phase").notNull(),
+  checkedAt: timestamp("checked_at").notNull().defaultNow(),
+  valueMg: doublePrecision("value_mg"),
+  detected: boolean("detected").notNull().default(false),
+  method: text("method").notNull(),
+  checker: text("checker"),
+  vehicle: text("vehicle"),
+  note: text("note"),
+  clientId: text("client_id"),
+  updatedBy: text("updated_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+/** 日報（退勤のときにまとめて残す。1人1日1件） */
+export const dailyReportsTable = pgTable("daily_reports", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
+  workDate: date("work_date").notNull(),
+  vehicle: text("vehicle"),
+  departure: text("departure"),
+  arrival: text("arrival"),
+  startOdometer: doublePrecision("start_odometer"),
+  endOdometer: doublePrecision("end_odometer"),
+  distanceKm: doublePrecision("distance_km"),
+  shipper: text("shipper"),
+  waitingMinutes: integer("waiting_minutes"),
+  note: text("note"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => [unique("daily_reports_emp_date_unique").on(t.employeeId, t.workDate)]);
+
+/** 勤怠の設定（1行だけ。中身は JSON。lib/attendance-settings.ts が読み書きする） */
+export const attendanceSettingsTable = pgTable("attendance_settings", {
+  id: integer("id").primaryKey().default(1),
+  data: text("data").notNull().default("{}"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});

@@ -90,3 +90,5 @@ https://admin.mikawa-unso.jp/             -> 302  Cloudflare Access のログイ
     動かないのは画面のリアルタイム更新（SSE）とプッシュ通知の購読。
   - `isPublicDriverFlowRequest()` はこれら3つを許可しており、nginx の allowlist にも入れてある。
     ハンドラ側のセッション要求を公開フロー対応にすれば直る想定（※未着手）。
+
+- 2026-10-24 `migrations/2026-10-24-batch-b.sql`（追加のみ）を足した。当てる前に、同じ勤務日に出勤・退勤が2つ入っていないか確かめる（部分一意インデックスが作れなくなるため）：`select employee_id, work_date, event_type, count(*) from attendance_records where event_type in ('clock_in','clock_out') group by 1,2,3 having count(*)>1;`（本番の写しでは0件）。公開ホストの nginx は、打刻ページの新しい API（取り消し・場所の付け足し・設定・修正申請・アルコールチェック）と manifest・アイコンを通すように直した。

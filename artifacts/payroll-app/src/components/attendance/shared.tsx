@@ -7,7 +7,7 @@ import {
 /* ── 型 ─────────────────────────────────────────────── */
 export type EventType = "clock_in" | "clock_out" | "break_start" | "break_end";
 export type Status = "未出勤" | "出勤中" | "休憩中" | "退勤済";
-export type AbsenceType = "sick" | "paid_leave" | "bereavement" | "morning_half" | "afternoon_half" | "other";
+export type AbsenceType = "sick" | "paid_leave" | "paid_leave_am" | "paid_leave_pm" | "bereavement" | "morning_half" | "afternoon_half" | "other";
 
 export interface AbsenceRecord {
   id: number;
@@ -29,6 +29,7 @@ export interface AttendanceRecord {
   startOdometer: number | null;
   endOdometer: number | null;
   checklistNgItems: string | null;
+  source?: string | null;
 }
 
 export interface AttendanceDraft {
@@ -38,18 +39,55 @@ export interface AttendanceDraft {
   endOdometer: number | null;
 }
 
+/** 日常点検（1人1日1件。全項目に答えるまでは「未点検」） */
+export interface Inspection {
+  id: number; workDate: string; vehicle: string | null; items: Record<string, string>;
+  total: number; checked: number; ng: string[]; complete: boolean;
+  officeAction: string | null; officeDecision: "ok" | "ng" | null; decidedBy: string | null; decidedAt: string | null; updatedAt: string;
+}
+export interface AlcoholCheck {
+  id: number; employeeId: number; employeeName: string; workDate: string; phase: "before" | "after"; checkedAt: string;
+  valueMg: number | null; detected: boolean; method: string; checker: string | null; vehicle: string | null; note: string | null;
+}
+export interface DailyReport {
+  id: number; employeeId: number; workDate: string; vehicle: string | null; departure: string | null; arrival: string | null;
+  startOdometer: number | null; endOdometer: number | null; distanceKm: number | null; shipper: string | null; waitingMinutes: number | null; note: string | null;
+}
+export interface ComplianceFlag { level: "danger" | "warn"; code: string; text: string }
+export interface DayCompliance {
+  date: string; clockIn: string | null; clockOut: string | null; open: boolean; workMinutes: number; nightMinutes: number;
+  restraintMinutes: number; restBeforeMinutes: number | null; maxContinuousMinutes: number; flags: ComplianceFlag[];
+}
+
 export interface EmployeeStatus {
   employee: { id: number; employeeCode: string; name: string; department: string; isOfficeStaff?: boolean; qrKey?: string | null };
+  /** この行の勤務日（深夜に前の日の勤務が続いていれば前の日） */
+  workDate?: string;
   status: Status;
   clockInTime: string | null;
   records: AttendanceRecord[];
   draft: AttendanceDraft | null;
+  inspection?: Inspection | null;
+  alcohol?: AlcoholCheck[];
+  report?: DailyReport | null;
+  compliance?: DayCompliance | null;
+  pendingCorrections?: number;
+}
+
+export const METHOD_LABELS: Record<string, string> = { face: "対面", phone: "電話", video: "ビデオ通話", other: "その他" };
+
+/** 分を「◯時間◯分」に */
+export function minToStr(m: number): string {
+  const h = Math.floor(m / 60), mm = Math.round(m % 60);
+  return h === 0 ? `${mm}分` : `${h}時間${String(mm).padStart(2, "0")}分`;
 }
 
 /* ── 定数（ラベル・色・アイコン）───────────────────────── */
 export const ABSENCE_LABELS: Record<AbsenceType, string> = {
   sick:           "病欠",
   paid_leave:     "有給休暇",
+  paid_leave_am:  "有給（午前半日）",
+  paid_leave_pm:  "有給（午後半日）",
   bereavement:    "忌引き",
   morning_half:   "午前休み",
   afternoon_half: "午後休み",
@@ -59,6 +97,8 @@ export const ABSENCE_LABELS: Record<AbsenceType, string> = {
 export const ABSENCE_COLORS: Record<AbsenceType, string> = {
   sick:           "bg-red-100 text-red-700 border-red-200",
   paid_leave:     "bg-emerald-100 text-emerald-700 border-emerald-200",
+  paid_leave_am:  "bg-emerald-50 text-emerald-700 border-emerald-200",
+  paid_leave_pm:  "bg-emerald-50 text-emerald-700 border-emerald-200",
   bereavement:    "bg-purple-100 text-purple-700 border-purple-200",
   morning_half:   "bg-orange-100 text-orange-700 border-orange-200",
   afternoon_half: "bg-amber-100 text-amber-700 border-amber-200",
@@ -106,12 +146,12 @@ export function isFuture(dateStr: string, timeStr: string): boolean {
 export function formatDateJP(dateStr: string): string {
   const [y, m, d] = dateStr.split("-");
   const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
-  const dow = weekdays[new Date(dateStr).getDay()];
+  const dow = weekdays[new Date(`${dateStr}T00:00:00Z`).getUTCDay()];
   return `${y}年${Number(m)}月${Number(d)}日（${dow}）`;
 }
 export function addDays(dateStr: string, n: number): string {
-  const d = new Date(dateStr);
-  d.setDate(d.getDate() + n);
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
 }
 export function fmt(dateStr: string | null): string {
@@ -119,8 +159,18 @@ export function fmt(dateStr: string | null): string {
   return new Date(dateStr).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
 }
 export function toTimeInput(dateStr: string): string {
-  const d = new Date(dateStr);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  // 日本時間で出す（パソコンの時刻の設定に左右されないように）
+  return new Date(new Date(dateStr).getTime() + 9 * 3600000).toISOString().slice(11, 16);
+}
+/** 打刻の日付（日本時間）が勤務日より後か＝「翌日」の打刻 */
+export function isNextDayOf(recordedAt: string, workDate: string): boolean {
+  return new Date(new Date(recordedAt).getTime() + 9 * 3600000).toISOString().slice(0, 10) > workDate;
+}
+/** 勤務日＋時刻（＋翌日なら1日足す）から日時を作る */
+export function toIsoAt(workDate: string, time: string, nextDay: boolean): string {
+  const d = new Date(`${workDate}T${time}:00+09:00`);
+  if (nextDay) d.setTime(d.getTime() + 24 * 3600000);
+  return d.toISOString();
 }
 export function elapsedStr(from: string | null, now: Date): string {
   if (!from) return "-";

@@ -10,6 +10,7 @@ import journalEntriesRouter from "./journal_entries";
 import dashboardRouter from "./dashboard";
 import allowancesRouter from "./allowances";
 import attendanceRouter from "./attendance";
+import attendanceExtraRouter from "./attendance-extra";
 import absencesRouter from "./absences";
 import messagesRouter from "./messages";
 import usersRouter from "./users";
@@ -45,6 +46,16 @@ function isPublicDriverFlowRequest(req: Request): boolean {
   if (m === "GET"  && /^\/attendance\/employee\/\d+\/(today|month)$/.test(p)) return true;
   if (/^\/attendance\/checklist\/\d+$/.test(p) && (m === "GET" || m === "PATCH")) return true;
   if (/^\/attendance\/draft\/\d+$/.test(p)     && (m === "GET" || m === "PATCH")) return true;
+  // 押して1分以内の取り消し・打刻の場所の付け足し（本人の打刻だけ。中で確かめる）
+  if (m === "POST"  && /^\/attendance\/records\/\d+\/cancel$/.test(p)) return true;
+  if (m === "PATCH" && /^\/attendance\/records\/\d+\/location$/.test(p)) return true;
+  // 勤怠の設定（点検・アルコールチェックを必須にするか・車両の一覧）
+  if (m === "GET"  && p === "/attendance/settings/public") return true;
+  // 打刻の修正申請・アルコールチェック（本人の分だけ。中で確かめる）
+  if (m === "POST" && p === "/attendance/corrections") return true;
+  if (m === "GET"  && /^\/attendance\/corrections\/mine\/\d+$/.test(p)) return true;
+  if (m === "POST" && p === "/attendance/alcohol") return true;
+  if (m === "GET"  && /^\/attendance\/alcohol\/\d+\/today$/.test(p)) return true;
   // SSE（リアルタイム勤怠/メッセージ受信）
   if (m === "GET"  && p === "/attendance/stream") return true;
   if (m === "GET"  && p === "/messages/stream")   return true;
@@ -149,6 +160,7 @@ router.use(usersRouter);
 router.use(journalEntriesRouter);
 router.use(allowancesRouter);  // /*-definitions の POST/PUT/DELETE は admin（ファイル側）。/employees/:id/{allowances,deductions} は上の "/employees" プレフィックスで admin
 router.use(attendanceRouter);  // monthly-summary, gps-locations, location/live GET は admin（ファイル側）
+router.use(attendanceExtraRouter); // 修正申請・アルコールチェック・日報・点検の判断・改善基準・勤怠の設定
 router.use(absencesRouter);    // 現状認証のみ（owner設計後に強化）
 router.use(messagesRouter);    // conversations, broadcast は admin（ファイル側）
 router.use(insuranceRouter);

@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "wouter";
 import { qrKeyFor, isQrKeyError } from "@/lib/qr-key";
 import { playFeedbackSound, unlockAudio } from "@/lib/notification-sound";
+import { newClientId, sendOrQueue, flushQueue, queuedFor, type QueuedItem } from "@/lib/punch-queue";
+import { ChoiceSheet, fmtHM, type Choice } from "@/components/driver/driver-parts";
 
 type EventType = "clock_in" | "clock_out" | "break_start" | "break_end";
 type Status = "未出勤" | "出勤中" | "休憩中" | "退勤済";
@@ -22,6 +24,8 @@ interface Employee {
   department: string;
   scheduledWorkStart: string | null;
   scheduledWorkEnd: string | null;
+  isOfficeStaff?: boolean;
+  salaryType?: string;
 }
 
 const EVENT_LABELS: Record<EventType, string> = {
@@ -132,6 +136,12 @@ export default function OfficePage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  // 知らせは6秒で消す（新しい知らせが出たら数え直す）
+  useEffect(() => {
+    if (!successMsg) return;
+    const t = setTimeout(() => setSuccessMsg(null), 6000);
+    return () => clearTimeout(t);
+  }, [successMsg]);
 
   // PIN
   const [pinVerified, setPinVerified] = useState(false);
@@ -139,6 +149,13 @@ export default function OfficePage() {
   const [pinError, setPinError] = useState<string | null>(null);
   const [pinLoading, setPinLoading] = useState(false);
   const [hasPinSet, setHasPinSet] = useState<boolean | null>(null);
+  /** 電波が無くて端末に溜めている打刻 */
+  const [pending, setPending] = useState<QueuedItem[]>([]);
+  /** 押してから1分は取り消せる */
+  const [lastPunch, setLastPunch] = useState<{ id: number; eventType: EventType; at: number } | null>(null);
+  const [choice, setChoice] = useState<{ title: string; message: React.ReactNode; choices: Choice[] } | null>(null);
+  /** 実働を30分単位で切り上げる決まり（会社の設定） */
+  const [officeRounding, setOfficeRounding] = useState<"all_office" | "hourly_only" | "none">("all_office");
 
   const sseRef = useRef<EventSource | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -184,6 +201,21 @@ export default function OfficePage() {
   useEffect(() => {
     fetchData();
     checkPin();
+    void queuedFor(employeeId).then(setPending);
+    apiFetch(`/attendance/settings/public`).then((s: { officeRounding?: "all_office" | "hourly_only" | "none" }) => { if (s?.officeRounding) setOfficeRounding(s.officeRounding); }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employeeId]);
+
+  // 溜めた打刻を、電波が戻ったら送る
+  useEffect(() => {
+    const run = () => {
+      void flushQueue((id): Record<string, string> => { const k = qrKeyFor(id); return k ? { "X-QR-Key": k } : {}; }, (item, r) => {
+        if (item.employeeId === employeeId && !r.ok && !r.queued) setError(`溜めていた打刻は送れませんでした：${r.error}`);
+      }).then(() => queuedFor(employeeId)).then((p) => { setPending(p); void fetchData(); });
+    };
+    window.addEventListener("online", run);
+    const t = setInterval(() => { if (navigator.onLine !== false) run(); }, 20000);
+    return () => { window.removeEventListener("online", run); clearInterval(t); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employeeId]);
 
@@ -233,43 +265,61 @@ export default function OfficePage() {
     }
   }
 
-  async function handleRecord(eventType: EventType) {
+  /** 実際に打刻を送る。電波が無ければ端末に溜め、戻ったら送る（押し直しても二重にならない） */
+  async function doRecord(eventType: EventType) {
     if (!audioUnlockedRef.current) { unlockAudio(); audioUnlockedRef.current = true; }
     setSubmitting(true);
     setError(null);
     setSuccessMsg(null);
-    try {
-      await apiFetch("/attendance/record", {
-        method: "POST",
-        body: JSON.stringify({
-          employeeId,
-          eventType,
-          note: null,
-          startOdometer: null,
-          endOdometer: null,
-          latitude: null,
-          longitude: null,
-          checklistNgItems: null,
-        }),
-      });
+    setLastPunch(null);
+    const clientId = newClientId();
+    const item = { clientId, employeeId, path: "/attendance/record", kind: "record" as const, createdAt: Date.now(),
+      body: { employeeId, eventType, note: null, startOdometer: null, endOdometer: null, latitude: null, longitude: null, checklistNgItems: null } };
+    setPending(p => [...p, { ...item, attempts: 0 }]);
+    const r = await sendOrQueue(item, QR_KEY ? { "X-QR-Key": QR_KEY } : {});
+    if (r.ok) {
+      const rec = r.json as AttendanceRecord & { autoBreakEnd?: AttendanceRecord | null };
+      setPending(p => p.filter(x => x.clientId !== clientId));
       playFeedbackSound();
-      setSuccessMsg(`${EVENT_LABELS[eventType]}を記録しました`);
-      setTimeout(() => setSuccessMsg(null), 4000);
-      await fetchData();
-    } catch (e: unknown) {
-      await fetchData();
-      let msg = "記録に失敗しました";
-      if (e instanceof Error) {
-        try {
-          const body = JSON.parse(e.message);
-          if (body?.error) msg = body.error;
-        } catch { msg = e.message; }
-      }
-      setError(msg);
-      setTimeout(() => setError(null), 5000);
-    } finally {
-      setSubmitting(false);
+      setLastPunch({ id: rec.id, eventType, at: Date.now() });
+      setSuccessMsg(`${EVENT_LABELS[eventType]}を記録しました${rec.autoBreakEnd ? "（休憩中だったので休憩終了も入れました）" : ""}`);
+    } else if (r.queued) {
+      setSuccessMsg(`${EVENT_LABELS[eventType]}を端末に記録しました（${fmtHM(item.createdAt)}）。電波が戻ったら送ります`);
+    } else {
+      // 断られた：画面に出した仮の打刻を必ず取り消す
+      setPending(p => p.filter(x => x.clientId !== clientId));
+      setError(r.error);
+      setTimeout(() => setError(null), 8000);
     }
+    await fetchData();
+    setSubmitting(false);
+  }
+
+  /** 退勤は確かめてから（押し間違い防止） */
+  function handleRecord(eventType: EventType) {
+    if (eventType !== "clock_out") { void doRecord(eventType); return; }
+    setChoice({
+      title: "退勤しますか？",
+      message: status === "休憩中" ? "休憩中です。休憩終了も一緒に入れます。" : "退勤を記録します。",
+      choices: [
+        { label: "退勤する", tone: "danger", onClick: () => { setChoice(null); void doRecord("clock_out"); } },
+        { label: "やめる", tone: "plain", onClick: () => setChoice(null) },
+      ],
+    });
+  }
+
+  async function undoPunch() {
+    if (!lastPunch) return;
+    try {
+      await apiFetch(`/attendance/records/${lastPunch.id}/cancel`, { method: "POST", body: JSON.stringify({ reason: "押し間違いの取り消し（本人）" }) });
+      setSuccessMsg(`${EVENT_LABELS[lastPunch.eventType]}を取り消しました`);
+    } catch (e) {
+      let msg = "取り消せませんでした";
+      try { const b = JSON.parse((e as Error).message); if (b?.error) msg = b.error; } catch { /* ignore */ }
+      setError(msg);
+    }
+    setLastPunch(null);
+    await fetchData();
   }
 
   // ─── Loading ────────────────────────────────────
@@ -307,10 +357,17 @@ export default function OfficePage() {
     );
   }
 
-  const status = getStatus(records);
+  // 端末に溜めている打刻も画面に出す（押したらすぐ次のボタンが押せるように）
+  const shown: AttendanceRecord[] = [...records, ...pending.filter(p => p.kind === "record").map((p, i) => ({
+    id: -(i + 1), employeeId, eventType: p.body.eventType as EventType, workDate: records[0]?.workDate ?? "", recordedAt: new Date(p.createdAt).toISOString(), note: null,
+  }))].sort((a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime());
+  const status = getStatus(shown);
   const statusConf = STATUS_CONFIG[status];
   const rawWorkMin = calcRawWorkMinutes(records);
-  const workMin = roundUpTo30Min(rawWorkMin);
+  // 30分単位で切り上げるかは会社の設定（既定は事務員は全員＝これまでどおり）
+  const roundsUp = officeRounding === "none" ? false : officeRounding === "hourly_only" ? employee.salaryType === "hourly" : (employee.salaryType === "hourly" || employee.isOfficeStaff !== false);
+  const workMin = roundsUp ? roundUpTo30Min(rawWorkMin) : rawWorkMin;
+  const undoLeft = lastPunch ? Math.max(0, 60 - Math.floor((now.getTime() - lastPunch.at) / 1000)) : 0;
   const breakMin = calcBreakMinutes(records);
   const clockInRecord = records.find(r => r.eventType === "clock_in");
   const clockOutRecord = [...records].reverse().find(r => r.eventType === "clock_out");
@@ -391,6 +448,18 @@ export default function OfficePage() {
             <p className="text-emerald-800 text-sm font-medium">{successMsg}</p>
           </div>
         )}
+        {lastPunch && undoLeft > 0 && (
+          <div className="flex justify-center">
+            <button type="button" onClick={undoPunch} className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm">
+              ↩ いまの{EVENT_LABELS[lastPunch.eventType]}を取り消す（あと{undoLeft}秒）
+            </button>
+          </div>
+        )}
+        {pending.length > 0 && (
+          <div className="bg-amber-50 border border-amber-300 rounded-2xl px-4 py-3 text-amber-900 text-sm">
+            📡 電波が戻ったら送る打刻が <b>{pending.length}件</b> あります。この画面を閉じても消えません。
+          </div>
+        )}
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3 flex items-center gap-2">
             <span className="text-red-500 text-lg">⚠️</span>
@@ -410,7 +479,7 @@ export default function OfficePage() {
             </div>
             {status !== "未出勤" && (
               <div className="text-right">
-                <p className="text-xs text-slate-500 mb-0.5">計算時間 <span className="text-[10px] text-indigo-400">30分単位</span></p>
+                <p className="text-xs text-slate-500 mb-0.5">計算時間 {roundsUp && <span className="text-[10px] text-indigo-400">30分単位</span>}</p>
                 <p className="text-lg font-bold text-indigo-700 tabular-nums">{fmtDuration(workMin)}</p>
                 <p className="text-xs text-slate-400">実績 {fmtDuration(rawWorkMin)}</p>
                 {breakMin > 0 && (
@@ -555,6 +624,8 @@ export default function OfficePage() {
             <p className="text-sm">本日の打刻はまだありません</p>
           </div>
         )}
+
+        <ChoiceSheet open={!!choice} title={choice?.title ?? ""} message={choice?.message ?? null} choices={choice?.choices ?? []} onClose={() => setChoice(null)} />
 
         <p className="text-center text-slate-300 text-xs pb-6">
           三川運送 給与管理システム — 事務用打刻

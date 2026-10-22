@@ -10,6 +10,7 @@ import {
 } from "@workspace/db";
 import { and, eq, inArray } from "drizzle-orm";
 import { logger } from "./logger";
+import { computeAttendanceAlerts } from "./alerts-attendance";
 import fs from "fs/promises";
 import path from "path";
 
@@ -230,6 +231,8 @@ export async function computeAlerts(): Promise<EmployeeAlert[]> {
       title: `${pm}月分の給与明細が${drafts.length}件、未確定です`,
       body: "金額を確かめて「確定」してください。" });
   }
+
+  out.push(...(await computeAttendanceAlerts().catch((err) => { logger.warn({ err }, "勤怠のお知らせを作れませんでした"); return []; })));
 
   return out.sort((a, b) =>
     LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level] ||

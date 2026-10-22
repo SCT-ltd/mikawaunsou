@@ -17,6 +17,7 @@ import Settings from "@/pages/settings";
 import AllowanceSettings from "@/pages/allowances";
 import CalendarPage from "@/pages/calendar";
 import AttendancePage from "@/pages/attendance";
+import AttendanceRecordsPage from "@/pages/attendance-records";
 import DriverPage from "@/pages/driver";
 import OfficePage from "@/pages/office";
 import RealtimeMapPage from "@/pages/realtime-map";
@@ -62,6 +63,7 @@ function ProtectedRoutes() {
       <Route path="/allowances" component={AllowanceSettings} />
       <Route path="/calendar" component={CalendarPage} />
       <Route path="/attendance" component={AttendancePage} />
+      <Route path="/attendance-records" component={AttendanceRecordsPage} />
       <Route path="/realtime-map" component={RealtimeMapPage} />
       <Route path="/messages" component={MessagesPage} />
       <Route path="/users" component={UserManagement} />
