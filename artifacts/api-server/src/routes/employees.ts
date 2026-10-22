@@ -366,7 +366,8 @@ router.get("/employees/:id/pin/status", async (req, res) => {
   const [emp] = await db.select({ pin: employeesTable.pin, qrKey: employeesTable.qrKey }).from(employeesTable).where(eq(employeesTable.id, id));
   if (!emp) return res.status(404).json({ error: "社員が見つかりません。" });
   const verified = !!emp.pin && tokenValid(req, id, emp.pin);
-  if (!verified && !qrKeyOk(req, emp.qrKey)) return res.status(403).json(QR_KEY_REQUIRED_BODY);
+  // 管理画面（ログイン済み）からは社員編集で「暗証番号が設定済みか」を見るのに使う
+  if (!verified && !req.session?.userId && !qrKeyOk(req, emp.qrKey)) return res.status(403).json(QR_KEY_REQUIRED_BODY);
   // verified＝この端末は暗証番号を確かめ済み（開き直すたびに入れ直さなくてよい）
   return res.json({ pinSet: !!emp.pin, verified });
 });
