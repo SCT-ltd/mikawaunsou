@@ -20,7 +20,32 @@ const TOKEN_DAYS = 30;
 const cookieName = (employeeId: number) => `mkdrv_${employeeId}`;
 
 function secret(): string {
-  return process.env.SESSION_SECRET ?? "mikawa-dev-secret-change-in-prod";
+  const s = process.env.SESSION_SECRET;
+  if (!s) {
+    if (process.env.NODE_ENV === "production") throw new Error("SESSION_SECRET が設定されていません");
+    return "mikawa-dev-secret-change-in-prod";
+  }
+  return s;
+}
+
+/** QR の合言葉（URL の ?k= を画面がヘッダー X-QR-Key で送る。EventSource はヘッダーを付けられないので ?k= も見る） */
+export function qrKeyFromReq(req: Request): string | null {
+  const h = req.header("x-qr-key");
+  if (h) return h;
+  const q = (req.query as Record<string, unknown> | undefined)?.["k"];
+  return typeof q === "string" && q ? q : null;
+}
+
+export function qrKeyOk(req: Request, stored: string | null | undefined): boolean {
+  const given = qrKeyFromReq(req);
+  if (!stored || !given) return false;
+  const a = Buffer.from(given), b = Buffer.from(stored);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+/** QR の合言葉を作る（推測できない長さの英数字） */
+export function newQrKey(): string {
+  return crypto.randomBytes(12).toString("base64url");
 }
 
 function sign(employeeId: number, exp: number, pin: string): string {
@@ -51,7 +76,7 @@ export function issueDriverToken(res: Response, employeeId: number, pin: string)
   });
 }
 
-function tokenValid(req: Request, employeeId: number, pin: string): boolean {
+export function tokenValid(req: Request, employeeId: number, pin: string): boolean {
   const raw = readCookie(req, cookieName(employeeId));
   if (!raw) return false;
   const dot = raw.indexOf(".");
@@ -79,13 +104,18 @@ export type DriverAccess =
 export async function driverAccess(req: Request, employeeId: number): Promise<DriverAccess> {
   if (!Number.isInteger(employeeId) || employeeId <= 0) return "not-found";
   const [emp] = await db
-    .select({ pin: employeesTable.pin })
+    .select({ pin: employeesTable.pin, qrKey: employeesTable.qrKey })
     .from(employeesTable)
     .where(eq(employeesTable.id, employeeId));
   if (!emp) return "not-found";
-  if (!emp.pin) return "no-pin";
-  return tokenValid(req, employeeId, emp.pin) ? "verified" : "denied";
+  // 暗証番号を確かめた端末は、QR の合言葉が無くても本人
+  if (emp.pin && tokenValid(req, employeeId, emp.pin)) return "verified";
+  // それ以外は、QR の合言葉（URL の ?k=）を持っている端末だけ。
+  // 以前は社員番号（連番）を差し替えるだけで、暗証番号の無い人の打刻・位置・点検を代わりに書けた。
+  if (!qrKeyOk(req, emp.qrKey)) return "denied";
+  return emp.pin ? "denied" : "no-pin";
 }
 
+export const QR_KEY_REQUIRED_BODY = { error: "QRコードが新しくなりました。事務所で新しいQRコードを受け取って、読み取り直してください。", code: "qr-key-required" };
 export const PIN_REQUIRED_BODY = { error: "暗証番号の確認が必要です。画面を読み込み直して、暗証番号を入力してください。", code: "pin-required" };
 export const PIN_NOT_SET_BODY = { error: "暗証番号が未設定のため表示できません。事務所で暗証番号を設定してください。", code: "pin-not-set" };

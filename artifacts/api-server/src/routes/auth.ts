@@ -1,13 +1,10 @@
 import { Router, type Request } from "express";
 import { db, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import crypto from "crypto";
+import { verifyPassword, hashSecret } from "../lib/password";
+import { audit } from "../lib/audit";
 
 const router = Router();
-
-function hashPassword(password: string): string {
-  return crypto.createHash("sha256").update(password + "mikawa_salt").digest("hex");
-}
 
 // ── ログイン試行のレート制限（総当たり対策）─────────────────────────────
 // 管理画面（admin.mikawa-unso.jp）は Cloudflare Access を外したため、ログイン画面が
@@ -59,7 +56,8 @@ router.post("/auth/login", async (req, res) => {
     .where(eq(usersTable.username, String(username)))
     .limit(1);
 
-  if (!user || user.passwordHash !== hashPassword(String(password))) {
+  const checked = user ? verifyPassword(String(password), user.passwordHash) : { ok: false, upgrade: false };
+  if (!user || !checked.ok) {
     // 失敗を記録。窓を過ぎていればカウントをリセットして数え直す。
     const a = existing && now - existing.firstFailureAt <= WINDOW_MS
       ? existing
@@ -83,12 +81,20 @@ router.post("/auth/login", async (req, res) => {
   // 成功したらカウントをクリア
   attempts.delete(key);
 
+  // 古い形式（sha256＋共通の文字列）で保存されていたら、この機会に新しい形式で保存し直す
+  if (checked.upgrade) {
+    await db.update(usersTable).set({ passwordHash: hashSecret(String(password)), updatedAt: new Date() }).where(eq(usersTable.id, user.id));
+  }
+
+  // ログインの前後でセッションの番号を作り直す（前もって仕込まれた番号を乗っ取られないように）
+  await new Promise<void>((resolve, reject) => req.session.regenerate((err) => (err ? reject(err) : resolve())));
   req.session.userId = user.id;
   req.session.username = user.username;
   req.session.displayName = user.displayName;
   req.session.role = user.role;
   req.session.employeeId = user.employeeId ?? null;
 
+  await audit(req, "auth.login", `user:${user.id}`);
   return res.json({
     id: user.id,
     username: user.username,

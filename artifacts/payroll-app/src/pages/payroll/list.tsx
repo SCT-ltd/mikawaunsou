@@ -240,14 +240,21 @@ export default function PayrollList() {
   };
 
   const handleExportCsv = async () => {
-    const url = `/api/payrolls/export/csv?year=${year}&month=${month}`;
+    // 以前は送り先がサーバーに無く、エラーの中身を CSV として保存したうえで「開始しました」と出していた
+    const res = await fetch(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/api/payrolls/export/csv?year=${year}&month=${month}`, { credentials: "include" });
+    if (!res.ok) {
+      toast({ title: "CSVを作れませんでした", description: `もう一度お試しください（${res.status}）`, variant: "destructive" });
+      return;
+    }
+    const blob = await res.blob();
     const a = document.createElement("a");
-    a.href = url;
-    a.download = `給与明細データ_${year}${month}.csv`;
+    a.href = URL.createObjectURL(blob);
+    a.download = `給与明細データ_${year}${String(month).padStart(2, "0")}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    toast({ title: "CSVエクスポート", description: "ダウンロードを開始しました。" });
+    setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+    toast({ title: "CSVを保存しました", description: `${year}年${month}月分` });
   };
 
   // この社員のみ再計算（標準モード）

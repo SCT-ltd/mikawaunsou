@@ -8,8 +8,8 @@
     "./schema": "./src/schema/index.ts"
   },
   "scripts": {
-    "push": "drizzle-kit push --config ./drizzle.config.ts",
-    "push-force": "drizzle-kit push --force --config ./drizzle.config.ts"
+    "push": "node -e \"console.error('drizzle-kit push は使いません（本番の表・列を消すおそれがあります）。deploy/migrations の SQL を手で当ててください（deploy/README.md の「DB の変更」）。'); process.exit(1)\"",
+    "push-force": "node -e \"console.error('drizzle-kit push --force は使いません。deploy/migrations の SQL を手で当ててください。'); process.exit(1)\""
   },
   "dependencies": {
     "drizzle-orm": "catalog:",

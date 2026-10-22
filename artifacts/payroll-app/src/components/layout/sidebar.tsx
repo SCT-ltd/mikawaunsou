@@ -14,6 +14,7 @@ import { X, Truck,
   MapPin,
   MessageSquare,
   Users,
+  History,
 } from "lucide-react";
 
 const navigation = [
@@ -26,6 +27,7 @@ const navigation = [
   { name: "カレンダー",         href: "/calendar",      icon: CalendarRange,   description: "シフト・スケジュールを管理します" },
   { name: "マスター管理",       href: "/allowances",    icon: Tag,             description: "手当・控除定義などのマスターデータを管理します" },
   { name: "ユーザー管理",       href: "/users",         icon: Users,           description: "システムユーザーの追加・編集・権限設定をします" },
+  { name: "操作の記録",         href: "/audit",         icon: History,         description: "だれが・いつ・何をしたか（確定・修正・設定の変更など）を確認します" },
   { name: "会社設定",           href: "/settings",      icon: Settings,        description: "会社情報・保険料率・各種計算設定を管理します" },
 ];
 

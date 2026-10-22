@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db, calendarOverridesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import type { Response } from "express";
+import { audit } from "../lib/audit";
 
 const router = Router();
 

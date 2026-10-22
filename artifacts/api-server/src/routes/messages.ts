@@ -5,6 +5,7 @@ import { db, messagesTable, pushSubscriptionsTable, employeesTable } from "@work
 import { eq, and, desc, asc, isNull, sql } from "drizzle-orm";
 import { requireAdmin, requireOwnerOrAdmin } from "../lib/auth-middleware";
 import { driverAccess, PIN_REQUIRED_BODY, PIN_NOT_SET_BODY } from "../lib/driver-token";
+import { isAdminReq } from "../lib/roles";
 
 const router = Router();
 
@@ -56,7 +57,7 @@ router.get("/messages/stream", async (req, res) => {
     if (access === "no-pin") return res.status(403).json(PIN_NOT_SET_BODY);
     if (access === "denied") return res.status(401).json(PIN_REQUIRED_BODY);
     employeeId = requestedEmployeeId;
-  } else if (req.session.role === "admin") {
+  } else if (isAdminReq(req)) {
     employeeId = Number.isNaN(requestedEmployeeId) ? 0 : requestedEmployeeId;
   } else {
     const sessionEmployeeId = req.session.employeeId;
@@ -96,7 +97,7 @@ router.get("/messages/unread-count", async (req, res) => {
     return res.status(401).json({ error: "ログインが必要です" });
   }
 
-  if (req.session.role === "admin") {
+  if (isAdminReq(req)) {
     const rows = await db
       .select({ id: messagesTable.id })
       .from(messagesTable)
@@ -218,7 +219,7 @@ router.post("/messages/:employeeId/read", requireOwnerOrAdmin(req => parseInt(pa
   if (isNaN(employeeId)) return res.status(400).json({ error: "Invalid employeeId" });
   // 事務所側として既読にできるのは管理者だけ。QR ページ（未ログイン）やドライバーは
   // 本文で reader:"office" と名乗っても、事務所からのメッセージ（自分あて）しか既読にできない。
-  const reader: "office" | "employee" = req.session?.role === "admin"
+  const reader: "office" | "employee" = isAdminReq(req)
     ? (req.body as { reader: "office" | "employee" })?.reader
     : "employee";
 
@@ -283,7 +284,7 @@ router.post("/messages", async (req, res) => {
     if (access === "not-found") return res.status(404).json({ error: "社員が見つかりません。" });
     if (access === "no-pin") return res.status(403).json(PIN_NOT_SET_BODY);
     if (access === "denied") return res.status(401).json(PIN_REQUIRED_BODY);
-  } else if (req.session.role === "admin") {
+  } else if (isAdminReq(req)) {
     if (!bodyEmployeeId || Number.isNaN(Number(bodyEmployeeId))) {
       return res.status(400).json({ error: "送信先の employeeId が必要です" });
     }
@@ -452,7 +453,7 @@ router.post("/push/subscribe", async (req, res) => {
     if (access === "denied") return res.status(401).json(PIN_REQUIRED_BODY);
     role = "employee";
     employeeId = target;
-  } else if (req.session.role === "admin") {
+  } else if (isAdminReq(req)) {
     if (!bodyRole || (bodyRole !== "office" && bodyRole !== "employee")) {
       return res.status(400).json({ error: "role は 'office' または 'employee' を指定してください" });
     }

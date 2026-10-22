@@ -6,17 +6,29 @@
 # 外からの唯一の入口は cloudflared がCloudflareへ張る outbound 接続だけ。
 #
 # 使い方:
-#   cd /volume2/docker/mikawa-system/deploy
+#   cd /volume2/docker/mikawa-system/app/deploy
 #   cp .env.example .env   &&  vi .env      # ← 秘密情報を埋める
-#   docker compose up -d --build
+#   docker compose up -d
+#
+# DB の変更は drizzle-kit push を使わず、deploy/migrations の SQL を手で当てる（README の「DB の変更」）。
 
 name: mikawa-system
+
+# ログは1つ10MB×5本まで（以前は上限が無く、位置の送信などで1日数万行たまり続けていた）
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
 
 services:
   # ── PostgreSQL（給与データ。法定保存対象） ──────────────────────────
   db:
     image: postgres:17-alpine
     restart: unless-stopped
+    logging: *logging
+    mem_limit: 1g
+    shm_size: 128mb
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -34,26 +46,42 @@ services:
 
   # ── API（Express。esbuild で単一 ESM 済み） ──────────────────────────
   api:
-    # ビルド済みイメージがあればそれを使う（開発機で検証したものを docker save/load で持ち込む）。
-    # NAS 上でビルドし直したいときは `docker compose up -d --build`。
+    # ビルド済みイメージを使う（開発機で検証したものを docker save/load で持ち込む）。
     image: mikawa-api:latest
     build:
       context: ..
       dockerfile: deploy/Dockerfile
       target: api
     restart: unless-stopped
+    logging: *logging
+    mem_limit: 512m
+    # 終わりの合図（SIGTERM）を node に届ける（node を PID 1 にすると合図が無視され、毎回強制終了になっていた）
+    init: true
+    stop_grace_period: 15s
     environment:
       NODE_ENV: production          # ← これで secure Cookie + trust proxy が有効になる
+      NODE_OPTIONS: --max-old-space-size=384
       PORT: "8080"
       DATABASE_URL: ${DATABASE_URL}
       SESSION_SECRET: ${SESSION_SECRET}
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
       VAPID_EMAIL: ${VAPID_EMAIL}
+      # バックアップが取れているかを見て、取れていなければ従業員のお知らせ・PCの通知で知らせる
+      BACKUP_DIR: /backups
       TZ: Asia/Tokyo
+    volumes:
+      - ./backups:/backups:ro
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      # DB まで届くかを見る（/api/healthz は DB に問い合わせてから ok を返す）
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/api/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   # ── nginx（SPA 配信 + /api リバースプロキシ） ────────────────────────
   web:
@@ -63,19 +91,29 @@ services:
       dockerfile: deploy/Dockerfile
       target: web
       args:
-        # QRコードが指す公開ホスト。管理画面(admin.*)は Access の背後にあるため、
-        # ここを指定しないと QR が admin.* を指してドライバーが Access に弾かれる。
+        # QRコードが指す公開ホスト（ドライバーの打刻ページ）。
         VITE_PUBLIC_ORIGIN: ${PUBLIC_ORIGIN}
     restart: unless-stopped
+    logging: *logging
+    mem_limit: 128m
     environment:
       TZ: Asia/Tokyo
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   # ── Cloudflare Tunnel（唯一の入口。outbound のみ） ───────────────────
   cloudflared:
-    image: cloudflare/cloudflared:latest
+    # 版を固定する（latest だと作り直すたびに中身が変わりうる）。上げるときはここを書き換える。
+    image: cloudflare/cloudflared:2026.2.0
     restart: unless-stopped
+    logging: *logging
+    mem_limit: 256m
     command: tunnel --no-autoupdate run
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN}
@@ -84,15 +122,21 @@ services:
       - web
 
   # ── 日次バックアップ（給与データは法定保存。NAS障害＝喪失にしない） ──
+  # 毎日 3時に取る。失敗したら10分おきに6回までやり直す。取れたダンプは読み直して確かめる。
+  # BACKUP_COPY_DIR（.env）を決めておくと、別のディスクにも同じものを複製する。
+  # 以前は「起動した時刻から24時間おき」で、DB の起動を待たずに失敗すると次の日まで取らなかった。
   db-backup:
     image: postgres:17-alpine
     restart: unless-stopped
+    logging: *logging
+    mem_limit: 256m
     environment:
       DATABASE_URL: ${DATABASE_URL}
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-60}
       TZ: Asia/Tokyo
     volumes:
       - ./backups:/backups
+      - ${BACKUP_COPY_DIR:-./backups-copy}:/backups-copy
     depends_on:
       db:
         condition: service_healthy
@@ -100,13 +144,27 @@ services:
     command:
       - |
         echo "[backup] started (retention=$${BACKUP_RETENTION_DAYS}d)"
-        while true; do
+        take() {
           ts=$$(date +%Y%m%d-%H%M%S)
-          if pg_dump "$$DATABASE_URL" -Fc -f "/backups/mikawa-$$ts.dump"; then
-            echo "[backup] ok: mikawa-$$ts.dump"
-            find /backups -name 'mikawa-*.dump' -mtime +$${BACKUP_RETENTION_DAYS} -delete
-          else
-            echo "[backup] FAILED at $$ts" >&2
+          f="/backups/mikawa-$$ts.dump"
+          # DB が応えるまで待つ（NAS の再起動直後など）
+          i=0; until pg_isready -d "$$DATABASE_URL" -q || [ $$i -ge 30 ]; do i=$$((i+1)); sleep 10; done
+          if pg_dump "$$DATABASE_URL" -Fc -f "$$f.part" && pg_restore --list "$$f.part" > /dev/null; then
+            mv "$$f.part" "$$f"
+            echo "[backup] ok: $$(basename $$f) $$(du -h $$f | cut -f1)"
+            cp "$$f" /backups-copy/ 2>/dev/null && echo "[backup] copied to /backups-copy"
+            find /backups /backups-copy -name 'mikawa-*.dump' -mtime +$${BACKUP_RETENTION_DAYS} -delete
+            return 0
           fi
-          sleep 86400
+          rm -f "$$f.part"
+          echo "[backup] FAILED at $$ts" >&2
+          return 1
+        }
+        # 起動したときに今日の分が無ければすぐ取る
+        if ! ls /backups/mikawa-$$(date +%Y%m%d)-*.dump > /dev/null 2>&1; then take || true; fi
+        while true; do
+          now=$$(date +%s); next=$$(date -d "$$(date +%Y-%m-%d) 03:00" +%s 2>/dev/null || echo $$((now + 86400)))
+          [ $$next -le $$now ] && next=$$((next + 86400))
+          sleep $$((next - now))
+          n=0; until take || [ $$n -ge 6 ]; do n=$$((n+1)); sleep 600; done
         done

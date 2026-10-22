@@ -1,6 +1,6 @@
 # lib/db — Drizzle スキーマと DB シングルトン（`@workspace/db`）
 
-PostgreSQL への接続（pg `Pool`）と Drizzle ORM のスキーマ定義を提供する共有パッケージ。**import 時に `DATABASE_URL` が必須**。スキーマ変更はマイグレーションファイルではなく `drizzle-kit push` で適用する（このスキーマが真実の源）。
+PostgreSQL への接続（pg `Pool`）と Drizzle ORM のスキーマ定義を提供する共有パッケージ。**import 時に `DATABASE_URL` が必須**。スキーマ変更は `deploy/migrations/` の SQL を手で当てる（2026-10 から。`drizzle-kit push` は止めてある）。
 
 ## 主要ファイル
 
@@ -28,7 +28,7 @@ PostgreSQL への接続（pg `Pool`）と Drizzle ORM のスキーマ定義を�
 ## コマンド
 
 - スキーマ反映（dev のみ）: `pnpm --filter @workspace/db run push`
-- 強制反映: `pnpm --filter @workspace/db run push-force`
+- 強制反映: （2026-10 から使わない）`deploy/migrations/` の SQL を手で当てる
 
 ## 現在のステータス
 

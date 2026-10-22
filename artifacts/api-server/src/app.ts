@@ -27,9 +27,22 @@ declare module "express-session" {
 
 const app: Express = express();
 
+// 本番では秘密の鍵が無い・短いまま動かさない（既定の文字列だとログインの印を偽造できる）
+if (process.env.NODE_ENV === "production") {
+  const s = process.env.SESSION_SECRET ?? "";
+  if (s.length < 32 || s === "mikawa-dev-secret-change-in-prod") {
+    throw new Error("SESSION_SECRET が未設定か短すぎます（32文字以上の乱数にしてください）");
+  }
+}
+
 app.use(
   pinoHttp({
     logger,
+    // 位置の送信・下書き・未読の数・稼働確認など、数秒〜数十秒ごとに来る要求は1行ずつ残さない
+    // （ログが1日数万行になり、NAS の容量を圧迫していた）。失敗したものは残す。
+    autoLogging: {
+      ignore: (req) => /\/(attendance\/location\/live|attendance\/draft\/|attendance\/checklist\/|messages\/(\d+\/)?unread-count|healthz|attendance\/today|alerts$)/.test(req.url ?? ""),
+    },
     serializers: {
       req(req) {
         return {
@@ -52,7 +65,9 @@ app.use(
 const isProduction = process.env.NODE_ENV === "production";
 if (isProduction) app.set("trust proxy", 1);
 
-app.use(cors({ origin: true, credentials: true }));
+// 画面と API は同じサイト（nginx が /api を中継）なので、本番ではほかのサイトからの呼び出しを許さない。
+// 以前はどのサイトからでも Cookie 付きで呼べる設定だった。
+app.use(cors({ origin: isProduction ? false : true, credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -71,7 +86,7 @@ app.use(
       // 期限切れセッションを 1 時間ごとに削除
       pruneSessionInterval: 60 * 60,
     }),
-    secret: process.env.SESSION_SECRET ?? "mikawa-dev-secret-change-in-prod",
+    secret: process.env.SESSION_SECRET || "mikawa-dev-secret-change-in-prod",
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -108,7 +123,8 @@ app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
   }
 
   if (res.headersSent) return;
-  res.status(500).json({ error: userMessage, detail: message });
+  // 中身（SQL の断片など）は本番では返さない。サーバーのログには残っている。
+  res.status(500).json(isProduction ? { error: userMessage } : { error: userMessage, detail: message });
 });
 
 export default app;

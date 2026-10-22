@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { db, absenceRecordsTable } from "@workspace/db";
 import { eq, and, gte, lte } from "drizzle-orm";
+import { isAdminReq } from "../lib/roles";
 
 const router = Router();
 
@@ -32,7 +33,7 @@ router.get("/absences", async (req, res) => {
   const date = (req.query.date as string) ?? new Date().toISOString().slice(0, 10);
 
   const conditions = [eq(absenceRecordsTable.workDate, date)];
-  if (req.session.role !== "admin") {
+  if (!isAdminReq(req)) {
     const sessionEmployeeId = req.session.employeeId;
     if (sessionEmployeeId === null || sessionEmployeeId === undefined) {
       return res.status(403).json({ error: "権限がありません" });
@@ -63,7 +64,7 @@ router.get("/absences/month", async (req, res) => {
     gte(absenceRecordsTable.workDate, from),
     lte(absenceRecordsTable.workDate, to),
   ];
-  if (req.session.role !== "admin") {
+  if (!isAdminReq(req)) {
     const sessionEmployeeId = req.session.employeeId;
     if (sessionEmployeeId === null || sessionEmployeeId === undefined) {
       return res.status(403).json({ error: "権限がありません" });
@@ -99,7 +100,7 @@ router.post("/absences", async (req, res) => {
   }
 
   let employeeId: number;
-  if (req.session.role === "admin") {
+  if (isAdminReq(req)) {
     if (!bodyEmployeeId) {
       return res.status(400).json({ error: "employeeId は必須です" });
     }
@@ -134,7 +135,7 @@ router.delete("/absences/:id", async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (Number.isNaN(id)) return res.status(400).json({ error: "id が不正です" });
 
-  if (req.session.role !== "admin") {
+  if (!isAdminReq(req)) {
     const sessionEmployeeId = req.session.employeeId;
     if (sessionEmployeeId === null || sessionEmployeeId === undefined) {
       return res.status(403).json({ error: "権限がありません" });

@@ -12,9 +12,15 @@ import {
   payrollsTable,
   employeeAllowancesTable,
   employeeDeductionsTable,
+  employeeMonthSetsTable,
+  employeeMonthAllowancesTable,
+  employeeMonthDeductionsTable,
 } from "@workspace/db";
 import { asc, eq } from "drizzle-orm";
-import { issueDriverToken } from "../lib/driver-token";
+import { issueDriverToken, qrKeyOk, tokenValid, newQrKey, QR_KEY_REQUIRED_BODY } from "../lib/driver-token";
+import { hashSecret, verifyPin } from "../lib/password";
+import { audit, diffOf } from "../lib/audit";
+import { isAdminReq } from "../lib/roles";
 
 const router = Router();
 
@@ -23,6 +29,10 @@ const PIN_MAX_FAILURES = 5;
 const PIN_WINDOW_MS = 10 * 60 * 1000;
 const PIN_LOCK_MS = 10 * 60 * 1000;
 const pinAttempts = new Map<string, { failures: number; firstFailureAt: number; lockedUntil: number }>();
+// 接続元を変えながら試す相手のために、社員ごとの合計も数える（1時間に20回でその社員を1時間止める）
+const PIN_EMP_MAX = 20;
+const PIN_EMP_WINDOW_MS = 60 * 60 * 1000;
+const pinEmpAttempts = new Map<number, { failures: number; firstFailureAt: number; lockedUntil: number }>();
 
 /**
  * 社員行から機密の `pin` を除去し、代わりに `hasPin`（設定有無）を付与する。
@@ -30,6 +40,7 @@ const pinAttempts = new Map<string, { failures: number; firstFailureAt: number; 
  */
 function sanitizeEmployee(row: typeof employeesTable.$inferSelect) {
   const { pin, ...rest } = row;
+  // qrKey は管理者にだけ返す（この関数を通すのは管理者向けの経路だけ。QR の URL を作るのに使う）
   return { ...rest, hasPin: !!pin };
 }
 
@@ -120,7 +131,12 @@ router.get("/employees/:id", async (req, res) => {
   if (!emp) return res.status(404).json({ error: "社員が見つかりません。" });
   // この経路は QR 打刻ページのためにログインなしで開けてある。管理者以外には、打刻画面の
   // 表示に要る項目だけを返す（以前は基本給・標準報酬・住民税・生年月日まで返していた）。
-  if (req.session?.role !== "admin") {
+  // さらに、QR の合言葉か暗証番号を確かめた印を持つ端末だけに返す（以前は番号を順に試すと
+  // 全員の氏名・部署・勤務予定が取れた）。
+  if (!isAdminReq(req) && !req.session?.userId && !(qrKeyOk(req, emp.qrKey) || (emp.pin && tokenValid(req, emp.id, emp.pin)))) {
+    return res.status(403).json(QR_KEY_REQUIRED_BODY);
+  }
+  if (!isAdminReq(req)) {
     return res.json({
       id: emp.id,
       employeeCode: emp.employeeCode,
@@ -195,7 +211,7 @@ router.delete("/employees/:id", async (req, res) => {
   const id = parseInt(req.params.id, 10);
 
   // 社員が存在するか確認
-  const [emp] = await db.select({ id: employeesTable.id })
+  const [emp] = await db.select({ id: employeesTable.id, name: employeesTable.name, employeeCode: employeesTable.employeeCode })
     .from(employeesTable).where(eq(employeesTable.id, id));
   if (!emp) return res.status(404).json({ error: "社員が見つかりません" });
 
@@ -211,18 +227,25 @@ router.delete("/employees/:id", async (req, res) => {
     });
   }
 
-  // 関連データを順番に完全削除（外部キー制約順）
-  await db.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.employeeId, id));
-  await db.delete(liveLocationsTable).where(eq(liveLocationsTable.employeeId, id));
-  await db.delete(attendanceDraftsTable).where(eq(attendanceDraftsTable.employeeId, id));
-  await db.delete(employeeAllowancesTable).where(eq(employeeAllowancesTable.employeeId, id));
-  await db.delete(employeeDeductionsTable).where(eq(employeeDeductionsTable.employeeId, id));
-  await db.delete(absenceRecordsTable).where(eq(absenceRecordsTable.employeeId, id));
-  await db.delete(attendanceRecordsTable).where(eq(attendanceRecordsTable.employeeId, id));
-  await db.delete(monthlyRecordsTable).where(eq(monthlyRecordsTable.employeeId, id));
-  await db.delete(payrollsTable).where(eq(payrollsTable.employeeId, id));
-  await db.delete(messagesTable).where(eq(messagesTable.employeeId, id));
-  await db.delete(employeesTable).where(eq(employeesTable.id, id));
+  // 関連データを1回のトランザクションで削除（外部キー制約順）。以前は1つずつ消していたため、
+  // 途中で失敗すると半分だけ消えた状態で残り、月ごとの手当・控除は消さずに残っていた。
+  await db.transaction(async (tx) => {
+    await tx.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.employeeId, id));
+    await tx.delete(liveLocationsTable).where(eq(liveLocationsTable.employeeId, id));
+    await tx.delete(attendanceDraftsTable).where(eq(attendanceDraftsTable.employeeId, id));
+    await tx.delete(employeeAllowancesTable).where(eq(employeeAllowancesTable.employeeId, id));
+    await tx.delete(employeeDeductionsTable).where(eq(employeeDeductionsTable.employeeId, id));
+    await tx.delete(employeeMonthAllowancesTable).where(eq(employeeMonthAllowancesTable.employeeId, id));
+    await tx.delete(employeeMonthDeductionsTable).where(eq(employeeMonthDeductionsTable.employeeId, id));
+    await tx.delete(employeeMonthSetsTable).where(eq(employeeMonthSetsTable.employeeId, id));
+    await tx.delete(absenceRecordsTable).where(eq(absenceRecordsTable.employeeId, id));
+    await tx.delete(attendanceRecordsTable).where(eq(attendanceRecordsTable.employeeId, id));
+    await tx.delete(monthlyRecordsTable).where(eq(monthlyRecordsTable.employeeId, id));
+    await tx.delete(payrollsTable).where(eq(payrollsTable.employeeId, id));
+    await tx.delete(messagesTable).where(eq(messagesTable.employeeId, id));
+    await tx.delete(employeesTable).where(eq(employeesTable.id, id));
+  });
+  await audit(req, "employee.delete", `employee:${id}`, { name: emp.name, code: emp.employeeCode });
 
   return res.status(204).send();
 });
@@ -237,10 +260,11 @@ router.put("/employees/:id/pin", async (req, res) => {
     return res.status(400).json({ error: "PINは4桁の数字で入力してください" });
   }
   const [updated] = await db.update(employeesTable)
-    .set({ pin: String(pin), updatedAt: new Date() })
+    .set({ pin: hashSecret(String(pin)), updatedAt: new Date() })
     .where(eq(employeesTable.id, id))
     .returning({ id: employeesTable.id });
   if (!updated) return res.status(404).json({ error: "社員が見つかりません。" });
+  await audit(req, "pin.set", `employee:${id}`);
   return res.json({ ok: true });
 });
 
@@ -252,19 +276,39 @@ router.delete("/employees/:id/pin", async (req, res) => {
     .where(eq(employeesTable.id, id))
     .returning({ id: employeesTable.id });
   if (!updated) return res.status(404).json({ error: "社員が見つかりません。" });
+  await audit(req, "pin.clear", `employee:${id}`);
   return res.json({ ok: true });
+});
+
+// QR の合言葉を作り直す（管理者用）。古い QR コードは使えなくなる（退職・紛失のとき）。
+router.post("/employees/:id/qr-key/rotate", async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const [updated] = await db.update(employeesTable)
+    .set({ qrKey: newQrKey(), updatedAt: new Date() })
+    .where(eq(employeesTable.id, id))
+    .returning({ id: employeesTable.id, qrKey: employeesTable.qrKey });
+  if (!updated) return res.status(404).json({ error: "社員が見つかりません。" });
+  await audit(req, "qrkey.rotate", `employee:${id}`);
+  return res.json(updated);
 });
 
 // PIN照合（ドライバー用）
 router.post("/employees/:id/pin/verify", async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const { pin } = req.body ?? {};
-  const [emp] = await db.select({ pin: employeesTable.pin }).from(employeesTable).where(eq(employeesTable.id, id));
+  const [emp] = await db.select({ pin: employeesTable.pin, qrKey: employeesTable.qrKey }).from(employeesTable).where(eq(employeesTable.id, id));
   if (!emp) return res.status(404).json({ error: "社員が見つかりません。" });
+  // QR の合言葉を持っていない端末からは試させない（番号を知っているだけの第三者の総当たりを止める）
+  if (!qrKeyOk(req, emp.qrKey)) return res.status(403).json(QR_KEY_REQUIRED_BODY);
   if (!emp.pin) return res.json({ ok: true, pinRequired: false });
 
   // 4桁（1万通り）なので、回数を制限しないと総当たりで当てられる。
   const now = Date.now();
+  const empA = pinEmpAttempts.get(id);
+  if (empA && empA.lockedUntil > now) {
+    const minutes = Math.ceil((empA.lockedUntil - now) / 60000);
+    return res.status(429).json({ error: `暗証番号の間違いが続いたため、あと${minutes}分は入力できません。事務所に連絡してください。` });
+  }
   const key = `${id}|${req.header("cf-connecting-ip") || req.ip || "unknown"}`;
   for (const [k, a] of pinAttempts) {
     if (a.lockedUntil < now && now - a.firstFailureAt > PIN_WINDOW_MS) pinAttempts.delete(k);
@@ -275,8 +319,13 @@ router.post("/employees/:id/pin/verify", async (req, res) => {
     return res.status(429).json({ error: `暗証番号を続けて間違えたため、あと${minutes}分は入力できません。` });
   }
 
-  const ok = emp.pin === String(pin);
+  const checked = verifyPin(String(pin ?? ""), emp.pin);
+  const ok = checked.ok;
   if (!ok) {
+    const e = empA && now - empA.firstFailureAt <= PIN_EMP_WINDOW_MS ? empA : { failures: 0, firstFailureAt: now, lockedUntil: 0 };
+    e.failures += 1;
+    if (e.failures >= PIN_EMP_MAX) e.lockedUntil = now + PIN_EMP_WINDOW_MS;
+    pinEmpAttempts.set(id, e);
     const a = attempt && now - attempt.firstFailureAt <= PIN_WINDOW_MS
       ? attempt
       : { failures: 0, firstFailureAt: now, lockedUntil: 0 };
@@ -286,17 +335,27 @@ router.post("/employees/:id/pin/verify", async (req, res) => {
     return res.json({ ok: false, pinRequired: true });
   }
   pinAttempts.delete(key);
+  pinEmpAttempts.delete(id);
+  // 平文で保存されていたら、この機会に新しい形式で保存し直す（印の署名も新しい値で作る）
+  let stored = emp.pin;
+  if (checked.upgrade) {
+    stored = hashSecret(String(pin));
+    await db.update(employeesTable).set({ pin: stored }).where(eq(employeesTable.id, id));
+  }
   // 合った端末に印を渡す。以後の打刻・履歴・メッセージの API はこの印を見て本人と判断する。
-  issueDriverToken(res, id, emp.pin);
+  issueDriverToken(res, id, stored);
   return res.json({ ok: true, pinRequired: true });
 });
 
 // PIN設定有無の確認（ドライバー用）
 router.get("/employees/:id/pin/status", async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  const [emp] = await db.select({ pin: employeesTable.pin }).from(employeesTable).where(eq(employeesTable.id, id));
+  const [emp] = await db.select({ pin: employeesTable.pin, qrKey: employeesTable.qrKey }).from(employeesTable).where(eq(employeesTable.id, id));
   if (!emp) return res.status(404).json({ error: "社員が見つかりません。" });
-  return res.json({ pinSet: !!emp.pin });
+  const verified = !!emp.pin && tokenValid(req, id, emp.pin);
+  if (!verified && !qrKeyOk(req, emp.qrKey)) return res.status(403).json(QR_KEY_REQUIRED_BODY);
+  // verified＝この端末は暗証番号を確かめ済み（開き直すたびに入れ直さなくてよい）
+  return res.json({ pinSet: !!emp.pin, verified });
 });
 
 export default router;

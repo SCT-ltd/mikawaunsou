@@ -10,6 +10,8 @@ import {
 } from "@workspace/db";
 import { and, eq, inArray } from "drizzle-orm";
 import { logger } from "./logger";
+import fs from "fs/promises";
+import path from "path";
 
 /**
  * 従業員のお知らせ。社員マスター・月次実績・明細から、事務所が対応しておくべきことを作る。
@@ -162,6 +164,26 @@ export async function computeAlerts(): Promise<EmployeeAlert[]> {
     if (nowYm >= ymOf(r75) && Math.round((today.getTime() - r75.getTime()) / DAY) > AFTER_DAYS) {
       out.push({ ...base, key: `age75over:${e.id}`, level: "warn", title: `${name}さんは75歳以上です`,
         body: "健康保険（協会けんぽ）の対象外です。健康保険料を引いていないか確認してください。" });
+    }
+  }
+
+  // ── バックアップが取れているか（api に BACKUP_DIR が渡されているときだけ）──
+  // 以前は失敗しても誰にも届かず、次の日まで取り直さなかった。36時間取れていなければ至急で知らせる。
+  const dir = process.env["BACKUP_DIR"];
+  if (dir) {
+    let newest = 0;
+    try {
+      for (const name of await fs.readdir(dir)) {
+        if (!/^mikawa-d{8}-d{6}.dump$/.test(name)) continue;
+        const st = await fs.stat(path.join(dir, name));
+        if (st.size > 1024) newest = Math.max(newest, st.mtimeMs);
+      }
+    } catch { /* フォルダが読めない＝取れていない扱い */ }
+    const hours = newest ? Math.floor((Date.now() - newest) / 3_600_000) : Infinity;
+    if (hours > 36) {
+      out.push({ key: `backup:${iso(today)}`, level: "danger", href: "/",
+        title: newest ? `データのバックアップが${hours}時間取れていません` : "データのバックアップが見つかりません",
+        body: "毎日3時に自動で取っています。NAS の db-backup の記録を確かめてください。直るまで、給与の確定などの大きな作業は控えてください。" });
     }
   }
 

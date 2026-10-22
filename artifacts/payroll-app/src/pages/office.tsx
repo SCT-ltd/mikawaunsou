@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "wouter";
+import { qrKeyFor, isQrKeyError } from "@/lib/qr-key";
 import { playFeedbackSound, unlockAudio } from "@/lib/notification-sound";
 
 type EventType = "clock_in" | "clock_out" | "break_start" | "break_end";
@@ -106,10 +107,12 @@ function fmtDuration(minutes: number): string {
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+/** QR の合言葉（lib/qr-key.ts）。画面を開いたときに決まる */
+let QR_KEY = "";
 async function apiFetch(path: string, options?: RequestInit) {
   const res = await fetch(`${BASE}/api${path}`, {
     ...options,
-    headers: { "Content-Type": "application/json", ...(options?.headers ?? {}) },
+    headers: { "Content-Type": "application/json", ...(QR_KEY ? { "X-QR-Key": QR_KEY } : {}), ...(options?.headers ?? {}) },
   });
   if (!res.ok) throw new Error(await res.text());
   if (res.status === 204) return null;
@@ -119,6 +122,8 @@ async function apiFetch(path: string, options?: RequestInit) {
 export default function OfficePage() {
   const params = useParams<{ id: string }>();
   const employeeId = Number(params.id);
+  QR_KEY = qrKeyFor(employeeId);
+  const [qrKeyMissing, setQrKeyMissing] = useState(false);
 
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
@@ -168,7 +173,12 @@ export default function OfficePage() {
       // サーバーが返す項目名は pinSet。以前は hasPinSet を見ていたため常に「未設定」と判断し、
       // 暗証番号を設定していても入力なしで打刻画面に入れていた。
       setHasPinSet(data?.pinSet ?? false);
-    } catch { setHasPinSet(false); }
+      // 暗証番号が無い人・この端末で確かめ済みの人は、そのまま使える（リアルタイム更新もつなぐ）
+      if (!data?.pinSet || data?.verified) setPinVerified(true);
+    } catch (e) {
+      if (isQrKeyError(String((e as Error)?.message ?? ""))) setQrKeyMissing(true);
+      setHasPinSet(false);
+    }
   }
 
   useEffect(() => {
@@ -182,11 +192,12 @@ export default function OfficePage() {
     if (!pinVerified) return;
 
     function startSSE() {
-      const es = new EventSource(`${BASE}/api/attendance/stream`);
+      // 本人の番号と合言葉を付けてつなぐ（以前は付けずにつないで断られ、30秒ごとの取り直しだけで動いていた）
+      const es = new EventSource(`${BASE}/api/attendance/stream?employeeId=${employeeId}${QR_KEY ? `&k=${encodeURIComponent(QR_KEY)}` : ""}`);
       es.onmessage = (e) => {
         try {
           const msg = JSON.parse(e.data);
-          if (msg.type === "snapshot") fetchData();
+          if (Array.isArray(msg) || msg.type === "refresh" || msg.type === "snapshot") fetchData();
         } catch { /* ignore */ }
       };
       es.onerror = () => { es.close(); sseRef.current = null; };
@@ -268,6 +279,17 @@ export default function OfficePage() {
         <div className="flex flex-col items-center gap-3 text-slate-500">
           <div className="h-10 w-10 animate-spin rounded-full border-4 border-blue-400 border-t-transparent" />
           <p className="text-sm font-medium">読み込み中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (qrKeyMissing) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center p-8 max-w-sm">
+          <p className="text-xl font-bold text-amber-700 mb-2">QRコードが新しくなりました</p>
+          <p className="text-muted-foreground text-sm leading-relaxed">事務所で新しいQRコードを受け取って、読み取り直してください。</p>
         </div>
       </div>
     );

@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from "express";
 import { db, attendanceRecordsTable } from "@workspace/db";
 import { paramStr } from "./params";
 import { eq } from "drizzle-orm";
+import { isAdminReq } from "./roles";
 import { driverAccess, PIN_REQUIRED_BODY, PIN_NOT_SET_BODY } from "./driver-token";
 
 /**
@@ -19,8 +20,9 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction) {
   if (!req.session?.userId) {
     return res.status(401).json({ error: "ログインが必要です" });
   }
-  if (req.session.role !== "admin") {
-    return res.status(403).json({ error: "管理者権限が必要です" });
+  // 管理者／スタッフ／閲覧のみ の決まりは lib/roles.ts
+  if (!isAdminReq(req)) {
+    return res.status(403).json({ error: req.session.role === "viewer" ? "閲覧のみのユーザーは変更できません" : "この操作の権限がありません" });
   }
   return next();
 }
@@ -65,7 +67,7 @@ export function requireOwnerOrAdmin(
       return res.status(401).json(PIN_REQUIRED_BODY);
     }
 
-    if (req.session.role === "admin") {
+    if (isAdminReq(req)) {
       return next();
     }
 
@@ -110,10 +112,10 @@ export async function requireAttendanceRecordOwnerOrAdmin(
   res: Response,
   next: NextFunction,
 ) {
-  // 未ログインは公開フロー（QR打刻からの編集など）として通過。
-  // ログイン中のドライバーには引き続き owner チェックが効く。
+  // 未ログインは断る。以前は「公開フロー」として素通ししていたが、この経路（打刻の修正・削除）を
+  // 公開している画面は無く、いつか公開側に足すと所有者の確認が黙って無効になる地雷だった。
   if (!req.session?.userId) {
-    return next();
+    return res.status(401).json({ error: "ログインが必要です" });
   }
 
   const id = parseInt(paramStr(req.params["id"]), 10);
@@ -131,7 +133,7 @@ export async function requireAttendanceRecordOwnerOrAdmin(
     return res.status(404).json({ error: "レコードが見つかりません" });
   }
 
-  if (req.session.role === "admin") {
+  if (isAdminReq(req)) {
     (req as Request & { attendanceRecord?: typeof record }).attendanceRecord = record;
     return next();
   }

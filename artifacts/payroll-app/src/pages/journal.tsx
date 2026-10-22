@@ -44,19 +44,21 @@ export default function JournalEntries() {
     }
   };
 
-  const handleExportCsv = () => {
-    const url = `/api/journal-entries/export/csv?year=${year}&month=${month}&format=${format}`;
+  const handleExportCsv = async () => {
+    const res = await fetch(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/api/journal-entries/export/csv?year=${year}&month=${month}&format=${format}`, { credentials: "include" });
+    if (!res.ok) {
+      toast({ title: "CSVを作れませんでした", description: `もう一度お試しください（${res.status}）`, variant: "destructive" });
+      return;
+    }
+    const blob = await res.blob();
     const a = document.createElement("a");
-    a.href = url;
-    a.download = `仕訳データ_${format}_${year}${month}.csv`;
+    a.href = URL.createObjectURL(blob);
+    a.download = `仕訳データ_${format}_${year}${String(month).padStart(2, "0")}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    
-    toast({
-      title: "CSVエクスポート",
-      description: "会計ソフト連携用CSVのダウンロードを開始しました。",
-    });
+    setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+    toast({ title: "CSVを保存しました", description: "会計ソフト連携用CSV" });
   };
 
   const years = Array.from({ length: 3 }, (_, i) => currentDate.getFullYear() - 1 + i);

@@ -22,6 +22,7 @@ import OfficePage from "@/pages/office";
 import RealtimeMapPage from "@/pages/realtime-map";
 import MessagesPage from "@/pages/messages";
 import UserManagement from "@/pages/users";
+import AuditPage from "@/pages/audit";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -64,6 +65,7 @@ function ProtectedRoutes() {
       <Route path="/realtime-map" component={RealtimeMapPage} />
       <Route path="/messages" component={MessagesPage} />
       <Route path="/users" component={UserManagement} />
+      <Route path="/audit" component={AuditPage} />
       <Route component={NotFound} />
     </Switch>
   );

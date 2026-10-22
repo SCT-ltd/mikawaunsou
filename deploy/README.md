@@ -155,20 +155,40 @@ cd /volume2/docker/mikawa-system/app/deploy
 sudo /usr/local/bin/docker compose up -d --build
 ```
 
+## DB の変更（2026-10 から）
+
+**`drizzle-kit push` は使わない**（古い枝や手元の schema との差で、本番の表・列を消すおそれがある。
+`pnpm --filter @workspace/db run push` / `push-force` は止めてある）。変更は `deploy/migrations/` の SQL を手で当てる:
+
+```sh
+cd /volume2/docker/mikawa-system/app/deploy
+sudo /usr/local/bin/docker exec mikawa-system-db-1 sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' | gzip > ../transfer/before-<名前>.sql.gz   # 先に控え
+sudo /usr/local/bin/docker exec -i mikawa-system-db-1 sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < <SQL ファイル>
+```
+
+- 当てたものは `schema_migrations` 表に記録する（SQL の最後で INSERT する）。
+- api は起動時に要る列があるかを確かめ、当て忘れていれば**起動しない**（ログに足りない列が出る）。
+
 ## バックアップ
 
-`db-backup` コンテナが**毎日** `deploy/backups/mikawa-<日時>.dump` を出力する（既定60日保持）。
-給与データは法定保存対象なので、`deploy/backups/` を Synology の Hyper Backup で
-**NAS外（クラウド/外付けHDD）にも**複製すること。NAS故障＝喪失、にしない。
+`db-backup` コンテナが**毎日3時**に `deploy/backups/mikawa-<日時>.dump` を出力する（既定60日保持）。
+- 取ったダンプは読み直して確かめる。失敗したら10分おきに6回までやり直す。起動したときに今日の分が無ければすぐ取る。
+- `.env` の `BACKUP_COPY_DIR` に別のディスクのフォルダを書くと、同じものを複製する（いまは /volume1 側）。
+- **36時間取れていないと、管理画面の従業員のお知らせに至急で出て、PCに通知も届く。**
+- 給与データは法定保存対象なので、Synology の Hyper Backup で **NAS外（クラウド/外付けHDD）にも**複製すること。NAS故障＝喪失、にしない。
 
 手動バックアップ:
 ```sh
-docker compose exec db pg_dump "$DATABASE_URL" -Fc -f /backups/manual-$(date +%Y%m%d).dump
+sudo /usr/local/bin/docker exec mikawa-system-db-1 sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc -f /backups/manual-$(date +%Y%m%d).dump'
 ```
 
-リストア:
+リストア（**先に api を止める**。止めないと戻している途中に書き込みが混ざる）:
 ```sh
-docker compose exec db pg_restore --clean --if-exists -U mikawa -d mikawa /backups/<ファイル>.dump
+cd /volume2/docker/mikawa-system/app/deploy
+sudo /usr/local/bin/docker compose stop api web
+sudo /usr/local/bin/docker exec mikawa-system-db-1 sh -c 'pg_restore --clean --if-exists -U "$POSTGRES_USER" -d "$POSTGRES_DB" /backups/<ファイル>.dump'
+sudo /usr/local/bin/docker exec mikawa-system-db-1 sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select count(*) from payrolls"'   # 件数を確かめる
+sudo /usr/local/bin/docker compose start api web
 ```
 
 ## ロールバック（DBをNeonに戻す）

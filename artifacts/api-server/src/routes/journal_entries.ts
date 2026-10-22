@@ -119,7 +119,8 @@ router.post("/journal-entries/generate", async (req, res) => {
   return res.json(inserted);
 });
 
-router.get("/journal-entries/export-csv", async (req, res) => {
+// 画面は /journal-entries/export/csv を呼んでいた（サーバーは export-csv だけで、404 になっていた）。両方で受ける。
+router.get(["/journal-entries/export-csv", "/journal-entries/export/csv"], async (req, res) => {
   const year = parseInt(req.query.year as string, 10);
   const month = parseInt(req.query.month as string, 10);
   const format = (req.query.format as string) ?? "generic";

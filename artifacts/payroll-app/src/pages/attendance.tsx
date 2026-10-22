@@ -329,7 +329,18 @@ export default function AttendancePage() {
   // window.location.origin（＝admin.…）でQRを作るとドライバーが Access に弾かれて打刻できない。
   // VITE_PUBLIC_ORIGIN（公開ホストのURL）が設定されていればそれを使う。未設定なら従来どおり現在のオリジン。
   const publicOrigin = import.meta.env.VITE_PUBLIC_ORIGIN || window.location.origin;
-  const qrUrl = qrEmployee ? `${publicOrigin}${BASE}/${qrAttendancePath}/${qrEmployee.id}` : "";
+  // QR の合言葉（?k=）を入れる。合言葉の無い URL では開けない（番号を順に試すだけで他人の打刻ができないように）
+  const [qrKeyOverride, setQrKeyOverride] = useState<Record<number, string>>({});
+  const qrKeyNow = qrEmployee ? (qrKeyOverride[qrEmployee.id] ?? (qrEmployee as { qrKey?: string | null }).qrKey ?? "") : "";
+  const qrUrl = qrEmployee ? `${publicOrigin}${BASE}/${qrAttendancePath}/${qrEmployee.id}${qrKeyNow ? `?k=${encodeURIComponent(qrKeyNow)}` : ""}` : "";
+  const rotateQrKey = async () => {
+    if (!qrEmployee) return;
+    if (!window.confirm(`${qrEmployee.name}さんのQRコードを作り直しますか？\n前のQRコードは使えなくなります（スマホを替えた・なくした・退職したときに使います）。`)) return;
+    const res = await fetch(`${BASE}/api/employees/${qrEmployee.id}/qr-key/rotate`, { method: "POST" });
+    if (!res.ok) { window.alert("作り直せませんでした"); return; }
+    const data = (await res.json()) as { qrKey: string };
+    setQrKeyOverride((m) => ({ ...m, [qrEmployee.id]: data.qrKey }));
+  };
 
   return (
     <AppLayout fullWidth>
@@ -572,6 +583,8 @@ export default function AttendancePage() {
                 </div>
                 <p className="text-xs text-muted-foreground text-center break-all">{qrUrl}</p>
                 <p className="text-sm text-center text-muted-foreground">スマホで読み取ると打刻ページが開きます</p>
+                {!qrKeyNow && <p className="text-xs text-center text-red-600">QRの合言葉がまだありません。画面を読み込み直してください。</p>}
+                <button type="button" onClick={rotateQrKey} className="text-xs text-muted-foreground underline hover:text-foreground">QRコードを作り直す（前のQRを使えなくする）</button>
               </>
             )}
           </div>

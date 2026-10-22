@@ -61,7 +61,7 @@ pwsh -File scripts/dev.ps1                     # ← local dev: loads .env.local
 
 **There is no test suite** (no vitest/jest/node:test). `pnpm run typecheck` is the verification step — run it after non-trivial changes.
 
-DB schema changes are applied with `drizzle-kit push` (no generated migration files are committed); the schema in `lib/db/src/schema/` is the source of truth.
+DB schema changes are applied by hand with the SQL files in `deploy/migrations/` (since 2026-10; `drizzle-kit push` is disabled because it can drop production tables/columns). Keep `lib/db/src/schema/` in sync with them.
 
 ## Runtime configuration
 
@@ -151,7 +151,7 @@ powershell -File deploy/update-nas.ps1 -Only api    # バックエンドだけ�
 NAS 固有の注意（ハマりどころ）:
 - **`docker` は `sudo /usr/local/bin/docker`**。`kotaki` は docker グループに入っておらず、PATH にも無い。
 - **バインドマウント先は先に `mkdir` が要る。** Synology の Docker はディレクトリを自動作成せず、無いと起動に失敗する。
-- **DBスキーマを変えたときは NAS 側で `drizzle-kit push` が別途必要**（`compose` は push しない）。
+- **DBスキーマを変えたときは `deploy/migrations/` の SQL を NAS で手で当てる**（`drizzle-kit push` は使わない。api は当て忘れを起動時に検知して止まる）。
 - 他システム（FesDX / kamatamei / lstep 等）が同じ NAS に15コンテナ稼働中。**`mikawa-system-*` 以外に触らないこと。**
 
 `deploy/README.md` が手順書、`deploy/overview.md` が設計と決定事項。要点だけ:

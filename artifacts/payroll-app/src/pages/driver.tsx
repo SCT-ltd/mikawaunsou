@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "wouter";
+import { qrKeyFor, isQrKeyError } from "@/lib/qr-key";
 import { playNotificationSound, unlockAudio } from "@/lib/notification-sound";
 
 type EventType = "clock_in" | "clock_out" | "break_start" | "break_end";
@@ -52,10 +53,15 @@ function formatTime(dateStr: string): string {
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+/** QR の合言葉（lib/qr-key.ts）。画面を開いたときに決まる */
+let QR_KEY = "";
+const qrHeaders = (): Record<string, string> => (QR_KEY ? { "X-QR-Key": QR_KEY } : {});
+const qrQuery = () => (QR_KEY ? `&k=${encodeURIComponent(QR_KEY)}` : "");
+
 async function apiFetch(path: string, options?: RequestInit) {
   const res = await fetch(`${BASE}/api${path}`, {
     ...options,
-    headers: { "Content-Type": "application/json", ...(options?.headers ?? {}) },
+    headers: { "Content-Type": "application/json", ...qrHeaders(), ...(options?.headers ?? {}) },
   });
   if (!res.ok) throw new Error(await res.text());
   if (res.status === 204) return null;
@@ -107,6 +113,9 @@ const INSPECTION_SECTIONS: { label: string; items: InspectionItem[] }[] = [
 export default function DriverPage() {
   const params = useParams<{ id: string }>();
   const employeeId = parseInt(params.id ?? "0", 10);
+  QR_KEY = qrKeyFor(employeeId);
+  /** QR が古い（合言葉が無い）ため使えない */
+  const [qrKeyMissing, setQrKeyMissing] = useState(false);
 
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
@@ -421,8 +430,10 @@ export default function DriverPage() {
       ]);
       setEmployee(emp);
       setRecords(recs ?? []);
-    } catch {
-      setError("データの取得に失敗しました");
+      setError(null);
+    } catch (e) {
+      if (isQrKeyError(String((e as Error)?.message ?? ""))) setQrKeyMissing(true);
+      else setError("データの取得に失敗しました。電波の良いところで画面を読み込み直してください。");
     } finally {
       setLoading(false);
     }
@@ -432,11 +443,15 @@ export default function DriverPage() {
   useEffect(() => {
     fetchData();
     apiFetch(`/employees/${employeeId}/pin/status`)
-      .then((res: { pinSet: boolean }) => {
-        if (res.pinSet) setPinRequired(true);
-        else setPinVerified(true);
+      .then((res: { pinSet: boolean; verified?: boolean }) => {
+        // verified＝この端末は暗証番号を確かめ済み（開き直すたびに入れ直さなくてよい）
+        if (res.pinSet && !res.verified) setPinRequired(true);
+        else { if (res.pinSet) setPinRequired(true); setPinVerified(true); }
       })
-      .catch(() => setPinVerified(true));
+      .catch((e) => {
+        if (isQrKeyError(String((e as Error)?.message ?? ""))) setQrKeyMissing(true);
+        else setPinVerified(true);
+      });
   }, [fetchData, employeeId]);
 
   // SSEで管理者操作（打刻追加・修正・削除）をリアルタイム受信。
@@ -444,7 +459,7 @@ export default function DriverPage() {
   // （以前は番号を付けずに接続していたためサーバーに断られ、事務所が直しても画面に出なかった）
   useEffect(() => {
     if (!pinVerified) return;
-    const es = new EventSource(`${BASE}/api/attendance/stream?employeeId=${employeeId}`);
+    const es = new EventSource(`${BASE}/api/attendance/stream?employeeId=${employeeId}${qrQuery()}`);
     es.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data) as
@@ -478,7 +493,7 @@ export default function DriverPage() {
   // メッセージSSE（リアルタイム受信）
   useEffect(() => {
     if (!pinVerified) return;
-    const es = new EventSource(`${BASE}/api/messages/stream?employeeId=${employeeId}`);
+    const es = new EventSource(`${BASE}/api/messages/stream?employeeId=${employeeId}${qrQuery()}`);
     es.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data) as { type: string; message: { id: number; employeeId: number; sender: "office" | "employee"; content: string; createdAt: string } };
@@ -528,7 +543,7 @@ export default function DriverPage() {
         const json = sub.toJSON();
         await fetch(`${BASE}/api/push/subscribe`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...qrHeaders() },
           body: JSON.stringify({
             employeeId,
             role: "employee",
@@ -556,7 +571,7 @@ export default function DriverPage() {
       // 以前は結果を見ずに入力欄を空にしていたため、断られても「送れた」ように見えていた
       const res = await fetch(`${BASE}/api/messages`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...qrHeaders() },
         body: JSON.stringify({ employeeId, sender: "employee", content: msgInput.trim() }),
       });
       if (!res.ok) {
@@ -838,12 +853,24 @@ export default function DriverPage() {
     );
   }
 
+  if (qrKeyMissing) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center p-8 max-w-sm">
+          <p className="text-xl font-bold text-amber-700 mb-2">QRコードが新しくなりました</p>
+          <p className="text-muted-foreground text-sm leading-relaxed">事務所で新しいQRコードを受け取って、読み取り直してください。（前のQRコードやブックマークからは開けません）</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!employee) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center p-8">
-          <p className="text-xl font-bold text-red-600 mb-2">社員が見つかりません</p>
-          <p className="text-muted-foreground">QRコードを確認してください</p>
+          <p className="text-xl font-bold text-red-600 mb-2">{error ? "読み込めませんでした" : "社員が見つかりません"}</p>
+          <p className="text-muted-foreground mb-4">{error ? "電波の良いところで、もう一度読み込んでください" : "QRコードを確認してください"}</p>
+          <button type="button" onClick={() => window.location.reload()} className="rounded-lg bg-primary text-primary-foreground px-4 py-2 text-sm font-semibold">読み込み直す</button>
         </div>
       </div>
     );

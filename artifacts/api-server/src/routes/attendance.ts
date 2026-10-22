@@ -6,6 +6,7 @@ import { ABSENCE_DAYS } from "./absences";
 import { requireAdmin, requireOwnerOrAdmin, requireAttendanceRecordOwnerOrAdmin } from "../lib/auth-middleware";
 import { driverAccess, PIN_REQUIRED_BODY } from "../lib/driver-token";
 import { holidayName } from "../lib/jp-holidays";
+import { isAdminReq } from "../lib/roles";
 
 const router = Router();
 
@@ -110,6 +111,7 @@ async function buildSnapshot(date?: string) {
         name: emp.name,
         department: emp.department,
         isOfficeStaff: emp.isOfficeStaff ?? false,
+        qrKey: emp.qrKey ?? null,
       },
       status,
       clockInTime: clockIn?.recordedAt ?? null,
@@ -138,7 +140,7 @@ router.get("/attendance/stream", async (req, res) => {
     if (access === "denied") return res.status(401).json(PIN_REQUIRED_BODY);
     ownerEmployeeId = requested;
     refreshOnly = true;
-  } else if (req.session.role === "admin") {
+  } else if (isAdminReq(req)) {
     ownerEmployeeId = null;
   } else {
     const sessionEmployeeId = req.session.employeeId;
@@ -202,7 +204,7 @@ router.get("/attendance/today", async (req, res) => {
   const date = req.query.date as string | undefined;
   const snapshot = await buildSnapshot(date);
 
-  if (req.session.role === "admin") {
+  if (isAdminReq(req)) {
     return res.json(snapshot);
   }
 
@@ -280,7 +282,7 @@ router.post("/attendance/record", async (req, res) => {
     const access = await driverAccess(req, employeeId);
     if (access === "not-found") return res.status(404).json({ error: "社員が見つかりません。" });
     if (access === "denied") return res.status(401).json(PIN_REQUIRED_BODY);
-  } else if (req.session.role === "admin") {
+  } else if (isAdminReq(req)) {
     if (!bodyEmployeeId || Number.isNaN(Number(bodyEmployeeId))) {
       return res.status(400).json({ error: "employeeId は必須です" });
     }

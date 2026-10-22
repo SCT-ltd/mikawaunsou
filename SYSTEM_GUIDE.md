@@ -727,7 +727,7 @@ workspace/
 
 ```bash
 # スキーマ変更をDBに反映
-pnpm --filter @workspace/db run push-force
+# （2026-10 から使わない）deploy/migrations の SQL を手で当てる。deploy/README.md の「DB の変更」
 
 # OpenAPI仕様からAPIクライアントを再生成
 pnpm --filter @workspace/api-spec run codegen
@@ -753,7 +753,7 @@ pnpm --filter @workspace/payroll-app run dev
 ### 注意事項
 
 - **給与確定後の修正は不可**です。確定前に内容を必ず確認してください。
-- **DBスキーマ変更時**は `pnpm --filter @workspace/db run push-force` を実行してください。主キーの型変更は行わないでください。
+- **DBスキーマ変更時**は `deploy/migrations/` に SQL を足し、手で当ててください（`drizzle-kit push` は表・列を消すおそれがあるため止めてあります）。主キーの型変更は行わないでください。
 - **日給レート変更**は会社設定画面から行ってください。変更は即時反映されます（過去月の計算済みデータには影響しません）。
 - **PINコード**は暗号化してDBに保存されます。管理者でも平文を確認することはできません。
 - **三川家（EMP001/EMP015/EMP016）** は固定給・雇用保険非適用の設定です。

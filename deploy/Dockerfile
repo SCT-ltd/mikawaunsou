@@ -69,5 +69,6 @@ FROM nginx:1.27-alpine AS web
 COPY --from=builder /repo/artifacts/payroll-app/dist/public /usr/share/nginx/html
 COPY deploy/nginx/proxy.conf   /etc/nginx/mikawa-proxy.conf
 COPY deploy/nginx/default.conf /etc/nginx/conf.d/default.conf
+COPY deploy/nginx/security-headers.conf /etc/nginx/mikawa-security-headers.conf
 
 EXPOSE 80

@@ -43,7 +43,10 @@ export const employeesTable = pgTable("employees", {
   isOfficeStaff: boolean("is_office_staff").notNull().default(false),
   scheduledWorkStart: text("scheduled_work_start").default("08:00"),
   scheduledWorkEnd: text("scheduled_work_end").default("17:00"),
+  /** 暗証番号（scrypt で保存。古い行は平文のまま残っていることがあり、照合のときに書き換える） */
   pin: text("pin"),
+  /** QR の合言葉。QR の URL（/driver/:id?k=…）に入れ、ログインしていない打刻ページの本人確認に使う */
+  qrKey: text("qr_key"),
   /** @deprecated dailyRateWeekday / dailyRateSaturday に置き換えられました。書き込みはしないが既存データ保護のため残存。 */
   dailyRateOverride: doublePrecision("daily_rate_override").default(0),
   /** 個人 平日日当（>0 の場合は会社共通の dailyWageWeekday を上書き） */

@@ -39,7 +39,7 @@ export interface AttendanceDraft {
 }
 
 export interface EmployeeStatus {
-  employee: { id: number; employeeCode: string; name: string; department: string; isOfficeStaff?: boolean };
+  employee: { id: number; employeeCode: string; name: string; department: string; isOfficeStaff?: boolean; qrKey?: string | null };
   status: Status;
   clockInTime: string | null;
   records: AttendanceRecord[];

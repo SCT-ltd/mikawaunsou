@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { db, payrollsTable, employeesTable, monthlyRecordsTable, companyTable, allowanceDefinitionsTable, employeeAllowancesTable, employeeDeductionsTable, deductionDefinitionsTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, ne } from "drizzle-orm";
+import { audit } from "../lib/audit";
 import { calculatePayroll, calculateBluewingPayroll, roundJapanese, lateNightRateFor } from "../lib/payroll-calculator";
 import { ensureMonthItems, getMonthItems, syncMonthItemsWithAttendance } from "../lib/month-items";
 import { calculateInsuranceAndTax, EMP_INS_RATE_R8 } from "../lib/tax-tables-reiwa8";
@@ -275,11 +276,13 @@ router.post("/payroll/calculate", async (req, res) => {
 
     let manualPayroll;
     if (existingManual.length > 0) {
+      // 確定済みでない行だけを書き換える（確かめてから書くまでの間に確定されたら、確定を消さない）
       [manualPayroll] = await db.update(payrollsTable).set({
         ...manualPayrollData,
         status: "draft",
         updatedAt: new Date(),
-      }).where(eq(payrollsTable.id, existingManual[0].id)).returning();
+      }).where(and(eq(payrollsTable.id, existingManual[0].id), ne(payrollsTable.status, "confirmed"))).returning();
+      if (!manualPayroll) return res.status(409).json({ error: "確定済みの給与明細は再計算できません。" });
     } else {
       [manualPayroll] = await db.insert(payrollsTable).values({
         employeeId,
@@ -428,7 +431,8 @@ router.post("/payroll/calculate", async (req, res) => {
         ...bwPayrollData,
         status: "draft",
         updatedAt: new Date(),
-      }).where(eq(payrollsTable.id, existingBw[0].id)).returning();
+      }).where(and(eq(payrollsTable.id, existingBw[0].id), ne(payrollsTable.status, "confirmed"))).returning();
+      if (!bwPayroll) return res.status(409).json({ error: "確定済みの給与明細は再計算できません。" });
     } else {
       [bwPayroll] = await db.insert(payrollsTable).values({
         employeeId,
@@ -618,6 +622,14 @@ router.get("/payroll/:id", async (req, res) => {
 router.put("/payroll/:id", async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const body = req.body;
+  // 確定済みの明細は変えない。以前は確定済みでも手当を書き換えられ、合計は計算し直さなかった。
+  // いまの画面はこの経路を使っていない。メモ（notes）だけは確定後も直せるようにしておく。
+  const [cur] = await db.select().from(payrollsTable).where(eq(payrollsTable.id, id));
+  if (!cur) return res.status(404).json({ error: "給与明細が見つかりません。" });
+  const touchesMoney = body.safetyDrivingAllowance !== undefined || body.longDistanceAllowance !== undefined || body.positionAllowance !== undefined;
+  if (touchesMoney) {
+    return res.status(409).json({ error: "明細の金額はここでは直せません。手当・控除を直して「再計算」してください。" });
+  }
   const [updated] = await db.update(payrollsTable).set({
     ...(body.safetyDrivingAllowance !== undefined && { safetyDrivingAllowance: body.safetyDrivingAllowance }),
     ...(body.longDistanceAllowance !== undefined && { longDistanceAllowance: body.longDistanceAllowance }),
@@ -653,19 +665,58 @@ router.post("/payroll/:id/confirm", async (req, res) => {
     .returning();
   if (!updated) return res.status(404).json({ error: "給与明細が見つかりません。" });
   const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, updated.employeeId));
+  await audit(req, "payroll.confirm", `payroll:${id}`, { employee: emp?.name, year: updated.year, month: updated.month, gross: updated.grossSalary, net: updated.netSalary });
   return res.json(buildPayrollResponse(updated, emp));
 });
 
 // 確定解除：確定済みを draft に戻し、再計算・訂正を可能にする
 router.post("/payroll/:id/unconfirm", async (req, res) => {
   const id = parseInt(req.params.id, 10);
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 200) : "";
   const [updated] = await db.update(payrollsTable)
     .set({ status: "draft", updatedAt: new Date() })
     .where(eq(payrollsTable.id, id))
     .returning();
   if (!updated) return res.status(404).json({ error: "給与明細が見つかりません。" });
   const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, updated.employeeId));
+  await audit(req, "payroll.unconfirm", `payroll:${id}`, { employee: emp?.name, year: updated.year, month: updated.month, gross: updated.grossSalary, net: updated.netSalary, reason });
   return res.json(buildPayrollResponse(updated, emp));
+});
+
+// ── 月まとめの CSV（給与明細の「CSV出力」）──────────────────────────────
+// 以前は画面が /payrolls/export/csv を呼んでいたのに、サーバーにその入口が無く、エラーの中身が
+// CSV として落ちていた。表計算ソフトで開けるよう BOM 付き UTF-8・値は引用符で囲む。
+router.get("/payrolls/export/csv", async (req, res) => {
+  const year = parseInt(String(req.query.year), 10);
+  const month = parseInt(String(req.query.month), 10);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+    return res.status(400).json({ error: "年と月を指定してください" });
+  }
+  const rows = await db.select({ payroll: payrollsTable, employee: employeesTable })
+    .from(payrollsTable)
+    .innerJoin(employeesTable, eq(payrollsTable.employeeId, employeesTable.id))
+    .where(and(eq(payrollsTable.year, year), eq(payrollsTable.month, month)))
+    .orderBy(employeesTable.employeeCode);
+  const q = (v: unknown) => {
+    const s = v === null || v === undefined ? "" : String(v);
+    // 先頭が = + - @ の文字は表計算ソフトが式として動かすので、頭に ' を付ける
+    const safe = /^[=+\-@]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s) ? `'${s}` : s;
+    return `"${safe.replace(/"/g, '""')}"`;
+  };
+  const head = ["社員番号", "氏名", "年月", "状態", "基本給", "土曜出勤手当", "時間外手当", "深夜手当", "休日手当", "歩合給", "通勤手当", "その他の手当合計", "欠勤控除", "総支給額",
+    "社会保険料（健保・子育て支援金・厚年）", "うち子ども・子育て支援金", "雇用保険料", "源泉所得税", "住民税", "その他の控除合計", "控除合計", "差引支給額",
+    "出勤日数", "土曜出勤日数", "日曜出勤時間", "祝日出勤日数", "残業時間", "深夜時間", "有給日数"];
+  const lines = [head.map(q).join(",")];
+  for (const { payroll: p, employee: e } of rows) {
+    lines.push([e.employeeCode, e.name, `${p.year}年${p.month}月`, p.status === "confirmed" ? "確定" : "未確定",
+      p.baseSalary, p.saturdayPay ?? 0, p.overtimePay, p.lateNightPay, p.holidayPay, p.commissionPay, p.transportationAllowance,
+      p.customAllowancesTotal ?? 0, p.absenceDeduction, p.grossSalary,
+      p.socialInsurance, p.childcareSupportContribution ?? 0, p.employmentInsurance, p.incomeTax, p.residentTax, p.customDeductionsTotal ?? 0, p.totalDeductions, p.netSalary,
+      p.workDays, p.saturdayWorkDays ?? 0, p.holidayWorkHours ?? 0, p.publicHolidayWorkDays ?? 0, p.overtimeHours, p.lateNightHours, p.paidLeaveDays ?? 0].map(q).join(","));
+  }
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="payroll_${year}${String(month).padStart(2, "0")}.csv"`);
+  return res.send("\uFEFF" + lines.join("\r\n"));
 });
 
 router.get("/payroll/:id/csv", async (req, res) => {
@@ -704,7 +755,7 @@ router.get("/payroll/:id/csv", async (req, res) => {
     ["支給合計", p.grossSalary].join(","),
     [""],
     ["【控除】", ""].join(","),
-    ["健康保険料（子育て支援金含む）", p.socialInsurance].join(","),
+    ["社会保険料（健保・子育て支援金・厚年）", p.socialInsurance].join(","),
     ["  うち子ども・子育て支援金", p.childcareSupportContribution ?? 0].join(","),
     ["雇用保険料", p.employmentInsurance].join(","),
     ["源泉所得税", p.incomeTax].join(","),
@@ -716,7 +767,7 @@ router.get("/payroll/:id/csv", async (req, res) => {
 
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="payslip_${e.employeeCode}_${p.year}${String(p.month).padStart(2, "0")}.csv"`);
-  return res.send("\uFEFF" + lines.join("\n"));
+  return res.send("\uFEFF" + lines.map((l) => (Array.isArray(l) ? l : [l]).join("")).map((l) => l.split(",").map((c) => (c === "" ? "" : `"${c.replace(/"/g, '""')}"`)).join(",")).join("\r\n"));
 });
 
 export default router;

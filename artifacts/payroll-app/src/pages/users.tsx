@@ -59,10 +59,11 @@ type SystemUser = {
   createdAt: string;
 };
 
+// サーバーの決まり（api-server/src/lib/roles.ts）と同じ
 const ROLES = [
-  { value: "admin", label: "管理者" },
-  { value: "staff", label: "事務スタッフ" },
-  { value: "viewer", label: "閲覧のみ" },
+  { value: "admin", label: "管理者", help: "すべての操作ができます" },
+  { value: "staff", label: "事務スタッフ", help: "ユーザー管理・会社設定・保険料率・操作の記録 以外のすべて" },
+  { value: "viewer", label: "閲覧のみ", help: "見るだけで、変更はできません" },
 ];
 
 function roleLabel(role: string) {
@@ -420,7 +421,7 @@ export default function UserManagement() {
                         <SelectContent>
                           {ROLES.map((r) => (
                             <SelectItem key={r.value} value={r.value}>
-                              {r.label}
+                              {r.label}<span className="ml-2 text-xs text-muted-foreground">{r.help}</span>
                             </SelectItem>
                           ))}
                         </SelectContent>
