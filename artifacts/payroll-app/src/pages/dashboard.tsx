@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { RichMonthPicker } from "@/components/rich-month-picker";
+import { AlertsCard } from "@/components/alerts/alert-bell";
 import { Badge } from "@/components/ui/badge";
 import { LayoutDashboard, Wallet, ClipboardCheck, TrendingUp, Landmark, AlertTriangle, ChevronRight } from "lucide-react";
 
@@ -72,6 +73,9 @@ export default function Dashboard() {
           </div>
           <RichMonthPicker year={year} month={month} onChange={(y, m) => { setYear(y); setMonth(m); }} />
         </div>
+
+        {/* ── 従業員のお知らせ（年齢の節目・設定の確認など）── */}
+        <AlertsCard />
 
         {/* ── KPI タイル ── */}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

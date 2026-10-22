@@ -1,5 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { startAlertJob } from "./lib/alerts";
 
 const rawPort = process.env["PORT"];
 
@@ -22,4 +23,6 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+  // 従業員のお知らせを1時間ごとに見直し、新しい要対応があれば事務所のPCへプッシュ通知する
+  startAlertJob();
 });

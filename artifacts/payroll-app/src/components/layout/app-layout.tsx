@@ -26,6 +26,7 @@ import {
 import { LogOut, UserCircle, ChevronDown, Menu, Sun, Moon } from "lucide-react";
 import { useLocation } from "wouter";
 import { useTheme } from "@/context/theme-context";
+import { AlertBell } from "@/components/alerts/alert-bell";
 
 export function AppLayout({
   children,
@@ -89,6 +90,7 @@ export function AppLayout({
               <div className="text-sm font-medium text-muted-foreground hidden sm:block">
                 {new Date().getFullYear()}年{new Date().getMonth() + 1}月
               </div>
+              {user && <AlertBell />}
               <button
                 type="button"
                 onClick={toggleTheme}

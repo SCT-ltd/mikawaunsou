@@ -60,7 +60,9 @@ export function lateNightRateFor(personalLateNightRate: number | null | undefine
 /**
  * 厚生年金適用判定（サーバー側 resolvePensionApplied と同ロジック）
  * - pensionApplied が true/false → その値をそのまま使用
- * - null/undefined → 生年月日から年齢を算出し 70歳以上なら false
+ * - null/undefined → 70歳に達した日（誕生日の前日）の月から false
+ *   （例：10月12日生まれ→10月11日に到達→10月分から引かない。1日生まれは前の月から）。
+ *   以前は「その月の1日時点の年齢」で見ていたため、到達した月の分も引いていた。
  */
 export function resolvePensionApplied(
   employee: EmployeeExt,
@@ -71,14 +73,13 @@ export function resolvePensionApplied(
   if (pa !== null && pa !== undefined) return pa;
   const dob = employee.dateOfBirth;
   if (!dob) return true;
-  const birthDate = new Date(dob);
-  const checkYear = year ?? new Date().getFullYear();
-  const checkMonth = month ?? new Date().getMonth() + 1;
-  const calcDate = new Date(checkYear, checkMonth - 1, 1);
-  let age = calcDate.getFullYear() - birthDate.getFullYear();
-  const md = calcDate.getMonth() - birthDate.getMonth();
-  if (md < 0 || (md === 0 && calcDate.getDate() < birthDate.getDate())) age--;
-  return age < 70;
+  const checkY = year ?? new Date().getFullYear();
+  const checkM = month ?? new Date().getMonth() + 1;
+  const p = String(dob).split(/[-/]/).map(Number);
+  if (p.length < 3 || p.some((n) => !Number.isFinite(n))) return true;
+  const reach = new Date(Date.UTC(p[0]! + 70, p[1]! - 1, p[2]!));
+  reach.setUTCDate(reach.getUTCDate() - 1);
+  return checkY * 12 + (checkM - 1) < reach.getUTCFullYear() * 12 + reach.getUTCMonth();
 }
 
 /**

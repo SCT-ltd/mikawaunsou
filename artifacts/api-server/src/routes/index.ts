@@ -16,6 +16,7 @@ import usersRouter from "./users";
 import authRouter from "./auth";
 import calendarRouter from "./calendar";
 import insuranceRouter from "./insurance";
+import alertsRouter from "./alerts";
 import { requireAdmin } from "../lib/auth-middleware";
 
 const router: IRouter = Router();
@@ -121,7 +122,8 @@ router.use(allowancesRouter);  // /*-definitions の POST/PUT/DELETE は admin�
 router.use(attendanceRouter);  // monthly-summary, gps-locations, location/live GET は admin（ファイル側）
 router.use(absencesRouter);    // 現状認証のみ（owner設計後に強化）
 router.use(messagesRouter);    // conversations, broadcast は admin（ファイル側）
-router.use(insuranceRouter);   // 保険料率マスターの GET はログインのみ、POST/PUT/DELETE は admin（ファイル側）
+router.use(insuranceRouter);
+router.use(alertsRouter);      // 従業員のお知らせ（すべて admin・ファイル側）   // 保険料率マスターの GET はログインのみ、POST/PUT/DELETE は admin（ファイル側）
 
 export { requireAdmin };
 export default router;

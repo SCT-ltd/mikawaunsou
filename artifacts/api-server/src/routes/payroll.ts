@@ -38,14 +38,16 @@ function resolvePensionApplied(emp: typeof employeesTable.$inferSelect, year: nu
   if (emp.pensionApplied !== null && emp.pensionApplied !== undefined) {
     return emp.pensionApplied;
   }
-  if (!emp.dateOfBirth) return true;
-  const dob = new Date(emp.dateOfBirth);
-  // 計算月の1日時点での年齢を算出
-  const calcDate = new Date(year, month - 1, 1);
-  let age = calcDate.getFullYear() - dob.getFullYear();
-  const monthDiff = calcDate.getMonth() - dob.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && calcDate.getDate() < dob.getDate())) age--;
-  return age < 70;
+  // 70歳に達した日（誕生日の前日）の月から引かない。以前は「その月の1日時点の年齢」で見ていたため、
+  // 到達した月の分も引いていた（例：10月12日生まれ→10月11日に到達→10月分から引かない）。
+  const dob = emp.dateOfBirth;
+  if (!dob) return true;
+  const y = year, m = month;
+  const p = String(dob).split(/[-/]/).map(Number);
+  if (p.length < 3 || p.some((n) => !Number.isFinite(n))) return true;
+  const reach = new Date(Date.UTC(p[0]! + 70, p[1]! - 1, p[2]!));
+  reach.setUTCDate(reach.getUTCDate() - 1);
+  return y * 12 + (m - 1) < reach.getUTCFullYear() * 12 + reach.getUTCMonth();
 }
 
 function buildPayrollResponse(p: typeof payrollsTable.$inferSelect, emp: typeof employeesTable.$inferSelect) {
