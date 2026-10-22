@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { attentionOf, dayTotals, DayBar, HourScale, segmentsOf, windowFor, planOf } from "./board";
 import { Link } from "wouter";
-import { MapPin } from "lucide-react";
+import { MapPin, Phone, MessageSquare, LogOut } from "lucide-react";
 import {
   EmployeeStatus,
   AttendanceRecord,
@@ -57,6 +57,7 @@ export function DetailPanel({
   onShowQR,
   onClose,
   onDecideInspection,
+  onDecideCorrection,
 }: {
   selected: EmployeeStatus;
   now: Date;
@@ -70,6 +71,8 @@ export function DetailPanel({
   onAddRecord: (eventType: EventType, time: string, nextDay: boolean) => Promise<string | null>;
   /** 日常点検の「否」への事務所の処置と、運行してよいかの判断 */
   onDecideInspection?: (id: number, officeAction: string, decision: "ok" | "ng" | null) => Promise<void>;
+  /** 修正申請を決める（承認して直す／見送る）。だめなら理由の文字列を返す */
+  onDecideCorrection?: (id: number, approve: boolean, note: string) => Promise<string | null>;
   onSaveAbsence: (absenceType: AbsenceType, note: string) => Promise<boolean>;
   onShowQR: (employee: EmployeeStatus["employee"]) => void;
   onClose: () => void;
@@ -114,13 +117,64 @@ export function DetailPanel({
 
   const breakMs = breakTotalMs(selected.records, now);
   const elapMs = elapsedMs(selected.clockInTime, now);
-  const showElapsed = selected.status !== "未出勤" && selected.status !== "退勤済";
-  const totals = dayTotals(selected.records, now, isToday);
-  const daySegs = segmentsOf(selected.records, now, isToday);
+  const showElapsed = selected.status !== "未出勤" && selected.status !== "退勤済" && !selected.missingOut;
+  const live = isToday && !selected.missingOut;
+  const totals = dayTotals(selected.records, now, live);
+  const daySegs = segmentsOf(selected.records, now, live);
   const dayDate = selected.workDate ?? selected.records[0]?.workDate ?? new Date(now.getTime() + 9 * 3600000).toISOString().slice(0, 10);
   const plan = planOf(dayDate, selected.schedule);
   const dayWin = windowFor(dayDate, plan ? [...daySegs, { from: plan.start, to: plan.end, kind: "work", open: false }] : daySegs);
   const attention = attentionOf(selected, now, isToday);
+
+  // 次に押すはずの打刻（打刻を追加するときの初期値）。退勤の打ち忘れなら退勤、休憩中なら休憩終了
+  const nextEvent: EventType = (() => {
+    const last = [...selected.records].sort((a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime()).pop();
+    if (!last || last.eventType === "clock_out") return "clock_in";
+    if (last.eventType === "break_start") return "break_end";
+    return "clock_out";
+  })();
+  const hmOf = (iso: string) => new Date(new Date(iso).getTime() + 9 * 3600000).toISOString().slice(11, 16);
+  /** その打刻の初期の時刻：今日の勤務中はいま。それ以外は予定（終わり／始まり）、無ければ出勤から9時間 */
+  const defaultTimeFor = (ev: EventType): string => {
+    if (isToday && !selected.missingOut) return nowTimeJST();
+    if (ev === "clock_out") {
+      if (selected.schedule && !selected.schedule.off && selected.schedule.end) return selected.schedule.end;
+      if (selected.clockInTime) return hmOf(new Date(new Date(selected.clockInTime).getTime() + 9 * 3600000).toISOString());
+      return "17:00";
+    }
+    if (ev === "clock_in") return selected.schedule?.start ?? "08:00";
+    return "12:00";
+  };
+  /** 退勤の時刻が出勤の時刻より前なら翌日（夜勤） */
+  const nextDayFor = (ev: EventType, t: string) => ev === "clock_out" && !!selected.clockInTime && t < hmOf(selected.clockInTime);
+  const addRef = useRef<HTMLDivElement>(null);
+  const openAdd = () => {
+    const ev = nextEvent;
+    const t = defaultTimeFor(ev);
+    setAddMode(true); setAddEventType(ev); setAddTime(t); setAddError(null); setAddNextDay(nextDayFor(ev, t));
+    setTimeout(() => addRef.current?.scrollIntoView({ block: "center", behavior: "smooth" }), 50);
+  };
+  // 退勤の打ち忘れを、その場の1回で入れる
+  const [quickOut, setQuickOut] = useState<string | null>(null);
+  const [quickBusy, setQuickBusy] = useState(false);
+  const [quickErr, setQuickErr] = useState<string | null>(null);
+  const quickOutTime = quickOut ?? defaultTimeFor("clock_out");
+  const saveQuickOut = async () => {
+    setQuickBusy(true); setQuickErr(null);
+    const err = await onAddRecord("clock_out", quickOutTime, nextDayFor("clock_out", quickOutTime));
+    setQuickBusy(false);
+    if (err) setQuickErr(err); else setQuickOut(null);
+  };
+  // 修正申請
+  const [corrBusy, setCorrBusy] = useState<number | null>(null);
+  const [corrErr, setCorrErr] = useState<string | null>(null);
+  const decideCorrection = async (id: number, approve: boolean) => {
+    if (!onDecideCorrection) return;
+    setCorrBusy(id); setCorrErr(null);
+    const err = await onDecideCorrection(id, approve, "");
+    setCorrBusy(null);
+    if (err) setCorrErr(err);
+  };
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -149,9 +203,25 @@ export function DetailPanel({
             {selected.employee.department}
           </p>
           <div className="mt-1.5">
-            <StatusBadge status={selected.status} />
+            {selected.missingOut
+              ? <span className="text-[11px] font-bold px-2 py-0.5 rounded-full border bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-300 dark:border-red-500/30">退勤なし（打ち忘れ？）</span>
+              : <StatusBadge status={selected.status} />}
           </div>
         </div>
+        {selected.employee.phone && (
+          <a href={`tel:${selected.employee.phone}`} title={`電話をかける（${selected.employee.phone}）`}>
+            <Button variant="outline" size="sm" className="gap-1.5 shrink-0">
+              <Phone className="h-3.5 w-3.5" />
+              <span className="hidden lg:inline amount">{selected.employee.phone}</span>
+            </Button>
+          </a>
+        )}
+        <Link href={`/messages?emp=${selected.employee.id}`}>
+          <Button variant="outline" size="sm" className="gap-1.5 shrink-0" title="メッセージを送る">
+            <MessageSquare className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">メッセージ</span>
+          </Button>
+        </Link>
         <Link href={`/realtime-map?emp=${selected.employee.id}`}>
           <Button variant="outline" size="sm" className="gap-1.5 shrink-0" title="地図で見る（いまいる場所・打刻した場所）">
             <MapPin className="h-3.5 w-3.5" />
@@ -188,11 +258,47 @@ export function DetailPanel({
               <p className="text-xs font-semibold text-red-700 dark:text-red-300 leading-relaxed">{attention.join("　／　")}</p>
             </div>
           )}
+          {/* 退勤の打ち忘れ：その場で退勤を入れる */}
+          {selected.missingOut && (
+            <div className="mb-3 rounded-lg border border-red-200 bg-red-50/70 dark:bg-red-500/10 dark:border-red-500/30 px-3 py-2.5 space-y-2">
+              <p className="text-xs font-bold text-red-700 dark:text-red-300 flex items-center gap-1.5"><LogOut className="h-3.5 w-3.5" />退勤が押されていません。退勤した時刻を入れてください。</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Input type="time" value={quickOutTime} onChange={(e) => setQuickOut(e.target.value)} className="w-28 h-8 bg-white dark:bg-slate-900" aria-label="退勤の時刻" />
+                {nextDayFor("clock_out", quickOutTime) && <span className="text-[11px] text-indigo-600">翌日の{quickOutTime}として入れます</span>}
+                <Button size="sm" className="h-8" onClick={saveQuickOut} disabled={quickBusy || saving}>この時刻で退勤を入れる</Button>
+                <span className="text-[11px] text-muted-foreground">
+                  {selected.schedule && !selected.schedule.off && selected.schedule.end ? `予定の終わり（${selected.schedule.end}）を入れてあります` : "出勤から9時間後を入れてあります"}
+                </span>
+              </div>
+              {quickErr && <p className="text-xs text-red-600">{quickErr}</p>}
+            </div>
+          )}
+          {/* まだ決めていない修正申請：ここで承認できる */}
+          {(selected.corrections ?? []).length > 0 && (
+            <div className="mb-3 rounded-lg border border-sky-200 bg-sky-50/70 dark:bg-sky-500/10 dark:border-sky-500/30 px-3 py-2.5 space-y-2">
+              <p className="text-xs font-bold text-sky-800 dark:text-sky-200">打刻の修正申請 {(selected.corrections ?? []).length}件</p>
+              {(selected.corrections ?? []).map((c) => (
+                <div key={c.id} className="rounded-md bg-white/80 dark:bg-slate-900/60 border border-sky-100 dark:border-sky-500/20 px-2.5 py-2 text-xs space-y-1.5">
+                  <p>
+                    <b>{{ add: "打ち忘れを足す", change: "時刻を直す", cancel: "取り消す" }[c.kind]}</b>
+                    {c.eventType ? `　${EVENT_LABELS[c.eventType]}` : ""}{c.requestedAt ? ` → ${hmOf(c.requestedAt)}` : ""}
+                    <span className="text-muted-foreground">　{Number(c.workDate.slice(5, 7))}/{Number(c.workDate.slice(8, 10))}の勤務</span>
+                  </p>
+                  <p className="text-muted-foreground">理由：{c.reason}</p>
+                  <div className="flex gap-2">
+                    <Button size="sm" className="h-7" onClick={() => decideCorrection(c.id, true)} disabled={corrBusy !== null}>承認して直す</Button>
+                    <Button size="sm" variant="outline" className="h-7" onClick={() => decideCorrection(c.id, false)} disabled={corrBusy !== null}>見送る</Button>
+                  </div>
+                </div>
+              ))}
+              {corrErr && <p className="text-xs text-red-600">{corrErr}</p>}
+            </div>
+          )}
           {/* 時刻と時間を1行に */}
           <div className="grid grid-cols-[repeat(auto-fit,minmax(6.5rem,1fr))] gap-px rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 overflow-hidden">
             {[
               ["出勤", fmt(totals.clockIn), ""],
-              ["退勤", totals.clockOut ? fmt(totals.clockOut) : showElapsed ? "勤務中" : "—", showElapsed ? "text-emerald-600 text-sm" : ""],
+              ["退勤", totals.clockOut ? fmt(totals.clockOut) : selected.missingOut ? "なし" : showElapsed ? "勤務中" : "—", selected.missingOut ? "text-red-600" : showElapsed ? "text-emerald-600 text-sm" : ""],
               [showElapsed ? "経過" : "拘束", showElapsed ? elapsedStr(selected.clockInTime, now) : totals.restraintMin > 0 ? minToStr(totals.restraintMin) : "—",
                 showElapsed && elapMs >= 10 * 3600000 ? "text-red-600" : showElapsed && elapMs >= 8 * 3600000 ? "text-orange-500" : ""],
               ["休憩", breakMs > 0 ? msToStr(breakMs) : "—", "text-amber-700 dark:text-amber-300"],
@@ -220,7 +326,7 @@ export function DetailPanel({
           {(daySegs.length > 0 || plan) && (
             <div className="mt-3">
               <HourScale win={dayWin} />
-              <DayBar segs={daySegs} win={dayWin} now={now} live={isToday} height="h-4" plan={plan} />
+              <DayBar segs={daySegs} win={dayWin} now={now} live={live} height="h-4" plan={plan} />
             </div>
           )}
 
@@ -406,7 +512,7 @@ export function DetailPanel({
           <div className="flex items-center justify-between mb-4">
             <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">打刻・休暇履歴</p>
             <button
-              onClick={() => { setAddMode(true); setAddTime(nowTimeJST()); setAddEventType("clock_in"); setAddError(null); setAddNextDay(false); }}
+              onClick={openAdd}
               className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition-colors bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg"
             >
               <Plus className="h-3 w-3" />打刻を追加
@@ -415,7 +521,7 @@ export function DetailPanel({
 
           {/* 手動追加フォーム */}
           {addMode && (
-            <div className="mb-4 rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-3">
+            <div ref={addRef} className="mb-4 rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-3">
               <p className="text-xs font-medium text-primary">打刻を手動追加</p>
               {addError && (
                 <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1.5">{addError}</p>

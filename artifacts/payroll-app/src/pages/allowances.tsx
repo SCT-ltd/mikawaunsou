@@ -608,6 +608,8 @@ const empFullSchema = z.object({
   nameKana: z.string().min(1, "フリガナを入力してください"),
   department: z.string().min(1, "部署を入力してください"),
   position: z.string().optional(),
+  /** 電話番号（勤怠管理から電話をかけるため） */
+  phone: z.string().optional().default("").refine((v) => !v || /^[0-9０-９+()\-ー－ ]{6,20}$/.test(v.trim()), "数字とハイフンで入れてください（例：080-1234-5678）"),
   dateOfBirth: z.string().optional().default(""),
   hireDate: z.string().min(1, "入社日を入力してください"),
   isActive: z.boolean().default(true),
@@ -828,6 +830,10 @@ function EmpFormFields({
           <FormField control={f.control} name="position" render={({ field }) => (
             <FormItem><FormLabel>役職</FormLabel>
               <FormControl><TipInput tip="役職名（例：課長）。未入力でも可" {...field} value={field.value || ""} /></FormControl></FormItem>
+          )} />
+          <FormField control={f.control} name="phone" render={({ field }) => (
+            <FormItem><FormLabel>電話番号</FormLabel>
+              <FormControl><TipInput tip="携帯など、事務所から連絡する番号。勤怠管理の「電話」ボタンでかけられます（QRの打刻ページには出ません）" inputMode="tel" placeholder="080-1234-5678" {...field} value={field.value || ""} /></FormControl><FormMessage /></FormItem>
           )} />
         </div>
 
@@ -1306,7 +1312,7 @@ function EmployeeMasterTab() {
   const editForm = useForm<EmpFullValues>({
     resolver: zodResolver(empFullSchema),
     defaultValues: {
-      employeeCode: "", name: "", nameKana: "", department: "", position: "",
+      employeeCode: "", name: "", nameKana: "", department: "", position: "", phone: "",
       dateOfBirth: "", hireDate: "", isActive: true, isOfficeStaff: false, salaryType: "daily", baseSalary: 0,
       residentTax: 0, otherDeductionMonthly: 0,
       useBluewingLogic: false, bluewingCommissionRate: 0,
@@ -1321,7 +1327,7 @@ function EmployeeMasterTab() {
   const createForm = useForm<EmpFullValues>({
     resolver: zodResolver(empFullSchema),
     defaultValues: {
-      employeeCode: "", name: "", nameKana: "", department: "配送部", position: "",
+      employeeCode: "", name: "", nameKana: "", department: "配送部", position: "", phone: "",
       dateOfBirth: "", hireDate: new Date().toISOString().split("T")[0], isActive: true, isOfficeStaff: false,
       salaryType: "daily", baseSalary: 0, residentTax: 0,
       otherDeductionMonthly: 0,
@@ -1348,6 +1354,7 @@ function EmployeeMasterTab() {
       nameKana: emp.nameKana,
       department: emp.department,
       position: emp.position || "",
+      phone: (emp as unknown as { phone?: string | null }).phone ?? "",
       dateOfBirth: (emp as unknown as { dateOfBirth?: string | null }).dateOfBirth?.split("T")[0] || "",
       hireDate: emp.hireDate.split("T")[0],
       isActive: emp.isActive,

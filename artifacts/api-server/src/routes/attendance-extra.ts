@@ -34,7 +34,7 @@ const str = (v: unknown, n: number) => (typeof v === "string" && v.trim() ? v.tr
 // ── 設定 ─────────────────────────────────────────────
 router.get("/attendance/settings/public", async (_req, res) => {
   const s = await getAttendanceSettings();
-  return res.json({ requireChecklist: s.requireChecklist, requireAlcohol: s.requireAlcohol, vehicles: s.vehicles, officeRounding: s.officeRounding });
+  return res.json({ requireChecklist: s.requireChecklist, requireAlcohol: s.requireAlcohol, vehicles: s.vehicles, officeRounding: s.officeRounding, showUninspected: s.showUninspected });
 });
 router.get("/attendance/settings", requireAdmin, async (_req, res) => res.json(await getAttendanceSettings()));
 router.put("/attendance/settings", requireAdmin, async (req, res) => {

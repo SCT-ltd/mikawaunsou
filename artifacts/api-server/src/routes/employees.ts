@@ -58,9 +58,20 @@ router.get("/employees", async (req, res) => {
   return res.json(rows.map(sanitizeEmployee));
 });
 
+/** 電話番号：空なら null。形が違えば undefined（＝保存しない・400 を返す） */
+function phoneOf(v: unknown): string | null | undefined {
+  if (v === undefined) return undefined;
+  if (v === null) return null;
+  const s = String(v).trim().replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace(/[ー－]/g, "-");
+  if (s === "") return null;
+  return /^[0-9+()\- ]{6,20}$/.test(s) ? s : "__bad__";
+}
+
 router.post("/employees", async (req, res) => {
   const body = req.body;
+  if (phoneOf(body.phone) === "__bad__") return res.status(400).json({ error: "電話番号は数字とハイフンで入れてください（例：080-1234-5678）" });
   const fields = {
+    phone: phoneOf(body.phone) ?? null,
     name: body.name,
     nameKana: body.nameKana,
     department: body.department,
@@ -158,8 +169,11 @@ router.get("/employees/:id", async (req, res) => {
 router.put("/employees/:id", async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const body = req.body;
+  const phone = phoneOf(body.phone);
+  if (phone === "__bad__") return res.status(400).json({ error: "電話番号は数字とハイフンで入れてください（例：080-1234-5678）" });
   const [updated] = await db.update(employeesTable)
     .set({
+      ...(phone !== undefined && { phone }),
       ...(body.employeeCode !== undefined && { employeeCode: body.employeeCode }),
       ...(body.name !== undefined && { name: body.name }),
       ...(body.nameKana !== undefined && { nameKana: body.nameKana }),

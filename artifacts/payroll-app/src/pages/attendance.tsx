@@ -4,7 +4,7 @@ import { AppLayout } from "@/components/layout/app-layout";
 import { Button } from "@/components/ui/button";
 import {
   RefreshCw, Pencil, Trash2, Save,
-  ChevronLeft, ChevronRight, CalendarDays, Users, List, GanttChart,
+  ChevronLeft, ChevronRight, CalendarDays, Users, List, GanttChart, ListChecks,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -31,6 +31,7 @@ import { Link } from "wouter";
 import { EmployeeList, filterAttendance } from "@/components/attendance/employee-list";
 import { DetailPanel } from "@/components/attendance/detail-panel";
 import { StatusFilter, TimelineView, attentionOf, type FilterKey } from "@/components/attendance/board";
+import { TodoView } from "@/components/attendance/todo";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -57,10 +58,16 @@ export default function AttendancePage() {
   /** 状態で絞り込む（全員／出勤中／…／要確認） */
   const [statusFilter, setStatusFilter] = useState<FilterKey>("all");
   /** 見え方：一覧（左に社員・右に詳細）／タイムライン（全員の1日を帯で並べる）。端末に覚えておく */
-  const [view, setViewState] = useState<"list" | "timeline">(() => {
-    try { return localStorage.getItem("mk_att_view") === "timeline" ? "timeline" : "list"; } catch { return "list"; }
+  type View = "list" | "timeline" | "todo";
+  const [view, setViewState] = useState<View>(() => {
+    try { const v = localStorage.getItem("mk_att_view"); return v === "timeline" || v === "todo" ? v : "list"; } catch { return "list"; }
   });
-  const setView = (v: "list" | "timeline") => { setViewState(v); try { localStorage.setItem("mk_att_view", v); } catch { /* ignore */ } };
+  const setView = (v: View) => { setViewState(v); try { localStorage.setItem("mk_att_view", v); } catch { /* ignore */ } };
+  /** 一覧に「未点検」の札を出すか（勤怠の設定） */
+  const [showUninspected, setShowUninspected] = useState(true);
+  useEffect(() => {
+    fetch(`${BASE}/api/attendance/settings/public`).then((r) => r.json()).then((s: { showUninspected?: boolean }) => setShowUninspected(s.showUninspected !== false)).catch(() => {});
+  }, []);
 
   // QR ダイアログ
   const [qrEmployee, setQrEmployee] = useState<EmployeeStatus["employee"] | null>(null);
@@ -368,6 +375,27 @@ export default function AttendancePage() {
     } finally { setSaving(false); }
   }, [selected, selectedDate, fetchData]);
 
+  /* ── 修正申請を決める（承認して直す／見送る） ── */
+  const decideCorrection = useCallback(async (id: number, approve: boolean, note: string): Promise<string | null> => {
+    setSaving(true);
+    try {
+      let res = await fetch(`${BASE}/api/attendance/corrections/${id}/decide`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approve, note }),
+      });
+      if (res.status === 409) {
+        const err = await res.clone().json().catch(() => ({}));
+        if (err.canForce && window.confirm(`${err.error}\n\n順番が合いませんが、このまま直しますか？`)) {
+          res = await fetch(`${BASE}/api/attendance/corrections/${id}/decide`, {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approve, note, force: true }),
+          });
+        }
+      }
+      if (!res.ok) { const e = await res.json().catch(() => ({})); return e.error ?? "できませんでした"; }
+      await fetchData(selectedDate);
+      return null;
+    } finally { setSaving(false); }
+  }, [fetchData, selectedDate]);
+
   /* ── 日常点検の「否」への処置と判断 ── */
   const decideInspection = useCallback(async (id: number, officeAction: string, officeDecision: "ok" | "ng" | null) => {
     setSaving(true);
@@ -425,7 +453,7 @@ export default function AttendancePage() {
               <span className="hidden lg:inline text-[11px] text-muted-foreground">
                 {isToday
                   ? `最終更新 ${lastUpdated.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`
-                  : "過去の記録（読み取り専用）"}
+                  : "過去の日を表示中（打刻の追加・修正・休みの登録ができます）"}
               </span>
             </div>
             <div className="flex flex-wrap items-center gap-2 ml-auto">
@@ -505,7 +533,7 @@ export default function AttendancePage() {
           <div className="flex flex-col-reverse sm:flex-row sm:items-center gap-2">
             <div className="flex-1 min-w-0"><StatusFilter value={statusFilter} onChange={setStatusFilter} counts={counts} /></div>
             <div className="shrink-0 self-end sm:self-auto flex items-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-0.5" role="tablist" aria-label="見え方">
-              {([["list", "一覧", List], ["timeline", "タイムライン", GanttChart]] as const).map(([v, label, Icon]) => (
+              {([["todo", "やること", ListChecks], ["list", "一覧", List], ["timeline", "タイムライン", GanttChart]] as const).map(([v, label, Icon]) => (
                 <button key={v} type="button" role="tab" aria-selected={view === v} onClick={() => setView(v)}
                   className={`inline-flex items-center gap-1 h-7 px-2.5 rounded-md text-xs font-semibold transition-colors ${view === v ? "bg-indigo-600 text-white" : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100"}`}>
                   <Icon className="h-3.5 w-3.5" />{label}
@@ -526,6 +554,15 @@ export default function AttendancePage() {
             社員が見つかりません
           </div>
         ) : (
+          view === "todo" ? (
+            <div className="flex-1 min-h-0 rounded-xl border bg-card overflow-hidden">
+              <TodoView
+                refreshKey={lastUpdated.getTime()}
+                onChanged={() => { void fetchData(selectedDate); void fetchAbsences(selectedDate); }}
+                onOpen={(date, id) => { setSelectedDate(date); setSelectedId(id); setStatusFilter("all"); setView("list"); }}
+              />
+            </div>
+          ) : (
           <div className="flex-1 min-h-0 flex md:gap-4">
             {/* 左ペイン: 社員リスト */}
             <div
@@ -555,6 +592,7 @@ export default function AttendancePage() {
                   onSearchChange={setSearch}
                   live={live}
                   workDate={selectedDate}
+                  showUninspected={showUninspected}
                 />
               )}
             </div>
@@ -566,6 +604,7 @@ export default function AttendancePage() {
               {selected ? (
                 <div className="flex flex-col h-full min-h-0 rounded-xl border bg-card overflow-hidden">
                   <DetailPanel
+                    key={`${selected.employee.id}:${selected.workDate ?? selectedDate}`}
                     selected={selected}
                     now={now}
                     saving={saving}
@@ -580,6 +619,7 @@ export default function AttendancePage() {
                     onShowQR={setQrEmployee}
                     onClose={() => setSelectedId(null)}
                     onDecideInspection={decideInspection}
+                    onDecideCorrection={decideCorrection}
                   />
                 </div>
               ) : (
@@ -590,6 +630,7 @@ export default function AttendancePage() {
               )}
             </div>
           </div>
+          )
         )}
       </div>
 

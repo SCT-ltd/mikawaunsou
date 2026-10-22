@@ -170,8 +170,9 @@ export function attentionOf(d: EmployeeStatus, now: Date, live: boolean): string
   if (d.compliance?.flags.some((f) => f.level === "danger")) out.push("改善基準超え");
   if ((d.pendingCorrections ?? 0) > 0) out.push(`修正申請${d.pendingCorrections}件`);
   if (live && d.plan?.noShow) out.push(`出勤なし（予定 ${d.schedule?.start ?? ""}〜）`);
-  if (live && (d.status === "出勤中" || d.status === "休憩中") && d.clockInTime && now.getTime() - new Date(d.clockInTime).getTime() > 14 * H) {
-    out.push("退勤の打ち忘れ？");
+  if (d.missingOut) out.push("退勤なし（打ち忘れ？）");
+  else if (live && (d.status === "出勤中" || d.status === "休憩中") && d.clockInTime && now.getTime() - new Date(d.clockInTime).getTime() > 14 * H) {
+    out.push("14時間を超えて勤務中");
   }
   if (live && d.status === "休憩中") {
     const lastBreak = [...d.records].reverse().find((r) => r.eventType === "break_start");
@@ -235,7 +236,7 @@ export function TimelineView({
   rows: EmployeeStatus[]; now: Date; live: boolean; workDate: string;
   selectedId: number | null; onSelect: (id: number) => void; absences: AbsenceRecord[];
 }) {
-  const segsById = new Map(rows.map((d) => [d.employee.id, segmentsOf(d.records, now, live)]));
+  const segsById = new Map(rows.map((d) => [d.employee.id, segmentsOf(d.records, now, live && !d.missingOut)]));
   const planSegs = rows.map((d) => planOf(d.workDate ?? workDate, d.schedule)).filter((p): p is { start: number; end: number } => !!p)
     .map((p) => ({ from: p.start, to: p.end, kind: "work" as const, open: false }));
   const win = windowFor(workDate, [...[...segsById.values()].flat(), ...planSegs]);
@@ -250,7 +251,7 @@ export function TimelineView({
         {rows.length === 0 && <div className="py-10 text-center text-sm text-muted-foreground">該当する社員がいません</div>}
         {rows.map((d) => {
           const segs = segsById.get(d.employee.id) ?? [];
-          const t = dayTotals(d.records, now, live);
+          const t = dayTotals(d.records, now, live && !d.missingOut);
           const sel = d.employee.id === selectedId;
           const att = attentionOf(d, now, live);
           const abs = absences.filter((a) => a.employeeId === d.employee.id);
@@ -267,7 +268,7 @@ export function TimelineView({
                 <div className="min-w-0">
                   <p className="text-[13px] font-semibold truncate jp-tight leading-tight">{d.employee.name}</p>
                   <p className="text-[10px] text-muted-foreground truncate leading-tight">
-                    {abs.length > 0 ? abs.map((a) => ABSENCE_LABELS[a.absenceType]).join("・") : t.clockIn ? `${fmt(t.clockIn)}〜${t.clockOut ? fmt(t.clockOut) : live ? "" : "退勤なし"}` : d.status}
+                    {abs.length > 0 ? abs.map((a) => ABSENCE_LABELS[a.absenceType]).join("・") : t.clockIn ? `${fmt(t.clockIn)}〜${t.clockOut ? fmt(t.clockOut) : d.missingOut || !live ? "退勤なし" : ""}` : d.status}
                   </p>
                 </div>
                 {att.length > 0 && <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0 ml-auto" aria-label={att.join("、")} />}

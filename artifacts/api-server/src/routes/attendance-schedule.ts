@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   db, employeesTable, attendanceRecordsTable, absenceRecordsTable, workSchedulesTable, schedulePatternsTable,
+  attendanceMonthChecksTable, attendanceCorrectionsTable, dailyInspectionsTable, alcoholChecksTable,
 } from "@workspace/db";
 import { and, asc, eq, gte, lte } from "drizzle-orm";
 import { requireAdmin } from "../lib/auth-middleware";
@@ -115,6 +116,7 @@ router.get("/attendance/month-grid", requireAdmin, async (req, res) => {
     getAttendanceSettings(),
     db.select({ employeeId: schedulePatternsTable.employeeId }).from(schedulePatternsTable),
   ]);
+  const checks = await db.select().from(attendanceMonthChecksTable).where(eq(attendanceMonthChecksTable.ym, `${year}-${pad(month)}`));
   const hasPattern = new Set(pats.map((p) => p.employeeId));
 
   const days: Array<{ date: string; day: number; dow: number; holiday: string | null }> = [];
@@ -181,10 +183,117 @@ router.get("/attendance/month-grid", requireAdmin, async (req, res) => {
         flags,
       };
     }
-    return { employee: { ...e, isOfficeStaff: e.isOfficeStaff ?? false }, hasPattern: hasPattern.has(e.id), cells, totals: tot };
+    const ck = checks.find((c) => c.employeeId === e.id);
+    return { employee: { ...e, isOfficeStaff: e.isOfficeStaff ?? false }, hasPattern: hasPattern.has(e.id), cells, totals: tot,
+      /** 月の勤怠表で「確認済み」にした人と日時 */
+      checked: ck ? { by: ck.checkedBy, at: ck.checkedAt } : null };
   });
 
   return res.json({ year, month, from, to, today, days, settings: { lateGraceMinutes: settings.lateGraceMinutes, noShowAlertMinutes: settings.noShowAlertMinutes }, rows });
+});
+
+// ── 月の勤怠表の「確認済み」 ──────────────────────────────
+const YM = /^\d{4}-(0[1-9]|1[0-2])$/;
+router.put("/attendance/month-checks/:employeeId/:ym", requireAdmin, async (req, res) => {
+  const employeeId = parseInt(paramStr(req.params.employeeId), 10);
+  const ym = paramStr(req.params.ym);
+  if (!YM.test(ym)) return res.status(400).json({ error: "月の形が違います（例：2026-10）。" });
+  const values = { employeeId, ym, checkedBy: actorName(req), checkedAt: new Date() };
+  await db.insert(attendanceMonthChecksTable).values(values)
+    .onConflictDoUpdate({ target: [attendanceMonthChecksTable.employeeId, attendanceMonthChecksTable.ym], set: values });
+  return res.json({ ok: true, ...values });
+});
+router.delete("/attendance/month-checks/:employeeId/:ym", requireAdmin, async (req, res) => {
+  const employeeId = parseInt(paramStr(req.params.employeeId), 10);
+  const ym = paramStr(req.params.ym);
+  await db.delete(attendanceMonthChecksTable).where(and(eq(attendanceMonthChecksTable.employeeId, employeeId), eq(attendanceMonthChecksTable.ym, ym)));
+  return res.json({ ok: true });
+});
+
+/**
+ * やること（事務所が今日片付けること）。上から順に片付ければよいよう、急ぐものから並べる。
+ *   alcohol     … アルコールチェックで検知（直近2日）
+ *   inspection  … 日常点検の「否」で、まだ運行の判断をしていない（直近2日）
+ *   noshow      … 今日、予定の始まりを過ぎても出勤していない（1日休みが入っていれば出さない）
+ *   missingOut  … 退勤の打ち忘れ（直近7日・出勤から16時間を過ぎても退勤が無い）
+ *   missingIn   … 出勤が無いのに休憩・退勤だけある（直近7日）
+ *   correction  … まだ決めていない打刻の修正申請
+ *   conflict    … 1日休みなのに出勤もある（直近7日）
+ */
+router.get("/attendance/todo", requireAdmin, async (_req, res) => {
+  const now = new Date();
+  const today = jstDate(now);
+  const from = addDaysStr(today, -7);
+  const emps = await db.select({ id: employeesTable.id, name: employeesTable.name, phone: employeesTable.phone, isOfficeStaff: employeesTable.isOfficeStaff })
+    .from(employeesTable).where(eq(employeesTable.isActive, true)).orderBy(asc(employeesTable.employeeCode));
+  const ids = emps.map((e) => e.id);
+  const [recs, absences, schedules, settings, corrections, inspections, alcohols] = await Promise.all([
+    db.select().from(attendanceRecordsTable).where(and(gte(attendanceRecordsTable.workDate, from), lte(attendanceRecordsTable.workDate, today), active)).orderBy(attendanceRecordsTable.recordedAt),
+    db.select().from(absenceRecordsTable).where(and(gte(absenceRecordsTable.workDate, from), lte(absenceRecordsTable.workDate, today))),
+    schedulesFor(ids, from, today),
+    getAttendanceSettings(),
+    db.select().from(attendanceCorrectionsTable).where(eq(attendanceCorrectionsTable.status, "pending")).orderBy(attendanceCorrectionsTable.createdAt),
+    db.select().from(dailyInspectionsTable).where(gte(dailyInspectionsTable.workDate, addDaysStr(today, -2))),
+    db.select().from(alcoholChecksTable).where(and(gte(alcoholChecksTable.workDate, addDaysStr(today, -2)), eq(alcoholChecksTable.detected, true))),
+  ]);
+  type Item = { key: string; kind: string; date: string; employee: { id: number; name: string; phone: string | null }; title: string; detail: string; data?: Record<string, unknown> };
+  const items: Item[] = [];
+  const empOf = (id: number) => emps.find((e) => e.id === id);
+  const who = (id: number) => { const e = empOf(id)!; return { id: e.id, name: e.name.replace(/[\s　]+/g, " ").trim(), phone: e.phone ?? null }; };
+  const hm = (d: Date | string) => new Date(new Date(d).getTime() + 9 * 3600_000).toISOString().slice(11, 16);
+  for (const a of alcohols) {
+    if (!empOf(a.employeeId)) continue;
+    items.push({ key: `alcohol:${a.id}`, kind: "alcohol", date: a.workDate, employee: who(a.employeeId), title: "アルコールチェックで検知",
+      detail: `${a.phase === "before" ? "乗る前" : "乗った後"} ${a.valueMg ?? "?"} mg/L（${hm(a.checkedAt)}）。乗務させないでください。` });
+  }
+  for (const i of inspections) {
+    let ng: string[] = []; try { ng = JSON.parse(i.ng) as string[]; } catch { ng = []; }
+    if (ng.length === 0 || i.officeDecision || !empOf(i.employeeId)) continue;
+    items.push({ key: `inspection:${i.id}`, kind: "inspection", date: i.workDate, employee: who(i.employeeId), title: "日常点検に「否」",
+      detail: `${ng.join("・")}${i.vehicle ? `（${i.vehicle}）` : ""}。処置と、運行してよいかを決めてください。`, data: { inspectionId: i.id } });
+  }
+  for (const e of emps) {
+    const sch = schedules.get(`${e.id}:${today}`);
+    const inRec = recs.find((r) => r.employeeId === e.id && r.workDate === today && r.eventType === "clock_in");
+    const cmp = comparePlan(today, sch, inRec ? new Date(inRec.recordedAt).getTime() : null, null, {
+      now: now.getTime(), today, graceMin: settings.lateGraceMinutes, noShowMin: settings.noShowAlertMinutes,
+      hasFullDayAbsence: absences.some((a) => a.employeeId === e.id && a.workDate === today && isFullDayAbsence(a.absenceType)),
+    });
+    if (cmp.noShow) items.push({ key: `noshow:${e.id}:${today}`, kind: "noshow", date: today, employee: who(e.id), title: `出勤していません（予定 ${sch?.start}〜）`,
+      detail: "連絡を取ってください。休みなら「休みを入れる」で消えます。", data: { scheduleStart: sch?.start ?? null } });
+  }
+  const byEmpDate = new Map<string, typeof recs>();
+  for (const r of recs) { const k = `${r.employeeId}:${r.workDate}`; if (!byEmpDate.has(k)) byEmpDate.set(k, []); byEmpDate.get(k)!.push(r); }
+  for (const [k, rs] of byEmpDate) {
+    const [idS, date] = k.split(":") as [string, string];
+    const id = Number(idS);
+    if (!empOf(id)) continue;
+    const inR = rs.find((r) => r.eventType === "clock_in");
+    const hasOut = rs.some((r) => r.eventType === "clock_out");
+    if (inR && !hasOut && now.getTime() - new Date(inR.recordedAt).getTime() > 16 * 3600_000) {
+      const sch = schedules.get(k);
+      items.push({ key: `missingOut:${id}:${date}`, kind: "missingOut", date, employee: who(id), title: "退勤が押されていません",
+        detail: `${Number(date.slice(5, 7))}月${Number(date.slice(8, 10))}日 ${hm(inR.recordedAt)}に出勤したまま。退勤の時刻を入れてください。`,
+        data: { clockIn: inR.recordedAt, scheduleEnd: sch && !sch.off ? sch.end : null } });
+    } else if (!inR) {
+      items.push({ key: `missingIn:${id}:${date}`, kind: "missingIn", date, employee: who(id), title: "出勤が押されていません",
+        detail: `${Number(date.slice(5, 7))}月${Number(date.slice(8, 10))}日：休憩・退勤だけが打刻されています。勤怠管理で出勤を入れてください。` });
+    }
+    if (inR && absences.some((a) => a.employeeId === id && a.workDate === date && isFullDayAbsence(a.absenceType))) {
+      items.push({ key: `conflict:${id}:${date}`, kind: "conflict", date, employee: who(id), title: "休みと出勤の両方が入っています",
+        detail: "どちらが正しいか確かめて、違う方を消してください。" });
+    }
+  }
+  for (const c of corrections) {
+    if (!empOf(c.employeeId)) continue;
+    const KIND: Record<string, string> = { add: "打ち忘れを足す", change: "時刻を直す", cancel: "取り消す" };
+    const EV: Record<string, string> = { clock_in: "出勤", clock_out: "退勤", break_start: "休憩開始", break_end: "休憩終了" };
+    items.push({ key: `correction:${c.id}`, kind: "correction", date: c.workDate, employee: who(c.employeeId), title: `打刻の修正申請（${KIND[c.kind] ?? c.kind}）`,
+      detail: `${c.eventType ? EV[c.eventType] ?? c.eventType : ""}${c.requestedAt ? ` → ${hm(c.requestedAt)}` : ""}　理由：${c.reason}`, data: { correctionId: c.id } });
+  }
+  const ORDER = ["alcohol", "inspection", "noshow", "missingOut", "missingIn", "correction", "conflict"];
+  items.sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind) || (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  return res.json({ today, items });
 });
 
 export default router;

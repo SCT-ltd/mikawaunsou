@@ -123,7 +123,11 @@ async function buildSnapshot(date?: string) {
     // 休息期間（前の勤務の退勤から）を出すため、前の3日分も読む
     db.select({ employeeId: attendanceRecordsTable.employeeId, eventType: attendanceRecordsTable.eventType, workDate: attendanceRecordsTable.workDate, recordedAt: attendanceRecordsTable.recordedAt })
       .from(attendanceRecordsTable).where(and(gte(attendanceRecordsTable.workDate, addDaysStr(minDate, -3)), lte(attendanceRecordsTable.workDate, maxDate), active)),
-    db.select({ employeeId: attendanceCorrectionsTable.employeeId }).from(attendanceCorrectionsTable).where(eq(attendanceCorrectionsTable.status, "pending")),
+    db.select({
+      id: attendanceCorrectionsTable.id, employeeId: attendanceCorrectionsTable.employeeId, workDate: attendanceCorrectionsTable.workDate,
+      kind: attendanceCorrectionsTable.kind, eventType: attendanceCorrectionsTable.eventType, recordId: attendanceCorrectionsTable.recordId,
+      requestedAt: attendanceCorrectionsTable.requestedAt, reason: attendanceCorrectionsTable.reason, createdAt: attendanceCorrectionsTable.createdAt,
+    }).from(attendanceCorrectionsTable).where(eq(attendanceCorrectionsTable.status, "pending")).orderBy(attendanceCorrectionsTable.createdAt),
   ]);
   // 出勤の予定（シフト）と、その日の休みの登録（予定と比べて遅刻・早退・出勤していないを出す）
   const [schedules, settings, dayAbsences] = await Promise.all([
@@ -152,6 +156,7 @@ async function buildSnapshot(date?: string) {
         department: emp.department,
         isOfficeStaff: emp.isOfficeStaff ?? false,
         qrKey: emp.qrKey ?? null,
+        phone: emp.phone ?? null,
       },
       /** この行の勤務日（深夜に前の日の勤務が続いていれば前の日） */
       workDate: wd,
@@ -164,6 +169,14 @@ async function buildSnapshot(date?: string) {
       report: reports.find(r => r.employeeId === emp.id && r.workDate === wd) ?? null,
       compliance,
       pendingCorrections: corrections.filter(c => c.employeeId === emp.id).length,
+      /** まだ決めていない修正申請（勤怠管理の画面でそのまま承認できるように） */
+      corrections: corrections.filter(c => c.employeeId === emp.id),
+      /**
+       * 退勤の打ち忘れ：出勤したまま退勤が無く、前の日の勤務か、出勤から16時間を過ぎている。
+       * 画面は「出勤中」ではなく「退勤なし」と出す（以前は「出勤中・27時間35分」と出ていた）。
+       */
+      missingOut: !!clockIn && !empRecords.some(r => r.eventType === "clock_out")
+        && (wd < today || now.getTime() - new Date(clockIn.recordedAt).getTime() > 16 * 3600_000),
       /** 出勤の予定（無ければ null） */
       schedule: schedules.get(`${emp.id}:${wd}`) ?? null,
       /** 予定との比べ（遅刻・早退の分、出勤していない、休みの日の出勤） */

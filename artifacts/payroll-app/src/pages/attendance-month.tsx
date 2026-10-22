@@ -40,6 +40,8 @@ interface Totals {
 interface Row {
   employee: { id: number; employeeCode: string; name: string; department: string; isOfficeStaff: boolean };
   hasPattern: boolean; cells: Record<string, Cell>; totals: Totals;
+  /** 「確認済み」にした人と日時 */
+  checked: { by: string | null; at: string } | null;
 }
 interface Grid {
   year: number; month: number; from: string; to: string; today: string;
@@ -69,6 +71,34 @@ export default function AttendanceMonthPage() {
   const [search, setSearch] = useState("");
   const [cellOpen, setCellOpen] = useState<{ row: Row; date: string } | null>(null);
   const [patOpen, setPatOpen] = useState<Row | null>(null);
+  /** その月の、まだ決めていない修正申請の数（締めの確認に出す） */
+  const [pendingCorr, setPendingCorr] = useState<Array<{ id: number; workDate: string; employeeName: string | null }>>([]);
+  useEffect(() => {
+    api<Array<{ id: number; workDate: string; employeeName: string | null }>>(`/attendance/corrections?status=pending`).then(setPendingCorr).catch(() => setPendingCorr([]));
+  }, [grid]);
+  const ymKey = `${ym.y}-${String(ym.m).padStart(2, "0")}`;
+  const toggleChecked = async (r: Row) => {
+    try {
+      await api(`/attendance/month-checks/${r.employee.id}/${ymKey}`, { method: r.checked ? "DELETE" : "PUT" });
+      void load();
+    } catch (e) { setError((e as Error).message); }
+  };
+  // 締めの確認：月次実績へ取り込む前に直すもの（退勤なし・出勤なし・休みと出勤の重なり・修正申請）
+  const closeIssues = useMemo(() => {
+    const out: Array<{ row: Row; date: string; label: string; tone: string }> = [];
+    if (!grid) return out;
+    for (const r of grid.rows) for (const d of grid.days) {
+      const c = r.cells[d.date]; if (!c) continue;
+      if (c.flags.includes("missingOut")) out.push({ row: r, date: d.date, label: "退勤なし", tone: "text-red-600" });
+      if (c.flags.includes("missingIn")) out.push({ row: r, date: d.date, label: "出勤なし（打刻あり）", tone: "text-red-600" });
+      if (c.flags.includes("noshow")) out.push({ row: r, date: d.date, label: "予定の日に出勤なし", tone: "text-orange-600" });
+      if (c.flags.includes("conflict")) out.push({ row: r, date: d.date, label: "休みと出勤が重なる", tone: "text-purple-600" });
+    }
+    return out;
+  }, [grid]);
+  const monthCorr = pendingCorr.filter((c) => c.workDate.startsWith(ymKey));
+  const checkedCount = grid ? grid.rows.filter((r) => r.checked).length : 0;
+  const allHavePattern = grid ? grid.rows.every((r) => r.hasPattern) : false;
 
   const load = useCallback(async () => {
     try {
@@ -203,6 +233,42 @@ export default function AttendanceMonthPage() {
         </div>
 
         {error && <p className="text-sm text-red-600">{error}</p>}
+        {/* 締めの確認 */}
+        {grid && (
+          <details className="rounded-xl border bg-card" open={closeIssues.length + monthCorr.length > 0}>
+            <summary className="cursor-pointer px-3 py-2 text-sm flex flex-wrap items-center gap-x-4 gap-y-1">
+              <b>締めの確認</b>
+              <span className={closeIssues.length ? "text-red-600 font-semibold" : "text-emerald-600 font-semibold"}>
+                {closeIssues.length ? `直すもの ${closeIssues.length}件` : "直すものはありません"}
+              </span>
+              <span className={monthCorr.length ? "text-sky-700 font-semibold" : "text-muted-foreground"}>修正申請 {monthCorr.length}件</span>
+              <span className="text-muted-foreground">確認済み {checkedCount}／{grid.rows.length}人</span>
+              <Link href="/monthly-input" className="ml-auto">
+                <Button size="sm" variant={closeIssues.length + monthCorr.length === 0 ? "default" : "outline"} className="h-7">月次実績入力へ（勤怠から一括反映）</Button>
+              </Link>
+            </summary>
+            {(closeIssues.length > 0 || monthCorr.length > 0) && (
+              <div className="border-t px-3 py-2 space-y-1 max-h-56 overflow-y-auto">
+                <p className="text-[11px] text-muted-foreground">月次実績へ取り込む前に直してください。退勤が無い日は0時間で数えられます。押すとその日の画面が開きます。</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {closeIssues.map((x, i) => (
+                    <button key={i} type="button" onClick={() => setCellOpen({ row: x.row, date: x.date })}
+                      className="text-xs rounded-md border px-2 py-1 hover:bg-muted/60">
+                      <span className="font-semibold">{x.row.employee.name.replace(/[\s　]+/g, " ")}</span>
+                      <span className="text-muted-foreground amount"> {Number(x.date.slice(5, 7))}/{Number(x.date.slice(8, 10))} </span>
+                      <span className={x.tone}>{x.label}</span>
+                    </button>
+                  ))}
+                  {monthCorr.length > 0 && (
+                    <Link href="/attendance-records" className="text-xs rounded-md border border-sky-200 bg-sky-50 dark:bg-sky-500/10 px-2 py-1 text-sky-700 dark:text-sky-300 hover:bg-sky-100">
+                      まだ決めていない修正申請 {monthCorr.length}件 →
+                    </Link>
+                  )}
+                </div>
+              </div>
+            )}
+          </details>
+        )}
         {!grid ? (
           <div className="rounded-xl border bg-card py-16 text-center text-sm text-muted-foreground">読み込み中...</div>
         ) : (
@@ -217,7 +283,7 @@ export default function AttendanceMonthPage() {
                       <div className="text-xs">{d.day}</div><div className="text-[10px] font-normal">{DOW[d.dow]}{d.holiday ? "祝" : ""}</div>
                     </th>
                   ))}
-                  {["日数", "実働", "残業", "深夜", "遅刻", "早退", "出勤なし", "打ち忘れ", "欠勤", "有給"].map((h) => (
+                  {["日数", "実働", "残業", "深夜", "遅刻", "早退", "出勤なし", "打ち忘れ", "欠勤", "有給", "確認"].map((h) => (
                     <th key={h} className="sticky top-0 z-20 bg-indigo-50 dark:bg-indigo-500/10 border-b border-l px-1.5 py-1 font-semibold whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -228,7 +294,10 @@ export default function AttendanceMonthPage() {
                     <th className="sticky left-0 z-10 bg-card group-hover:bg-muted/60 text-left px-2 py-1 border-b border-r font-normal">
                       <button type="button" className="text-left w-full" onClick={() => setPatOpen(r)} title="予定の型（曜日ごと）を決める">
                         <span className="block text-[13px] font-semibold jp-tight truncate max-w-[8.5rem]">{r.employee.name}</span>
-                        <span className={`block text-[10px] ${r.hasPattern ? "text-indigo-600 dark:text-indigo-300" : "text-muted-foreground"}`}>{r.hasPattern ? "予定の型あり" : "予定の型なし"}</span>
+                        {/* 全員に型があるときは「予定の型あり」を出さない（毎行に出て目障りなので）。無い人だけ知らせる */}
+                        {!r.hasPattern ? <span className="block text-[10px] text-orange-600">予定の型なし</span>
+                          : !allHavePattern ? <span className="block text-[10px] text-indigo-600 dark:text-indigo-300">予定の型あり</span> : null}
+                        {r.checked && <span className="block text-[10px] text-emerald-600">✓ 確認済み</span>}
                       </button>
                     </th>
                     {grid.days.map((d) => <GridCell key={d.date} cell={r.cells[d.date]} today={d.date === grid.today} future={d.date > grid.today} onClick={() => setCellOpen({ row: r, date: d.date })} />)}
@@ -241,6 +310,11 @@ export default function AttendanceMonthPage() {
                       ];
                       return v.map(([s, hot], i) => <td key={i} className={`border-b border-l px-1.5 text-right whitespace-nowrap bg-indigo-50/40 dark:bg-indigo-500/5 ${hot ? "text-red-600 font-semibold" : ""}`}>{s}</td>);
                     })()}
+                    <td className="border-b border-l px-1.5 text-center bg-indigo-50/40 dark:bg-indigo-500/5">
+                      <input type="checkbox" checked={!!r.checked} onChange={() => void toggleChecked(r)} className="h-4 w-4 cursor-pointer"
+                        title={r.checked ? `確認済み（${r.checked.by ?? ""}・${new Date(r.checked.at).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}）` : "この人のこの月を確認済みにする"}
+                        aria-label={`${r.employee.name}さんの${ym.m}月を確認済みにする`} />
+                    </td>
                   </tr>
                 ))}
               </tbody>

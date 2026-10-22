@@ -22,6 +22,8 @@ export interface AttendanceSettings {
   lateGraceMinutes: number;
   noShowAlertMinutes: number;
   noShowAlert: boolean;
+  /** 一覧に「未点検」の札を出すか（日常点検を使っていなければ全員に付いて目障りなので消せる） */
+  showUninspected: boolean;
 }
 
 export const DEFAULT_SETTINGS: AttendanceSettings = {
@@ -32,6 +34,7 @@ export const DEFAULT_SETTINGS: AttendanceSettings = {
   lateGraceMinutes: 5,
   noShowAlertMinutes: 15,
   noShowAlert: true,
+  showUninspected: true,
 };
 
 let cache: { at: number; value: AttendanceSettings } | null = null;
@@ -56,6 +59,7 @@ function normalize(raw: unknown): AttendanceSettings {
     lateGraceMinutes: clampInt(o.lateGraceMinutes, 0, 120, 5),
     noShowAlertMinutes: clampInt(o.noShowAlertMinutes, 0, 240, 15),
     noShowAlert: o.noShowAlert !== false,
+    showUninspected: o.showUninspected !== false,
   };
 }
 

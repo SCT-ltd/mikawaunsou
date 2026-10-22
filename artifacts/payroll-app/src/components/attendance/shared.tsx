@@ -60,7 +60,7 @@ export interface DayCompliance {
 }
 
 export interface EmployeeStatus {
-  employee: { id: number; employeeCode: string; name: string; department: string; isOfficeStaff?: boolean; qrKey?: string | null };
+  employee: { id: number; employeeCode: string; name: string; department: string; isOfficeStaff?: boolean; qrKey?: string | null; phone?: string | null };
   /** この行の勤務日（深夜に前の日の勤務が続いていれば前の日） */
   workDate?: string;
   status: Status;
@@ -72,6 +72,10 @@ export interface EmployeeStatus {
   report?: DailyReport | null;
   compliance?: DayCompliance | null;
   pendingCorrections?: number;
+  /** まだ決めていない修正申請 */
+  corrections?: Array<{ id: number; workDate: string; kind: "add" | "change" | "cancel"; eventType: EventType | null; recordId: number | null; requestedAt: string | null; reason: string; createdAt: string }>;
+  /** 退勤の打ち忘れ（前の日の勤務か、出勤から16時間を過ぎても退勤が無い） */
+  missingOut?: boolean;
   /** 出勤の予定（シフト）。無ければ null */
   schedule?: { start: string | null; end: string | null; off: boolean; note: string | null; source: "day" | "pattern" } | null;
   /** 予定との比べ */

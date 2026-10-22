@@ -61,6 +61,8 @@ export const employeesTable = pgTable("employees", {
   gender: text("gender"),
   address: text("address"),
   jobType: text("job_type"),
+  /** 電話番号（事務所から連絡するため。管理画面だけで使い、QR の打刻ページには返さない） */
+  phone: text("phone"),
   retirementDate: date("retirement_date"),
   retirementReason: text("retirement_reason"),
   residentTax: doublePrecision("resident_tax").notNull().default(0),

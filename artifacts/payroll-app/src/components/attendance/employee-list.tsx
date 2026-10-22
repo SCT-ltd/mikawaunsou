@@ -62,6 +62,7 @@ export function EmployeeList({
   onSearchChange,
   live = true,
   workDate,
+  showUninspected = true,
 }: {
   data: EmployeeStatus[];
   filtered: EmployeeStatus[];
@@ -74,6 +75,8 @@ export function EmployeeList({
   /** 今日を見ているか（過去の日は「いま」まで伸ばさない） */
   live?: boolean;
   workDate?: string;
+  /** 「未点検」の札を出すか（勤怠の設定） */
+  showUninspected?: boolean;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -84,9 +87,10 @@ export function EmployeeList({
   }, [selectedId]);
 
   // 状態ごとにまとめる（出勤中→休憩中→退勤済→未出勤）。同じ状態の中は元の並び（社員コード順）
-  const groups = STATUS_ORDER.map((st) => ({ st, rows: filtered.filter((d) => d.status === st) })).filter((g) => g.rows.length > 0);
+  const groupOf = (d: EmployeeStatus): string => (d.missingOut ? "退勤なし" : d.status);
+  const groups = (["退勤なし", ...STATUS_ORDER] as string[]).map((st) => ({ st, rows: filtered.filter((d) => groupOf(d) === st) })).filter((g) => g.rows.length > 0);
   // 1日の帯は全員同じ時間の幅にそろえる（並べて比べられるように）
-  const win = windowFor(workDate ?? todayJST(), filtered.flatMap((d) => segmentsOf(d.records, now, live)));
+  const win = windowFor(workDate ?? todayJST(), filtered.flatMap((d) => segmentsOf(d.records, now, live && !d.missingOut)));
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -112,20 +116,22 @@ export function EmployeeList({
           groups.map((g) => (
             <section key={g.st}>
               <div className="sticky top-0 z-[1] flex items-center gap-1.5 px-3 py-1 text-[11px] font-bold text-muted-foreground bg-muted/70 backdrop-blur border-b border-border/50">
-                <span className={`w-1.5 h-1.5 rounded-full ${STATUS_STYLE[g.st].dot}`} />
+                <span className={`w-1.5 h-1.5 rounded-full ${g.st === "退勤なし" ? "bg-red-500" : STATUS_STYLE[g.st as Status].dot}`} />
                 {g.st}
                 <span className="amount font-semibold">{g.rows.length}</span>
               </div>
               {g.rows.map((d) => {
                 const ms = elapsedMs(d.clockInTime, now);
-                const isActive = d.status === "出勤中" || d.status === "休憩中";
+                const isActive = (d.status === "出勤中" || d.status === "休憩中") && !d.missingOut;
                 const selected = d.employee.id === selectedId;
                 const empAbsences = absences.filter((a) => a.employeeId === d.employee.id);
                 const att = attentionOf(d, now, live);
-                const insp = inspectionTag(d);
-                const t = dayTotals(d.records, now, live);
-                const segs = segmentsOf(d.records, now, live);
-                const fromPrevDay = d.workDate && d.workDate < todayJST() && d.status !== "未出勤";
+                const insp0 = inspectionTag(d);
+                // 「未点検」は設定で隠せる（点検NG・点検OKは隠さない）
+                const insp = insp0 && !showUninspected && insp0.text.startsWith("未点検") ? null : insp0;
+                const t = dayTotals(d.records, now, live && !d.missingOut);
+                const segs = segmentsOf(d.records, now, live && !d.missingOut);
+                const fromPrevDay = d.workDate && d.workDate < (workDate ?? todayJST()) && d.status !== "未出勤";
 
                 return (
                   <button
@@ -140,7 +146,7 @@ export function EmployeeList({
                     <div className="flex items-center gap-2.5">
                       <div className="relative shrink-0">
                         <Avatar name={d.employee.name} size="sm" />
-                        <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-slate-900 ${STATUS_STYLE[d.status].dot}`} />
+                        <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-slate-900 ${d.missingOut ? "bg-red-500" : STATUS_STYLE[d.status].dot}`} />
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 min-w-0">
@@ -168,10 +174,10 @@ export function EmployeeList({
                         {t.clockIn ? (
                           <>
                             <p className="text-[13px] font-semibold amount text-slate-700 dark:text-slate-200">
-                              {fmt(t.clockIn)}<span className="text-slate-300 mx-0.5">〜</span>{t.clockOut ? fmt(t.clockOut) : ""}
+                              {fmt(t.clockIn)}<span className="text-slate-300 mx-0.5">〜</span>{t.clockOut ? fmt(t.clockOut) : d.missingOut ? <span className="text-red-600 font-bold">退勤なし</span> : ""}
                             </p>
                             <p className={`text-[11px] amount ${isActive ? `font-semibold ${elapsedColor(ms)}` : "text-muted-foreground"}`}>
-                              {isActive ? elapsedStr(d.clockInTime, now) : `実働 ${minToStr(t.workMin)}`}
+                              {isActive ? elapsedStr(d.clockInTime, now) : d.missingOut ? "退勤を入れてください" : `実働 ${minToStr(t.workMin)}`}
                             </p>
                           </>
                         ) : d.schedule && !d.schedule.off && d.schedule.start ? (

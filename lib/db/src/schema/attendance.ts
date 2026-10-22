@@ -222,3 +222,11 @@ export const schedulePatternsTable = pgTable("schedule_patterns", {
   data: text("data").notNull().default("{}"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+/** 月の勤怠表の「確認済み」（社員ごと・月ごと）。ym＝"2026-10" */
+export const attendanceMonthChecksTable = pgTable("attendance_month_checks", {
+  employeeId: integer("employee_id").notNull(),
+  ym: text("ym").notNull(),
+  checkedBy: text("checked_by"),
+  checkedAt: timestamp("checked_at").notNull().defaultNow(),
+}, (t) => [unique("attendance_month_checks_unique").on(t.employeeId, t.ym)]);

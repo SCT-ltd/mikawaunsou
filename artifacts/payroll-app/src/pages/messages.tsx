@@ -48,7 +48,7 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 export default function MessagesPage() {
   const { toast } = useToast();
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(() => Number(new URLSearchParams(window.location.search).get("emp")) || null);
   const [mobileView, setMobileView] = useState<"list" | "chat">("list");
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");

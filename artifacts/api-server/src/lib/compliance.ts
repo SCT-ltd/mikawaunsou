@@ -57,7 +57,8 @@ function dayFlags(d: Omit<DayCompliance, "flags">): ComplianceFlag[] {
     if (d.restBeforeMinutes < LIMITS.restMin) f.push({ level: "danger", code: "rest9", text: `前の勤務からの休息が${h(d.restBeforeMinutes)}です（最低9時間）` });
     else if (d.restBeforeMinutes < LIMITS.restBase) f.push({ level: "warn", code: "rest11", text: `前の勤務からの休息が${h(d.restBeforeMinutes)}です（基本11時間）` });
   }
-  if (d.maxContinuousMinutes > LIMITS.continuous) f.push({ level: "danger", code: "cont4", text: `休憩なしで${h(d.maxContinuousMinutes)}続けて働いています（連続運転は4時間まで・推定）` });
+  // 連続4時間は打刻（ふつうはお昼の休憩1回だけ）からの推定。至急にすると毎日・全員に出て、ほかの知らせが埋もれたので「注意」にする
+  if (d.maxContinuousMinutes > LIMITS.continuous) f.push({ level: "warn", code: "cont4", text: `休憩なしで${h(d.maxContinuousMinutes)}続けて働いています（連続運転は4時間まで・推定）` });
   return f;
 }
 
@@ -75,8 +76,10 @@ export function daysFrom(recs: R[], from: string, to: string, now: number = Date
     const evs = byDate.get(date)!;
     if (!evs.some(e => e.eventType === "clock_in")) continue;
     const hasOut = evs.some(e => e.eventType === "clock_out");
-    // 退勤していない勤務は、今日（いま続いている）なら今までで数え、過去の日は数えない（打ち忘れ）
-    const until = !hasOut && date >= addDaysStr(today, -1) ? now : undefined;
+    // 退勤していない勤務は、出勤から16時間までなら「いま続いている」として今までで数え、それより前は数えない（退勤の打ち忘れ）。
+    // 以前は前の日の打ち忘れも今まで数えたため、拘束27時間・休憩なしで21時間などと出ていた。
+    const inAt = evs.filter(e => e.eventType === "clock_in").map(e => new Date(e.recordedAt).getTime()).sort((a, b) => a - b)[0] ?? now;
+    const until = !hasOut && date >= addDaysStr(today, -1) && now - inAt < 16 * 3600_000 ? now : undefined;
     const st = shiftStats(evs, until);
     const restBefore = prevOut !== null && st.clockIn !== null && st.clockIn - prevOut < 3 * 24 * 3600_000 ? Math.max(0, (st.clockIn - prevOut) / 60000) : null;
     if (st.clockOut !== null) prevOut = st.clockOut;

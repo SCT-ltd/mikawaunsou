@@ -37,6 +37,9 @@ const REQUIRED: Array<[string, string]> = [
   // 2026-10-25-schedules.sql（出勤の予定）
   ["work_schedules", "start_time"],
   ["schedule_patterns", "data"],
+  // 2026-10-26-office-tools.sql（電話番号・月の確認済み）
+  ["employees", "phone"],
+  ["attendance_month_checks", "ym"],
   // 2026-10-24-batch-d.sql（給与計算と法令）
   ["company", "rule_premium_base_includes_allowances"],
   ["company", "minimum_wage_hourly"],

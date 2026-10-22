@@ -74,11 +74,19 @@ export async function computeAttendanceAlerts(): Promise<EmployeeAlert[]> {
     if (e.isOfficeStaff) continue;
     // ── 改善基準告示の目安 ──
     const days = daysFrom(mine, yearFrom, today, now.getTime());
+    const cont: string[] = [];
     for (const d of days.filter(x => x.date >= weekAgo)) {
       for (const f of d.flags) {
+        // 連続4時間は打刻（ふつうはお昼の休憩1回だけ）からの推定なので、日ごとに出さず1件にまとめる（以前は毎日・全員に出て、71件中57件がこれだった）
+        if (f.code === "cont4") { cont.push(d.date); continue; }
         out.push({ ...base, key: `kaizen:${e.id}:${d.date}:${f.code}`, level: f.level, title: `${name}さんの${md(d.date)}：${f.text}`,
           body: "トラック運転者の改善基準告示の目安を超えています（打刻からの推定）。運行の組み方を見直してください。", date: d.date });
       }
+    }
+    if (cont.length > 0) {
+      const last = cont.sort()[cont.length - 1]!;
+      out.push({ ...base, key: `kaizen-cont:${e.id}:${last}`, level: "info", title: `${name}さんは直近7日のうち${cont.length}日、休憩なしで4時間を超えて働いています（推定）`,
+        body: `対象の日：${cont.sort().map(md).join("・")}。打刻はふつうお昼の休憩1回なので推定です。運転の合間に30分（10分以上に分けても可）の休憩をとっているか確かめてください。`, date: last });
     }
     const monthMin = days.filter(d => d.date >= monthStart).reduce((s, d) => s + d.restraintMinutes, 0);
     if (monthMin > LIMITS.monthRestraint) {

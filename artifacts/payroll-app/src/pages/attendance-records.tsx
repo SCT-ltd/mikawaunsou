@@ -302,7 +302,7 @@ function Kaizen() {
 // ── 勤怠の設定 ────────────────────────────────────────
 interface AttSettings {
   requireChecklist: boolean; requireAlcohol: boolean; vehicles: string[]; officeRounding: "all_office" | "hourly_only" | "none";
-  lateGraceMinutes: number; noShowAlertMinutes: number; noShowAlert: boolean;
+  lateGraceMinutes: number; noShowAlertMinutes: number; noShowAlert: boolean; showUninspected: boolean;
 }
 function SettingsTab() {
   const [s, setS] = useState<AttSettings | null>(null);
@@ -357,6 +357,10 @@ function SettingsTab() {
         </label>
         <p className="text-xs text-muted-foreground pl-6">「欠勤・休暇登録」で1日休みを入れた人には知らせません。</p>
       </div>
+      <label className="flex items-start gap-2 text-sm border-t pt-4">
+        <input type="checkbox" className="mt-1" checked={s.showUninspected} onChange={e => setS({ ...s, showUninspected: e.target.checked })} />
+        <span><b>勤怠管理の一覧に「未点検」の札を出す</b><br /><span className="text-xs text-muted-foreground">日常点検をまだ使っていないときは、全員に付いて目障りなので外せます（点検の「否」はいつも出ます）。</span></span>
+      </label>
       <div className="flex items-center gap-3">
         <Button onClick={save}>保存</Button>
         {msg && <span className="text-sm text-muted-foreground">{msg}</span>}
