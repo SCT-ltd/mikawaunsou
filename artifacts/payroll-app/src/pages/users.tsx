@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   UserPlus,
   Pencil,
@@ -109,6 +110,7 @@ async function apiRequest(method: string, path: string, body?: unknown) {
 
 export default function UserManagement() {
   const { toast } = useToast();
+  const { confirm, confirmDialog } = useConfirm();
   const qc = useQueryClient();
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -187,8 +189,15 @@ export default function UserManagement() {
     form.reset();
   }
 
-  function handleDelete(user: SystemUser) {
-    if (!confirm(`「${user.displayName}」を削除しますか？この操作は元に戻せません。`)) return;
+  async function handleDelete(user: SystemUser) {
+    const ok = await confirm({
+      title: `「${user.displayName}」を削除しますか？`,
+      description: "この人は管理画面にログインできなくなります。この操作は元に戻せません。",
+      okLabel: "削除する",
+      cancelLabel: "やめる",
+      danger: true,
+    });
+    if (!ok) return;
     deleteMutation.mutate(user.id);
   }
 
@@ -445,6 +454,7 @@ export default function UserManagement() {
           </DialogContent>
         </Dialog>
       </div>
+      {confirmDialog}
     </AppLayout>
   );
 }

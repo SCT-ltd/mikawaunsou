@@ -26,8 +26,14 @@ if (!basePath) {
   );
 }
 
-export default defineConfig({
+// 開発用サーバーが /api を中継する先。ふだんは 8080（scripts/dev.ps1）。
+// 同じPCで別の確認用の API を動かすときは API_PROXY_TARGET で変えられる。
+const apiProxyTarget = process.env.API_PROXY_TARGET || "http://localhost:8080";
+
+export default defineConfig(({ mode }) => ({
   base: basePath,
+  // 本番の組み立てでは console.* と debugger を落とす（給与額などがブラウザの開発者ツールに残らないように）
+  esbuild: mode === "production" ? { drop: ["console", "debugger"] } : undefined,
   plugins: [
     react(),
     tailwindcss(),
@@ -50,8 +56,7 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       "/api": {
-        // 中継先は API_PROXY_TARGET で変えられる（手元で別のポートの API を相手にするとき）
-        target: process.env.API_PROXY_TARGET ?? "http://localhost:8080",
+        target: apiProxyTarget,
         changeOrigin: true,
       },
     },
@@ -65,4 +70,4 @@ export default defineConfig({
     host: "0.0.0.0",
     allowedHosts: true,
   },
-});
+}));

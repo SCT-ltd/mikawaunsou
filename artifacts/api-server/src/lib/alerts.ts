@@ -89,7 +89,8 @@ export async function computeAlerts(): Promise<EmployeeAlert[]> {
 
   for (const e of emps) {
     const name = nameOf(e.name);
-    const base = { employeeId: e.id, employeeName: name, href: MASTER };
+    // お知らせから、その社員の編集をそのまま開く（社員マスターは ?emp= で開く）
+    const base = { employeeId: e.id, employeeName: name, href: `${MASTER}?emp=${e.id}` };
 
     if (!parseDob(e.dateOfBirth)) {
       out.push({ ...base, key: `nodob:${e.id}`, level: "info", title: `${name}さんの生年月日が未入力です`,
@@ -212,7 +213,7 @@ export async function computeAlerts(): Promise<EmployeeAlert[]> {
         if (h <= 45) continue;
         const e = emps.find((x) => x.id === r.employeeId)!;
         const name = nameOf(e.name);
-        out.push({ key: `ot:${e.id}:${ly}-${lm}`, level: h > 80 ? "danger" : "warn", employeeId: e.id, employeeName: name, href: "/monthly-input",
+        out.push({ key: `ot:${e.id}:${ly}-${lm}`, level: h > 80 ? "danger" : "warn", employeeId: e.id, employeeName: name, href: `/monthly-input?y=${ly}&m=${lm}&emp=${e.id}`,
           title: `${name}さんの${lm}月の残業が${h}時間です`,
           body: h > 80
             ? "80時間を超えています。長時間労働の面談（医師の面接指導）の対象になりえます。"
@@ -227,7 +228,7 @@ export async function computeAlerts(): Promise<EmployeeAlert[]> {
   const drafts = await db.select({ id: payrollsTable.id }).from(payrollsTable)
     .where(and(eq(payrollsTable.year, py), eq(payrollsTable.month, pm), eq(payrollsTable.status, "draft")));
   if (drafts.length > 0) {
-    out.push({ key: `drafts:${py}-${pm}`, level: "info", href: "/payroll",
+    out.push({ key: `drafts:${py}-${pm}`, level: "info", href: `/payroll?y=${py}&m=${pm}`,
       title: `${pm}月分の給与明細が${drafts.length}件、未確定です`,
       body: "金額を確かめて「確定」してください。" });
   }

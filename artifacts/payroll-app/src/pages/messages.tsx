@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useToast } from "@/hooks/use-toast";
 import { AppLayout } from "@/components/layout/app-layout";
 import { useUnread } from "@/context/unread-context";
 import { playNotificationSound, unlockAudio } from "@/lib/notification-sound";
@@ -45,6 +46,7 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 }
 
 export default function MessagesPage() {
+  const { toast } = useToast();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [mobileView, setMobileView] = useState<"list" | "chat">("list");
@@ -237,11 +239,11 @@ export default function MessagesPage() {
         await fetchConversations();
       } else {
         setInput(content);
-        alert("送信に失敗しました。再試行してください。");
+        toast({ title: "送信できませんでした", description: "入力した文はそのまま残っています。もう一度「送信」を押してください。", variant: "destructive" });
       }
     } catch {
       setInput(content);
-      alert("送信に失敗しました。通信エラーが発生しました。");
+      toast({ title: "送信できませんでした", description: "通信できませんでした。入力した文はそのまま残っています。", variant: "destructive" });
     } finally {
       setSending(false);
     }

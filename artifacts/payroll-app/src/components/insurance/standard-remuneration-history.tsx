@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Plus, Trash2 } from "lucide-react";
 import { getInsuranceGrade } from "@/lib/tax-tables-reiwa8";
 import {
@@ -38,6 +39,7 @@ export function StandardRemunerationHistorySection({
   initialAmount: number;
 }) {
   const { toast } = useToast();
+  const { confirm, confirmDialog } = useConfirm();
   const queryClient = useQueryClient();
   const { data: history, isLoading } = useListStandardRemunerationHistory(employeeId, {
     query: { enabled: employeeId > 0, queryKey: getListStandardRemunerationHistoryQueryKey(employeeId) },
@@ -94,7 +96,14 @@ export function StandardRemunerationHistorySection({
   };
 
   const handleDelete = async (row: StandardRemunerationHistory) => {
-    if (!window.confirm(`${formatYearMonth(row.effectiveYear, row.effectiveMonth)}〜 ${row.amount.toLocaleString()}円 の履歴を削除しますか？`)) return;
+    const ok = await confirm({
+      title: "標準報酬月額の履歴を削除しますか？",
+      description: `${formatYearMonth(row.effectiveYear, row.effectiveMonth)}〜 ${row.amount.toLocaleString()}円 の履歴を削除します。\nこの月からの社会保険料の計算に使う金額が変わります。`,
+      okLabel: "削除する",
+      cancelLabel: "やめる",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await deleteHistory.mutateAsync({ id: employeeId, historyId: row.id });
       toast({ title: "削除しました" });
@@ -160,6 +169,7 @@ export function StandardRemunerationHistorySection({
         </div>
         {offGrade && <p className="text-xs text-amber-700 dark:text-amber-300">※ 標準報酬月額の等級表にない金額です。通知書の金額を確認してください。</p>}
       </div>
+      {confirmDialog}
     </div>
   );
 }

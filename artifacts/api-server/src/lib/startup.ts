@@ -31,6 +31,9 @@ const REQUIRED: Array<[string, string]> = [
   ["alcohol_checks", "value_mg"],
   ["daily_reports", "shipper"],
   ["attendance_settings", "data"],
+  // 2026-10-24-batch-c.sql（振込）
+  ["employee_bank_accounts", "holder_kana"],
+  ["transfer_settings", "consignor_code"],
 ];
 
 export async function startupChecks(): Promise<void> {

@@ -1,6 +1,6 @@
 import { useMemo, useRef, useEffect } from "react";
 import { Input } from "@/components/ui/input";
-import { Search, Pencil, Check, Minus } from "lucide-react";
+import { Search, Pencil, Check, Minus, Lock } from "lucide-react";
 import {
   EmployeeExt,
   CompanySettings,
@@ -11,16 +11,50 @@ import {
 } from "./estimate";
 import type { MonthInsurance } from "@/lib/insurance-rates";
 
-export type EmployeeStatus = "dirty" | "entered" | "empty";
+export type EmployeeStatus = "dirty" | "entered" | "empty" | "confirmed";
+
+/** 給与明細の状態（明細が無い＝未計算）*/
+export type PayrollState = "draft" | "confirmed" | undefined;
 
 export function getEmployeeStatus(
   emp: EmployeeExt,
   edits: Record<number, RowData>,
-  dirtyIds: Set<number>
+  dirtyIds: Set<number>,
+  payrollState?: PayrollState
 ): EmployeeStatus {
+  if (payrollState === "confirmed") return "confirmed";
   if (dirtyIds.has(emp.id)) return "dirty";
   if (hasAnyRecordData(edits[emp.id])) return "entered";
   return "empty";
+}
+
+/**
+ * 左の一覧の絞り込み。毎月「まだ入れていない人」「計算していない人」を探して
+ * 17人を上から順に開いていたので、ここで絞れるようにする。
+ */
+export type ListFilter = "all" | "empty" | "dirty" | "uncalculated" | "confirmed";
+export const LIST_FILTERS: Array<{ value: ListFilter; label: string; hint: string }> = [
+  { value: "all", label: "全員", hint: "在籍している全員" },
+  { value: "empty", label: "未入力", hint: "この月の実績をまだ入れていない人" },
+  { value: "dirty", label: "変更あり", hint: "入力したけれど、まだ「保存して計算」していない人" },
+  { value: "uncalculated", label: "未計算", hint: "この月の給与明細がまだ無い人" },
+  { value: "confirmed", label: "確定済", hint: "給与明細を確定した人（表示のみ）" },
+];
+
+export function matchListFilter(
+  f: ListFilter,
+  emp: EmployeeExt,
+  edits: Record<number, RowData>,
+  dirtyIds: Set<number>,
+  payrollState: PayrollState
+): boolean {
+  switch (f) {
+    case "empty": return !dirtyIds.has(emp.id) && !hasAnyRecordData(edits[emp.id]) && payrollState !== "confirmed";
+    case "dirty": return dirtyIds.has(emp.id);
+    case "uncalculated": return payrollState === undefined;
+    case "confirmed": return payrollState === "confirmed";
+    default: return true;
+  }
 }
 
 // 給与形態バッジ
@@ -48,6 +82,14 @@ export function BWBadge() {
 }
 
 function StatusIndicator({ status }: { status: EmployeeStatus }) {
+  if (status === "confirmed") {
+    return (
+      <span className="flex items-center gap-1 text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+        <Lock className="h-3 w-3" />
+        確定済
+      </span>
+    );
+  }
   if (status === "dirty") {
     return (
       <span className="flex items-center gap-1 text-[10px] font-semibold text-amber-600">
@@ -94,8 +136,15 @@ export function EmployeeList({
   insurance,
   search,
   onSearchChange,
+  payrollStates,
+  listFilter = "all",
+  onListFilterChange,
 }: {
   employees: EmployeeExt[];
+  /** 社員ごとの給与明細の状態（無い社員＝未計算）*/
+  payrollStates?: Map<number, PayrollState>;
+  listFilter?: ListFilter;
+  onListFilterChange?: (f: ListFilter) => void;
   filtered: EmployeeExt[];
   selectedId: number | null;
   onSelect: (id: number) => void;
@@ -120,6 +169,15 @@ export function EmployeeList({
     () => employees.filter((e) => getEmployeeStatus(e, edits, dirtyIds) !== "empty").length,
     [employees, edits, dirtyIds]
   );
+  const filterCounts = useMemo(() => {
+    const out: Record<ListFilter, number> = { all: 0, empty: 0, dirty: 0, uncalculated: 0, confirmed: 0 };
+    for (const e of employees) {
+      for (const f of LIST_FILTERS) {
+        if (matchListFilter(f.value, e, edits, dirtyIds, payrollStates?.get(e.id))) out[f.value]++;
+      }
+    }
+    return out;
+  }, [employees, edits, dirtyIds, payrollStates]);
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -135,17 +193,38 @@ export function EmployeeList({
             className="h-9 pl-8 text-sm"
           />
         </div>
+        {onListFilterChange && (
+          <div className="flex flex-wrap gap-1 mt-2" role="group" aria-label="一覧の絞り込み">
+            {LIST_FILTERS.map((f) => (
+              <button
+                key={f.value}
+                type="button"
+                title={f.hint}
+                aria-pressed={listFilter === f.value}
+                onClick={() => onListFilterChange(f.value)}
+                className={`px-2 py-0.5 rounded-full border text-[11px] font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${
+                  listFilter === f.value
+                    ? "bg-indigo-600 text-white border-indigo-600"
+                    : "bg-background text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                {f.label}
+                <span className="ml-1 amount">{filterCounts[f.value]}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* リスト本体 */}
       <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto">
         {filtered.length === 0 ? (
           <div className="py-10 text-center text-sm text-muted-foreground">
-            該当する社員がいません
+            {listFilter !== "all" ? "この絞り込みに当てはまる社員はいません" : "該当する社員がいません"}
           </div>
         ) : (
           filtered.map((emp) => {
-            const status = getEmployeeStatus(emp, edits, dirtyIds);
+            const status = getEmployeeStatus(emp, edits, dirtyIds, payrollStates?.get(emp.id));
             const { gross, net } = computeQuickEstimate(emp, edits[emp.id] ?? {}, company, insurance);
             const selected = emp.id === selectedId;
             return (
@@ -156,13 +235,13 @@ export function EmployeeList({
                 onClick={() => onSelect(emp.id)}
                 className={`w-full text-left px-3 py-2.5 border-b border-border/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-inset ${
                   selected
-                    ? "bg-indigo-50 border-l-[3px] border-l-indigo-500"
+                    ? "bg-indigo-50 dark:bg-indigo-500/15 border-l-[3px] border-l-indigo-500"
                     : "border-l-[3px] border-l-transparent hover:bg-muted/40"
                 }`}
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0 flex-1">
-                    <div className={`text-sm font-semibold truncate jp-tight ${selected ? "text-indigo-900" : ""}`}>
+                    <div className={`text-sm font-semibold truncate jp-tight ${selected ? "text-indigo-900 dark:text-indigo-200" : ""}`}>
                       {emp.name}
                     </div>
                     <div className="flex items-center gap-1 mt-0.5 flex-wrap">

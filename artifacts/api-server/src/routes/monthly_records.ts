@@ -1,8 +1,22 @@
 import { Router } from "express";
-import { db, monthlyRecordsTable, employeesTable } from "@workspace/db";
+import { db, monthlyRecordsTable, employeesTable, payrollsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 
 const router = Router();
+
+/**
+ * その社員のその月の給与明細が確定済みか。
+ * 確定済みの月の勤怠（月次実績）を書き換えると、明細（確定した金額）と勤怠が食い違う。
+ * 以前は画面もサーバーも止めておらず、確定後に勤怠の取り込み・保存ができてしまっていた。
+ * 直すときは、先に給与明細画面で「確定解除」をする。
+ */
+async function isConfirmedMonth(employeeId: number, year: number, month: number): Promise<boolean> {
+  const [p] = await db.select({ status: payrollsTable.status }).from(payrollsTable)
+    .where(and(eq(payrollsTable.employeeId, employeeId), eq(payrollsTable.year, year), eq(payrollsTable.month, month)))
+    .limit(1);
+  return p?.status === "confirmed";
+}
+const CONFIRMED_MSG = "この月の給与明細は確定済みのため、月次実績は変更できません。直すときは、先に給与明細画面で「確定解除」をしてください。";
 
 const RECORD_FIELDS = {
   id: monthlyRecordsTable.id,
@@ -50,6 +64,9 @@ router.get("/monthly-records", async (req, res) => {
 
 router.post("/monthly-records", async (req, res) => {
   const body = req.body;
+  if (await isConfirmedMonth(Number(body?.employeeId), Number(body?.year), Number(body?.month))) {
+    return res.status(409).json({ error: CONFIRMED_MSG });
+  }
 
   const existing = await db.select().from(monthlyRecordsTable)
     .where(and(
@@ -122,6 +139,12 @@ router.get("/monthly-records/:id", async (req, res) => {
 router.put("/monthly-records/:id", async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const body = req.body;
+  const [current] = await db.select({ employeeId: monthlyRecordsTable.employeeId, year: monthlyRecordsTable.year, month: monthlyRecordsTable.month })
+    .from(monthlyRecordsTable).where(eq(monthlyRecordsTable.id, id));
+  if (!current) return res.status(404).json({ error: "月次実績が見つかりません。" });
+  if (await isConfirmedMonth(current.employeeId, current.year, current.month)) {
+    return res.status(409).json({ error: CONFIRMED_MSG });
+  }
   const [updated] = await db.update(monthlyRecordsTable).set({
     ...(body.workDays !== undefined && { workDays: body.workDays }),
     ...(body.overtimeHours !== undefined && { overtimeHours: body.overtimeHours }),

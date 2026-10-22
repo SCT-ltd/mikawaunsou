@@ -133,7 +133,8 @@ function BulkItem({
   companyName: string;
   employees: AnyEmployee[];
   company: CompanyInfo;
-  onReady: () => void;
+  /** 準備ができたら呼ぶ。手当の読み込みに失敗したときはその人の名前を渡す */
+  onReady: (failedName: string | null) => void;
   isLast: boolean;
   /** full = 1人1ページ（A4横）、stack = A4縦に自然な高さで積む（ページに収まる分だけ自動で詰める） */
   variant?: "full" | "stack";
@@ -142,17 +143,19 @@ function BulkItem({
   // 内訳は「その明細の月」の手当・控除から作る。
   // 以前は印刷した時点の手当を使っていたため、過去の月を刷り直すと内訳だけが今の金額になり、
   // 合計と合わなかった。印刷の直前に必ず取り直す（staleTime 0）。
-  const { data: monthItems, isSuccess: aOk } = useMonthItems(empId, payroll.year, payroll.month, { staleTime: 0, refetchOnMount: "always" });
-  const dOk = aOk;
+  const { data: monthItems, isSuccess: aOk, isError: aErr } = useMonthItems(empId, payroll.year, payroll.month, { staleTime: 0, refetchOnMount: "always" });
   const { allowances, deductions } = toLegacyRows(monthItems, empId);
   const notifiedRef = useRef(false);
 
+  // 手当の読み込みに失敗した人も「準備できた」に数える（失敗したことは親に伝える）。
+  // 以前は1人でも失敗すると数が揃わず、「印刷準備中」のまま止まっていた。
   useEffect(() => {
-    if ((aOk || empId === 0) && (dOk || empId === 0) && !notifiedRef.current) {
+    if (notifiedRef.current) return;
+    if (aOk || aErr || empId === 0) {
       notifiedRef.current = true;
-      onReady();
+      onReady(aErr ? String((payroll as { employeeName?: string }).employeeName ?? "") : null);
     }
-  }, [aOk, dOk, empId, onReady]);
+  }, [aOk, aErr, empId, onReady, payroll]);
 
   const employee = employees.find((e) => e.id === empId) as ClassicPayslipProps["employee"] | undefined;
 
@@ -201,6 +204,9 @@ export function PayslipBulkPrint({
   year,
   month,
   layout = "1up",
+  title,
+  onFailed,
+  onTimeout,
 }: {
   payrolls: PayrollItem[];
   companyName: string;
@@ -211,6 +217,12 @@ export function PayslipBulkPrint({
   month?: number;
   /** "1up" = 1人1ページ（A4横）、"2up" = A4縦1枚に2人（上下） */
   layout?: "1up" | "2up";
+  /** 印刷のときのページ名（PDFに保存するときのファイル名の候補になる）。省略時は「一括_◯年◯月」 */
+  title?: string;
+  /** 手当の読み込みに失敗した人がいたとき（内訳が空欄で刷られるおそれがある）*/
+  onFailed?: (names: string[]) => void;
+  /** 15秒たっても準備が終わらなかったとき（印刷はしない）*/
+  onTimeout?: () => void;
 }) {
   const [portalEl] = useState<HTMLDivElement>(() => {
     document.getElementById("payroll-print-root")?.remove();
@@ -243,15 +255,33 @@ export function PayslipBulkPrint({
 
   const printTriggeredRef = useRef(false);
   const [readyCount, setReadyCount] = useState(0);
-  const handleReady = useCallback(() => setReadyCount((c) => c + 1), []);
+  const failedRef = useRef<string[]>([]);
+  const handleReady = useCallback((failedName: string | null) => {
+    if (failedName !== null) failedRef.current.push(failedName || "（名前不明）");
+    setReadyCount((c) => c + 1);
+  }, []);
+
+  // 15秒たっても全員分の準備が終わらなければ、印刷せずに止める（画面が止まったままにしない）
+  const timeoutRef = useRef(onTimeout);
+  timeoutRef.current = onTimeout;
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      if (printTriggeredRef.current) return;
+      printTriggeredRef.current = true;
+      timeoutRef.current?.();
+    }, 15_000);
+    return () => window.clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     if (readyCount < payrolls.length || printTriggeredRef.current || payrolls.length === 0) return;
     printTriggeredRef.current = true;
+    if (failedRef.current.length > 0) onFailed?.(failedRef.current);
     const prevTitle = document.title;
     const y = year ?? payrolls[0]?.year;
     const m = month ?? payrolls[0]?.month;
-    if (y && m) document.title = `一括_${y}年${m}月`;
+    if (title) document.title = title;
+    else if (y && m) document.title = `一括_${y}年${m}月`;
     const restoreTitle = () => {
       document.title = prevTitle;
       window.removeEventListener("afterprint", restoreTitle);
@@ -273,7 +303,7 @@ export function PayslipBulkPrint({
       portalEl.removeAttribute("style");
       requestAnimationFrame(() => window.print());
     });
-  }, [readyCount, payrolls, year, month, layout, portalEl]);
+  }, [readyCount, payrolls, year, month, layout, portalEl, title, onFailed]);
 
   useEffect(() => {
     window.addEventListener("afterprint", onDone);

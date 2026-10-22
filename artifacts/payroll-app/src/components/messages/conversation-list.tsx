@@ -88,7 +88,7 @@ export function ConversationList({
                 key={conv.employee.id}
                 className={`w-full text-left px-3 py-3 border-b border-border/50 flex items-start gap-3 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-inset ${
                   isSelected
-                    ? "bg-indigo-50 border-l-[3px] border-l-indigo-500"
+                    ? "bg-indigo-50 dark:bg-indigo-500/15 border-l-[3px] border-l-indigo-500"
                     : `border-l-[3px] border-l-transparent hover:bg-muted/40 ${hasUnread ? "bg-blue-50/50" : ""}`
                 }`}
                 onClick={() => onSelect(conv.employee.id)}

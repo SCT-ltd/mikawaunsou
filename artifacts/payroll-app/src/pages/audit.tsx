@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
 import { AppLayout } from "@/components/layout/app-layout";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -46,7 +47,41 @@ const ACTION_LABEL: Record<string, string> = {
   "POST /attendance/record": "打刻を追加",
   "POST /monthly-records": "月次実績を保存",
   "PUT /monthly-records/:id": "月次実績を保存",
+  "bank.update": "振込口座を変更",
+  "transfer-settings.update": "振込元を変更",
+  "transfer.export": "振込データ（全銀）を書き出し",
+  "PUT /office-tools/bank-accounts/:id": "振込口座を変更",
 };
+
+/**
+ * 記録から、対象の明細・社員を開くリンクを作る。
+ *   payroll:12 → その明細の詳細／employee:5 → 社員マスターでその社員を開く
+ *   本文に社員・年月があれば（給与の計算・月次実績の保存など）その月の画面を開く
+ */
+function linksOf(r: AuditRow): Array<{ href: string; label: string }> {
+  const out: Array<{ href: string; label: string }> = [];
+  const t = r.target ?? "";
+  let m = /^payroll:(\d+)$/.exec(t);
+  if (m) out.push({ href: `/payroll/${m[1]}`, label: "明細を開く" });
+  m = /^employee:(\d+)$/.exec(t) ?? /^\/employees\/(\d+)/.exec(t) ?? /^\/office-tools\/bank-accounts\/(\d+)/.exec(t);
+  const empFromTarget = m ? Number(m[1]) : null;
+  let body: { employeeId?: unknown; year?: unknown; month?: unknown } = {};
+  let query: { year?: unknown; month?: unknown } = {};
+  try {
+    const d = JSON.parse(r.detail ?? "{}") as { body?: typeof body; query?: typeof query };
+    body = d.body ?? {};
+    query = d.query ?? {};
+  } catch { /* 中身が読めなければリンクは作らない */ }
+  const empId = empFromTarget ?? (typeof body.employeeId === "number" ? body.employeeId : null);
+  const y = Number(body.year ?? query.year);
+  const mo = Number(body.month ?? query.month);
+  if (empId && y && mo) {
+    if (/monthly-records/.test(r.action)) out.push({ href: `/monthly-input?y=${y}&m=${mo}&emp=${empId}`, label: "月次実績を開く" });
+    else out.push({ href: `/payroll?y=${y}&m=${mo}&emp=${empId}`, label: "その月の明細を開く" });
+  }
+  if (empId) out.push({ href: `/allowances?emp=${empId}`, label: "社員を開く" });
+  return out;
+}
 
 function fmtDetail(detail: string | null): string {
   if (!detail) return "";
@@ -111,6 +146,7 @@ export default function AuditPage() {
                 <th className="text-left px-3 py-2 whitespace-nowrap">だれが</th>
                 <th className="text-left px-3 py-2 whitespace-nowrap">何をしたか</th>
                 <th className="text-left px-3 py-2">中身</th>
+                <th className="text-left px-3 py-2 whitespace-nowrap">開く</th>
               </tr>
             </thead>
             <tbody>
@@ -120,10 +156,15 @@ export default function AuditPage() {
                   <td className="px-3 py-2 whitespace-nowrap text-xs">{r.actor}</td>
                   <td className="px-3 py-2 whitespace-nowrap text-xs font-medium">{ACTION_LABEL[r.action] ?? r.action}</td>
                   <td className="px-3 py-2 text-xs text-muted-foreground break-all">{fmtDetail(r.detail)}</td>
+                  <td className="px-3 py-2 text-xs whitespace-nowrap">
+                    {linksOf(r).map((l) => (
+                      <Link key={l.href} href={l.href} className="block text-primary hover:underline">{l.label}</Link>
+                    ))}
+                  </td>
                 </tr>
               ))}
               {!list.isLoading && rows.length === 0 && (
-                <tr><td colSpan={4} className="px-3 py-8 text-center text-muted-foreground">記録はまだありません</td></tr>
+                <tr><td colSpan={5} className="px-3 py-8 text-center text-muted-foreground">記録はまだありません</td></tr>
               )}
             </tbody>
           </table>

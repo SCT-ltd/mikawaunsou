@@ -14,6 +14,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatCurrency, formatMonth, formatHours } from "@/lib/format";
 import { ChevronLeft, CheckCircle2, FileText } from "lucide-react";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { useCanWrite } from "@/lib/use-can-write";
 
 export default function PayrollDetail() {
   const { id } = useParams();
@@ -21,6 +23,8 @@ export default function PayrollDetail() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { confirm, confirmDialog } = useConfirm();
+  const canWrite = useCanWrite();
 
   const { data: payroll, isLoading } = useGetPayroll(payrollId, {
     query: { enabled: !!payrollId, queryKey: getGetPayrollQueryKey(payrollId) }
@@ -29,6 +33,18 @@ export default function PayrollDetail() {
   const confirmPayroll = useConfirmPayroll();
 
   const handleConfirm = async () => {
+    // 確定の前に、明細の金額を見せて確かめる
+    if (!payroll) return;
+    const ok = await confirm({
+      title: `${payroll.employeeName}さんの${payroll.month}月の給与明細を確定します`,
+      description: `総支給額 ${Math.round(payroll.grossSalary).toLocaleString("ja-JP")}円
+差引支給額 ${Math.round(payroll.netSalary).toLocaleString("ja-JP")}円
+
+確定すると金額がロックされます（直すときは給与明細画面で「確定解除」）。`,
+      okLabel: "確定する",
+      cancelLabel: "やめる",
+    });
+    if (!ok) return;
     try {
       await confirmPayroll.mutateAsync({ id: payrollId });
       queryClient.invalidateQueries({ queryKey: getGetPayrollQueryKey(payrollId) });
@@ -66,15 +82,15 @@ export default function PayrollDetail() {
         <div className="flex items-center justify-between print:hidden">
           <div className="flex items-center gap-4">
             <Button variant="outline" size="icon" asChild>
-              <Link href="/payroll">
+              <Link href={`/payroll?y=${payroll.year}&m=${payroll.month}&emp=${payroll.employeeId}`} aria-label="給与明細一覧へ戻る">
                 <ChevronLeft className="h-4 w-4" />
               </Link>
             </Button>
             <h2 className="text-2xl font-bold tracking-tight">給与明細詳細</h2>
             {isConfirmed ? (
-              <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">確定済</Badge>
+              <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-200 dark:border-emerald-500/40">確定済</Badge>
             ) : (
-              <Badge variant="secondary" className="bg-amber-50 text-amber-700 border-amber-200">計算中（未確定）</Badge>
+              <Badge variant="secondary" className="bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/15 dark:text-amber-200 dark:border-amber-500/40">計算中（未確定）</Badge>
             )}
           </div>
           <div className="flex gap-2">
@@ -82,8 +98,8 @@ export default function PayrollDetail() {
               <FileText className="mr-2 h-4 w-4" />
               印刷
             </Button>
-            {!isConfirmed && (
-              <Button onClick={handleConfirm} disabled={confirmPayroll.isPending} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+            {!isConfirmed && canWrite && (
+              <Button onClick={() => { void handleConfirm(); }} disabled={confirmPayroll.isPending} className="bg-emerald-600 hover:bg-emerald-700 text-white">
                 <CheckCircle2 className="mr-2 h-4 w-4" />
                 明細を確定する
               </Button>
@@ -261,6 +277,7 @@ export default function PayrollDetail() {
           </div>
         </div>
       </div>
+      {confirmDialog}
     </AppLayout>
   );
 }

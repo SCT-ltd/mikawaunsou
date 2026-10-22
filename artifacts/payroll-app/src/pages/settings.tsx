@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/layout/app-layout";
 import { useGetCompany, useUpdateCompany, getGetCompanyQueryKey } from "@workspace/api-client-react";
 import { useForm } from "react-hook-form";
@@ -11,6 +11,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { Save, Building2, Info } from "lucide-react";
+import { RecalcNotice } from "@/components/recalc-notice";
+import { TransferSettingsCard } from "@/components/transfer-settings-card";
+import { useIsAdmin } from "@/lib/use-can-write";
 
 const companySchema = z.object({
   name: z.string().min(1, "会社名を入力してください"),
@@ -26,6 +29,9 @@ type CompanyFormValues = z.infer<typeof companySchema>;
 export default function Settings() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const isAdmin = useIsAdmin();
+  /** 日給の単価などを変えたあと「未確定の明細に反映するには再計算が必要」と知らせる */
+  const [showRecalc, setShowRecalc] = useState(false);
 
   const { data: company, isLoading } = useGetCompany();
   const updateCompany = useUpdateCompany();
@@ -63,6 +69,7 @@ export default function Settings() {
         description: "会社設定を更新しました。",
       });
       queryClient.invalidateQueries({ queryKey: getGetCompanyQueryKey() });
+      setShowRecalc(true);
     } catch (error) {
       toast({
         title: "エラー",
@@ -91,8 +98,16 @@ export default function Settings() {
           </div>
         </div>
 
+        <RecalcNotice show={showRecalc} onClose={() => setShowRecalc(false)} what="会社設定（日給の単価など）" />
+
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+            {!isAdmin && (
+              <p className="rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                会社設定を変えられるのは管理者だけです（見ることはできます）。
+              </p>
+            )}
+            <fieldset disabled={!isAdmin} className="space-y-6">
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg">基本設定</CardTitle>
@@ -203,11 +218,12 @@ export default function Settings() {
               </CardContent>
             </Card>
 
-            <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-              <Info className="h-4 w-4 mt-0.5 shrink-0 text-blue-600" />
+            </fieldset>
+            <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-500/10 dark:border-blue-500/30 px-4 py-3 text-sm text-blue-800 dark:text-blue-200">
+              <Info className="h-4 w-4 mt-0.5 shrink-0 text-blue-600 dark:text-blue-300" />
               <div>
                 <p className="font-medium mb-1">保険料率・計算パラメータについて</p>
-                <p className="text-blue-700">
+                <p className="text-blue-700 dark:text-blue-200">
                   健康保険・厚生年金・時間外割増率などの税・保険基準は<strong>令和8年の公式値がシステムに内蔵</strong>されています
                   （<strong>マスター管理 → 計算テーブルマスター</strong>で参照）。
                   そこで会社ごとに編集できるのは<strong>月平均労働時間・雇用保険料率</strong>のみです。
@@ -217,13 +233,17 @@ export default function Settings() {
             </div>
 
             <div className="flex justify-end gap-4 pb-12">
-              <Button type="submit" disabled={form.formState.isSubmitting}>
+              <Button type="submit" disabled={form.formState.isSubmitting || !isAdmin}>
                 <Save className="mr-2 h-4 w-4" />
                 設定を保存する
               </Button>
             </div>
           </form>
         </Form>
+
+        <div className="pb-12">
+          <TransferSettingsCard />
+        </div>
       </div>
     </AppLayout>
   );

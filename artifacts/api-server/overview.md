@@ -75,3 +75,6 @@
   - 月の集計（`monthlySummary`）：分のまま足して月で丸める・深夜（22〜5時）・土日祝の8時間超（`restDayOvertimeHours`）・打ち忘れの一覧・休みと出勤の重なり。事務員の30分切り上げは `attendance_settings.officeRounding`（既定＝これまでどおり）。
   - 新しい表：修正申請・日常点検（1人1日1件）と履歴・アルコールチェック（社員を消しても残す）・日報・勤怠の設定。経路は `routes/attendance-extra.ts`。改善基準告示の目安は `lib/compliance.ts`、お知らせは `lib/alerts-attendance.ts`（`computeAlerts` から呼ぶ）、毎朝の打ち忘れの知らせは `startAttendanceJobs()`。
   - メッセージは先に返事をしてから通知を送る（`client_id` で二重送信を捨てる）。SSE の心拍は `event: ping`（画面が切れたことに気づいてつなぎ直すため）。
+
+- 2026-10-24 `routes/office_tools.ts` を追加（すべて /office-tools 配下・requireAdmin。閲覧のみは GET だけ）。`month-status`（社員ごとの実績・明細・前月・要再計算の理由＝明細の更新日時より後に実績・手当・社員・会社設定・保険料率・標準報酬・手当マスターが変わったか）、`draft-payrolls`、振込口座 `bank-accounts/:id`、振込元 `transfer-settings`、振込一覧 `transfer`、全銀協フォーマット `transfer/zengin`（`lib/zengin.ts`・120バイト固定長・JIS X 0201 半角・確定済みだけ）。口座番号は操作の記録に残さない（AUDIT_SKIP に入れ、ルート側で下3桁だけ記録）。
+- 2026-10-24 `routes/monthly_records.ts` の POST/PUT は、その社員のその月の明細が確定済みなら 409 で断る（確定した金額と勤怠が食い違わないように）。お知らせの href に `?y=&m=&emp=` を付けた（`lib/alerts.ts`）。

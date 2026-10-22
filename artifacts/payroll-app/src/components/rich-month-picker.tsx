@@ -44,7 +44,7 @@ function MonthPopup({
         className="fixed z-50 -translate-x-1/2"
         style={{ top: pos.top, left: pos.left }}
       >
-        <div className="w-[320px] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+        <div className="w-[320px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
           {/* ヘッダー */}
           <div className="bg-gradient-to-r from-indigo-600 to-indigo-500 px-5 py-4 flex items-center justify-between">
             <button
@@ -87,8 +87,8 @@ function MonthPopup({
                     ${isSelected
                       ? "bg-indigo-600 text-white shadow-md shadow-indigo-200"
                       : isCurrentMonth
-                        ? "bg-indigo-50 text-indigo-700 ring-2 ring-indigo-400 ring-offset-1"
-                        : "text-slate-700 hover:bg-slate-100"}
+                        ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-200 ring-2 ring-indigo-400 ring-offset-1 dark:ring-offset-slate-900"
+                        : "text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"}
                   `}
                 >
                   <span>{label}</span>
@@ -101,14 +101,14 @@ function MonthPopup({
           </div>
 
           {/* フッター */}
-          <div className="px-4 py-3 border-t border-slate-100 bg-slate-50/60 flex items-center justify-between">
+          <div className="px-4 py-3 border-t border-slate-100 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/60 flex items-center justify-between">
             <span className="text-xs text-slate-400">
-              選択中：<span className="text-slate-600 font-medium">{year}年{month}月</span>
+              選択中：<span className="text-slate-600 dark:text-slate-200 font-medium">{year}年{month}月</span>
             </span>
             <button
               type="button"
               onClick={() => { onChange(currentYear, currentMonth); onClose(); }}
-              className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-colors"
+              className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-500/20 dark:text-indigo-200 dark:hover:bg-indigo-500/30 px-3 py-1.5 rounded-lg transition-colors"
             >
               今月
             </button>
@@ -143,7 +143,7 @@ export function RichMonthPicker({ year, month, onChange, minYear, maxYear }: Ric
         ref={btnRef}
         type="button"
         onClick={handleOpen}
-        className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 hover:border-indigo-300 transition-all shadow-sm text-sm font-semibold text-slate-700 min-w-[140px]"
+        className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-indigo-300 transition-all shadow-sm text-sm font-semibold text-slate-700 dark:text-slate-200 min-w-[140px]"
       >
         <CalendarDays className="h-4 w-4 text-indigo-500 shrink-0" />
         <span>{year}年{month}月</span>

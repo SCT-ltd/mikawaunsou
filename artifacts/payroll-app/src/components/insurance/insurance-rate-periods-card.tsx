@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { RecalcNotice } from "@/components/recalc-notice";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListInsuranceRatePeriods,
@@ -84,6 +85,8 @@ export function InsuranceRatePeriodsCard() {
   const [form, setForm] = useState<FormState>(() => toForm(undefined, new Date().getFullYear(), new Date().getMonth() + 1));
   const [deleteTarget, setDeleteTarget] = useState<InsuranceRatePeriod | null>(null);
   const [saving, setSaving] = useState(false);
+  /** 料率を変えたあと「未確定の明細に反映するには再計算が必要」と知らせる */
+  const [showRecalc, setShowRecalc] = useState(false);
 
   const now = new Date();
   const nowKey = ymKey(now.getFullYear(), now.getMonth() + 1);
@@ -153,6 +156,7 @@ export function InsuranceRatePeriodsCard() {
       toast({ title: "保存しました", description: `${formatYearMonth(y, m)}の明細から適用する料率を保存しました。` });
       refresh();
       setDialogOpen(false);
+      setShowRecalc(true);
     } catch (e) {
       toast({ title: "エラー", description: apiErrorMessage(e), variant: "destructive" });
     } finally {
@@ -166,6 +170,7 @@ export function InsuranceRatePeriodsCard() {
       await deletePeriod.mutateAsync({ id: deleteTarget.id });
       toast({ title: "削除しました" });
       refresh();
+      setShowRecalc(true);
     } catch (e) {
       toast({ title: "エラー", description: apiErrorMessage(e, "削除に失敗しました。"), variant: "destructive" });
     } finally {
@@ -175,6 +180,7 @@ export function InsuranceRatePeriodsCard() {
 
   return (
     <Card>
+      {showRecalc && <div className="px-6 pt-4"><RecalcNotice show onClose={() => setShowRecalc(false)} what="保険料率" /></div>}
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>

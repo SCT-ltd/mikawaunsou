@@ -114,7 +114,7 @@ export function EmployeePanel({
               <div
                 key={emp.employeeId}
                 className={`border-b last:border-0 transition-colors ${
-                  selectedId === emp.employeeId ? "bg-indigo-50 border-l-[3px] border-l-indigo-500" : ""
+                  selectedId === emp.employeeId ? "bg-indigo-50 dark:bg-indigo-500/15 border-l-[3px] border-l-indigo-500" : ""
                 }`}
               >
                 <div className="px-4 py-2.5 cursor-pointer hover:bg-muted/50 active:bg-muted" onClick={() => onEmpClick(emp)}>
@@ -158,7 +158,7 @@ export function EmployeePanel({
                 <div
                   key={emp.employeeId}
                   className={`border-b last:border-0 transition-colors ${
-                    selectedId === emp.employeeId ? "bg-indigo-50 border-l-[3px] border-l-indigo-500" : ""
+                    selectedId === emp.employeeId ? "bg-indigo-50 dark:bg-indigo-500/15 border-l-[3px] border-l-indigo-500" : ""
                   } ${hasEvents ? "" : "opacity-60"}`}
                 >
                   <div
