@@ -171,6 +171,8 @@ export default function DriverPage() {
 
   // PIN認証 (useEffectより前に宣言する必要あり)
   const [pinRequired, setPinRequired] = useState(false);
+  /** メッセージを送れなかったときの案内 */
+  const [msgError, setMsgError] = useState<string | null>(null);
   const [pinVerified, setPinVerified] = useState(false);
   const [pinInput, setPinInput] = useState("");
   const [pinError, setPinError] = useState(false);
@@ -437,16 +439,22 @@ export default function DriverPage() {
       .catch(() => setPinVerified(true));
   }, [fetchData, employeeId]);
 
-  // SSEで管理者操作（打刻追加・修正・削除）をリアルタイム受信
+  // SSEで管理者操作（打刻追加・修正・削除）をリアルタイム受信。
+  // ログインしていない QR ページには中身ではなく「取り直して」の合図が届くので、そのときは取り直す。
+  // （以前は番号を付けずに接続していたためサーバーに断られ、事務所が直しても画面に出なかった）
   useEffect(() => {
-    const es = new EventSource(`${BASE}/api/attendance/stream`);
+    if (!pinVerified) return;
+    const es = new EventSource(`${BASE}/api/attendance/stream?employeeId=${employeeId}`);
     es.onmessage = (event) => {
       try {
-        const snapshot = JSON.parse(event.data) as Array<{
-          employee: { id: number };
-          records: AttendanceRecord[];
-        }>;
-        const mine = snapshot.find(s => s.employee.id === employeeId);
+        const data = JSON.parse(event.data) as
+          | { type: "refresh" }
+          | Array<{ employee: { id: number }; records: AttendanceRecord[] }>;
+        if (!Array.isArray(data)) {
+          if (data.type === "refresh") void fetchData();
+          return;
+        }
+        const mine = data.find(s => s.employee.id === employeeId);
         if (mine) {
           setRecords(mine.records);
           setLoading(false);
@@ -454,7 +462,7 @@ export default function DriverPage() {
       } catch { /* ignore */ }
     };
     return () => es.close();
-  }, [employeeId]);
+  }, [employeeId, pinVerified, fetchData]);
 
   // 音声アンロック（最初のユーザー操作で解除）
   useEffect(() => {
@@ -543,13 +551,24 @@ export default function DriverPage() {
   const sendMessage = async () => {
     if (!msgInput.trim() || msgSending) return;
     setMsgSending(true);
+    setMsgError(null);
     try {
-      await fetch(`${BASE}/api/messages`, {
+      // 以前は結果を見ずに入力欄を空にしていたため、断られても「送れた」ように見えていた
+      const res = await fetch(`${BASE}/api/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ employeeId, sender: "employee", content: msgInput.trim() }),
       });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        setMsgError(res.status === 403
+          ? "暗証番号が設定されていないため、メッセージを送れません。事務所に暗証番号の設定を頼んでください。"
+          : body?.error ?? "送れませんでした。電波の良いところでもう一度送ってください。");
+        return;
+      }
       setMsgInput("");
+    } catch {
+      setMsgError("送れませんでした。電波の良いところでもう一度送ってください。");
     } finally {
       setMsgSending(false);
     }
@@ -1138,6 +1157,16 @@ export default function DriverPage() {
             })}
             <div ref={msgBottomRef} />
           </div>
+          {/* 暗証番号が無い人は、メッセージを送ることも読むこともできない（なりすまし防止のため） */}
+          {pinVerified && !pinRequired && (
+            <div className="px-3 py-2.5 border-t bg-amber-50 text-amber-900 text-xs leading-relaxed">
+              🔒 暗証番号が設定されていないため、メッセージは使えません。事務所に暗証番号の設定を頼んでください。
+              （出勤・退勤などの打刻はこのまま使えます）
+            </div>
+          )}
+          {msgError && (
+            <div className="px-3 py-2 border-t bg-red-50 text-red-700 text-xs">{msgError}</div>
+          )}
           {/* 入力欄 */}
           <div className="px-3 py-3 border-t bg-white flex gap-2 shrink-0">
             <input

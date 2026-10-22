@@ -24,7 +24,9 @@ function roundJapanese(amount: number): number {
 /**
  * 厚生年金適用判定（サーバー側 resolvePensionApplied と同ロジック）
  * - pensionApplied が true/false → その値をそのまま使用
- * - null/undefined → 生年月日から年齢を算出し 70歳以上なら false
+ * - null/undefined → 70歳に達した日（誕生日の前日）の月から false
+ *   （例：10月12日生まれ→10月11日に到達→10月分から引かない。1日生まれは前の月から）。
+ *   以前は「その月の1日時点の年齢」で見ていたため、到達した月の分も引いていた。
  */
 function resolvePensionApplied(
   employee: Employee,
@@ -35,14 +37,13 @@ function resolvePensionApplied(
   if (pa !== null && pa !== undefined) return pa;
   const dob = (employee as unknown as { dateOfBirth?: string }).dateOfBirth;
   if (!dob) return true;
-  const birthDate = new Date(dob);
-  const checkYear = year ?? new Date().getFullYear();
-  const checkMonth = month ?? new Date().getMonth() + 1;
-  const calcDate = new Date(checkYear, checkMonth - 1, 1);
-  let age = calcDate.getFullYear() - birthDate.getFullYear();
-  const md = calcDate.getMonth() - birthDate.getMonth();
-  if (md < 0 || (md === 0 && calcDate.getDate() < birthDate.getDate())) age--;
-  return age < 70;
+  const checkY = year ?? new Date().getFullYear();
+  const checkM = month ?? new Date().getMonth() + 1;
+  const p = String(dob).split(/[-/]/).map(Number);
+  if (p.length < 3 || p.some((n) => !Number.isFinite(n))) return true;
+  const reach = new Date(Date.UTC(p[0]! + 70, p[1]! - 1, p[2]!));
+  reach.setUTCDate(reach.getUTCDate() - 1);
+  return checkY * 12 + (checkM - 1) < reach.getUTCFullYear() * 12 + reach.getUTCMonth();
 }
 
 let uidCounter = 0;
@@ -469,6 +470,15 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
   /** この月の明細が確定済み。手当・控除は見るだけにする（直すときは先に確定を解除）。 */
   const locked = !!monthItems?.locked;
   const [saving, setSaving] = useState(false);
+  /** 雇用保険料の手入力（空欄＝自動計算）。その月の控えに保存する。 */
+  const [empInsInput, setEmpInsInput] = useState("");
+  useEffect(() => {
+    if (!monthItems) return;
+    const v = monthItems.employmentInsuranceOverride;
+    setEmpInsInput(v == null ? "" : String(v));
+    // 取り直しのたびに打ちかけを消さないよう、保存されている額か社員・月が変わったときだけ入れ直す
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [monthItems?.employmentInsuranceOverride, employeeId, targetYear, targetMonth, !!monthItems]);
   const { data: deductionDefinitions } = useListDeductionDefinitions({ activeOnly: true });
   const { data: company } = useGetCompany();
   // 年月の指定が無いときは今月として扱う（resolvePensionApplied と同じ）
@@ -623,6 +633,7 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
         allowances: allowancePayload,
         deductions: deductionPayload,
         ...(isHourly ? {} : { baseSalary: baseSalaryInput }),
+        employmentInsuranceOverride: empInsManual,
       });
       queryClient.setQueryData(monthItemsQueryKey(employeeId, targetYear, targetMonth), saved);
 
@@ -746,9 +757,12 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
   }, 0);
 
   // 雇用保険料：（総支給 − 除外対象手当）× 料率。携帯代等の実費手当のみ計算基礎から除く。
-  const employmentInsurance = (isTaxExemptEmployee || employee.employmentInsuranceApplied === false)
+  // 手で入れた額があればそれを使う（空欄なら自動）。
+  const employmentInsuranceAuto = (isTaxExemptEmployee || employee.employmentInsuranceApplied === false)
     ? 0
     : round50sen((grandTotal - empInsExcludedTotal) * empInsRate);
+  const empInsManual = empInsInput.trim() === "" ? null : Math.max(0, Math.round(Number(empInsInput.replace(/[,，円¥￥\s]/g, "")) || 0));
+  const employmentInsurance = empInsManual ?? employmentInsuranceAuto;
 
   const totalInsurance = healthInsurance + childcareSupportContribution + pensionInsurance + employmentInsurance;
 
@@ -794,7 +808,10 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
             「{duplicateAllowanceNames.join("・")}」は給与計算で自動的に支給される項目です。
             同名のカスタム手当が付いているため、明細で二重表示・総支給の二重計上になります。
             この明細は自動計算で作られています。
-            <span className="font-medium">「手入力固定」を押して計算し直すと、手当の行の金額だけが支給額になり、二重になりません。</span>
+            <span className="font-medium">「手入力固定」で計算し直すと、手当の行にある金額だけが支給額になり、二重にはなりません。</span>
+            ただし、自動計算で出ていた項目（時間外手当・休日手当・業績手当など）は0円になります。
+            必要な金額が下の手当の行にすべて入っているか確かめてから押してください。
+            押したあとは総支給額を見比べ、足りない項目があれば手当の行に足してください。
           </p>
         </div>
       )}
@@ -901,7 +918,43 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
       <DisplayRow label={`健康保険料${employee.careInsuranceApplied === true ? "（介護込）" : ""}`} value={healthInsurance} exempt={employee.taxExempt === true} />
       <DisplayRow label="子ども・子育て支援金" value={childcareSupportContribution} bg="bg-muted/10" exempt={employee.taxExempt === true} />
       <DisplayRow label="厚生年金保険料" value={pensionInsurance} exempt={employee.taxExempt === true} />
-      <DisplayRow label="雇用保険料" value={employmentInsurance} bg="bg-muted/10" exempt={employee.taxExempt === true} />
+      {/* 雇用保険料は手で入れられる（空欄＝自動計算）。確定済み・非課税の人は表示だけ。 */}
+      {locked || employee.taxExempt === true ? (
+        <DisplayRow label={`雇用保険料${empInsManual != null ? "（手入力）" : ""}`} value={employmentInsurance} bg="bg-muted/10" exempt={employee.taxExempt === true} />
+      ) : (
+        <div className="flex items-center gap-1.5 px-2 py-1 border-b border-border/40 bg-muted/10">
+          <div className={COL_DRAG} />
+          <div className={`${COL_NAME} text-xs text-muted-foreground flex items-center gap-1.5 flex-wrap`}>
+            <span>雇用保険料</span>
+            {empInsManual != null ? (
+              <>
+                <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1">手入力</span>
+                <span className="text-[10px]">自動なら {employmentInsuranceAuto.toLocaleString("ja-JP")}</span>
+                <button
+                  type="button"
+                  className="text-[10px] text-primary hover:underline"
+                  onClick={() => { setEmpInsInput(""); markDirty(); }}
+                >自動に戻す</button>
+              </>
+            ) : (
+              <span className="text-[10px]">自動（直すときは右に金額を入力）</span>
+            )}
+          </div>
+          <div className={COL_TAX} />
+          <div className={COL_AMOUNT}>
+            <input
+              type="text"
+              inputMode="numeric"
+              aria-label="雇用保険料"
+              value={empInsInput}
+              placeholder={employmentInsuranceAuto.toLocaleString("ja-JP")}
+              onChange={(e) => { setEmpInsInput(e.target.value); markDirty(); }}
+              className={`w-full h-7 rounded border bg-background px-2 text-right text-xs tabular-nums ${empInsManual != null ? "border-amber-400" : "border-input"}`}
+            />
+          </div>
+          <div className={COL_DEL} />
+        </div>
+      )}
       <DisplayRow label="社会保険料控除後の金額" value={afterInsuranceSalary} labelClass="font-medium text-foreground" valueClass="tabular-nums font-medium" />
 
       {/* 社会保険料合計 */}

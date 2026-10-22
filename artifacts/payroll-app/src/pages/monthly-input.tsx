@@ -138,7 +138,7 @@ export default function MonthlyInput() {
               const ok = window.confirm(
                 `未保存の手入力がある社員がいます:\n${dirtyTargets.join("・")}\n\n` +
                   "打刻データを取り込むと、これらの社員の\n" +
-                  "「平日出勤・土曜出勤・日曜祝日・欠勤・有給・残業時間・走行距離・実働時間」は\n" +
+                  "「平日出勤・土曜出勤・日曜出勤・祝日出勤・欠勤・有給・残業時間・走行距離・実働時間」は\n" +
                   "打刻集計の値で上書きされます（深夜時間は上書きされません）。\n\n" +
                   "取り込みを続けますか？"
               );
@@ -155,6 +155,8 @@ export default function MonthlyInput() {
                 saturdayWorkDays: s.saturdayWorkDays,
                 sundayWorkDays: s.sundayWorkDays,
                 sundayWorkHours: s.sundayWorkHours ?? 0,
+                // 平日の祝日に出勤した日数（勤怠から自動で見分ける）
+                holidayWorkDays: (s as { holidayWorkDays?: number }).holidayWorkDays ?? 0,
                 overtimeHours: s.overtimeHours,
                 absenceDays: s.absenceDays ?? 0,
                 paidLeaveDays: s.paidLeaveDays ?? 0,
@@ -428,7 +430,7 @@ export default function MonthlyInput() {
     : dirtyNames.join("、");
   const importTip =
     `打刻データを集計して、${month}月分の実績入力欄に反映します（まだ保存はされません）。\n` +
-    "・反映する項目：平日出勤・土曜出勤・日曜祝日の時間・欠勤・有給・残業時間・走行距離・実働時間\n" +
+    "・反映する項目：平日出勤・土曜出勤・日曜の時間・祝日の日数・欠勤・有給・残業時間・走行距離・実働時間\n" +
     "・深夜時間は打刻から集計できないため反映しません\n" +
     "・手入力した値は打刻の値で上書きされます（未保存の入力がある社員は確認が出ます）\n" +
     "・反映した社員は「変更あり」になるので、確認後に「保存して計算」を押してください";
@@ -681,6 +683,7 @@ export default function MonthlyInput() {
                             workDays: Number(edits[selectedEmployee.id]?.workDays) || 0,
                             saturdayWorkDays: Number(edits[selectedEmployee.id]?.saturdayWorkDays) || 0,
                             sundayWorkHours: Number(edits[selectedEmployee.id]?.sundayWorkHours) || 0,
+                            holidayWorkDays: Number(edits[selectedEmployee.id]?.holidayWorkDays) || 0,
                             paidLeaveDays: Number(edits[selectedEmployee.id]?.paidLeaveDays) || 0,
                             overtimeHours: Number(edits[selectedEmployee.id]?.overtimeHours) || 0,
                             lateNightHours: Number(edits[selectedEmployee.id]?.lateNightHours) || 0,

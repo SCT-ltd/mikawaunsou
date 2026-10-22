@@ -437,12 +437,14 @@ const INSURANCE_GRADES: [number, number, number, boolean][] = [
  *
  * 以前は「50銭以上で切り上げ」になっていて、50銭ちょうどの等級（例: 標準報酬17万円の健康保険
  * 8,372.5円）で1円多く引いていた。
- * 料率を掛けた結果は 8372.499999… のように誤差を含むことがあるので、いったん銭の整数に直してから比べる。
+ * 料率を掛けた結果は 8372.499999… のように誤差を含むことがあるので、小数6桁に丸めてから比べる。
+ * （以前は銭の整数に丸めていたため、50.05銭〜50.49銭が「50銭ちょうど」と同じ扱いになり、
+ *   1円少なくなることがあった。50銭を少しでも超えたら切り上げる。）
  */
 export function round50sen(x: number): number {
-  const sen = Math.round(x * 100);
-  const yen = Math.floor(sen / 100);
-  return sen - yen * 100 <= 50 ? yen : yen + 1;
+  const r = Math.round(x * 1e6) / 1e6;
+  const yen = Math.floor(r);
+  return r - yen > 0.5 + 5e-7 ? yen + 1 : yen;
 }
 
 /** 報酬月額から標準報酬月額と厚生年金適用可否を返す */

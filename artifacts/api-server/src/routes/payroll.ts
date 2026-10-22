@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db, payrollsTable, employeesTable, monthlyRecordsTable, companyTable, allowanceDefinitionsTable, employeeAllowancesTable, employeeDeductionsTable, deductionDefinitionsTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { calculatePayroll, calculateBluewingPayroll, roundJapanese, lateNightRateFor } from "../lib/payroll-calculator";
-import { ensureMonthItems, getMonthItems } from "../lib/month-items";
+import { ensureMonthItems, getMonthItems, syncMonthItemsWithAttendance } from "../lib/month-items";
 import { calculateInsuranceAndTax, EMP_INS_RATE_R8 } from "../lib/tax-tables-reiwa8";
 import { getEffectiveInsuranceRates, getEffectiveStandardRemuneration, type EffectiveInsuranceRates } from "../lib/insurance-settings";
 
@@ -38,14 +38,16 @@ function resolvePensionApplied(emp: typeof employeesTable.$inferSelect, year: nu
   if (emp.pensionApplied !== null && emp.pensionApplied !== undefined) {
     return emp.pensionApplied;
   }
-  if (!emp.dateOfBirth) return true;
-  const dob = new Date(emp.dateOfBirth);
-  // 計算月の1日時点での年齢を算出
-  const calcDate = new Date(year, month - 1, 1);
-  let age = calcDate.getFullYear() - dob.getFullYear();
-  const monthDiff = calcDate.getMonth() - dob.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && calcDate.getDate() < dob.getDate())) age--;
-  return age < 70;
+  // 70歳に達した日（誕生日の前日）の月から引かない。以前は「その月の1日時点の年齢」で見ていたため、
+  // 到達した月の分も引いていた（例：10月12日生まれ→10月11日に到達→10月分から引かない）。
+  const dob = emp.dateOfBirth;
+  if (!dob) return true;
+  const y = year, m = month;
+  const p = String(dob).split(/[-/]/).map(Number);
+  if (p.length < 3 || p.some((n) => !Number.isFinite(n))) return true;
+  const reach = new Date(Date.UTC(p[0]! + 70, p[1]! - 1, p[2]!));
+  reach.setUTCDate(reach.getUTCDate() - 1);
+  return y * 12 + (m - 1) < reach.getUTCFullYear() * 12 + reach.getUTCMonth();
 }
 
 function buildPayrollResponse(p: typeof payrollsTable.$inferSelect, emp: typeof employeesTable.$inferSelect) {
@@ -139,7 +141,13 @@ router.post("/payroll/calculate", async (req, res) => {
   // 手当・控除は「その月」の内容を使う（lib/month-items.ts）。
   // 以前は月を持たない社員ごとの手当を読んでいたため、ほかの月の作業で書き換わった金額が
   // そのまま計算に入っていた。その月の控えがまだ無ければ、ここで今の内容から作る。
-  const monthItems = await ensureMonthItems(emp, year, month);
+  // 手入力固定では、勤怠で決まる手当（有給・休日出勤・早出残業・深夜）と日給の基本給を、
+  // ここでこの月の勤怠から入れ直す（手で直した金額は変えない）。以前は画面だけが計算していたため、
+  // 画面を開かずに計算した社員は前の月の金額のままになっていた。
+  // 自動計算の2つは残業などを自分で計算するので、従来どおり手当の行はそのまま使う。
+  const monthItems = calculationMode === "manual"
+    ? await syncMonthItemsWithAttendance(emp, record, company as { dailyWageWeekday?: number; dailyWageSaturday?: number; hourlyWageSunday?: number }, year, month)
+    : await ensureMonthItems(emp, year, month);
   const customAllowances = monthItems.allowances
     .map(a => ({
       allowanceDefinitionId: a.allowanceDefinitionId,
@@ -204,6 +212,7 @@ router.post("/payroll/calculate", async (req, res) => {
       residentTax: emp.residentTax ?? 0,
       customDeductionsTotal,
       employmentInsuranceRate: empInsRate,
+      employmentInsuranceOverride: monthItems.employmentInsuranceOverride,
       insuranceRates,
     });
 
@@ -250,6 +259,7 @@ router.post("/payroll/calculate", async (req, res) => {
       // 表示用: 「日曜/祝日」列を休日として保存（時間が主、日数は過去データ互換）、土曜日数も保存
       holidayWorkDays: record.sundayWorkDays ?? 0,
       holidayWorkHours: record.sundayWorkHours ?? 0,
+      publicHolidayWorkDays: record.holidayWorkDays ?? 0,
       paidLeaveDays: record.paidLeaveDays ?? 0,
       saturdayWorkDays: record.saturdayWorkDays ?? 0,
       useBluewingLogic: false,
@@ -353,6 +363,7 @@ router.post("/payroll/calculate", async (req, res) => {
       residentTax: emp.residentTax ?? 0,
       customDeductionsTotal,
       employmentInsuranceRate: empInsRate,
+      employmentInsuranceOverride: monthItems.employmentInsuranceOverride,
       insuranceRates,
     });
 
@@ -392,6 +403,7 @@ router.post("/payroll/calculate", async (req, res) => {
       // 表示用: 「日曜/祝日」列を休日として保存（時間が主、日数は過去データ互換）、土曜日数も保存
       holidayWorkDays: record.sundayWorkDays ?? 0,
       holidayWorkHours: record.sundayWorkHours ?? 0,
+      publicHolidayWorkDays: record.holidayWorkDays ?? 0,
       paidLeaveDays: record.paidLeaveDays ?? 0,
       saturdayWorkDays: record.saturdayWorkDays ?? 0,
       useBluewingLogic: true,
@@ -453,6 +465,7 @@ router.post("/payroll/calculate", async (req, res) => {
     employmentInsuranceApplied: emp.employmentInsuranceApplied ?? true,
     pensionApplied: resolvePensionApplied(emp, year, month),
     employmentInsuranceRate: empInsRate,
+    employmentInsuranceOverride: monthItems.employmentInsuranceOverride,
     insuranceRates,
     residentTax: emp.residentTax,
     monthlyAverageWorkHours: company.monthlyAverageWorkHours,
@@ -531,6 +544,7 @@ router.post("/payroll/calculate", async (req, res) => {
       // 表示用: 「日曜/祝日」列を休日として保存（時間が主、日数は過去データ互換）、土曜日数も保存
       holidayWorkDays: record.sundayWorkDays,
       holidayWorkHours: record.sundayWorkHours ?? 0,
+      publicHolidayWorkDays: record.holidayWorkDays ?? 0,
       paidLeaveDays: record.paidLeaveDays ?? 0,
       saturdayWorkDays: record.saturdayWorkDays,
       workDays: record.workDays,
@@ -575,6 +589,7 @@ router.post("/payroll/calculate", async (req, res) => {
       // 表示用: 「日曜/祝日」列を休日として保存（時間が主、日数は過去データ互換）、土曜日数も保存
       holidayWorkDays: record.sundayWorkDays,
       holidayWorkHours: record.sundayWorkHours ?? 0,
+      publicHolidayWorkDays: record.holidayWorkDays ?? 0,
       paidLeaveDays: record.paidLeaveDays ?? 0,
       saturdayWorkDays: record.saturdayWorkDays,
       workDays: record.workDays,

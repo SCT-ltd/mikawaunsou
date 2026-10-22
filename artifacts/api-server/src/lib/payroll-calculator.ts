@@ -102,6 +102,8 @@ export interface PayrollCalculationInput {
   careInsuranceApplied?: boolean;
   /** 雇用保険適用（false の場合は0円）*/
   employmentInsuranceApplied?: boolean;
+  /** 雇用保険料を手で決めた額（null/undefined＝自動計算） */
+  employmentInsuranceOverride?: number | null;
   /** 厚生年金適用（false の場合は0円）*/
   pensionApplied?: boolean;
   /** 雇用保険料率（省略時は EMP_INS_RATE_R8 = 0.005）*/
@@ -301,14 +303,14 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
   const lateNightPay = (input.empLateNightHourlyRate ?? 0) > 0 || (input.empOvertimeHourlyRate ?? 0) > 0
     ? Math.floor(lateNightRateFor(input.empLateNightHourlyRate, input.empOvertimeHourlyRate ?? 0) * lateNightHours)
     : roundJapanese(hourlyRate * 0.25 * lateNightHours);
-  // 休日手当（holidayWorkDays）は従来どおり 日当 × 1.35 × 日数。
+  // 祝日手当（holidayWorkDays）は 日当 × 1.25 × 日数（土曜と同じ。1.35倍は日曜だけ）。
   // 日曜・祝日手当（sundayWorkHours）は 2026-08 から「時間 × 日曜時給（既定1,655円/h）」。
   let holidayPay: number;
   let sundayPay: number;
   let saturdayPay: number;
   {
     const standardDailyRate = salaryType === "daily" ? effectiveWeekdayRate : hourlyRate * 8;
-    holidayPay  = roundJapanese(standardDailyRate * 1.35 * holidayWorkDays);
+    holidayPay  = roundJapanese(standardDailyRate * 1.25 * holidayWorkDays);
     sundayPay   = roundPayYen(sundayHourlyRate * sundayWorkHours);
     saturdayPay = salaryType === "daily"
       ? roundJapanese(saturdayWorkDays * effectiveSaturdayRate)
@@ -378,6 +380,7 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     careInsuranceApplied,
     pensionApplied,
     employmentInsuranceApplied,
+    employmentInsuranceOverride: input.employmentInsuranceOverride,
     residentTax,
     customDeductionsTotal: 0,
     employmentInsuranceRate,

@@ -68,8 +68,12 @@ export function MapView({
 }) {
   return (
     <MapContainer center={center} zoom={10} className="h-full w-full" zoomControl={true}>
+      {/* OpenStreetMap はどのサイトから使われているか（リファラー）が無い取得を断る（403「Access blocked」）。
+          このサイトは全体で Referrer-Policy: same-origin にしているので、地図の絵の取得だけサイト名（ドメイン）を送る。
+          サブドメイン付きの {s}.tile… は今は勧められていないので、1つの名前にしている。 */}
       <TileLayer
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+        referrerPolicy="strict-origin-when-cross-origin"
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
       />
       <FitBounds locations={withGps} eventLocations={allEventLocations} />

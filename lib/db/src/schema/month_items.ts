@@ -21,6 +21,13 @@ export const employeeMonthSetsTable = pgTable("employee_month_sets", {
   month: integer("month").notNull(),
   /** 日給制の人の、その月の基本給（勤怠から計算した額、または手で直した額）。月給・時給は null。 */
   baseSalary: doublePrecision("base_salary"),
+  /**
+   * 最後に勤怠から出した金額の控え（JSON）。勤怠が変わったとき、手で直していない行だけを
+   * 入れ直すために使う（今の金額がこの控えと同じ＝手で直していない）。lib/month-items.ts を参照。
+   */
+  autoValues: text("auto_values"),
+  /** その月の雇用保険料を手で決めた額。null＝自動計算（総支給 × 料率）。 */
+  employmentInsuranceOverride: doublePrecision("employment_insurance_override"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [

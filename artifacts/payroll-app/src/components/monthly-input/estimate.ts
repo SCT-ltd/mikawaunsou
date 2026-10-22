@@ -60,7 +60,9 @@ export function lateNightRateFor(personalLateNightRate: number | null | undefine
 /**
  * 厚生年金適用判定（サーバー側 resolvePensionApplied と同ロジック）
  * - pensionApplied が true/false → その値をそのまま使用
- * - null/undefined → 生年月日から年齢を算出し 70歳以上なら false
+ * - null/undefined → 70歳に達した日（誕生日の前日）の月から false
+ *   （例：10月12日生まれ→10月11日に到達→10月分から引かない。1日生まれは前の月から）。
+ *   以前は「その月の1日時点の年齢」で見ていたため、到達した月の分も引いていた。
  */
 export function resolvePensionApplied(
   employee: EmployeeExt,
@@ -71,14 +73,13 @@ export function resolvePensionApplied(
   if (pa !== null && pa !== undefined) return pa;
   const dob = employee.dateOfBirth;
   if (!dob) return true;
-  const birthDate = new Date(dob);
-  const checkYear = year ?? new Date().getFullYear();
-  const checkMonth = month ?? new Date().getMonth() + 1;
-  const calcDate = new Date(checkYear, checkMonth - 1, 1);
-  let age = calcDate.getFullYear() - birthDate.getFullYear();
-  const md = calcDate.getMonth() - birthDate.getMonth();
-  if (md < 0 || (md === 0 && calcDate.getDate() < birthDate.getDate())) age--;
-  return age < 70;
+  const checkY = year ?? new Date().getFullYear();
+  const checkM = month ?? new Date().getMonth() + 1;
+  const p = String(dob).split(/[-/]/).map(Number);
+  if (p.length < 3 || p.some((n) => !Number.isFinite(n))) return true;
+  const reach = new Date(Date.UTC(p[0]! + 70, p[1]! - 1, p[2]!));
+  reach.setUTCDate(reach.getUTCDate() - 1);
+  return checkY * 12 + (checkM - 1) < reach.getUTCFullYear() * 12 + reach.getUTCMonth();
 }
 
 /**
@@ -154,7 +155,7 @@ export function computeQuickEstimate(
     // 深夜手当は残業の単位単価ではなく素の時給の25%（サーバ側 calculatePayroll と同じ）。
     // 以前は残業と同じ単位単価を掛けていたため、概算と確定値が大きくズレていた。
     lateNightPay = roundJapanese((effectiveWeekdayRate / 8) * LATE_NIGHT_ADDITIONAL_RATE_R8 * lateNightHours);
-    holidayPay = roundJapanese(companyDailyRate * 1.35 * holidayWorkDays);
+    holidayPay = roundJapanese(companyDailyRate * 1.25 * holidayWorkDays);
   } else if (empOtRate > 0) {
     // 個人残業時給が設定されている場合はそれを直接使用（割増込み単価）
     // 60h超部分は ×1.20（= 1.50/1.25）追加
@@ -172,7 +173,7 @@ export function computeQuickEstimate(
       : monthlyHours > 0 ? baseSalary / monthlyHours : 0;
     // 深夜手当は残業単価から素の時給を復元して25%（サーバ側 calculatePayroll と同じ）
     lateNightPay = Math.floor(lateNightRateFor((emp as { lateNightHourlyRate?: number }).lateNightHourlyRate, empOtRate) * lateNightHours);
-    holidayPay = roundJapanese(hourlyRate * HOLIDAY_RATE_R8 * holidayWorkDays * 8);
+    holidayPay = roundJapanese(hourlyRate * 1.25 * holidayWorkDays * 8); // 祝日は1.25倍
   } else {
     // 標準計算: 日給÷8 or 月給÷月平均 × 割増率（令和8年 内蔵定数）
     const hourlyRate = isHourly
@@ -188,7 +189,7 @@ export function computeQuickEstimate(
         Math.round(hourlyRate * 1.50 * (overtimeHours - OT_THRESHOLD));
     }
     lateNightPay = roundJapanese(hourlyRate * LATE_NIGHT_ADDITIONAL_RATE_R8 * lateNightHours);
-    holidayPay = roundJapanese(hourlyRate * HOLIDAY_RATE_R8 * holidayWorkDays * 8);
+    holidayPay = roundJapanese(hourlyRate * 1.25 * holidayWorkDays * 8); // 祝日は1.25倍
   }
 
   // 土曜出勤分（基本給は平日のみ／土曜は別出し、個人単価がある場合もそれを使用）

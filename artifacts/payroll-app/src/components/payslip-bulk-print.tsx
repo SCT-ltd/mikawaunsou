@@ -85,14 +85,34 @@ function applyStackZoom(portalEl: HTMLElement): number {
   // 3人目の見出しだけが1ページ目の下に載り、本体が次のページへ送られていた。
   let used = 0;
   let count = 0;
+  const starts: boolean[] = [];
   items.forEach((el, i) => {
     const h = heights[i];
     const startNew = count > 0 && (count >= 2 || used + h > MM_PRINTABLE_HEIGHT * ZOOM_SAFETY);
     if (startNew) { used = 0; count = 0; }
     el.style.breakBefore = startNew ? "page" : "";
     el.style.pageBreakBefore = startNew ? "always" : "";
+    starts.push(i === 0 || startNew);
     used += h;
     count += 1;
+  });
+
+  // 同じ紙に2人並ぶときは、2人目を用紙のちょうど半分から始める（上下の明細の間を空け、
+  // 半分に切りやすくする）。以前は1人目のすぐ下に5mmで詰めて並べていたため、間が狭く
+  // 紙の下半分が丸ごと余っていた。margin は zoom で拡大されるので zoom で割って指定する。
+  items.forEach((el, i) => {
+    const pairedBelow = i + 1 < items.length && !starts[i + 1];
+    if (!pairedBelow) {
+      el.style.marginBottom = `${MM_ITEM_GAP}mm`;
+      delete el.dataset.cut;
+      return;
+    }
+    const contentMm = heights[i] - MM_ITEM_GAP * zoom;
+    const gapMm = Math.max(MM_ITEM_GAP * zoom, MM_HALF_PAGE - contentMm);
+    el.style.marginBottom = `${(gapMm / zoom).toFixed(2)}mm`;
+    // 切り取り線は上下の明細の間のまん中に引く（線と鋏の位置は印刷用の <style> が --cut を見て決める）
+    el.dataset.cut = "1";
+    el.style.setProperty("--cut", `${(gapMm / 2 / zoom).toFixed(2)}mm`);
   });
   return zoom;
 }
@@ -208,7 +228,15 @@ export function PayslipBulkPrint({
     if (layout !== "2up") return;
     const style = document.createElement("style");
     style.setAttribute("data-print-2up", "");
-    style.textContent = "@media print { @page { size: A4 portrait; margin: 6mm; } }";
+    style.textContent =
+      "@media print { @page { size: A4 portrait; margin: 6mm; } }" +
+      // 2人が並ぶ紙の、上下の明細の間に引く切り取り線（点線＋鋏）
+      "[data-stack-item][data-cut]{position:relative}" +
+      "[data-stack-item][data-cut]::after{content:\"\";position:absolute;left:0;right:0;" +
+      "bottom:calc(var(--cut) * -1);border-top:0.35mm dashed #8a8a8a}" +
+      "[data-stack-item][data-cut]::before{content:\"✂ 切り取り線\";position:absolute;left:3mm;" +
+      "bottom:calc(var(--cut) * -1 + 0.8mm);color:#7a7a7a;" +
+      "font-size:3mm;line-height:3.8mm;white-space:nowrap}";
     document.head.appendChild(style);
     return () => style.remove();
   }, [layout]);

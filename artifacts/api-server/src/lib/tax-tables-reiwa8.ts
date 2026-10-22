@@ -269,6 +269,8 @@ export interface InsuranceTaxInput {
   pensionApplied: boolean;
   /** 雇用保険適用 */
   employmentInsuranceApplied: boolean;
+  /** 雇用保険料を手で決めた額（null/undefined＝自動計算）。決めてあれば料率の計算より優先する。 */
+  employmentInsuranceOverride?: number | null;
   /** 住民税（月額）*/
   residentTax: number;
   /** その他控除（積立金等）*/
@@ -348,6 +350,7 @@ export function calculateInsuranceAndTax(input: InsuranceTaxInput): InsuranceTax
     careInsuranceApplied,
     pensionApplied,
     employmentInsuranceApplied,
+    employmentInsuranceOverride,
     residentTax = 0,
     customDeductionsTotal = 0,
     employmentInsuranceRate = EMP_INS_RATE_R8,
@@ -376,7 +379,10 @@ export function calculateInsuranceAndTax(input: InsuranceTaxInput): InsuranceTax
   // 除外対象は「雇用保険の対象外」フラグが立った手当のみ（携帯代など実費弁償）。
   // 通勤手当（交通費）は非課税でも賃金に含めるため除外しない。
   // 例) 総支給163,652 に携帯代2,000 が含まれる場合、161,652 × 0.0005 = 80.826 → 81。
-  const employmentInsurance = employmentInsuranceApplied
+  // 手で決めた額があればそれを使う（給与明細の右パネルで入力。所得税の計算基礎にも同じ額が入る）
+  const employmentInsurance = employmentInsuranceOverride != null
+    ? Math.round(employmentInsuranceOverride)
+    : employmentInsuranceApplied
     ? round50sen((grossSalary - employmentInsuranceExcludedAllowances) * employmentInsuranceRate)
     : 0;
 
