@@ -43,15 +43,20 @@ router.get("/messages/vapid-public-key", (_req, res) => {
 // ── SSEストリーム ──────────────────────────────────────
 // admin: ?employeeId=0（事務所用）または任意の employeeId を購読可
 // driver: 自分の session.employeeId のみ購読可（query は無視 or 一致時のみ可）
-router.get("/messages/stream", (req, res) => {
-  if (!req.session?.userId) {
-    return res.status(401).json({ error: "ログインが必要です" });
-  }
-
+router.get("/messages/stream", async (req, res) => {
   const requestedEmployeeId = parseInt((req.query["employeeId"] as string) ?? "0", 10);
   let employeeId: number;
 
-  if (req.session.role === "admin") {
+  if (!req.session?.userId) {
+    // QR の打刻ページ：暗証番号を確かめた端末の本人だけ（メッセージは暗証番号が要る決まり）。
+    // 以前は 401 で断っていたため、事務所からのメッセージが開き直すまで画面に出なかった。
+    if (Number.isNaN(requestedEmployeeId) || requestedEmployeeId <= 0) return res.status(401).json({ error: "ログインが必要です" });
+    const access = await driverAccess(req, requestedEmployeeId);
+    if (access === "not-found") return res.status(404).json({ error: "社員が見つかりません。" });
+    if (access === "no-pin") return res.status(403).json(PIN_NOT_SET_BODY);
+    if (access === "denied") return res.status(401).json(PIN_REQUIRED_BODY);
+    employeeId = requestedEmployeeId;
+  } else if (req.session.role === "admin") {
     employeeId = Number.isNaN(requestedEmployeeId) ? 0 : requestedEmployeeId;
   } else {
     const sessionEmployeeId = req.session.employeeId;
@@ -418,10 +423,6 @@ router.post("/messages/broadcast", requireAdmin, async (req, res) => {
 // admin → role を任意指定可能、employeeId も自由
 // driver → role は強制的に "employee"、employeeId は session.employeeId を強制使用
 router.post("/push/subscribe", async (req, res) => {
-  if (!req.session?.userId) {
-    return res.status(401).json({ error: "ログインが必要です" });
-  }
-
   const { employeeId: bodyEmployeeId, role: bodyRole, endpoint, p256dh, auth } = req.body as {
     employeeId?: number | null;
     role?: "office" | "employee";
@@ -433,11 +434,25 @@ router.post("/push/subscribe", async (req, res) => {
   if (!endpoint || !p256dh || !auth) {
     return res.status(400).json({ error: "購読情報が不足しています" });
   }
+  if (endpoint.length > 1000 || p256dh.length > 200 || auth.length > 100) {
+    return res.status(400).json({ error: "購読情報が正しくありません" });
+  }
 
   let employeeId: number | null;
   let role: "office" | "employee";
 
-  if (req.session.role === "admin") {
+  if (!req.session?.userId) {
+    // QR の打刻ページ：暗証番号を確かめた端末の本人として登録する（役割は必ず employee）。
+    // 以前はログインを求めていたため、ドライバーのスマホにはプッシュ通知が届かなかった。
+    const target = Number(bodyEmployeeId);
+    if (!Number.isInteger(target) || target <= 0) return res.status(401).json({ error: "ログインが必要です" });
+    const access = await driverAccess(req, target);
+    if (access === "not-found") return res.status(404).json({ error: "社員が見つかりません。" });
+    if (access === "no-pin") return res.status(403).json(PIN_NOT_SET_BODY);
+    if (access === "denied") return res.status(401).json(PIN_REQUIRED_BODY);
+    role = "employee";
+    employeeId = target;
+  } else if (req.session.role === "admin") {
     if (!bodyRole || (bodyRole !== "office" && bodyRole !== "employee")) {
       return res.status(400).json({ error: "role は 'office' または 'employee' を指定してください" });
     }

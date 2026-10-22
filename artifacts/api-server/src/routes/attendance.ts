@@ -5,6 +5,7 @@ import { asc, eq, and, gte, lte, sql } from "drizzle-orm";
 import { ABSENCE_DAYS } from "./absences";
 import { requireAdmin, requireOwnerOrAdmin, requireAttendanceRecordOwnerOrAdmin } from "../lib/auth-middleware";
 import { driverAccess, PIN_REQUIRED_BODY } from "../lib/driver-token";
+import { holidayName } from "../lib/jp-holidays";
 
 const router = Router();
 
@@ -12,7 +13,10 @@ const router = Router();
 // クライアントごとに「自分が見るべき employeeId」を保持する。
 //   null  → admin（全社員のスナップショットをそのまま受け取る）
 //   number → driver（自分の employeeId のみにフィルタしたスナップショットを受け取る）
-const sseClients = new Map<Response, number | null>();
+//   refreshOnly → QR の打刻ページ（ログインなし）。中身は送らず「取り直して」の合図だけ送る
+//                 （自分の分が変わったときだけ。受け取った画面は暗証番号の確認に応じた範囲で取り直す）
+interface SseClient { owner: number | null; refreshOnly: boolean; last?: string }
+const sseClients = new Map<Response, SseClient>();
 
 function flush(res: Response) {
   if (typeof (res as unknown as { flush?: () => void }).flush === "function") {
@@ -27,13 +31,34 @@ function filterSnapshotForDriver(snapshot: Snapshot, employeeId: number): Snapsh
 }
 
 function broadcast(snapshot: Snapshot) {
-  for (const [client, ownerEmployeeId] of sseClients) {
-    const data = ownerEmployeeId === null
-      ? snapshot
-      : filterSnapshotForDriver(snapshot, ownerEmployeeId);
+  for (const [client, c] of sseClients) {
+    if (c.refreshOnly && c.owner !== null) {
+      const mine = JSON.stringify(filterSnapshotForDriver(snapshot, c.owner));
+      if (mine === c.last) continue;
+      c.last = mine;
+      client.write(`data: ${JSON.stringify({ type: "refresh" })}\n\n`);
+      flush(client);
+      continue;
+    }
+    const data = c.owner === null ? snapshot : filterSnapshotForDriver(snapshot, c.owner);
     client.write(`data: ${JSON.stringify(data)}\n\n`);
     flush(client);
   }
+}
+
+/**
+ * いま表示すべき勤務の日付。深夜0〜4時台は、前の日に出勤して退勤していなければ前の日（25時制）。
+ * 打刻の記録（POST /attendance/record）と同じ決まり。以前は表示だけ「今日」で見ていたため、
+ * 深夜0時を過ぎるとドライバーの画面が「未出勤」に戻り、退勤も休憩も押せなかった。
+ */
+async function currentShiftDate(employeeId: number): Promise<string> {
+  const jst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const today = jst.toISOString().slice(0, 10);
+  if (jst.getUTCHours() >= 5) return today;
+  const prev = new Date(jst.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const recs = await db.select({ eventType: attendanceRecordsTable.eventType }).from(attendanceRecordsTable)
+    .where(and(eq(attendanceRecordsTable.employeeId, employeeId), eq(attendanceRecordsTable.workDate, prev)));
+  return recs.some(r => r.eventType === "clock_in") && !recs.some(r => r.eventType === "clock_out") ? prev : today;
 }
 
 // ── ユーティリティ ────────────────────────────────────
@@ -96,16 +121,24 @@ async function buildSnapshot(date?: string) {
 
 // ── SSEストリーム ─────────────────────────────────────
 router.get("/attendance/stream", async (req, res) => {
-  if (!req.session?.userId) {
-    return res.status(401).json({ error: "ログインが必要です" });
-  }
-
   // ── 接続時の認可判定 ─────────────────────────────────
   // admin: ownerEmployeeId = null（全社員データ受信）
   // driver: ownerEmployeeId = session.employeeId（自分の分のみ受信）
   //         driver が ?employeeId=他人 を指定した場合は 403
+  // QR の打刻ページ（ログインなし）: ?employeeId= の本人。暗証番号を確かめた端末（未設定の人は従来どおり）。
+  //         中身は送らず「取り直して」の合図だけ送る。以前は 401 で断っていたため、事務所が打刻を
+  //         直してもドライバーの画面に出なかった。
   let ownerEmployeeId: number | null;
-  if (req.session.role === "admin") {
+  let refreshOnly = false;
+  if (!req.session?.userId) {
+    const requested = parseInt(String(req.query["employeeId"] ?? ""), 10);
+    if (Number.isNaN(requested)) return res.status(401).json({ error: "ログインが必要です" });
+    const access = await driverAccess(req, requested);
+    if (access === "not-found") return res.status(404).json({ error: "社員が見つかりません。" });
+    if (access === "denied") return res.status(401).json(PIN_REQUIRED_BODY);
+    ownerEmployeeId = requested;
+    refreshOnly = true;
+  } else if (req.session.role === "admin") {
     ownerEmployeeId = null;
   } else {
     const sessionEmployeeId = req.session.employeeId;
@@ -128,19 +161,23 @@ router.get("/attendance/stream", async (req, res) => {
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
 
-  // 接続直後に現在の状態を送信（driverならフィルタ済みのもの）
+  // 接続直後に現在の状態を送信（driverならフィルタ済みのもの。QR ページは合図だけ）
+  const client: SseClient = { owner: ownerEmployeeId, refreshOnly };
   try {
     const snapshot = await buildSnapshot();
-    const initial = ownerEmployeeId === null
-      ? snapshot
-      : filterSnapshotForDriver(snapshot, ownerEmployeeId);
-    res.write(`data: ${JSON.stringify(initial)}\n\n`);
+    if (refreshOnly) {
+      client.last = JSON.stringify(filterSnapshotForDriver(snapshot, ownerEmployeeId!));
+      res.write(`data: ${JSON.stringify({ type: "refresh" })}\n\n`);
+    } else {
+      const initial = ownerEmployeeId === null ? snapshot : filterSnapshotForDriver(snapshot, ownerEmployeeId);
+      res.write(`data: ${JSON.stringify(initial)}\n\n`);
+    }
     flush(res);
   } catch {
     // 初回送信失敗は無視
   }
 
-  sseClients.set(res, ownerEmployeeId);
+  sseClients.set(res, client);
 
   // 接続維持用ハートビート（15秒ごと）
   const heartbeat = setInterval(() => {
@@ -185,7 +222,8 @@ router.get("/attendance/employee/:employeeId/today", async (req, res, next) => {
   return next();
 }, async (req, res) => {
   const employeeId = parseInt(paramStr(req.params.employeeId), 10);
-  const today = todayJST();
+  // 深夜0〜4時台で前の日の勤務が続いていれば、その日の打刻を返す（退勤・休憩を押せるように）
+  const today = await currentShiftDate(employeeId);
   // QR ページは暗証番号の入力前にもこの API で「いま出勤中か」を出している。
   // 本人確認の済んでいない端末には、状態の判定に要る項目（種別と時刻）だけを返し、
   // 打刻した場所・メモ・メーターは返さない。
@@ -667,6 +705,8 @@ router.get("/attendance/monthly-summary", requireAdmin, async (req, res) => {
     saturdayWorkDays: number;
     sundayWorkDays: number;
     sundayWorkHours: number;
+    /** 祝日（平日の祝日・振替休日・国民の休日）の出勤日数。土曜と同じ日当（1.25倍）で計算する */
+    holidayWorkDays: number;
     overtimeHours: number;
     drivingDistanceKm: number;
     actualWorkHours: number;
@@ -679,7 +719,7 @@ router.get("/attendance/monthly-summary", requireAdmin, async (req, res) => {
     if (!recs.some(r => r.eventType === "clock_in")) continue;
 
     if (!summaryMap.has(empId)) {
-      summaryMap.set(empId, { workDays: 0, saturdayWorkDays: 0, sundayWorkDays: 0, sundayWorkHours: 0, overtimeHours: 0, drivingDistanceKm: 0, actualWorkHours: 0 });
+      summaryMap.set(empId, { workDays: 0, saturdayWorkDays: 0, sundayWorkDays: 0, sundayWorkHours: 0, holidayWorkDays: 0, overtimeHours: 0, drivingDistanceKm: 0, actualWorkHours: 0 });
     }
     const s = summaryMap.get(empId)!;
     const dow = new Date(dateStr).getDay(); // 0=日, 6=土
@@ -699,6 +739,10 @@ router.get("/attendance/monthly-summary", requireAdmin, async (req, res) => {
       s.sundayWorkHours = Math.round((s.sundayWorkHours + rawWorkMins / 60) * 10) / 10;
     } else if (dow === 6) {
       s.saturdayWorkDays += 1;
+    } else if (holidayName(dateStr)) {
+      // 平日の祝日は「祝日出勤」（土曜と同じ1.25倍の日当）。残業は平日と同じく数えない（土曜と同じ扱い）。
+      // 日曜の祝日は日曜（1.35倍）、土曜の祝日は土曜として数える。
+      s.holidayWorkDays += 1;
     } else {
       s.workDays += 1;
       const overtimeMins = Math.max(0, rawWorkMins - 480);
@@ -729,7 +773,7 @@ router.get("/attendance/monthly-summary", requireAdmin, async (req, res) => {
   // 欠勤・有給のみの社員も結果に含める
   for (const [empId] of [...absenceSummary.entries(), ...paidLeaveSummary.entries()]) {
     if (!summaryMap.has(empId)) {
-      summaryMap.set(empId, { workDays: 0, saturdayWorkDays: 0, sundayWorkDays: 0, sundayWorkHours: 0, overtimeHours: 0, drivingDistanceKm: 0, actualWorkHours: 0 });
+      summaryMap.set(empId, { workDays: 0, saturdayWorkDays: 0, sundayWorkDays: 0, sundayWorkHours: 0, holidayWorkDays: 0, overtimeHours: 0, drivingDistanceKm: 0, actualWorkHours: 0 });
     }
   }
 
