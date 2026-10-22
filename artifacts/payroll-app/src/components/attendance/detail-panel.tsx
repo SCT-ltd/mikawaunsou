@@ -10,6 +10,7 @@ import {
 import { attentionOf, dayTotals, DayBar, HourScale, segmentsOf, windowFor, planOf } from "./board";
 import { Link } from "wouter";
 import { MapPin, Phone, MessageSquare, LogOut } from "lucide-react";
+import { TimeField } from "@/components/ui/time-field";
 import {
   EmployeeStatus,
   AttendanceRecord,
@@ -263,7 +264,7 @@ export function DetailPanel({
             <div className="mb-3 rounded-lg border border-red-200 bg-red-50/70 dark:bg-red-500/10 dark:border-red-500/30 px-3 py-2.5 space-y-2">
               <p className="text-xs font-bold text-red-700 dark:text-red-300 flex items-center gap-1.5"><LogOut className="h-3.5 w-3.5" />退勤が押されていません。退勤した時刻を入れてください。</p>
               <div className="flex flex-wrap items-center gap-2">
-                <Input type="time" value={quickOutTime} onChange={(e) => setQuickOut(e.target.value)} className="w-28 h-8 bg-white dark:bg-slate-900" aria-label="退勤の時刻" />
+                <TimeField value={quickOutTime} onChange={(v) => setQuickOut(v)} className="w-32 h-8 bg-white dark:bg-slate-900 rounded-md" aria-label="退勤の時刻" />
                 {nextDayFor("clock_out", quickOutTime) && <span className="text-[11px] text-indigo-600">翌日の{quickOutTime}として入れます</span>}
                 <Button size="sm" className="h-8" onClick={saveQuickOut} disabled={quickBusy || saving}>この時刻で退勤を入れる</Button>
                 <span className="text-[11px] text-muted-foreground">
@@ -541,12 +542,11 @@ export function DetailPanel({
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">時刻</Label>
-                  <Input
-                    type="time"
+                  <TimeField
                     value={addTime}
-                    max={isToday && !addNextDay ? nowTimeJST() : undefined}
-                    onChange={(e) => { setAddTime(e.target.value); setAddError(null); }}
-                    className="h-8 text-xs"
+                    onChange={(v) => { setAddTime(v); setAddError(null); }}
+                    className="h-8 w-full"
+                    aria-label="追加する打刻の時刻"
                   />
                 </div>
               </div>

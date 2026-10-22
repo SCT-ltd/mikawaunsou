@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ChevronLeft, ChevronRight, Download, Printer, CalendarRange, ExternalLink, Search } from "lucide-react";
+import { TimeField } from "@/components/ui/time-field";
 import { ABSENCE_LABELS, minToStr, todayJST, type AbsenceType } from "@/components/attendance/shared";
 
 /**
@@ -424,9 +425,9 @@ function CellDialog({ row, date, day, onClose, onSaved }: {
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={off} onChange={(e) => setOff(e.target.checked)} />この日は休み</label>
             {!off && (
               <div className="flex items-center gap-2">
-                <Input type="time" value={start} onChange={(e) => setStart(e.target.value)} className="w-28" aria-label="始まり" />
+                <TimeField value={start} onChange={setStart} className="w-32 h-9" aria-label="始まり" />
                 <span>〜</span>
-                <Input type="time" value={end} onChange={(e) => setEnd(e.target.value)} className="w-28" aria-label="終わり" />
+                <TimeField value={end} onChange={setEnd} className="w-32 h-9" aria-label="終わり" />
               </div>
             )}
             {!off && end <= start && <p className="text-[11px] text-indigo-600">終わりが始まりより前なので、翌日の{end}までとして扱います（夜勤）。</p>}
@@ -490,9 +491,9 @@ function PatternDialog({ row, rows, pattern, onClose, onSaved }: {
                   </label>
                   {v.on ? (
                     <>
-                      <Input type="time" value={v.start} onChange={(e) => set(d, { start: e.target.value })} className="w-28 h-8" aria-label={`${DOW[d]}曜の始まり`} />
+                      <TimeField value={v.start} onChange={(x) => set(d, { start: x })} className="w-32 h-8" aria-label={`${DOW[d]}曜の始まり`} />
                       <span>〜</span>
-                      <Input type="time" value={v.end} onChange={(e) => set(d, { end: e.target.value })} className="w-28 h-8" aria-label={`${DOW[d]}曜の終わり`} />
+                      <TimeField value={v.end} onChange={(x) => set(d, { end: x })} className="w-32 h-8" aria-label={`${DOW[d]}曜の終わり`} />
                     </>
                   ) : <span className="text-xs text-muted-foreground">休み</span>}
                 </div>

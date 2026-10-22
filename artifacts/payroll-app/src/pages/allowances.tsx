@@ -50,6 +50,7 @@ import { StandardRemunerationBulkTab } from "@/components/insurance/standard-rem
 import { BankAccountTab, type BankAccountTabHandle } from "@/components/bank-account-tab";
 import { RecalcNotice } from "@/components/recalc-notice";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { TimeField } from "@/components/ui/time-field";
 import type { FieldErrors } from "react-hook-form";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -897,7 +898,7 @@ function EmpFormFields({
                     <FormField control={f.control} name="scheduledWorkStart" render={({ field }) => (
                       <FormItem className="flex-1">
                         <FormLabel>開始時刻</FormLabel>
-                        <FormControl><TipInput type="time" tip="定時開始時刻。打刻画面の遅刻・早退判定に使用" {...field} value={field.value ?? ""} /></FormControl>
+                        <FormControl><TimeField value={field.value ?? ""} onChange={field.onChange} className="h-9 w-full" aria-label="定時の開始時刻" /></FormControl>
                         <FormMessage />
                       </FormItem>
                     )} />
@@ -905,7 +906,7 @@ function EmpFormFields({
                     <FormField control={f.control} name="scheduledWorkEnd" render={({ field }) => (
                       <FormItem className="flex-1">
                         <FormLabel>終了時刻</FormLabel>
-                        <FormControl><TipInput type="time" tip="定時終了時刻。打刻画面の残業判定に使用" {...field} value={field.value ?? ""} /></FormControl>
+                        <FormControl><TimeField value={field.value ?? ""} onChange={field.onChange} className="h-9 w-full" aria-label="定時の終了時刻" /></FormControl>
                         <FormMessage />
                       </FormItem>
                     )} />

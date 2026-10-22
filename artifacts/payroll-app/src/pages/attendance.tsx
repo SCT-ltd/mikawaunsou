@@ -31,6 +31,7 @@ import { Link } from "wouter";
 import { EmployeeList, filterAttendance } from "@/components/attendance/employee-list";
 import { DetailPanel } from "@/components/attendance/detail-panel";
 import { StatusFilter, TimelineView, attentionOf, type FilterKey } from "@/components/attendance/board";
+import { TimeField } from "@/components/ui/time-field";
 import { TodoView } from "@/components/attendance/todo";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -672,11 +673,11 @@ export default function AttendancePage() {
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">打刻時刻</Label>
-                <Input
-                  type="time"
+                <TimeField
                   value={editTime}
-                  max={editDate === todayJST() && !editNextDay ? nowTimeJST() : undefined}
-                  onChange={(e) => { setEditTime(e.target.value); setEditError(null); }}
+                  onChange={(v) => { setEditTime(v); setEditError(null); }}
+                  className="h-9 w-full"
+                  aria-label="打刻の時刻"
                 />
                 <label className="flex items-center gap-1.5 text-xs text-slate-600">
                   <input type="checkbox" checked={editNextDay} onChange={(e) => { setEditNextDay(e.target.checked); setEditError(null); }} />

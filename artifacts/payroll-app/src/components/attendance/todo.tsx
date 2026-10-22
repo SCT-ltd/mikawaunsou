@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CheckCircle2, Phone, ExternalLink, RefreshCw } from "lucide-react";
+import { TimeField } from "@/components/ui/time-field";
 import { ABSENCE_LABELS, type AbsenceType } from "./shared";
 
 /**
@@ -132,7 +133,7 @@ function TodoRow({ it, today, onOpen, done }: { it: Item; today: string; onOpen:
       {it.kind === "missingOut" && (
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <span className="text-xs">退勤</span>
-          <Input type="time" value={outTime} onChange={(e) => setOutTime(e.target.value)} className="w-28 h-8" aria-label="退勤の時刻" />
+          <TimeField value={outTime} onChange={setOutTime} className="w-32 h-8" aria-label="退勤の時刻" />
           <Button size="sm" className="h-8" disabled={busy} onClick={() => run((f) => putOut(f))}>この時刻で退勤を入れる</Button>
           <span className="text-[11px] text-muted-foreground">{it.data?.scheduleEnd ? `予定の終わり（${it.data.scheduleEnd}）` : "出勤から9時間後"}を入れてあります</span>
         </div>
