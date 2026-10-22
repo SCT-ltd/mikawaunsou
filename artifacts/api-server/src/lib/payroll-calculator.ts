@@ -102,6 +102,8 @@ export interface PayrollCalculationInput {
   careInsuranceApplied?: boolean;
   /** 雇用保険適用（false の場合は0円）*/
   employmentInsuranceApplied?: boolean;
+  /** 雇用保険料を手で決めた額（null/undefined＝自動計算） */
+  employmentInsuranceOverride?: number | null;
   /** 厚生年金適用（false の場合は0円）*/
   pensionApplied?: boolean;
   /** 雇用保険料率（省略時は EMP_INS_RATE_R8 = 0.005）*/
@@ -378,6 +380,7 @@ export function calculatePayroll(input: PayrollCalculationInput): PayrollCalcula
     careInsuranceApplied,
     pensionApplied,
     employmentInsuranceApplied,
+    employmentInsuranceOverride: input.employmentInsuranceOverride,
     residentTax,
     customDeductionsTotal: 0,
     employmentInsuranceRate,

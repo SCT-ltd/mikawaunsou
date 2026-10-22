@@ -212,6 +212,7 @@ router.post("/payroll/calculate", async (req, res) => {
       residentTax: emp.residentTax ?? 0,
       customDeductionsTotal,
       employmentInsuranceRate: empInsRate,
+      employmentInsuranceOverride: monthItems.employmentInsuranceOverride,
       insuranceRates,
     });
 
@@ -362,6 +363,7 @@ router.post("/payroll/calculate", async (req, res) => {
       residentTax: emp.residentTax ?? 0,
       customDeductionsTotal,
       employmentInsuranceRate: empInsRate,
+      employmentInsuranceOverride: monthItems.employmentInsuranceOverride,
       insuranceRates,
     });
 
@@ -463,6 +465,7 @@ router.post("/payroll/calculate", async (req, res) => {
     employmentInsuranceApplied: emp.employmentInsuranceApplied ?? true,
     pensionApplied: resolvePensionApplied(emp, year, month),
     employmentInsuranceRate: empInsRate,
+    employmentInsuranceOverride: monthItems.employmentInsuranceOverride,
     insuranceRates,
     residentTax: emp.residentTax,
     monthlyAverageWorkHours: company.monthlyAverageWorkHours,

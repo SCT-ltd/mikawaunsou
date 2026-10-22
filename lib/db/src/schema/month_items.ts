@@ -26,6 +26,8 @@ export const employeeMonthSetsTable = pgTable("employee_month_sets", {
    * 入れ直すために使う（今の金額がこの控えと同じ＝手で直していない）。lib/month-items.ts を参照。
    */
   autoValues: text("auto_values"),
+  /** その月の雇用保険料を手で決めた額。null＝自動計算（総支給 × 料率）。 */
+  employmentInsuranceOverride: doublePrecision("employment_insurance_override"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [

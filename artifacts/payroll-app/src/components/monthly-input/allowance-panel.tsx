@@ -554,8 +554,11 @@ export function AllowancePanel({
     return s + (def?.excludeFromEmploymentInsurance ? (r.amount || 0) : 0);
   }, 0);
   // 雇用保険: （総支給 − 除外対象手当）× 料率。携帯代等の実費手当のみ計算基礎から除く。
-  const employmentInsurance =
-    !isInsuranceExempt && employee.employmentInsuranceApplied !== false
+  // 給与明細の右パネルで雇用保険料を手で決めてあれば、その額（ここでは変えない・保存でも送らない）
+  const empInsOverride = monthItems?.employmentInsuranceOverride ?? null;
+  const employmentInsurance = empInsOverride != null
+    ? empInsOverride
+    : !isInsuranceExempt && employee.employmentInsuranceApplied !== false
       ? round50sen((grandTotal - empInsExcludedTotal) * eiRate)
       : 0;
   const totalInsurance = healthInsurance + childcareSupport + pensionInsurance + employmentInsurance;

@@ -42,6 +42,8 @@ export interface MonthItems {
   exists: boolean;
   /** 日給制の人の、その月の基本給（控えが無い・日給制でない場合は null） */
   baseSalary: number | null;
+  /** その月の雇用保険料を手で決めた額（null＝自動計算） */
+  employmentInsuranceOverride: number | null;
   allowances: MonthAllowance[];
   deductions: MonthDeduction[];
 }
@@ -89,7 +91,7 @@ export async function getMonthItems(employeeId: number, year: number, month: num
   const [set] = await ex.select().from(employeeMonthSetsTable)
     .where(sameMonth(employeeMonthSetsTable, employeeId, year, month));
   if (!set) {
-    return { exists: false, baseSalary: null, ...(await readMaster(ex, employeeId)) };
+    return { exists: false, baseSalary: null, employmentInsuranceOverride: null, ...(await readMaster(ex, employeeId)) };
   }
   const [aRows, dRows] = await Promise.all([
     ex.select().from(employeeMonthAllowancesTable)
@@ -102,6 +104,7 @@ export async function getMonthItems(employeeId: number, year: number, month: num
   return {
     exists: true,
     baseSalary: set.baseSalary ?? null,
+    employmentInsuranceOverride: set.employmentInsuranceOverride ?? null,
     allowances: aRows.map((r) => ({
       allowanceDefinitionId: r.allowanceDefinitionId,
       allowanceName: r.allowanceName,
@@ -378,6 +381,8 @@ export async function saveMonthItems(
     deductions: Array<{ deductionDefinitionId: number; amount: number }>;
     /** 日給制の人の、その月の基本給。undefined は「変えない」。 */
     baseSalary?: number;
+    /** その月の雇用保険料を手で決めた額。null＝自動計算に戻す、undefined＝変えない。 */
+    employmentInsuranceOverride?: number | null;
   },
 ): Promise<MonthItems> {
   return db.transaction(async (tx) => {
@@ -413,6 +418,10 @@ export async function saveMonthItems(
     const isDaily = emp?.salaryType === "daily";
     const monthBase = isDaily && input.baseSalary !== undefined ? input.baseSalary : undefined;
     await writeMonthRows(tx, employeeId, year, month, monthBase, allowances, deductions);
+    if (input.employmentInsuranceOverride !== undefined) {
+      await tx.update(employeeMonthSetsTable).set({ employmentInsuranceOverride: input.employmentInsuranceOverride })
+        .where(sameMonth(employeeMonthSetsTable, employeeId, year, month));
+    }
 
     // いまの勤怠から出した金額を控える（次の計算で「手で直した行かどうか」を見分けるため）。
     // 勤怠がまだ無い月は、勤怠が入ったときに全部入れ直す印を付ける。

@@ -330,7 +330,7 @@ router.put("/employees/:id/month-items", requireAdmin, async (req, res) => {
   const ym = parseYearMonth(req.query as Record<string, unknown>);
   if (Number.isNaN(employeeId) || !ym) return res.status(400).json({ error: "社員と年月の指定が正しくありません。" });
 
-  const body = (req.body ?? {}) as { allowances?: unknown; deductions?: unknown; baseSalary?: unknown };
+  const body = (req.body ?? {}) as { allowances?: unknown; deductions?: unknown; baseSalary?: unknown; employmentInsuranceOverride?: unknown };
   const amountOk = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 100_000_000;
   const allowances: Array<{ allowanceDefinitionId: number; amount: number }> = [];
   for (const raw of Array.isArray(body.allowances) ? body.allowances : []) {
@@ -351,12 +351,18 @@ router.put("/employees/:id/month-items", requireAdmin, async (req, res) => {
   if (body.baseSalary !== undefined && !amountOk(body.baseSalary)) {
     return res.status(400).json({ error: "基本給が正しくありません（0以上の数値で入力してください）。" });
   }
+  // 雇用保険料の手入力：null＝自動計算に戻す。数値は0以上の整数（円）。
+  if (body.employmentInsuranceOverride !== undefined && body.employmentInsuranceOverride !== null
+      && !(amountOk(body.employmentInsuranceOverride) && Number.isInteger(body.employmentInsuranceOverride))) {
+    return res.status(400).json({ error: "雇用保険料が正しくありません（0以上の整数で入力してください。自動に戻すときは空欄）。" });
+  }
 
   try {
     const items = await saveMonthItems(employeeId, ym.year, ym.month, {
       allowances,
       deductions,
       baseSalary: body.baseSalary as number | undefined,
+      employmentInsuranceOverride: body.employmentInsuranceOverride as number | null | undefined,
     });
     return res.json({ ...items, locked: false, year: ym.year, month: ym.month });
   } catch (e) {

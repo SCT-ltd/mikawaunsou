@@ -31,6 +31,8 @@ export interface MonthItems {
   locked: boolean;
   /** 日給制の人の、その月の基本給（控えが無い・日給制でない場合は null） */
   baseSalary: number | null;
+  /** その月の雇用保険料を手で決めた額（null＝自動計算） */
+  employmentInsuranceOverride?: number | null;
   allowances: MonthAllowanceRow[];
   deductions: MonthDeductionRow[];
   year: number;
@@ -68,6 +70,8 @@ export function saveMonthItems(
     deductions: Array<{ deductionDefinitionId: number; amount: number }>;
     /** 月給・日給の人の基本給。時給の人は送らない（マスターの時給を上書きしないため）。 */
     baseSalary?: number;
+    /** 雇用保険料を手で決めた額。null＝自動計算に戻す。送らなければ変えない。 */
+    employmentInsuranceOverride?: number | null;
   },
 ): Promise<MonthItems> {
   return request(employeeId, year, month, { method: "PUT", body: JSON.stringify(body) });
