@@ -25,7 +25,10 @@ import {
   toTimeInput,
   RichDatePicker,
   SummaryStats,
+  isNextDayOf,
+  toIsoAt,
 } from "@/components/attendance/shared";
+import { Link } from "wouter";
 import { EmployeeList, filterAttendance } from "@/components/attendance/employee-list";
 import { DetailPanel } from "@/components/attendance/detail-panel";
 
@@ -57,6 +60,8 @@ export default function AttendancePage() {
   const [editEventType, setEditEventType] = useState<EventType>("clock_in");
   const [editTime, setEditTime] = useState("");
   const [editDate, setEditDate] = useState("");
+  /** 翌日の時刻（日をまたいだ退勤など）。勤務日はそのままで、時刻だけ翌日にする */
+  const [editNextDay, setEditNextDay] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -69,7 +74,9 @@ export default function AttendancePage() {
   /* ── データ取得 ──────────────────────── */
   const fetchData = useCallback(async (date: string) => {
     try {
-      const url = `${BASE}/api/attendance/today?date=${date}`;
+      // 今日を見ているときは日付を付けない＝社員ごとに「いまの勤務の日付」（深夜に前の日の勤務が続いていればその日）。
+      // 以前は今日の日付で全員を見ていたため、深夜は勤務中の人まで「未出勤」に見えた。
+      const url = date === todayJST() ? `${BASE}/api/attendance/today` : `${BASE}/api/attendance/today?date=${date}`;
       const res = await fetch(url, { cache: "no-store" });
       if (!res.ok) return;
       const result: EmployeeStatus[] = await res.json();
@@ -174,6 +181,7 @@ export default function AttendancePage() {
     setEditEventType(r.eventType);
     setEditTime(toTimeInput(r.recordedAt));
     setEditDate(r.workDate);
+    setEditNextDay(isNextDayOf(r.recordedAt, r.workDate));
     setDeleteConfirm(false);
     setEditError(null);
   };
@@ -182,18 +190,27 @@ export default function AttendancePage() {
     if (!editRecord) return;
     setEditError(null);
     if (!editDate) { setEditError("日付を入力してください"); return; }
-    const recordedAt = new Date(`${editDate}T${editTime}:00+09:00`).toISOString();
-    if (isFuture(editDate, editTime)) { setEditError("未来の時刻は登録できません"); return; }
+    const recordedAt = toIsoAt(editDate, editTime, editNextDay);
+    if (new Date(recordedAt).getTime() > Date.now() + 60_000) { setEditError("未来の時刻は登録できません"); return; }
     const dateChanged = editDate !== editRecord.workDate;
     setSaving(true);
     try {
-      const body: Record<string, string> = { eventType: editEventType, recordedAt };
+      const body: Record<string, string | boolean> = { eventType: editEventType, recordedAt };
       if (dateChanged) body.workDate = editDate;
-      const res = await fetch(`${BASE}/api/attendance/records/${editRecord.id}`, {
+      let res = await fetch(`${BASE}/api/attendance/records/${editRecord.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
+      // 打刻の順番が合わない（退勤のあとに休憩 など）ときは、確かめてから保存する
+      if (res.status === 409) {
+        const err = await res.clone().json().catch(() => ({}));
+        if (err.canForce && window.confirm(`${err.error}\n\n順番が合いませんが、このまま保存しますか？`)) {
+          res = await fetch(`${BASE}/api/attendance/records/${editRecord.id}`, {
+            method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, force: true }),
+          });
+        }
+      }
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         setEditError(err.error ?? "保存に失敗しました");
@@ -208,7 +225,8 @@ export default function AttendancePage() {
     if (!editRecord) return;
     setSaving(true);
     try {
-      await fetch(`${BASE}/api/attendance/records/${editRecord.id}`, { method: "DELETE" });
+      // 消さずに「取り消し」の印を付けて残す（だれが・いつ消したかは打刻の変更の記録に残る）
+      await fetch(`${BASE}/api/attendance/records/${editRecord.id}?reason=${encodeURIComponent("管理画面で削除")}`, { method: "DELETE" });
       setEditRecord(null);
       setDeleteConfirm(false);
       await fetchData(selectedDate);
@@ -217,17 +235,28 @@ export default function AttendancePage() {
 
   /* ── 手動追加（DetailPanel から呼ばれる。error文字列 or null を返す）── */
   const handleAddRecord = useCallback(
-    async (eventType: EventType, time: string): Promise<string | null> => {
+    async (eventType: EventType, time: string, nextDay: boolean): Promise<string | null> => {
       if (!selected) return "社員が選択されていません";
-      if (isFuture(selectedDate, time)) return "未来の時刻は登録できません";
+      // 勤務日はその行の勤務日（深夜に前の日の勤務が続いていれば前の日）。翌日の時刻なら1日足す。
+      const workDate = selected.workDate ?? selectedDate;
+      const recordedAt = toIsoAt(workDate, time, nextDay);
+      if (new Date(recordedAt).getTime() > Date.now() + 60_000) return "未来の時刻は登録できません";
       setSaving(true);
       try {
-        const recordedAt = new Date(`${selectedDate}T${time}:00+09:00`).toISOString();
-        const res = await fetch(`${BASE}/api/attendance/record`, {
+        const body = { employeeId: selected.employee.id, eventType, recordedAt, workDate };
+        let res = await fetch(`${BASE}/api/attendance/record`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ employeeId: selected.employee.id, eventType, recordedAt }),
+          body: JSON.stringify(body),
         });
+        if (res.status === 409) {
+          const err = await res.clone().json().catch(() => ({}));
+          if (err.canForce && window.confirm(`${err.error}\n\n順番が合いませんが、このまま追加しますか？`)) {
+            res = await fetch(`${BASE}/api/attendance/record`, {
+              method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, force: true }),
+            });
+          }
+        }
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           return body.error ?? "保存に失敗しました";
@@ -245,7 +274,7 @@ export default function AttendancePage() {
       if (!selected) return false;
       setSaving(true);
       try {
-        await fetch(`${BASE}/api/absences`, {
+        const res = await fetch(`${BASE}/api/absences`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -255,6 +284,10 @@ export default function AttendancePage() {
             note: note || null,
           }),
         });
+        const body = await res.json().catch(() => ({})) as { warning?: string | null; error?: string };
+        if (!res.ok) { window.alert(body.error ?? "登録できませんでした"); return false; }
+        // 1日休みなのに出勤もある・休みが重なっている ときは知らせる（登録はしてある）
+        if (body.warning) window.alert(body.warning);
         await fetchAbsences(selectedDate);
         return true;
       } finally { setSaving(false); }
@@ -300,21 +333,37 @@ export default function AttendancePage() {
 
     setSaving(true);
     try {
-      await Promise.all([
-        fetch(`${BASE}/api/attendance/records/${a.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ eventType: a.eventType, recordedAt: b.recordedAt }),
-        }),
-        fetch(`${BASE}/api/attendance/records/${b.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ eventType: b.eventType, recordedAt: a.recordedAt }),
-        }),
-      ]);
+      // 2つを1回で入れ替える（以前は2回に分けて直していたため、途中の順番の確認で断られることがあった）
+      let res = await fetch(`${BASE}/api/attendance/records/swap`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ a: a.id, b: b.id }),
+      });
+      if (res.status === 409) {
+        const err = await res.clone().json().catch(() => ({}));
+        if (err.canForce && window.confirm(`${err.error}\n\n順番が合いませんが、入れ替えますか？`)) {
+          res = await fetch(`${BASE}/api/attendance/records/swap`, {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ a: a.id, b: b.id, force: true }),
+          });
+        }
+      }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        if (err.error) window.alert(err.error);
+      }
       await fetchData(selectedDate);
     } finally { setSaving(false); }
   }, [selected, selectedDate, fetchData]);
+
+  /* ── 日常点検の「否」への処置と判断 ── */
+  const decideInspection = useCallback(async (id: number, officeAction: string, officeDecision: "ok" | "ng" | null) => {
+    setSaving(true);
+    try {
+      const res = await fetch(`${BASE}/api/attendance/inspections/${id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ officeAction, officeDecision }),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); window.alert(e.error ?? "保存できませんでした"); }
+      await fetchData(selectedDate);
+    } finally { setSaving(false); }
+  }, [fetchData, selectedDate]);
 
   /* ── 集計 ──────────────────────────── */
   const counts = useMemo(() => ({
@@ -424,6 +473,11 @@ export default function AttendancePage() {
               <Button variant="outline" size="sm" onClick={() => fetchData(selectedDate)} className="gap-1.5 border-slate-200">
                 <RefreshCw className="h-3.5 w-3.5" />更新
               </Button>
+              <Link href="/attendance-records">
+                <Button variant="outline" size="sm" className="gap-1.5 border-slate-200">
+                  修正申請・アルコール・日報{(() => { const n = data.reduce((s, d) => s + (d.pendingCorrections ?? 0), 0); return n > 0 ? <span className="ml-1 rounded-full bg-red-500 text-white text-[10px] px-1.5">{n}</span> : null; })()}
+                </Button>
+              </Link>
             </div>
           </div>
 
@@ -477,6 +531,7 @@ export default function AttendancePage() {
                     onSaveAbsence={handleSaveAbsence}
                     onShowQR={setQrEmployee}
                     onClose={() => setSelectedId(null)}
+                    onDecideInspection={decideInspection}
                   />
                 </div>
               ) : (
@@ -531,9 +586,13 @@ export default function AttendancePage() {
                 <Input
                   type="time"
                   value={editTime}
-                  max={editDate === todayJST() ? nowTimeJST() : undefined}
+                  max={editDate === todayJST() && !editNextDay ? nowTimeJST() : undefined}
                   onChange={(e) => { setEditTime(e.target.value); setEditError(null); }}
                 />
+                <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                  <input type="checkbox" checked={editNextDay} onChange={(e) => { setEditNextDay(e.target.checked); setEditError(null); }} />
+                  翌日の時刻（日をまたいだ退勤など。勤務日はそのまま）
+                </label>
               </div>
 
               {editError && (
@@ -542,7 +601,7 @@ export default function AttendancePage() {
 
               {deleteConfirm && (
                 <div className="rounded-lg border border-red-200 bg-red-50 p-3 space-y-2">
-                  <p className="text-sm text-red-700 font-medium">このレコードを削除しますか？</p>
+                  <p className="text-sm text-red-700 font-medium">この打刻を削除しますか？（集計から外れます。消した記録は残ります）</p>
                   <div className="flex gap-2">
                     <Button variant="destructive" size="sm" className="flex-1" onClick={deleteRec} disabled={saving}>
                       <Trash2 className="h-3.5 w-3.5 mr-1" />削除

@@ -50,7 +50,8 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       "/api": {
-        target: "http://localhost:8080",
+        // 中継先は API_PROXY_TARGET で変えられる（手元で別のポートの API を相手にするとき）
+        target: process.env.API_PROXY_TARGET ?? "http://localhost:8080",
         changeOrigin: true,
       },
     },

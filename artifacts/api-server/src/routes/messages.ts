@@ -78,7 +78,8 @@ router.get("/messages/stream", async (req, res) => {
 
   addSse(employeeId, res);
 
-  const heartbeat = setInterval(() => res.write(": ping\n\n"), 30000);
+  // つながりの確認（画面は ping が来なくなったら、切れたとみなしてつなぎ直す）
+  const heartbeat = setInterval(() => res.write("event: ping\ndata: 1\n\n"), 25000);
   req.on("close", () => {
     clearInterval(heartbeat);
     removeSse(employeeId, res);
@@ -303,16 +304,43 @@ router.post("/messages", async (req, res) => {
     sender = "employee";
   }
 
-  const [message] = await db.insert(messagesTable).values({
-    employeeId,
-    sender,
-    content: content.trim(),
-  }).returning();
+  // 端末が送るごとに作る番号。電波が悪くて押し直したとき、同じメッセージが2回届かないようにする
+  const rawClientId = (req.body as { clientId?: unknown })?.clientId;
+  const clientId = typeof rawClientId === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(rawClientId) ? rawClientId : null;
+  if (clientId) {
+    const [dup] = await db.select().from(messagesTable).where(and(eq(messagesTable.employeeId, employeeId), eq(messagesTable.clientId, clientId)));
+    if (dup) return res.status(200).json(dup);
+  }
+
+  let message: typeof messagesTable.$inferSelect;
+  try {
+    [message] = await db.insert(messagesTable).values({
+      employeeId,
+      sender,
+      content: content.trim(),
+      clientId,
+    }).returning() as [typeof messagesTable.$inferSelect];
+  } catch (err) {
+    const code = (err as { code?: string; cause?: { code?: string } })?.code ?? (err as { cause?: { code?: string } })?.cause?.code;
+    if (code === "23505" && clientId) {
+      const [dup] = await db.select().from(messagesTable).where(and(eq(messagesTable.employeeId, employeeId), eq(messagesTable.clientId, clientId)));
+      if (dup) return res.status(200).json(dup);
+    }
+    throw err;
+  }
 
   // SSEでリアルタイム配信
   broadcastToEmployee(employeeId, { type: "message", message });
 
-  // プッシュ通知
+  // 先に「送れた」と返し、プッシュ通知はそのあとで送る。
+  // 以前は事務所の端末すべてへ送り終わるまで返事をしなかったため、電波の悪い所では
+  // 「送れなかった」と思って押し直し、同じメッセージが2回届いていた。
+  res.status(201).json(message);
+  setImmediate(() => { void sendMessagePush(employeeId, sender, content.trim()).catch(() => {}); });
+  return;
+});
+
+async function sendMessagePush(employeeId: number, sender: "office" | "employee", content: string) {
   const targets =
     sender === "office"
       ? await db.select().from(pushSubscriptionsTable)
@@ -337,7 +365,7 @@ router.post("/messages", async (req, res) => {
         { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
         JSON.stringify({
           title: sender === "office" ? `事務所からのメッセージ` : `${emp?.name ?? "従業員"}からのメッセージ`,
-          body: content.trim().slice(0, 80),
+          body: content.slice(0, 80),
           url: sender === "office" ? `/driver/${employeeId}` : `/messages`,
         })
       );
@@ -351,9 +379,7 @@ router.post("/messages", async (req, res) => {
       }
     }
   }
-
-  return res.status(201).json(message);
-});
+}
 
 // ── 一斉送信 ───────────────────────────────────────────
 router.post("/messages/broadcast", requireAdmin, async (req, res) => {
@@ -471,26 +497,30 @@ router.post("/push/subscribe", async (req, res) => {
     employeeId = Number(sessionEmployeeId);
   }
 
-  const existing = await db.select({ id: pushSubscriptionsTable.id })
+  // 1つの端末（endpoint）は最後に登録した人だけに届ける。1台を何人かで使うときは、
+  // 打刻ページを開いた（＝登録し直した）人に切り替わる。前の人には replacedEmployeeId で知らせる。
+  const existing = await db.select({ id: pushSubscriptionsTable.id, employeeId: pushSubscriptionsTable.employeeId, role: pushSubscriptionsTable.role })
     .from(pushSubscriptionsTable)
     .where(eq(pushSubscriptionsTable.endpoint, endpoint))
     .limit(1);
 
   if (existing.length > 0) {
+    const prev = existing[0]!;
+    const replacedEmployeeId = prev.role === "employee" && prev.employeeId !== null && prev.employeeId !== employeeId ? prev.employeeId : null;
     await db.update(pushSubscriptionsTable)
       .set({ p256dh, auth, active: true, employeeId, role })
-      .where(eq(pushSubscriptionsTable.id, existing[0]!.id));
-  } else {
-    await db.insert(pushSubscriptionsTable).values({
-      employeeId,
-      role,
-      endpoint,
-      p256dh,
-      auth,
-    });
+      .where(eq(pushSubscriptionsTable.id, prev.id));
+    return res.status(201).json({ ok: true, replacedEmployeeId });
   }
+  await db.insert(pushSubscriptionsTable).values({
+    employeeId,
+    role,
+    endpoint,
+    p256dh,
+    auth,
+  });
 
-  return res.status(201).json({ ok: true });
+  return res.status(201).json({ ok: true, replacedEmployeeId: null });
 });
 
 export default router;

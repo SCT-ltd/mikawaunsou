@@ -13,6 +13,7 @@ import {
   elapsedStr,
   elapsedMs,
   elapsedColor,
+  todayJST,
 } from "./shared";
 
 export function filterAttendance(data: EmployeeStatus[], search: string): EmployeeStatus[] {
@@ -26,21 +27,33 @@ export function filterAttendance(data: EmployeeStatus[], search: string): Employ
   );
 }
 
-// 点検NGバッジ（clock_in の checklistNgItems をパース）
+// 点検のバッジ。全項目に答えるまでは「未点検」（以前は1つもつけていなくても「点検OK」と出ていた）
 function ChecklistBadge({ d }: { d: EmployeeStatus }) {
-  const clockInRec = d.records.find((r) => r.eventType === "clock_in" && r.checklistNgItems);
-  if (!clockInRec?.checklistNgItems) return null;
-  let parsed: { total: number; checked: number; ng: string[] } | null = null;
-  try { parsed = JSON.parse(clockInRec.checklistNgItems); } catch { return null; }
-  if (!parsed) return null;
-  return parsed.ng.length === 0 ? (
-    <span className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200">
-      ✅ 点検OK
-    </span>
-  ) : (
-    <span className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-full border bg-red-50 text-red-700 border-red-200">
-      ⚠️ 点検NG {parsed.ng.length}
-    </span>
+  let insp: { checked: number; total: number; ng: string[]; complete: boolean } | null = d.inspection ?? null;
+  if (!insp) {
+    const clockInRec = d.records.find((r) => r.eventType === "clock_in" && r.checklistNgItems);
+    if (clockInRec?.checklistNgItems) {
+      try {
+        const p = JSON.parse(clockInRec.checklistNgItems) as { total: number; checked: number; ng: string[] };
+        insp = { ...p, ng: p.ng ?? [], complete: p.total > 0 && p.checked >= p.total };
+      } catch { /* 古い形 */ }
+    }
+  }
+  const alcoholDetected = (d.alcohol ?? []).some((a) => a.detected);
+  const kaizen = d.compliance?.flags.some((f) => f.level === "danger");
+  return (
+    <>
+      {insp && insp.ng.length > 0 ? (
+        <span className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-full border bg-red-50 text-red-700 border-red-200">⚠️ 点検NG {insp.ng.length}</span>
+      ) : insp && insp.complete ? (
+        <span className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200">✅ 点検OK</span>
+      ) : !d.employee.isOfficeStaff && d.status !== "未出勤" ? (
+        <span className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-full border bg-amber-50 text-amber-700 border-amber-200">未点検{insp ? ` ${insp.checked}/${insp.total}` : ""}</span>
+      ) : null}
+      {alcoholDetected && <span className="inline-block text-[10px] font-bold px-1.5 py-0.5 rounded-full border bg-red-100 text-red-700 border-red-300">🍺 検知</span>}
+      {kaizen && <span className="inline-block text-[10px] font-bold px-1.5 py-0.5 rounded-full border bg-red-50 text-red-700 border-red-200">改善基準超え</span>}
+      {(d.pendingCorrections ?? 0) > 0 && <span className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-full border bg-sky-50 text-sky-700 border-sky-200">修正申請 {d.pendingCorrections}</span>}
+    </>
   );
 }
 
@@ -139,7 +152,10 @@ export function EmployeeList({
                         </span>
                       )}
                     </div>
-                    {(empAbsences.length > 0 || d.records.length > 0) && (
+                    {d.workDate && d.workDate < todayJST() && d.status !== "未出勤" && (
+                      <p className="text-[10px] text-indigo-600 mt-0.5">前の日（{Number(d.workDate.slice(5, 7))}/{Number(d.workDate.slice(8, 10))}）から続く勤務</p>
+                    )}
+                    {(empAbsences.length > 0 || d.records.length > 0 || d.inspection || (d.pendingCorrections ?? 0) > 0) && (
                       <div className="flex items-center gap-1 mt-1 flex-wrap">
                         {empAbsences.map((a) => (
                           <span key={a.id} className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${ABSENCE_COLORS[a.absenceType]}`}>

@@ -143,6 +143,8 @@ router.get("/employees/:id", async (req, res) => {
       name: emp.name,
       department: emp.department,
       isOfficeStaff: emp.isOfficeStaff,
+      // 事務員の打刻ページで「30分単位で切り上げるか」を出すため（金額は返さない）
+      salaryType: emp.salaryType,
       scheduledWorkStart: emp.scheduledWorkStart,
       scheduledWorkEnd: emp.scheduledWorkEnd,
     });
@@ -307,7 +309,7 @@ router.post("/employees/:id/pin/verify", async (req, res) => {
   const empA = pinEmpAttempts.get(id);
   if (empA && empA.lockedUntil > now) {
     const minutes = Math.ceil((empA.lockedUntil - now) / 60000);
-    return res.status(429).json({ error: `暗証番号の間違いが続いたため、あと${minutes}分は入力できません。事務所に連絡してください。` });
+    return res.status(429).json({ error: `暗証番号の間違いが続いたため、あと${minutes}分は入力できません。事務所に連絡してください。`, code: "locked", minutes, lockedUntil: new Date(empA.lockedUntil).toISOString() });
   }
   const key = `${id}|${req.header("cf-connecting-ip") || req.ip || "unknown"}`;
   for (const [k, a] of pinAttempts) {
@@ -316,7 +318,7 @@ router.post("/employees/:id/pin/verify", async (req, res) => {
   const attempt = pinAttempts.get(key);
   if (attempt && attempt.lockedUntil > now) {
     const minutes = Math.ceil((attempt.lockedUntil - now) / 60000);
-    return res.status(429).json({ error: `暗証番号を続けて間違えたため、あと${minutes}分は入力できません。` });
+    return res.status(429).json({ error: `暗証番号を続けて間違えたため、あと${minutes}分は入力できません。`, code: "locked", minutes, lockedUntil: new Date(attempt.lockedUntil).toISOString() });
   }
 
   const checked = verifyPin(String(pin ?? ""), emp.pin);

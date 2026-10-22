@@ -19,6 +19,18 @@ const REQUIRED: Array<[string, string]> = [
   ["alert_pushes", "key"],
   ["audit_logs", "action"],
   ["employees", "qr_key"],
+  // 2026-10-24-batch-b.sql（ドライバー側と勤怠）
+  ["attendance_records", "client_id"],
+  ["attendance_records", "voided_at"],
+  ["attendance_records", "source"],
+  ["messages", "client_id"],
+  ["attendance_record_logs", "action"],
+  ["attendance_corrections", "status"],
+  ["daily_inspections", "items"],
+  ["inspection_history", "inspection_id"],
+  ["alcohol_checks", "value_mg"],
+  ["daily_reports", "shipper"],
+  ["attendance_settings", "data"],
 ];
 
 export async function startupChecks(): Promise<void> {

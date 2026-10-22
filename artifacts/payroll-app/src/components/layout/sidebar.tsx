@@ -22,6 +22,7 @@ const navigation = [
   { name: "リアルタイムマップ", href: "/realtime-map",  icon: MapPin,          description: "ドライバーのリアルタイム位置を地図で確認します" },
   { name: "メッセージ",         href: "/messages",      icon: MessageSquare,   description: "社員へのメッセージを送受信します", showUnread: true },
   { name: "勤怠管理",           href: "/attendance",    icon: ClipboardCheck,  description: "社員の出退勤・勤怠状況を管理します",       highlight: "teal" },
+  { name: "勤怠の記録",         href: "/attendance-records", icon: ClipboardCheck, description: "打刻の修正申請・アルコールチェック・日報・改善基準・勤怠の設定" },
   { name: "月次実績入力",       href: "/monthly-input", icon: CalendarDays,    description: "月次の売上・走行距離などの実績を入力します", highlight: "amber" },
   { name: "給与明細",           href: "/payroll",       icon: FileText,        description: "給与明細の作成・確認・印刷をします",         highlight: "violet" },
   { name: "カレンダー",         href: "/calendar",      icon: CalendarRange,   description: "シフト・スケジュールを管理します" },

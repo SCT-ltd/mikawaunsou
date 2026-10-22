@@ -128,7 +128,26 @@ export default function MonthlyInput() {
             }
             return;
           }
-          // 取り込みは下記フィールドを打刻集計で上書きする（深夜時間は対象外）。
+          // 打刻の打ち忘れ（退勤が無い日＝0時間で数えている／出勤が無い日＝数えていない）を、取り込む前に見せる。
+          // 以前は黙って「0時間の出勤日」として取り込まれていた。
+          if (shouldMarkDirty) {
+            const nameOf = (id: number) => employees.find((e) => e.id === id)?.name ?? `社員ID ${id}`;
+            const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+            const lines = (summary as Array<{ employeeId: number; missingClockOut?: string[]; missingClockIn?: string[]; absenceConflicts?: string[] }>)
+              .flatMap((s) => [
+                ...(s.missingClockOut?.length ? [`${nameOf(s.employeeId)}：退勤が無い日 ${s.missingClockOut.map(md).join("・")}（0時間で数えます）`] : []),
+                ...(s.missingClockIn?.length ? [`${nameOf(s.employeeId)}：出勤が無い日 ${s.missingClockIn.map(md).join("・")}（数えません）`] : []),
+                ...(s.absenceConflicts?.length ? [`${nameOf(s.employeeId)}：休みと出勤が両方ある日 ${s.absenceConflicts.map(md).join("・")}`] : []),
+              ]);
+            if (lines.length > 0) {
+              const ok = window.confirm(
+                `打刻の打ち忘れがあります：\n${lines.slice(0, 20).join("\n")}${lines.length > 20 ? `\nほか${lines.length - 20}件` : ""}\n\n` +
+                  "勤怠管理で直してから取り込むのがおすすめです。このまま取り込みますか？"
+              );
+              if (!ok) return;
+            }
+          }
+          // 取り込みは下記フィールドを打刻集計で上書きする。
           // 未保存の手入力がある社員の値まで無言で消えてしまうため、事前に確認を取る。
           if (shouldMarkDirty) {
             const dirtyTargets = (summary as Array<{ employeeId: number }>)
@@ -138,8 +157,8 @@ export default function MonthlyInput() {
               const ok = window.confirm(
                 `未保存の手入力がある社員がいます:\n${dirtyTargets.join("・")}\n\n` +
                   "打刻データを取り込むと、これらの社員の\n" +
-                  "「平日出勤・土曜出勤・日曜出勤・祝日出勤・欠勤・有給・残業時間・走行距離・実働時間」は\n" +
-                  "打刻集計の値で上書きされます（深夜時間は上書きされません）。\n\n" +
+                  "「平日出勤・土曜出勤・日曜出勤・祝日出勤・欠勤・有給・残業時間・休日の残業・深夜時間・走行距離・実働時間」は\n" +
+                  "打刻集計の値で上書きされます。\n\n" +
                   "取り込みを続けますか？"
               );
               if (!ok) return;
@@ -158,6 +177,10 @@ export default function MonthlyInput() {
                 // 平日の祝日に出勤した日数（勤怠から自動で見分ける）
                 holidayWorkDays: (s as { holidayWorkDays?: number }).holidayWorkDays ?? 0,
                 overtimeHours: s.overtimeHours,
+                // 深夜（22時〜翌5時）の時間も打刻から数える（以前は取り込めず手入力だった）
+                lateNightHours: (s as { lateNightHours?: number }).lateNightHours ?? 0,
+                // 土曜・日曜・祝日に8時間を超えた分（給与での使い方は給与計算の側で決める）
+                restDayOvertimeHours: (s as { restDayOvertimeHours?: number }).restDayOvertimeHours ?? 0,
                 absenceDays: s.absenceDays ?? 0,
                 paidLeaveDays: s.paidLeaveDays ?? 0,
                 drivingDistanceKm: s.drivingDistanceKm ?? 0,
@@ -169,7 +192,7 @@ export default function MonthlyInput() {
           if (shouldMarkDirty) {
             toast({
               title: "勤怠データを取り込みました",
-              description: `${summary.length}名分の出勤・残業・走行距離を反映しました。深夜時間は打刻から取り込めないため手入力のまま残ります。確認後「実績を保存」してください。`,
+              description: `${summary.length}名分の出勤・残業・深夜・走行距離を反映しました。確認後「実績を保存」してください。`,
             });
             setDirtyIds((prev) => {
               const next = new Set(prev);
