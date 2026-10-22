@@ -196,6 +196,8 @@ export interface AttendanceForAuto {
   workDays: number | null;
   saturdayWorkDays: number | null;
   sundayWorkHours: number | null;
+  /** 祝日の出勤日数（土曜と同じ日当＝1.25倍） */
+  holidayWorkDays?: number | null;
   paidLeaveDays: number | null;
   overtimeHours: number | null;
   lateNightHours: number | null;
@@ -235,6 +237,7 @@ export function deriveAutoValues(
   const workDays = rec.workDays ?? 0;
   const saturdayDays = rec.saturdayWorkDays ?? 0;
   const sundayHours = rec.sundayWorkHours ?? 0;
+  const holidayDays = rec.holidayWorkDays ?? 0;
   const paidLeaveDays = rec.paidLeaveDays ?? 0;
   const overtimeHours = rec.overtimeHours ?? 0;
   const lateNightHours = rec.lateNightHours ?? 0;
@@ -245,7 +248,8 @@ export function deriveAutoValues(
     if (def) a[String(def.id)] = amount;
   };
   put("有給", Math.round(rateWeekday * paidLeaveDays));
-  put("休日出勤手当", Math.round(saturdayDays * rateSaturday + sundayHours * rateSundayHour));
+  // 日曜だけ1.35倍（日曜時給）、土曜と祝日は1.25倍（土曜日当）
+  put("休日出勤手当", Math.round((saturdayDays + holidayDays) * rateSaturday + sundayHours * rateSundayHour));
   // 残業時給が未設定の社員は入れ直さない（手で入れた金額を0円で消さないため）
   if (overtimeRate > 0) {
     const OT_THRESHOLD = 60;

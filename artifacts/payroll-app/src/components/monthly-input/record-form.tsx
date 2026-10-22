@@ -229,11 +229,18 @@ export function RecordForm({
             {numInput("saturdayWorkDays", { max: 31, step: "1" })}
           </Field>
           <Field
-            label="日曜・祝日"
+            label="日曜出勤"
             unit="h"
-            hint={`${formatYen(company?.hourlyWageSunday ?? 1655)} / 時間 で計算`}
+            hint={`${formatYen(company?.hourlyWageSunday ?? 1655)} / 時間 で計算（1.35倍）`}
           >
             {numInput("sundayWorkHours", { step: "0.5" })}
+          </Field>
+          <Field
+            label="祝日出勤"
+            unit="日"
+            hint="土曜と同じ日給で計算（1.25倍）"
+          >
+            {numInput("holidayWorkDays", { max: 31, step: "1" })}
           </Field>
           <Field label="欠勤" unit="日" hint="日当 × 日数を控除">
             {numInput("absenceDays", { max: 31, step: "1" })}

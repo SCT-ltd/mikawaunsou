@@ -681,6 +681,7 @@ export default function MonthlyInput() {
                             workDays: Number(edits[selectedEmployee.id]?.workDays) || 0,
                             saturdayWorkDays: Number(edits[selectedEmployee.id]?.saturdayWorkDays) || 0,
                             sundayWorkHours: Number(edits[selectedEmployee.id]?.sundayWorkHours) || 0,
+                            holidayWorkDays: Number(edits[selectedEmployee.id]?.holidayWorkDays) || 0,
                             paidLeaveDays: Number(edits[selectedEmployee.id]?.paidLeaveDays) || 0,
                             overtimeHours: Number(edits[selectedEmployee.id]?.overtimeHours) || 0,
                             lateNightHours: Number(edits[selectedEmployee.id]?.lateNightHours) || 0,

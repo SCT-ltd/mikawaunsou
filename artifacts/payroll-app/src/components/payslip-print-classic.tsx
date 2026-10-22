@@ -35,6 +35,8 @@ interface PayrollData {
   overtimeHours: number;
   lateNightHours: number;
   holidayWorkHours?: number;
+  /** 祝日の出勤日数（2026-10 から日曜と分けて記録） */
+  publicHolidayWorkDays?: number;
   paidLeaveDays?: number;
   holidayWorkDays: number;
   employeeId?: number;
@@ -386,13 +388,17 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
   const attendanceItems = [
     { label: "平日日数", value: `${payroll.workDays ?? 0}日` },
     { label: "土曜出勤", value: `${payroll.saturdayWorkDays ?? 0}日` },
-    // 日曜・祝日出勤は 2026-08 から時間管理。過去分（時間0で日数のみ）は従来どおり日数で出す。
+    // 日曜出勤は 2026-08 から時間管理。過去分（時間0で日数のみ）は従来どおり日数で出す。
+    // 祝日は 2026-10 から日曜と分けて日数で記録（あるときだけ下に足す）。
     (payroll.holidayWorkHours ?? 0) > 0
       ? { label: "休日出勤", value: formatHours(payroll.holidayWorkHours ?? 0) }
       : { label: "休日出勤", value: `${payroll.holidayWorkDays ?? 0}日` },
     { label: "残業時間", value: formatHours(payroll.overtimeHours) },
     { label: "深夜時間", value: formatHours(payroll.lateNightHours) },
   ];
+  if ((payroll.publicHolidayWorkDays ?? 0) > 0) {
+    attendanceItems.push({ label: "祝日出勤", value: `${payroll.publicHolidayWorkDays}日` });
+  }
   if ((payroll.paidLeaveDays ?? 0) > 0) {
     attendanceItems.push({ label: "有給", value: `${payroll.paidLeaveDays}日` });
   }

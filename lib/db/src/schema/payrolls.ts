@@ -36,6 +36,8 @@ export const payrollsTable = pgTable("payrolls", {
   holidayWorkDays: doublePrecision("holiday_work_days").notNull().default(0),
   /** 明細表示用: 日曜・祝日の出勤時間（monthly_records.sundayWorkHours のスナップショット）*/
   holidayWorkHours: doublePrecision("holiday_work_hours").notNull().default(0),
+  /** 明細表示用: 祝日の出勤日数（monthly_records.holidayWorkDays のスナップショット）。土曜と同じ1.25倍の日当で計算 */
+  publicHolidayWorkDays: doublePrecision("public_holiday_work_days").notNull().default(0),
   /** 明細表示用: 有給休暇の日数（monthly_records.paidLeaveDays のスナップショット）*/
   paidLeaveDays: doublePrecision("paid_leave_days").notNull().default(0),
   saturdayWorkDays: doublePrecision("saturday_work_days").notNull().default(0),

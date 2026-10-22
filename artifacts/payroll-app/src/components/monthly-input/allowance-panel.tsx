@@ -223,6 +223,8 @@ export function AllowancePanel({
     workDays: number;
     saturdayWorkDays: number;
     sundayWorkHours: number;
+    /** 祝日の出勤日数（土曜と同じ日当＝1.25倍で計算） */
+    holidayWorkDays?: number;
     paidLeaveDays: number;
     overtimeHours: number;
     lateNightHours: number;
@@ -353,13 +355,17 @@ export function AllowancePanel({
     // 休日出勤手当 = 土曜日数 × 土曜日当 ＋ 日曜・祝日時間 × 日曜時給。
     // 本番データで裏付け済み: 岡田 2d×12,260+0h = 24,520、
     // 玉川 2d×12,260+5.5h×1,655 = 33,623 が、いずれも事務所の手入力額と一致する。
+    // 割増は日曜だけ1.35倍、土曜と祝日は1.25倍（会社の決まり・2026-10）。
+    // 祝日は土曜と同じ日当（平日日当×1.25）で日数を掛ける。以前は祝日も日曜の時給で数えていた。
     const saturdayDays = monthlyData?.saturdayWorkDays ?? 0;
     const sundayHours = monthlyData?.sundayWorkHours ?? 0;
+    const holidayDays = monthlyData?.holidayWorkDays ?? 0;
     push(
       defIdOf("休日出勤手当"),
-      Math.round(saturdayDays * rateSaturday + sundayHours * rateSundayHour),
-      `勤怠の土曜 ${saturdayDays}日 × ${rateSaturday.toLocaleString("ja-JP")}円` +
-        ` ＋ 日曜祝日 ${sundayHours}h × ${rateSundayHour.toLocaleString("ja-JP")}円（自動）`
+      Math.round((saturdayDays + holidayDays) * rateSaturday + sundayHours * rateSundayHour),
+      `勤怠の土曜 ${saturdayDays}日` + (holidayDays > 0 ? `＋祝日 ${holidayDays}日` : "") +
+        ` × ${rateSaturday.toLocaleString("ja-JP")}円` +
+        ` ＋ 日曜 ${sundayHours}h × ${rateSundayHour.toLocaleString("ja-JP")}円（自動）`
     );
 
     if (overtimeRate > 0) {
@@ -388,7 +394,7 @@ export function AllowancePanel({
     return rowsOut;
   }, [
     allowanceDefinitions, paidLeaveRate, paidLeaveDays,
-    monthlyData?.saturdayWorkDays, monthlyData?.sundayWorkHours, rateSaturday, rateSundayHour,
+    monthlyData?.saturdayWorkDays, monthlyData?.sundayWorkHours, monthlyData?.holidayWorkDays, rateSaturday, rateSundayHour,
     overtimeRate, overtimeHours, lateNightHours, personalNightRate,
   ]);
 

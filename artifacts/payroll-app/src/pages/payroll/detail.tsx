@@ -190,13 +190,21 @@ export default function PayrollDetail() {
                     </tr>
                   )}
                   <tr className="border-b border-dotted border-gray-300">
-                    <td className="py-2">祝日/休日出勤</td>
+                    <td className="py-2">日曜出勤</td>
                     <td className="py-2 text-right">
                       {Number((payroll as { holidayWorkHours?: number }).holidayWorkHours ?? 0) > 0
                         ? formatHours(Number((payroll as { holidayWorkHours?: number }).holidayWorkHours))
                         : `${payroll.holidayWorkDays} 日`}
                     </td>
                   </tr>
+                  {Number((payroll as { publicHolidayWorkDays?: number }).publicHolidayWorkDays ?? 0) > 0 && (
+                    <tr className="border-b border-dotted border-gray-300">
+                      <td className="py-2">祝日出勤</td>
+                      <td className="py-2 text-right">
+                        {Number((payroll as { publicHolidayWorkDays?: number }).publicHolidayWorkDays)} 日
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
