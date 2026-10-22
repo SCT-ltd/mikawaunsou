@@ -31,6 +31,9 @@ RUN pnpm install --frozen-lockfile
 
 COPY . .
 
+# 型の確認（型の誤りをそのまま本番に出さないように。以前はビルドだけで確認していなかった）
+RUN pnpm run typecheck
+
 # API: esbuild で dist/index.mjs（依存を内包した単一 ESM）を生成
 RUN pnpm --filter @workspace/api-server run build
 
