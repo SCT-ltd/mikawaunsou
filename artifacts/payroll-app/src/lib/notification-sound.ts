@@ -57,23 +57,10 @@ export function playNotificationSound(
   messageId: number,
   options?: { senderId?: number; conversationId?: number; currentUserId?: number }
 ): void {
-  if (notifiedMessageIds.has(messageId)) {
-    console.log("[MESSAGE_NOTIFICATION_SOUND]", {
-      messageId,
-      ...options,
-      shouldPlaySound: false,
-      reason: "already_notified",
-    });
-    return;
-  }
+  // 同じメッセージで2回鳴らさない（確認用のログは出さない）
+  void options;
+  if (notifiedMessageIds.has(messageId)) return;
   notifiedMessageIds.add(messageId);
-
-  console.log("[MESSAGE_NOTIFICATION_SOUND]", {
-    messageId,
-    ...options,
-    shouldPlaySound: true,
-    reason: "new_message_from_other",
-  });
 
   const ctx = getAudioContext();
   if (!ctx) return;

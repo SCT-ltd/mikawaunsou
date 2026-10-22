@@ -15,6 +15,7 @@ import { X, Truck,
   MessageSquare,
   Users,
   History,
+  BookOpen,
 } from "lucide-react";
 
 const navigation = [
@@ -24,6 +25,7 @@ const navigation = [
   { name: "勤怠管理",           href: "/attendance",    icon: ClipboardCheck,  description: "社員の出退勤・勤怠状況を管理します",       highlight: "teal" },
   { name: "月次実績入力",       href: "/monthly-input", icon: CalendarDays,    description: "月次の売上・走行距離などの実績を入力します", highlight: "amber" },
   { name: "給与明細",           href: "/payroll",       icon: FileText,        description: "給与明細の作成・確認・印刷をします",         highlight: "violet" },
+  { name: "仕訳（会計）",       href: "/journal",       icon: BookOpen,        description: "給与の振替伝票（仕訳）を確認し、会計ソフト用のCSVを出します" },
   { name: "カレンダー",         href: "/calendar",      icon: CalendarRange,   description: "シフト・スケジュールを管理します" },
   { name: "マスター管理",       href: "/allowances",    icon: Tag,             description: "手当・控除定義などのマスターデータを管理します" },
   { name: "ユーザー管理",       href: "/users",         icon: Users,           description: "システムユーザーの追加・編集・権限設定をします" },

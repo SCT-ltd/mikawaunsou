@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
+import { useToast } from "@/hooks/use-toast";
 import { AppLayout } from "@/components/layout/app-layout";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, Calendar, RotateCcw, Printer, Loader2 } from "lucide-react";
@@ -221,6 +222,7 @@ function CalendarSkeleton() {
 }
 
 export default function CalendarPage() {
+  const { toast } = useToast();
   const now = new Date();
   const currentMonth = now.getMonth() + 1;
   const currentYear  = now.getFullYear();
@@ -386,7 +388,7 @@ export default function CalendarPage() {
 </html>`;
 
     const win = window.open("", "_blank", "width=1200,height=800");
-    if (!win) { alert("ポップアップがブロックされました。ブラウザの設定でポップアップを許可してください。"); return; }
+    if (!win) { toast({ title: "印刷の画面を開けませんでした", description: "ポップアップがブロックされています。アドレスバーの右の表示から、このサイトのポップアップを許可してください。", variant: "destructive" }); return; }
     win.document.open();
     win.document.write(html);
     win.document.close();

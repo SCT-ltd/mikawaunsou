@@ -8,6 +8,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useNavigationGuard } from "@/context/navigation-guard-context";
 
 /**
  * 従業員のお知らせ（年齢の節目・設定の確認・残業・未確定の明細）。
@@ -85,12 +86,14 @@ function AlertRow({ a, onOpen }: { a: EmployeeAlert; onOpen: (a: EmployeeAlert) 
 function useOpenAlert() {
   const [, setLocation] = useLocation();
   const qc = useQueryClient();
+  const { requestNavigate } = useNavigationGuard();
   return async (a: EmployeeAlert) => {
     if (!a.read) {
       await postRead("read", { keys: [a.key] });
       qc.invalidateQueries({ queryKey: ALERTS_KEY });
     }
-    setLocation(a.href);
+    // 保存していない入力がある画面から移るときは、先に確認を出す
+    requestNavigate(a.href, setLocation);
   };
 }
 
@@ -140,7 +143,7 @@ function PushToggle() {
   }, [perm]);
 
   if (perm === "unsupported") return <p className="text-[11px] text-muted-foreground">このブラウザはPCの通知に対応していません。</p>;
-  if (perm === "granted") return <p className="text-[11px] text-emerald-700">✓ このPCに通知が届きます（要対応のお知らせが出たとき）</p>;
+  if (perm === "granted") return <p className="text-[11px] text-emerald-700 dark:text-emerald-300">✓ このPCに通知が届きます（要対応のお知らせが出たとき）</p>;
   if (perm === "denied") {
     return <p className="text-[11px] text-muted-foreground">通知がブロックされています。アドレスバー左の鍵マーク→「通知」を「許可」にしてください。</p>;
   }
@@ -223,7 +226,7 @@ export function AlertsCard() {
   if (isLoading || items.length === 0) return null;
   const need = items.filter((a) => a.level !== "info").length;
   return (
-    <Card className={need > 0 ? "border-amber-300" : undefined}>
+    <Card className={need > 0 ? "border-amber-300 dark:border-amber-500/50" : undefined}>
       <CardHeader className="pb-2">
         <CardTitle className="text-base flex items-center gap-2">
           <BellRing className={`h-4 w-4 ${need > 0 ? "text-amber-600" : "text-muted-foreground"}`} />

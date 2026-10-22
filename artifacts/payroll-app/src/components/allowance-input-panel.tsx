@@ -16,6 +16,7 @@ import { Reorder, useDragControls } from "framer-motion";
 import { calculateIncomeTaxReiwa8, round50sen } from "@/lib/tax-tables-reiwa8";
 import { formatRatePercent, useMonthInsurance } from "@/lib/insurance-rates";
 import { useMonthItems, saveMonthItems, monthItemsQueryKey, toLegacyRows, MonthItemsError } from "@/lib/month-items";
+import { SaveStatus, type SaveState } from "@/components/save-status";
 
 function roundJapanese(amount: number): number {
   return Math.floor(amount);
@@ -75,6 +76,17 @@ interface Props {
   month?: number;
   /** この明細を作った計算方法（"manual" / "auto" / "bluewing_auto"）。二重計上の警告を出すかの判断に使う。 */
   calculationMode?: string | null;
+  /**
+   * 親（給与明細画面）から「保存」を呼べるようにする口。
+   * 「保存して確定」「保存して印刷」で使う。保存できたら true。
+   */
+  saveRef?: { current: (() => Promise<boolean>) | null };
+  /** 画面で出している見込みの総支給・差引を親へ知らせる（明細の金額とのずれを出すため）*/
+  onEstimateChange?: (e: { gross: number; net: number }) => void;
+  /** 保存の状態を親（画面の上の札）へ知らせる */
+  onSaveStateChange?: (s: SaveState) => void;
+  /** 閲覧のみの人など、書き込みができないとき */
+  readOnly?: boolean;
 }
 
 type AllowanceRow = { uid: string; defId: number | null; amount: number };
@@ -93,11 +105,14 @@ function SearchableCombobox({
   value,
   onValueChange,
   placeholder,
+  usedIds,
 }: {
   options: { id: number; name: string }[];
   value: number | null;
   onValueChange: (id: number) => void;
   placeholder: string;
+  /** ほかの行で選んでいる項目（同じ手当を2行に入れると二重に支給されるため選べなくする）*/
+  usedIds?: Set<number>;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -123,7 +138,9 @@ function SearchableCombobox({
     setQuery("");
   };
 
+  const isUsed = (id: number) => id !== value && !!usedIds?.has(id);
   const selectOption = (id: number) => {
+    if (isUsed(id)) return;
     onValueChange(id);
     closeDropdown();
   };
@@ -196,12 +213,14 @@ function SearchableCombobox({
               filtered.map((o, i) => (
                 <li
                   key={o.id}
+                  aria-disabled={isUsed(o.id)}
                   onMouseDown={(e) => { e.preventDefault(); selectOption(o.id); }}
                   onMouseEnter={() => setActiveIdx(i)}
-                  className={`flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer transition-colors ${i === activeIdx ? "bg-accent text-accent-foreground" : "hover:bg-muted/50"}`}
+                  className={`flex items-center gap-2 px-3 py-1.5 text-xs transition-colors ${isUsed(o.id) ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} ${i === activeIdx ? "bg-accent text-accent-foreground" : "hover:bg-muted/50"}`}
                 >
                   <Check className={`h-3 w-3 shrink-0 ${o.id === value ? "opacity-100 text-primary" : "opacity-0"}`} />
                   <span className="truncate">{o.name}</span>
+                  {isUsed(o.id) && <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">ほかの行で選択済み</span>}
                 </li>
               ))
             )}
@@ -276,7 +295,9 @@ function AllowanceReorderItem({
   onDelete,
   inputRef,
   onEnterKey,
+  usedIds,
 }: {
+  usedIds?: Set<number>;
   row: AllowanceRow;
   allowanceDefinitions: { id: number; name: string; isTaxable: boolean }[] | undefined;
   onChange: (uid: string, patch: Partial<AllowanceRow>) => void;
@@ -309,6 +330,7 @@ function AllowanceReorderItem({
             value={row.defId}
             onValueChange={(id) => onChange(row.uid, { defId: id })}
             placeholder="手当を選択…"
+            usedIds={usedIds}
           />
         </div>
         <div className={COL_TAX}>
@@ -332,8 +354,11 @@ function AllowanceReorderItem({
         <button
           type="button"
           onClick={() => onDelete(row.uid)}
-          className={`${COL_DEL} flex items-center justify-center text-muted-foreground/30 hover:text-destructive transition-colors`}
-          title="削除"
+          // 以前は薄い色で見えにくく、キーボードで選んでも気付けなかった。
+          // 選んだとき・マウスを乗せたとき・タッチの端末でははっきり見せる
+          className={`${COL_DEL} flex items-center justify-center rounded text-muted-foreground/40 group-hover:text-muted-foreground hover:text-destructive focus-visible:text-destructive focus-visible:ring-2 focus-visible:ring-primary [@media(hover:none)]:text-muted-foreground transition-colors`}
+          title="この行を削除"
+          aria-label="この手当の行を削除"
         >
           <X className="h-3.5 w-3.5" />
         </button>
@@ -350,7 +375,9 @@ function DeductionReorderItem({
   onDelete,
   inputRef,
   onEnterKey,
+  usedIds,
 }: {
+  usedIds?: Set<number>;
   row: DeductionRow;
   deductionDefinitions: { id: number; name: string }[] | undefined;
   onChange: (uid: string, patch: Partial<DeductionRow>) => void;
@@ -382,6 +409,7 @@ function DeductionReorderItem({
             value={row.defId}
             onValueChange={(id) => onChange(row.uid, { defId: id })}
             placeholder="差引を選択…"
+            usedIds={usedIds}
           />
         </div>
         <div className={COL_TAX} />
@@ -396,8 +424,11 @@ function DeductionReorderItem({
         <button
           type="button"
           onClick={() => onDelete(row.uid)}
-          className={`${COL_DEL} flex items-center justify-center text-muted-foreground/30 hover:text-destructive transition-colors`}
-          title="削除"
+          // 以前は薄い色で見えにくく、キーボードで選んでも気付けなかった。
+          // 選んだとき・マウスを乗せたとき・タッチの端末でははっきり見せる
+          className={`${COL_DEL} flex items-center justify-center rounded text-muted-foreground/40 group-hover:text-muted-foreground hover:text-destructive focus-visible:text-destructive focus-visible:ring-2 focus-visible:ring-primary [@media(hover:none)]:text-muted-foreground transition-colors`}
+          title="この行を削除"
+          aria-label="この差引の行を削除"
         >
           <X className="h-3.5 w-3.5" />
         </button>
@@ -449,7 +480,7 @@ function DisplayRow({
   );
 }
 
-export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year, month, calculationMode }: Props) {
+export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year, month, calculationMode, saveRef, onEstimateChange, onSaveStateChange, readOnly = false }: Props) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const employeeId = employee.id;
@@ -470,6 +501,8 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
   /** この月の明細が確定済み。手当・控除は見るだけにする（直すときは先に確定を解除）。 */
   const locked = !!monthItems?.locked;
   const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   /** 雇用保険料の手入力（空欄＝自動計算）。その月の控えに保存する。 */
   const [empInsInput, setEmpInsInput] = useState("");
   useEffect(() => {
@@ -616,9 +649,15 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
     }
   }, [employee.baseSalary, employeeId, isDaily, computedDailyBaseSalary, computedHourlyBaseSalary, monthItems?.exists, monthItems?.baseSalary]);
 
-  const handleSave = async () => {
-    if (locked || saving) return;
+  const handleSave = async (): Promise<boolean> => {
+    if (locked || saving || readOnly) return false;
+    // 雇用保険料の欄に数字以外が入っていたら保存しない（以前は黙って0円で保存していた）
+    if (empInsInvalid) {
+      toast({ title: "雇用保険料の欄を直してください", description: "数字だけを入れてください（自動にするときは空欄）。", variant: "destructive" });
+      return false;
+    }
     setSaving(true);
+    setSaveError(null);
     try {
       const allowancePayload = rows
         .filter(r => r.defId !== null && r.amount > 0)
@@ -680,23 +719,32 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
           // 給与再計算失敗は警告のみ（手当保存自体は成功しているため）
           toast({ title: "警告", description: "手当は保存しましたが給与の再計算に失敗しました。", variant: "destructive" });
           markClean();
-          return;
+          setSavedAt(new Date());
+          setSaveError("明細の再計算に失敗しました");
+          return true;
         }
       }
 
       toast({ title: "保存・再計算しました", description: `${employee.name}の明細を更新しました。` });
       markClean();
+      setSavedAt(new Date());
+      return true;
     } catch (e) {
       if (e instanceof MonthItemsError && e.status === 409) {
         queryClient.invalidateQueries({ queryKey: monthItemsQueryKey(employeeId, targetYear, targetMonth) });
+        setSaveError("この月の明細が確定済みです");
         toast({ title: "確定済みのため保存できません", description: "この月の給与明細は確定済みです。直すときは、先に「確定解除」を押してください。", variant: "destructive" });
       } else {
+        setSaveError(e instanceof MonthItemsError ? e.message : "通信できませんでした");
         toast({ title: "エラー", description: e instanceof MonthItemsError ? e.message : "保存に失敗しました。", variant: "destructive" });
       }
+      return false;
     } finally {
       setSaving(false);
     }
   };
+  // 親から呼べるようにする（毎回いまの内容で保存するよう、描画ごとに入れ直す）
+  if (saveRef) saveRef.current = handleSave;
 
   const handleAllowanceChange = useCallback((uid: string, patch: Partial<AllowanceRow>) => {
     setRows(prev => prev.map(r => r.uid === uid ? { ...r, ...patch } : r));
@@ -763,6 +811,8 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
     : round50sen((grandTotal - empInsExcludedTotal) * empInsRate);
   const empInsManual = empInsInput.trim() === "" ? null : Math.max(0, Math.round(Number(empInsInput.replace(/[,，円¥￥\s]/g, "")) || 0));
   const employmentInsurance = empInsManual ?? employmentInsuranceAuto;
+  /** 雇用保険料の欄に数字以外が入っている（このまま保存させない）*/
+  const empInsInvalid = empInsInput.trim() !== "" && !/^\d+$/.test(empInsInput.replace(/[,，円¥￥\s]/g, "").replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)));
 
   const totalInsurance = healthInsurance + childcareSupportContribution + pensionInsurance + employmentInsurance;
 
@@ -785,6 +835,24 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
   const isBwEmployee = !!(employee as unknown as { useBluewingLogic?: boolean }).useBluewingLogic;
   const fmt = (v: number) => v >= 0 ? v.toLocaleString("ja-JP") : "—";
 
+  // 見込みの総支給・差引を親へ（明細の金額とのずれを出すため）
+  const onEstimateRef = useRef(onEstimateChange);
+  onEstimateRef.current = onEstimateChange;
+  useEffect(() => { onEstimateRef.current?.({ gross: grandTotal, net: netSalary }); }, [grandTotal, netSalary]);
+
+  // 保存の状態を親へ
+  const saveState: SaveState = locked ? { kind: "locked" }
+    : saving ? { kind: "saving" }
+    : isDirty ? { kind: "dirty", label: "未保存の変更あり" }
+    : saveError ? { kind: "error", reason: saveError }
+    : savedAt ? { kind: "saved", at: savedAt }
+    : { kind: "idle" };
+  const saveStateKey = JSON.stringify(saveState);
+  const onSaveStateRef = useRef(onSaveStateChange);
+  onSaveStateRef.current = onSaveStateChange;
+  useEffect(() => { onSaveStateRef.current?.(JSON.parse(saveStateKey, (k, v) => (k === "at" && v ? new Date(v) : v)) as SaveState); }, [saveStateKey]);
+  const editable = !locked && !readOnly;
+
   // 自動計算項目と同名のカスタム手当（＝二重計上の恐れ）を検知。
   // 二重になるのは、明細を「自動計算」で作ったときだけ（残業などをシステムが計算し、同じ名前の手当も足すため）。
   // 「保存して計算」（手入力固定）で作った明細では、システムは残業などを計算せず、この手当の行が
@@ -800,6 +868,8 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
 
   return (
     <div className="flex flex-col gap-0 select-none">
+      {/* 確定済み・閲覧のみのときは、入力欄に打てないようにする（以前は打てて、保存だけができなかった） */}
+      <fieldset disabled={!editable} className={`m-0 p-0 border-0 min-w-0 ${editable ? "" : "opacity-75"}`}>
       {/* 二重計上の警告（自動計算項目と同名のカスタム手当） */}
       {duplicateAllowanceNames.length > 0 && (
         <div className="mb-2 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-800">
@@ -873,6 +943,7 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
             allowanceDefinitions={allowanceDefinitions as { id: number; name: string; isTaxable: boolean }[] | undefined}
             onChange={handleAllowanceChange}
             onDelete={handleAllowanceDelete}
+            usedIds={new Set(rows.filter(r => r.uid !== row.uid && r.defId !== null).map(r => r.defId!))}
             inputRef={getAllowanceInputRef(row.uid)}
             onEnterKey={() => handleAllowanceEnterKey(row.uid)}
           />
@@ -949,11 +1020,18 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
               value={empInsInput}
               placeholder={employmentInsuranceAuto.toLocaleString("ja-JP")}
               onChange={(e) => { setEmpInsInput(e.target.value); markDirty(); }}
-              className={`w-full h-7 rounded border bg-background px-2 text-right text-xs tabular-nums ${empInsManual != null ? "border-amber-400" : "border-input"}`}
+              aria-invalid={empInsInvalid}
+              aria-describedby={empInsInvalid ? "empins-error" : undefined}
+              className={`w-full h-7 rounded border bg-background px-2 text-right text-xs tabular-nums ${empInsInvalid ? "border-red-500 ring-1 ring-red-500" : empInsManual != null ? "border-amber-400" : "border-input"}`}
             />
           </div>
           <div className={COL_DEL} />
         </div>
+      )}
+      {empInsInvalid && editable && employee.taxExempt !== true && (
+        <p id="empins-error" role="alert" className="px-3 py-1 text-[11px] font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 border-b border-red-200 dark:border-red-500/30">
+          雇用保険料には数字だけを入れてください（例：1234）。自動にするときは空欄にします。このままでは保存できません。
+        </p>
       )}
       <DisplayRow label="社会保険料控除後の金額" value={afterInsuranceSalary} labelClass="font-medium text-foreground" valueClass="tabular-nums font-medium" />
 
@@ -990,6 +1068,7 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
             deductionDefinitions={deductionDefinitions as { id: number; name: string }[] | undefined}
             onChange={handleDeductionChange}
             onDelete={handleDeductionDelete}
+            usedIds={new Set(deductionRows.filter(r => r.uid !== row.uid && r.defId !== null).map(r => r.defId!))}
             inputRef={getDeductionInputRef(row.uid)}
             onEnterKey={() => handleDeductionEnterKey(row.uid)}
           />
@@ -1038,7 +1117,7 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
       {/* 注記 */}
       {isBwEmployee && (
         <div className="mt-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
-          <strong>BW社員:</strong> 上記は基本給・手当のみ。時間外手当・業績手当（BW計算）は「給与明細」タブで確認してください。
+          <strong>BW社員:</strong> 上記は基本給・手当のみの見込みです。時間外手当・業績手当（BW計算）を含めた金額は、上の「明細の金額」（左の一覧と同じ、サーバーで計算した金額）で確認してください。
         </div>
       )}
       {company && (
@@ -1052,6 +1131,8 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
         </div>
       )}
 
+      </fieldset>
+
       {/* 保存ボタン */}
       <div className="border-t pt-3 mt-2">
         {locked && (
@@ -1059,12 +1140,15 @@ export function AllowanceInputPanel({ employee, monthlyData, onDirtyChange, year
             この月は確定済みです。表示しているのは確定したときの手当・控除で、変更はできません。直すときは、先に上の「確定解除」を押してください。
           </p>
         )}
+        <div className="flex items-center justify-between mb-1.5">
+          <SaveStatus title="手当・控除" state={saveState} />
+        </div>
         <Button
           className="w-full"
-          onClick={handleSave}
-          disabled={saving || locked}
+          onClick={() => { void handleSave(); }}
+          disabled={saving || locked || readOnly || empInsInvalid}
         >
-          {locked ? "確定済み（変更できません）" : saving ? "保存中…" : isDirty ? "💾 保存（未保存の変更あり）" : "保存"}
+          {locked ? "確定済み（変更できません）" : readOnly ? "閲覧のみ（変更できません）" : saving ? "保存中…" : empInsInvalid ? "雇用保険料の欄を直してください" : isDirty ? "💾 保存（未保存の変更あり）" : "保存"}
         </Button>
       </div>
     </div>

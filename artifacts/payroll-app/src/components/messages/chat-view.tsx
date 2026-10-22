@@ -73,7 +73,7 @@ export function ChatView({
                   <div className={`px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words ${
                     isOffice
                       ? "bg-primary text-primary-foreground rounded-tr-sm"
-                      : "bg-white border shadow-sm rounded-tl-sm text-foreground"
+                      : "bg-white dark:bg-slate-800 border shadow-sm rounded-tl-sm text-foreground"
                   }`}>
                     {msg.content}
                   </div>

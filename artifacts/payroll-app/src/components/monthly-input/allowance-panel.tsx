@@ -28,6 +28,8 @@ import {
 import { round50sen } from "@/lib/tax-tables-reiwa8";
 import { formatRatePercent, useMonthInsurance } from "@/lib/insurance-rates";
 import { useMonthItems, saveMonthItems, monthItemsQueryKey, toLegacyRows, MonthItemsError } from "@/lib/month-items";
+import { useToast } from "@/hooks/use-toast";
+import type { SaveState } from "@/components/save-status";
 
 /**
  * 手当・控除タブ。
@@ -66,9 +68,12 @@ function AllowanceReorderItem({
   onChange,
   onRemove,
   autoNote,
+  usedIds,
 }: {
   row: AllowanceRow;
   definitions: { id: number; name: string; isTaxable: boolean }[];
+  /** ほかの行ですでに選んでいる手当（同じ手当を2行に選ぶと二重に支給されるため選べなくする）*/
+  usedIds?: Set<number>;
   onChange: (uid: string, field: "defId" | "amount", value: number | null) => void;
   onRemove: (uid: string) => void;
   /** 金額が勤怠から自動で入る手当（有給など）の注記 */
@@ -96,8 +101,8 @@ function AllowanceReorderItem({
           </SelectTrigger>
           <SelectContent>
             {definitions.map((d) => (
-              <SelectItem key={d.id} value={d.id.toString()}>
-                {d.name}
+              <SelectItem key={d.id} value={d.id.toString()} disabled={d.id !== row.defId && !!usedIds?.has(d.id)}>
+                {d.name}{d.id !== row.defId && usedIds?.has(d.id) ? "（ほかの行で選択済み）" : ""}
               </SelectItem>
             ))}
           </SelectContent>
@@ -133,7 +138,10 @@ function AllowanceReorderItem({
       <button
         type="button"
         onClick={() => onRemove(row.uid)}
-        className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive p-0.5 shrink-0 transition-all"
+        aria-label="この手当の行を削除"
+        title="この行を削除"
+        // マウスを乗せたときだけでなく、キーボードで選んだとき・タッチの端末では常に見せる
+        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100 focus-visible:ring-2 focus-visible:ring-primary rounded text-muted-foreground hover:text-destructive p-0.5 shrink-0 transition-all"
       >
         <X className="h-3.5 w-3.5" />
       </button>
@@ -147,9 +155,12 @@ function DeductionReorderItem({
   definitions,
   onChange,
   onRemove,
+  usedIds,
 }: {
   row: DeductionRow;
   definitions: { id: number; name: string }[];
+  /** ほかの行ですでに選んでいる差引（同じ差引を2行に選べなくする）*/
+  usedIds?: Set<number>;
   onChange: (uid: string, field: "defId" | "amount", value: number | null) => void;
   onRemove: (uid: string) => void;
 }) {
@@ -174,8 +185,8 @@ function DeductionReorderItem({
           </SelectTrigger>
           <SelectContent>
             {definitions.map((d) => (
-              <SelectItem key={d.id} value={d.id.toString()}>
-                {d.name}
+              <SelectItem key={d.id} value={d.id.toString()} disabled={d.id !== row.defId && !!usedIds?.has(d.id)}>
+                {d.name}{d.id !== row.defId && usedIds?.has(d.id) ? "（ほかの行で選択済み）" : ""}
               </SelectItem>
             ))}
           </SelectContent>
@@ -194,7 +205,10 @@ function DeductionReorderItem({
       <button
         type="button"
         onClick={() => onRemove(row.uid)}
-        className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive p-0.5 shrink-0 transition-all"
+        aria-label="この差引の行を削除"
+        title="この行を削除"
+        // マウスを乗せたときだけでなく、キーボードで選んだとき・タッチの端末では常に見せる
+        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100 focus-visible:ring-2 focus-visible:ring-primary rounded text-muted-foreground hover:text-destructive p-0.5 shrink-0 transition-all"
       >
         <X className="h-3.5 w-3.5" />
       </button>
@@ -209,8 +223,21 @@ export function AllowancePanel({
   year,
   month,
   hasMonthlyRecord = false,
+  attendanceUnsaved = false,
+  readOnly = false,
+  onSaveStateChange,
 }: {
   employee: EmployeeExt;
+  /**
+   * 「実績入力」タブの勤怠がまだ保存されていない。
+   * このあいだは手当を自動保存しない（保存していない勤怠の値から作った手当で明細が計算されるのを防ぐ）。
+   * 勤怠を「保存して計算」すると、続けて手当も保存される。
+   */
+  attendanceUnsaved?: boolean;
+  /** 閲覧のみの人など、書き込みができないとき */
+  readOnly?: boolean;
+  /** 自動保存の状態を、画面の上の札（保存の状態）に知らせる */
+  onSaveStateChange?: (s: SaveState) => void;
   /**
    * この社員のこの月の月次実績が保存済みか。未保存の月は、開いただけでは自動反映も
    * 自動保存もしない（勤怠が全部0なので、0円で手当マスタを上書きしてしまうため）。
@@ -233,6 +260,7 @@ export function AllowancePanel({
   };
 }) {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const employeeId = employee.id;
   // 手当・控除は「この月」の内容を読み書きする（ほかの月の内容を書き換えない）
   const targetYear = year ?? new Date().getFullYear();
@@ -574,30 +602,6 @@ export function AllowancePanel({
   const totalDeductions = roundJapanese(totalInsurance + incomeTax + residentTax + customDeductionsTotal);
   const netSalary = roundJapanese(grandTotal - totalDeductions);
 
-  console.log("[FRONT_INCOME_TAX_SOURCE_CHECK]", {
-    page: "monthly-input/AllowancePanel",
-    employeeId,
-    payrollId: null,
-    incomeTaxDisplayed: incomeTax,
-    source: "calculateIncomeTaxReiwa8（公式月額表・甲欄）",
-    usesLegacyFormula: false,
-  });
-
-  console.log("[CUSTOM_DEDUCTIONS_TOTAL_CHECK]", {
-    employeeId,
-    payrollId: null,
-    deductionItems: deductionRows
-      .filter(r => r.defId !== null)
-      .map(r => ({
-        defId: r.defId,
-        name: deductionDefinitions.find(d => d.id === r.defId)?.name ?? "(未選択)",
-        amount: r.amount,
-      })),
-    customDeductionsTotal,
-    totalDeductions,
-    netSalary,
-  });
-
   const fmt = (v: number) =>
     v > 0 ? `¥${v.toLocaleString("ja-JP")}` : v === 0 ? "¥0" : "—";
 
@@ -624,6 +628,7 @@ export function AllowancePanel({
   const [saveState, setSaveState] = useState<"idle" | "pending" | "saving" | "saved" | "error">("idle");
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [recalcNote, setRecalcNote] = useState<string | null>(null);
+  const [errorReason, setErrorReason] = useState<string | null>(null);
 
   /** 最後に保存が成功した内容（初期値はDBの内容）。これと画面が違えば保存する */
   const lastSavedRef = useRef<string | null>(null);
@@ -648,7 +653,7 @@ export function AllowancePanel({
     setBaselineReady(true);
   }, [employeeAllowances, employeeDeductions, employee.baseSalary, isHourly, isDaily, monthItems]);
 
-  const canAutoSave = rowsReady && baselineReady && payrollStatusKnown && !isConfirmed && allowWrite;
+  const canAutoSave = rowsReady && baselineReady && payrollStatusKnown && !isConfirmed && allowWrite && !attendanceUnsaved && !readOnly;
 
   // 「実績入力」タブで勤怠を変えた場合も、この画面での変更として扱う（自動反映→保存させる）。
   // 基準は、パネルの準備が済んだ時点の勤怠。
@@ -702,13 +707,20 @@ export function AllowancePanel({
       queryClient.invalidateQueries({ queryKey: monthItemsQueryKey(employeeId, targetYear, targetMonth) });
       queryClient.invalidateQueries({ queryKey: getListEmployeesQueryKey({ active: true }) });
       setSavedAt(new Date());
+      setErrorReason(null);
     } catch (e) {
       // 409 ＝ ほかの人がこの月を確定した。取り直して「確定済み」の表示に切り替える。
+      const reason = e instanceof MonthItemsError && e.status === 409
+        ? "この月の明細が確定済みです"
+        : e instanceof MonthItemsError && e.message ? e.message : "通信できませんでした";
       if (e instanceof MonthItemsError && e.status === 409) {
         queryClient.invalidateQueries({ queryKey: monthItemsQueryKey(employeeId, targetYear, targetMonth) });
         if (year != null && month != null) queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) });
       }
+      setErrorReason(reason);
       setSaveState("error");
+      // 自動保存の失敗は画面の下の小さな文字だけでは気付きにくいので、知らせも出す
+      toast({ title: `${employee.name}さんの手当・控除を保存できませんでした`, description: `${reason}。「再試行」を押すか、少し待ってからもう一度入力してください。`, variant: "destructive" });
     } finally {
       inFlightRef.current = false;
     }
@@ -719,7 +731,7 @@ export function AllowancePanel({
     } else {
       setSaveState("saved");
     }
-  }, [employeeId, year, month, targetYear, targetMonth, isHourly, queryClient]);
+  }, [employeeId, year, month, targetYear, targetMonth, isHourly, queryClient, toast, employee.name]);
   const runSaveRef = useRef(runSave);
   runSaveRef.current = runSave;
 
@@ -734,6 +746,29 @@ export function AllowancePanel({
       void runSaveRef.current();
     }, AUTOSAVE_DELAY_MS);
   }, [snapshot, canAutoSave]);
+
+  // 勤怠が未保存のあいだは、待っていた保存も止める（「保存して計算」のあとで改めて保存する）
+  useEffect(() => {
+    if (!attendanceUnsaved || timerRef.current === null) return;
+    window.clearTimeout(timerRef.current);
+    timerRef.current = null;
+  }, [attendanceUnsaved]);
+
+  // 画面の上の札（保存の状態）へ知らせる
+  const onSaveStateRef = useRef(onSaveStateChange);
+  onSaveStateRef.current = onSaveStateChange;
+  const unsavedNow = rowsReady && baselineReady && snapshot !== lastSavedRef.current;
+  useEffect(() => {
+    const cb = onSaveStateRef.current;
+    if (!cb) return;
+    if (isConfirmed) cb({ kind: "locked" });
+    else if (saveState === "saving") cb({ kind: "saving" });
+    else if (saveState === "error") cb({ kind: "error", reason: errorReason ?? undefined });
+    else if (unsavedNow && attendanceUnsaved) cb({ kind: "dirty", label: "勤怠の保存待ち" });
+    else if (unsavedNow || saveState === "pending") cb({ kind: "dirty", label: "保存待ち" });
+    else if (saveState === "saved") cb({ kind: "saved", at: savedAt });
+    else cb({ kind: "idle" });
+  }, [isConfirmed, saveState, errorReason, unsavedNow, attendanceUnsaved, savedAt]);
 
   // 社員を切り替える（＝このパネルが外れる）ときは、待ち中の保存をすぐ実行する
   useEffect(() => () => {
@@ -813,9 +848,22 @@ export function AllowancePanel({
       )}
 
       {/* 確定済みの月は入力・並べ替え・行の追加削除をすべて無効にする */}
+      {attendanceUnsaved && !isConfirmed && !readOnly && (
+        <div role="status" className="px-4 py-2.5 flex items-start gap-2 bg-amber-50 dark:bg-amber-500/10 border-b border-amber-200 dark:border-amber-500/30">
+          <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-amber-700 dark:text-amber-300" />
+          <div className="text-xs text-amber-900 dark:text-amber-200">
+            <div className="font-semibold">勤怠が未保存です</div>
+            <div className="mt-0.5">
+              下の金額は、まだ保存していない勤怠から出した見込みです。手当・控除はまだ保存されません。
+              上の「保存して計算」を押すと、勤怠と一緒に手当・控除も保存されます。
+            </div>
+          </div>
+        </div>
+      )}
+
       <fieldset
-        disabled={isConfirmed}
-        className={`m-0 p-0 border-0 min-w-0 ${isConfirmed ? "pointer-events-none opacity-70" : ""}`}
+        disabled={isConfirmed || readOnly}
+        className={`m-0 p-0 border-0 min-w-0 ${isConfirmed || readOnly ? "pointer-events-none opacity-70" : ""}`}
       >
       {/* ── 支給セクション ── */}
       <div className="border-b">
@@ -893,6 +941,7 @@ export function AllowancePanel({
               definitions={allowanceDefinitions}
               onChange={handleAllowanceChange}
               onRemove={handleRemoveAllowance}
+              usedIds={new Set(rows.filter((r) => r.uid !== row.uid && r.defId !== null).map((r) => r.defId!))}
               autoNote={
                 autoRows.find((a) => a.defId === row.defId)?.note ??
                 (overtimeRate <= 0 && row.defId !== null && (row.defId === overtimeDefId || row.defId === lateNightDefId)
@@ -988,6 +1037,7 @@ export function AllowancePanel({
               definitions={deductionDefinitions}
               onChange={handleDeductionChange}
               onRemove={handleRemoveDeduction}
+              usedIds={new Set(deductionRows.filter((r) => r.uid !== row.uid && r.defId !== null).map((r) => r.defId!))}
             />
           ))}
         </Reorder.Group>
@@ -1035,6 +1085,16 @@ export function AllowancePanel({
               <Lock className="h-3.5 w-3.5 text-muted-foreground" />
               <span className="text-muted-foreground">確定済み（表示のみ）</span>
             </>
+          ) : readOnly ? (
+            <>
+              <Lock className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-muted-foreground">閲覧のみ（変更できません）</span>
+            </>
+          ) : attendanceUnsaved && unsavedNow ? (
+            <>
+              <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
+              <span className="text-amber-800 dark:text-amber-300">勤怠の保存を待っています（「保存して計算」で一緒に保存されます）</span>
+            </>
           ) : saveState === "saving" ? (
             <>
               <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />
@@ -1048,7 +1108,7 @@ export function AllowancePanel({
           ) : saveState === "error" ? (
             <>
               <AlertCircle className="h-3.5 w-3.5 text-red-600 dark:text-red-400" />
-              <span className="text-red-700 dark:text-red-400 font-semibold">保存に失敗しました</span>
+              <span className="text-red-700 dark:text-red-400 font-semibold">保存に失敗しました{errorReason ? `（${errorReason}）` : ""}</span>
             </>
           ) : saveState === "saved" ? (
             <>
@@ -1064,7 +1124,7 @@ export function AllowancePanel({
             </>
           )}
         </div>
-        {saveState === "error" && !isConfirmed && (
+        {saveState === "error" && !isConfirmed && !readOnly && (
           <Button size="sm" variant="outline" className="h-7" onClick={() => void runSaveRef.current()}>
             再試行
           </Button>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { AppLayout } from "@/components/layout/app-layout";
 import {
   useListPayrolls,
@@ -9,8 +9,8 @@ import {
   useGetPayroll,
   getGetPayrollQueryKey,
   useConfirmPayroll,
-  useUnconfirmPayroll,
   useListMonthlyRecords,
+  getListMonthlyRecordsQueryKey,
   useGetCompany,
   Payroll,
 } from "@workspace/api-client-react";
@@ -20,16 +20,26 @@ import { useMonthItems, toLegacyRows } from "@/lib/month-items";
 import { RichMonthPicker } from "@/components/rich-month-picker";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { AllowanceInputPanel } from "@/components/allowance-input-panel";
 import { useToast } from "@/hooks/use-toast";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { formatMonth } from "@/lib/format";
 import {
-  Calculator, Download, AlertCircle, X, CheckCircle2, FileText, Printer, ArrowLeft, Wallet, Receipt, RotateCcw, Info,
+  Calculator, Download, AlertCircle, X, CheckCircle2, FileText, Printer, ArrowLeft, Wallet, Receipt, RotateCcw, Info, Landmark, CheckCheck, RefreshCw, ExternalLink,
 } from "lucide-react";
 import { PayrollSummaryStats } from "@/components/payroll/summary-stats";
-import { PayrollListPane, filterPayrolls } from "@/components/payroll/payroll-list-pane";
+import { PayrollListPane, filterPayrolls, type PrevDiff } from "@/components/payroll/payroll-list-pane";
+import { ChecklistCard, buildChecklist, useChecklistAck, type ChecklistIssue } from "@/components/payroll/checklist";
+import { PrintDialog, type PrintFormat, type PrintTarget } from "@/components/payroll/print-dialog";
+import { TransferDialog } from "@/components/payroll/transfer-dialog";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { SaveStatus, type SaveState } from "@/components/save-status";
+import { useNavigationGuard } from "@/context/navigation-guard-context";
+import { useWorkMonth } from "@/lib/work-month";
+import { useCanWrite } from "@/lib/use-can-write";
+import { useMonthStatus, recalcPayrolls, unconfirmPayroll, MONTH_STATUS_KEY, DRAFT_PAYROLLS_KEY } from "@/lib/office-tools";
 
 interface CalcError {
   employeeCode: string;
@@ -37,33 +47,86 @@ interface CalcError {
   message: string;
 }
 
+/** 一括計算の結果。実績が無い人（休職など）は「エラー」ではなく「対象外」として分けて出す */
+interface CalcResult {
+  ok: number;
+  skippedConfirmed: number;
+  notApplicable: string[];
+  errors: CalcError[];
+}
+
+/** 印刷の仕事（1件＝印刷ダイアログ1回）*/
+interface PrintJob {
+  key: string;
+  payrolls: Payroll[];
+  layout: "1up" | "2up";
+  title?: string;
+  /** 1人ずつ保存のとき：残りの人（次に刷る人）*/
+  rest?: Payroll[];
+  /** 1人ずつ保存のとき：全体の人数と何人目か */
+  each?: { index: number; total: number };
+}
+
+/** 給与明細まわりの読み込みをまとめて取り直す */
+function refreshPayrollQueries(qc: QueryClient) {
+  qc.invalidateQueries({ predicate: (q) => typeof q.queryKey[0] === "string" && (q.queryKey[0] as string).startsWith("/api/payroll") });
+  qc.invalidateQueries({ queryKey: ["month-items"] });
+  qc.invalidateQueries({ queryKey: [MONTH_STATUS_KEY] });
+  qc.invalidateQueries({ queryKey: [DRAFT_PAYROLLS_KEY] });
+}
+
+const yen = (n: number) => `${Math.round(n).toLocaleString("ja-JP")}円`;
+
 export default function PayrollList() {
-  const currentDate = new Date();
-  const [year, setYear] = useState(currentDate.getFullYear());
-  const [month, setMonth] = useState(currentDate.getMonth() + 1);
+  const wm = useWorkMonth();
+  const { year, month, setWorkMonth, setEmpInUrl } = wm;
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { confirm, confirmDialog } = useConfirm();
+  const canWrite = useCanWrite();
+  const [, navigate] = useLocation();
+  const { setIsDirty: setGlobalDirty, requestNavigate } = useNavigationGuard();
 
-  const { data: payrollsData, isLoading: payrollsLoading } = useListPayrolls({ year, month });
+  const params = { year, month };
+  const { data: payrollsData, isLoading: payrollsLoadingRaw } = useListPayrolls(params, {
+    query: { enabled: wm.ready, queryKey: getListPayrollsQueryKey(params) },
+  });
+  const payrollsLoading = payrollsLoadingRaw || !wm.ready;
   const { data: employees } = useListEmployees({ active: true });
   const { data: company } = useGetCompany();
   const calculatePayroll = useCalculatePayroll();
+  const { data: monthStatus, isLoading: statusLoading } = useMonthStatus(year, month, wm.ready);
 
   const payrolls: Payroll[] = useMemo(() => payrollsData ?? [], [payrollsData]);
 
   const [calculating, setCalculating] = useState(false);
+  const [calcProgress, setCalcProgress] = useState<string | null>(null);
   const [printPayroll, setPrintPayroll] = useState<NonNullable<ReturnType<typeof useGetPayroll>["data"]> | null>(null);
-  /** null = 印刷していない。"1up" = 1人1ページ(A4横)、"2up" = A4縦1枚に2人 */
-  const [bulkPrintLayout, setBulkPrintLayout] = useState<"1up" | "2up" | null>(null);
-  const bulkPrintActive = bulkPrintLayout !== null;
-  const [calcErrors, setCalcErrors] = useState<CalcError[]>([]);
+  const [printJob, setPrintJob] = useState<PrintJob | null>(null);
+  const [printDialogOpen, setPrintDialogOpen] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [calcResult, setCalcResult] = useState<CalcResult | null>(null);
   const [selectedPayrollId, setSelectedPayrollId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
+  const [checked, setChecked] = useState<Set<number>>(new Set());
+  const [busy, setBusy] = useState<string | null>(null);
+  const [unconfirmOpen, setUnconfirmOpen] = useState(false);
+  const [unconfirmReason, setUnconfirmReason] = useState("");
+  /** 右のパネルの見込み（総支給・差引）と、保存の状態 */
+  const [estimate, setEstimate] = useState<{ gross: number; net: number } | null>(null);
+  const [panelSave, setPanelSave] = useState<SaveState>({ kind: "idle" });
+  const panelSaveRef = useRef<(() => Promise<boolean>) | null>(null);
+  const { acked, toggle: toggleAck } = useChecklistAck(year, month);
 
   // 未保存変更ガード
   const [isDirty, setIsDirty] = useState(false);
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
   const pendingActionRef = useRef<(() => void) | null>(null);
+
+  // 右のパネルの未保存を、画面全体の確認（左のメニュー・お知らせのベル・ログアウト）にもつなぐ。
+  // 以前はこの画面の中の移動だけを止めていて、左のメニューで移ると確認なしで消えていた。
+  useEffect(() => { setGlobalDirty(isDirty); }, [isDirty, setGlobalDirty]);
+  useEffect(() => () => setGlobalDirty(false), [setGlobalDirty]);
 
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
@@ -85,29 +148,39 @@ export default function PayrollList() {
     }
   }, [isDirty]);
 
+  const selectPayroll = useCallback((id: number | null) => {
+    setSelectedPayrollId(id);
+    setEstimate(null);
+    setPanelSave({ kind: "idle" });
+    const p = id == null ? null : payrolls.find((x) => x.id === id);
+    setEmpInUrl(p ? p.employeeId : null);
+  }, [payrolls, setEmpInUrl]);
+
   const tryClosePanel = useCallback(() => {
     requestAction(() => {
-      setSelectedPayrollId(null);
+      selectPayroll(null);
       setIsDirty(false);
     });
-  }, [requestAction]);
+  }, [requestAction, selectPayroll]);
 
   const trySelectPayroll = useCallback((id: number) => {
     if (selectedPayrollId === id) return;
     requestAction(() => {
-      setSelectedPayrollId(id);
+      selectPayroll(id);
       setIsDirty(false);
     });
-  }, [requestAction, selectedPayrollId]);
+  }, [requestAction, selectedPayrollId, selectPayroll]);
 
-  const { data: monthlyRecords } = useListMonthlyRecords({ year, month });
+  const recordsParams = { year, month };
+  const { data: monthlyRecords } = useListMonthlyRecords(recordsParams, {
+    query: { enabled: wm.ready, queryKey: getListMonthlyRecordsQueryKey(recordsParams) },
+  });
 
-  const { data: selectedPayroll, isLoading: detailLoading } = useGetPayroll(
+  const { data: selectedPayroll, isLoading: detailLoading, refetch: refetchSelected } = useGetPayroll(
     selectedPayrollId ?? 0,
     { query: { enabled: !!selectedPayrollId, queryKey: getGetPayrollQueryKey(selectedPayrollId ?? 0), staleTime: 0, refetchOnMount: "always" } }
   );
   const confirmPayroll = useConfirmPayroll();
-  const unconfirmPayroll = useUnconfirmPayroll();
 
   const selectedEmployeeId = selectedPayroll?.employeeId ?? 0;
   // 印刷の内訳は「その明細の月」の手当・控除（右パネルの保存で同じキャッシュが更新される）
@@ -115,54 +188,166 @@ export default function PayrollList() {
     selectedEmployeeId, selectedPayroll?.year, selectedPayroll?.month,
     { enabled: !!selectedPayroll?.employeeId },
   );
-  const deductionsFetching = allowancesFetching;
   const { allowances: printEmployeeAllowances, deductions: printEmployeeDeductions } = toLegacyRows(printMonthItems, selectedEmployeeId);
 
-  // 初回ロード時（デスクトップのみ）先頭給与を自動選択（一度きり。閉じるボタンを機能させる）
+  // 最初に開く明細：アドレスの ?emp= があればその社員、無ければ（デスクトップのみ）先頭
   const didInitSelectRef = useRef(false);
   const sortedPayrolls = useMemo(() => filterPayrolls(payrolls, ""), [payrolls]);
   useEffect(() => {
-    if (didInitSelectRef.current || sortedPayrolls.length === 0) return;
+    if (didInitSelectRef.current || payrollsLoading) return;
+    if (sortedPayrolls.length === 0) return;
     didInitSelectRef.current = true;
-    if (selectedPayrollId === null && window.matchMedia("(min-width: 768px)").matches) {
+    const fromUrl = wm.empFromUrl != null ? sortedPayrolls.find((p) => p.employeeId === wm.empFromUrl) : undefined;
+    if (fromUrl) {
+      setSelectedPayrollId(fromUrl.id);
+    } else if (selectedPayrollId === null && window.matchMedia("(min-width: 768px)").matches) {
       setSelectedPayrollId(sortedPayrolls[0].id);
     }
-  }, [sortedPayrolls, selectedPayrollId]);
+  }, [sortedPayrolls, selectedPayrollId, payrollsLoading, wm.empFromUrl]);
 
   const filtered = useMemo(() => filterPayrolls(payrolls, search), [payrolls, search]);
 
+  // ── 前月との差・再計算が要りそうな人 ──
+  const statusRows = useMemo(() => monthStatus?.rows ?? [], [monthStatus]);
+  const diffs = useMemo(() => {
+    const m = new Map<number, PrevDiff | null>();
+    for (const r of statusRows) {
+      if (!r.payroll || !r.prev) { m.set(r.employeeId, null); continue; }
+      m.set(r.employeeId, {
+        grossDiff: Math.round(r.payroll.grossSalary - r.prev.grossSalary),
+        netDiff: Math.round(r.payroll.netSalary - r.prev.netSalary),
+        netPct: r.prev.netSalary > 0 ? ((r.payroll.netSalary - r.prev.netSalary) / r.prev.netSalary) * 100 : null,
+        grossPct: r.prev.grossSalary > 0 ? ((r.payroll.grossSalary - r.prev.grossSalary) / r.prev.grossSalary) * 100 : null,
+      });
+    }
+    return m;
+  }, [statusRows]);
+  const needsRecalcRows = useMemo(() => statusRows.filter((r) => r.payroll && r.payroll.status !== "confirmed" && r.needsRecalc), [statusRows]);
+  const needsRecalcIds = useMemo(() => new Set(needsRecalcRows.map((r) => r.employeeId)), [needsRecalcRows]);
+
+  // ── 確定前チェックリスト ──
+  const issues = useMemo(
+    () => buildChecklist(statusRows, year, month, { dirtyEmployeeId: isDirty ? selectedEmployeeId || null : null }),
+    [statusRows, year, month, isDirty, selectedEmployeeId]
+  );
+  const blocking = issues.filter((i) => i.level === "must").length + issues.filter((i) => i.level === "check" && !acked.has(i.key)).length;
+  const draftPayrolls = payrolls.filter((p) => p.status !== "confirmed");
+  const draftNetTotal = draftPayrolls.reduce((s, p) => s + (p.netSalary ?? 0), 0);
+
+  const openIssue = (i: ChecklistIssue) => {
+    const p = payrolls.find((x) => x.employeeId === i.employeeId);
+    if (i.href) {
+      requestNavigate(i.href, navigate);
+    } else if (p) {
+      trySelectPayroll(p.id);
+    }
+  };
+
+  // ── 確定 ────────────────────────────────────────────────────────────
+  // 以前は右のパネルに保存していない変更があっても「確定」が押せ、古い金額のまま確定できた。
+  // いまは先に保存（＝計算し直し）してから、明細の実際の金額を見せて確かめる。
   const handleConfirm = async () => {
-    if (!selectedPayrollId) return;
+    if (!selectedPayrollId || !selectedPayroll || busy) return;
+    if (isDirty) {
+      const go = await confirm({
+        title: "保存していない変更があります",
+        description: "右のパネルの手当・控除がまだ保存されていません。\n保存して計算し直してから確定します。",
+        okLabel: "保存して次へ",
+        cancelLabel: "やめる",
+      });
+      if (!go) return;
+      setBusy("save");
+      const saved = await panelSaveRef.current?.();
+      setBusy(null);
+      if (!saved) return;
+    }
+    setBusy("confirm");
+    const fresh = (await refetchSelected()).data ?? selectedPayroll;
+    setBusy(null);
+    const recalc = needsRecalcIds.has(fresh.employeeId);
+    const ok = await confirm({
+      title: `${fresh.employeeName}さんの${month}月の給与明細を確定します`,
+      description: (
+        <div className="space-y-2">
+          <table className="w-full text-sm">
+            <tbody>
+              <tr><td className="py-0.5 text-muted-foreground">総支給額</td><td className="py-0.5 text-right amount font-semibold">{yen(fresh.grossSalary)}</td></tr>
+              <tr><td className="py-0.5 text-muted-foreground">控除合計</td><td className="py-0.5 text-right amount">{yen(fresh.totalDeductions)}</td></tr>
+              <tr className="border-t"><td className="py-0.5 font-semibold text-foreground">差引支給額</td><td className="py-0.5 text-right amount font-bold text-foreground">{yen(fresh.netSalary)}</td></tr>
+            </tbody>
+          </table>
+          {recalc && <p className="text-red-600 font-semibold">計算したあとで勤怠・手当・単価などが変わっています。先に「再計算」をしたほうが安全です。</p>}
+          <p>確定すると金額がロックされ、勤怠・手当も変更できなくなります（直すときは「確定解除」）。</p>
+        </div>
+      ),
+      okLabel: "確定する",
+      cancelLabel: "やめる",
+    });
+    if (!ok) return;
+    setBusy("confirm");
     try {
-      await confirmPayroll.mutateAsync({ id: selectedPayrollId });
-      queryClient.invalidateQueries({ queryKey: getGetPayrollQueryKey(selectedPayrollId) });
-      queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) }); queryClient.invalidateQueries({ queryKey: ["month-items"] });
-      toast({ title: "給与確定", description: "給与明細を確定済みに変更しました。" });
+      await confirmPayroll.mutateAsync({ id: fresh.id });
+      refreshPayrollQueries(queryClient);
+      toast({ title: "給与確定", description: `${fresh.employeeName}さんの明細を確定しました（差引 ${yen(fresh.netSalary)}）。` });
     } catch {
       toast({ title: "エラー", description: "確定に失敗しました。", variant: "destructive" });
+    } finally {
+      setBusy(null);
     }
   };
 
+  // 確定解除。理由を入れてもらい、操作の記録に残す。
   const handleUnconfirm = async () => {
-    if (!selectedPayrollId) return;
+    if (!selectedPayrollId || busy) return;
+    setBusy("unconfirm");
     try {
-      await unconfirmPayroll.mutateAsync({ id: selectedPayrollId });
-      queryClient.invalidateQueries({ queryKey: getGetPayrollQueryKey(selectedPayrollId) });
-      queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) }); queryClient.invalidateQueries({ queryKey: ["month-items"] });
-      toast({ title: "確定を解除しました", description: "未確定（draft）に戻しました。再計算・訂正ができます。" });
-    } catch {
-      toast({ title: "エラー", description: "確定解除に失敗しました。", variant: "destructive" });
+      await unconfirmPayroll(selectedPayrollId, unconfirmReason.trim());
+      refreshPayrollQueries(queryClient);
+      setUnconfirmOpen(false);
+      setUnconfirmReason("");
+      toast({ title: "確定を解除しました", description: "未確定に戻しました。再計算・訂正ができます（理由は操作の記録に残りました）。" });
+    } catch (e) {
+      toast({ title: "エラー", description: e instanceof Error ? e.message : "確定解除に失敗しました。", variant: "destructive" });
+    } finally {
+      setBusy(null);
     }
   };
 
-  const handlePrint = useCallback(() => {
-    if (!selectedPayroll) return;
-    // 手当・控除の取得が終わっていないと明細に載らないため、完了を待つ
-    if (allowancesFetching || deductionsFetching) {
-      toast({ title: "データ取得中", description: "手当・控除の読み込み中です。少し待ってから再度お試しください。" });
-      return;
+  // ── 一括確定 ────────────────────────────────────────────────────────
+  const handleConfirmAll = async () => {
+    if (busy || blocking > 0 || draftPayrolls.length === 0) return;
+    const ok = await confirm({
+      title: `${month}月の給与明細をまとめて確定します`,
+      description: `${draftPayrolls.length}名・差引支給額の合計 ${yen(draftNetTotal)} を確定します。\n確定すると金額がロックされます（直すときは1人ずつ「確定解除」）。`,
+      okLabel: `${draftPayrolls.length}名を確定する`,
+      cancelLabel: "やめる",
+    });
+    if (!ok) return;
+    setBusy("confirmAll");
+    let done = 0;
+    const failed: string[] = [];
+    for (const p of draftPayrolls) {
+      try {
+        await confirmPayroll.mutateAsync({ id: p.id });
+        done++;
+      } catch {
+        failed.push(p.employeeName ?? `明細${p.id}`);
+      }
+      setCalcProgress(`確定しています… ${done + failed.length} / ${draftPayrolls.length}`);
     }
-    setPrintPayroll(selectedPayroll);
+    setCalcProgress(null);
+    setBusy(null);
+    refreshPayrollQueries(queryClient);
+    toast({
+      title: failed.length ? `${done}名を確定しました（${failed.length}名はできませんでした）` : `${done}名の給与明細を確定しました`,
+      description: failed.length ? `確定できなかった人：${failed.join("、")}` : `差引支給額の合計 ${yen(draftNetTotal)}`,
+      variant: failed.length ? "destructive" : undefined,
+    });
+  };
+
+  // ── 印刷 ────────────────────────────────────────────────────────────
+  const doPrintSingle = useCallback((p: NonNullable<typeof selectedPayroll>) => {
+    setPrintPayroll(p);
     // ポータル（印刷対象DOM）の描画を待ってから印刷（2フレーム）
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -173,7 +358,7 @@ export default function PayrollList() {
           return;
         }
         const prevTitle = document.title;
-        document.title = `${selectedPayroll.employeeName}_${selectedPayroll.year}年${selectedPayroll.month}月`;
+        document.title = `${p.employeeName}_${p.year}年${p.month}月`;
         // 印刷後のクリーンアップ（タイトル復元＋ポータル撤去）。
         // afterprint を主とし、不発ブラウザ向けに setTimeout をフォールバックにする（冪等）。
         const cleanup = () => {
@@ -186,19 +371,112 @@ export default function PayrollList() {
         window.setTimeout(cleanup, 3000);
       });
     });
-  }, [selectedPayroll, allowancesFetching, deductionsFetching, toast]);
+  }, [toast]);
 
+  const handlePrint = useCallback(async () => {
+    if (!selectedPayroll) return;
+    let target = selectedPayroll;
+    // 右のパネルに保存していない変更があると、印刷には入らない（印刷は保存した内容で作る）
+    if (isDirty) {
+      const go = await confirm({
+        title: "保存していない変更は印刷に入りません",
+        description: "右のパネルの手当・控除がまだ保存されていません。\n保存して計算し直してから印刷します。",
+        okLabel: "保存して印刷",
+        cancelLabel: "やめる",
+      });
+      if (!go) return;
+      const saved = await panelSaveRef.current?.();
+      if (!saved) return;
+      target = (await refetchSelected()).data ?? selectedPayroll;
+    }
+    // 手当・控除の取得が終わっていないと明細に載らないため、完了を待つ
+    if (allowancesFetching) {
+      toast({ title: "データ取得中", description: "手当・控除の読み込み中です。少し待ってから再度お試しください。" });
+      return;
+    }
+    doPrintSingle(target);
+  }, [selectedPayroll, isDirty, confirm, refetchSelected, allowancesFetching, toast, doPrintSingle]);
+
+  const sortByCode = (list: Payroll[]) => [...list].sort((a, b) => (a.employeeCode ?? "").localeCompare(b.employeeCode ?? ""));
+  const pickTarget = useCallback((t: PrintTarget) => {
+    const list = sortByCode(payrolls);
+    if (t === "confirmed") return list.filter((p) => p.status === "confirmed");
+    if (t === "checked") return list.filter((p) => checked.has(p.id));
+    return list;
+  }, [payrolls, checked]);
+
+  const startPrint = async (target: PrintTarget, format: PrintFormat) => {
+    const list = pickTarget(target);
+    if (list.length === 0) return;
+    if (isDirty && list.some((p) => p.id === selectedPayrollId)) {
+      const go = await confirm({
+        title: "保存していない変更は印刷に入りません",
+        description: "右のパネルの手当・控除がまだ保存されていません。保存した内容で印刷します。",
+        okLabel: "保存して印刷",
+        cancelLabel: "やめる",
+      });
+      if (!go) return;
+      const saved = await panelSaveRef.current?.();
+      if (!saved) return;
+    }
+    setPrintDialogOpen(false);
+    if (format === "each") {
+      const [first, ...rest] = list;
+      setPrintJob({
+        key: `each-${first!.id}-${Date.now()}`,
+        payrolls: [first!],
+        layout: "1up",
+        title: `${first!.employeeName}_${first!.year}年${first!.month}月`,
+        rest,
+        each: { index: 1, total: list.length },
+      });
+    } else {
+      setPrintJob({ key: `bulk-${Date.now()}`, payrolls: list, layout: format });
+    }
+  };
+
+  // 1枚刷り終わったら、1人ずつ保存のときは次の人へ
+  const onPrintDone = useCallback(() => {
+    setPrintJob((job) => {
+      if (!job?.rest || job.rest.length === 0 || !job.each) return null;
+      const [next, ...rest] = job.rest;
+      return {
+        key: `each-${next!.id}-${Date.now()}`,
+        payrolls: [next!],
+        layout: "1up",
+        title: `${next!.employeeName}_${next!.year}年${next!.month}月`,
+        rest,
+        each: { index: job.each.index + 1, total: job.each.total },
+      };
+    });
+  }, []);
+  const onPrintFailed = useCallback((names: string[]) => {
+    toast({ title: "手当・控除を読み込めなかった人がいます", description: `${names.join("、")}さんの明細は、手当・控除の内訳が空欄で印刷された可能性があります。もう一度印刷してください。`, variant: "destructive" });
+  }, [toast]);
+  const onPrintTimeout = useCallback(() => {
+    setPrintJob(null);
+    toast({ title: "印刷の準備が終わりませんでした", description: "15秒たっても手当・控除を読み込めなかったため、印刷をやめました。通信を確かめて、もう一度お試しください。", variant: "destructive" });
+  }, [toast]);
+
+  // ── 一括計算 ────────────────────────────────────────────────────────
   const handleCalculateAll = async () => {
-    if (!employees) return;
+    if (!employees || calculating) return;
     setCalculating(true);
-    setCalcErrors([]);
+    setCalcResult(null);
     let success = 0;
+    let skippedConfirmed = 0;
+    const notApplicable: string[] = [];
     const errorList: CalcError[] = [];
+    const hasRecord = new Set((monthlyRecords ?? []).map((r) => r.employeeId));
 
     try {
-      for (const emp of employees) {
+      for (let i = 0; i < employees.length; i++) {
+        const emp = employees[i]!;
+        setCalcProgress(`計算しています… ${i + 1} / ${employees.length}`);
         const existing = payrolls.find(p => p.employeeId === emp.id);
-        if (existing?.status === "confirmed") continue;
+        if (existing?.status === "confirmed") { skippedConfirmed++; continue; }
+        // この月の実績が無い人（休職・入社前など）は計算できない。エラーではなく「対象外」として分ける
+        if (!hasRecord.has(emp.id)) { notApplicable.push(emp.name); continue; }
 
         try {
           // 明細がまだ無い社員は、月次実績入力の「保存して計算」と同じ手入力固定で作る。
@@ -209,34 +487,45 @@ export default function PayrollList() {
           success++;
         } catch (err: unknown) {
           let msg = "不明なエラー";
-          if (err && typeof err === "object") {
-            const e = err as { data?: { error?: string }; message?: string };
-            const apiMsg = (e.data as { error?: string } | null)?.error ?? e.message ?? "";
-            if (apiMsg.includes("月次実績") || apiMsg.toLowerCase().includes("monthly record not found")) {
-              msg = `${formatMonth(year, month)}の月次実績が未入力です`;
-            } else if (apiMsg) {
-              msg = apiMsg;
-            }
-          }
+          const e = err as { data?: { error?: string }; message?: string; status?: number } | null;
+          const apiMsg = e?.data?.error ?? e?.message ?? "";
+          if (e?.status === 404 && apiMsg.includes("月次実績")) { notApplicable.push(emp.name); continue; }
+          if (e?.status === 409) { skippedConfirmed++; continue; }
+          if (apiMsg) msg = apiMsg;
           errorList.push({ employeeCode: emp.employeeCode, name: emp.name, message: msg });
         }
       }
 
-      queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) }); queryClient.invalidateQueries({ queryKey: ["month-items"] });
-
-      if (errorList.length > 0) {
-        setCalcErrors(errorList);
-        toast({
-          title: success > 0 ? `${success}件の計算が完了しました` : "計算エラー",
-          description: `${errorList.length}件はエラーのため未計算です。下の詳細を確認してください。`,
-          variant: "destructive",
-        });
-      } else {
-        toast({ title: "計算完了", description: `${success}件の給与計算が完了しました。` });
-      }
+      refreshPayrollQueries(queryClient);
+      setCalcResult({ ok: success, skippedConfirmed, notApplicable, errors: errorList });
+      toast({
+        title: errorList.length > 0 ? `${success}件を計算しました（${errorList.length}件はエラー）` : `${success}件の給与を計算しました`,
+        description: [
+          skippedConfirmed > 0 ? `確定済みの${skippedConfirmed}名は計算していません。` : "",
+          notApplicable.length > 0 ? `この月の実績が無い${notApplicable.length}名は対象外です。` : "",
+          errorList.length > 0 ? "エラーの人は下の詳細を確認してください。" : "",
+        ].filter(Boolean).join("") || undefined,
+        variant: errorList.length > 0 ? "destructive" : undefined,
+      });
     } finally {
       setCalculating(false);
+      setCalcProgress(null);
     }
+  };
+
+  // 計算のあとで勤怠・単価などが変わった人だけをまとめて計算し直す
+  const handleRecalcStale = async () => {
+    if (busy || needsRecalcRows.length === 0) return;
+    setBusy("recalcStale");
+    const r = await recalcPayrolls(needsRecalcRows.map((x) => ({ employeeId: x.employeeId, year, month })),
+      (d, t) => setCalcProgress(`計算し直しています… ${d} / ${t}`));
+    setCalcProgress(null);
+    setBusy(null);
+    refreshPayrollQueries(queryClient);
+    toast({
+      title: r.failed.length ? `${r.ok}名を計算し直しました（${r.failed.length}名はできませんでした）` : `${r.ok}名の明細を計算し直しました`,
+      variant: r.failed.length ? "destructive" : undefined,
+    });
   };
 
   const handleExportCsv = async () => {
@@ -257,39 +546,64 @@ export default function PayrollList() {
     toast({ title: "CSVを保存しました", description: `${year}年${month}月分` });
   };
 
-  // この社員のみ再計算（標準モード）
-  const recalcSelected = async () => {
-    if (!selectedPayroll) return;
-    try {
-      await calculatePayroll.mutateAsync({ data: { employeeId: selectedPayroll.employeeId, year, month } });
-      queryClient.invalidateQueries({ queryKey: getGetPayrollQueryKey(selectedPayroll.id) });
-      queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) }); queryClient.invalidateQueries({ queryKey: ["month-items"] });
-      toast({ title: "計算完了", description: `${selectedPayroll.employeeName}の給与計算が完了しました。` });
-    } catch {
-      toast({ title: "エラー", description: "計算に失敗しました。月次実績を確認してください。", variant: "destructive" });
+  // この社員だけ再計算（この明細を作ったときと同じ方法）。二度押しで2回計算しない。
+  const recalcWith = async (mode: "same" | "manual") => {
+    if (!selectedPayroll || busy || calculatePayroll.isPending) return;
+    if (isDirty) {
+      await confirm({
+        title: "先に「保存」を押してください",
+        description: "右のパネルに保存していない変更があります。保存すると、その内容で計算し直されます。",
+        okLabel: "わかりました",
+        cancelLabel: null,
+      });
+      return;
     }
-  };
-
-  // 手入力固定で計算（マスター基本給・手当設定で再計算）
-  const recalcManual = async () => {
-    if (!selectedPayroll) return;
+    setBusy(mode === "manual" ? "manual" : "recalc");
     try {
-      await calculatePayroll.mutateAsync({ data: { employeeId: selectedPayroll.employeeId, year, month, calculationMode: "manual" } });
-      queryClient.invalidateQueries({ queryKey: getGetPayrollQueryKey(selectedPayroll.id) });
-      queryClient.invalidateQueries({ queryKey: getListPayrollsQueryKey({ year, month }) }); queryClient.invalidateQueries({ queryKey: ["month-items"] });
-      toast({ title: "手入力固定で計算完了", description: "マスター基本給と手当設定で給与を再計算しました。" });
-    } catch {
-      toast({ title: "エラー", description: "計算に失敗しました。", variant: "destructive" });
+      await calculatePayroll.mutateAsync({
+        data: mode === "manual"
+          ? { employeeId: selectedPayroll.employeeId, year, month, calculationMode: "manual" }
+          : { employeeId: selectedPayroll.employeeId, year, month },
+      });
+      refreshPayrollQueries(queryClient);
+      toast(mode === "manual"
+        ? { title: "手入力固定で計算しました", description: "基本給＋手当・控除の行の金額で計算し直しました。" }
+        : { title: "計算完了", description: `${selectedPayroll.employeeName}の給与計算が完了しました。` });
+    } catch (err) {
+      const msg = (err as { data?: { error?: string } } | null)?.data?.error;
+      toast({ title: "エラー", description: msg ?? "計算に失敗しました。月次実績を確認してください。", variant: "destructive" });
+    } finally {
+      setBusy(null);
     }
   };
 
   const selectedEmployee = employees?.find(e => e.id === selectedPayroll?.employeeId);
+  const selectedMode = (selectedPayroll as { calculationMode?: string | null } | undefined)?.calculationMode ?? null;
+  const selectedIsBw = !!(selectedEmployee as { useBluewingLogic?: boolean } | undefined)?.useBluewingLogic;
+
+  // ── 右のパネルの見込みと、明細（サーバーで計算した金額）のずれ ──
+  const serverGross = Math.round(selectedPayroll?.grossSalary ?? 0);
+  const serverNet = Math.round(selectedPayroll?.netSalary ?? 0);
+  const estGross = estimate ? Math.round(estimate.gross) : null;
+  const estNet = estimate ? Math.round(estimate.net) : null;
+  const comparable = selectedMode === "manual" && !selectedIsBw;
+  const mismatch = comparable && estGross !== null && estNet !== null && (Math.abs(estGross - serverGross) > 1 || Math.abs(estNet - serverNet) > 1);
+
+  // 振込日の初期値（会社設定の支払日。翌月払いの会社は翌月）※推測：締め日より支払日が前なら翌月払い
+  const defaultTransferDate = useMemo(() => {
+    const c = company as { closingDay?: number; paymentDay?: number } | undefined;
+    const pay = c?.paymentDay ?? 25;
+    const close = c?.closingDay ?? 31;
+    const d = new Date(year, month - 1 + (pay <= close ? 1 : 0), 1);
+    const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    return `${String(d.getMonth() + 1).padStart(2, "0")}${String(Math.min(pay, lastDay)).padStart(2, "0")}`;
+  }, [company, year, month]);
 
   return (
     <AppLayout fullWidth>
       <div className="flex flex-col h-[calc(100dvh-9.5rem)] md:h-[calc(100dvh-5.5rem)]">
         {/* ── ツールバー ── */}
-        <div className="shrink-0 pb-3 space-y-3">
+        <div className="shrink-0 pb-3 space-y-2.5">
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="p-2 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 text-white shadow-md shrink-0">
@@ -305,81 +619,118 @@ export default function PayrollList() {
                   // 月切替時は選択をクリア（給与IDは社員×年月で一意なため、
                   // 前月の選択が残ると確定/再計算/印刷が前月明細を対象にしてしまう）。
                   // 未保存編集がある場合は requestAction が確認ダイアログを出す。
-                  setYear(y);
-                  setMonth(m);
-                  setSelectedPayrollId(null);
+                  setWorkMonth(y, m);
+                  selectPayroll(null);
+                  setChecked(new Set());
+                  setCalcResult(null);
+                  didInitSelectRef.current = false;
                   setIsDirty(false);
                 })}
               />
-              <Button variant="secondary" size="sm" onClick={handleCalculateAll} disabled={calculating || !employees?.length}
-                title="保存済みの月次実績をもとに、全社員の給与を計算します（確定済みは対象外）。">
-                <Calculator className="mr-1.5 h-4 w-4" />
-                {calculating ? "計算中..." : "一括計算"}
-              </Button>
+              {canWrite && (
+                <Button variant="secondary" size="sm" onClick={handleCalculateAll} disabled={calculating || !!busy || !employees?.length}
+                  title="保存済みの月次実績をもとに、全社員の給与を計算します（確定済みは対象外）。">
+                  <Calculator className="mr-1.5 h-4 w-4" />
+                  {calculating ? "計算中..." : "一括計算"}
+                </Button>
+              )}
+              {canWrite && (
+                <Button
+                  size="sm"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  onClick={handleConfirmAll}
+                  disabled={!!busy || calculating || blocking > 0 || draftPayrolls.length === 0 || statusLoading}
+                  title={blocking > 0 ? "「確定前チェック」の要対応・確認がすべて済むと押せます。" : draftPayrolls.length === 0 ? "未確定の明細がありません。" : `未確定の${draftPayrolls.length}名をまとめて確定します。`}
+                >
+                  <CheckCheck className="mr-1.5 h-4 w-4" />
+                  {busy === "confirmAll" ? "確定中..." : "一括確定"}
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={handleExportCsv} disabled={payrolls.length === 0}>
                 <Download className="mr-1.5 h-4 w-4" />CSV出力
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setBulkPrintLayout("1up")}
-                disabled={payrolls.length === 0 || bulkPrintActive}
-                title="全員の給与明細を1人1ページ（A4横）で印刷します。文字が最も大きい印刷方法です。"
-              >
-                <Printer className="mr-1.5 h-4 w-4" />
-                {bulkPrintLayout === "1up" ? "印刷準備中..." : "一括印刷"}
+              <Button variant="outline" size="sm" onClick={() => setTransferOpen(true)} disabled={payrolls.length === 0}
+                title="差引支給額と振込先の一覧。全銀協フォーマットで書き出せます。">
+                <Landmark className="mr-1.5 h-4 w-4" />振込一覧
               </Button>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setBulkPrintLayout("2up")}
-                disabled={payrolls.length === 0 || bulkPrintActive}
-                title="A4縦1枚に2人ずつ印刷します（用紙半分）。文字は各明細が半ページに収まる範囲で自動的にできるだけ大きくします。印刷ダイアログの「1枚あたりのページ数」は1のままにしてください。"
+                onClick={() => setPrintDialogOpen(true)}
+                disabled={payrolls.length === 0 || !!printJob}
+                title="全員・確定済みだけ・チェックした人を選んで印刷します（2人/A4・1人1ページ・1人ずつPDF）。"
               >
                 <Printer className="mr-1.5 h-4 w-4" />
-                {bulkPrintLayout === "2up" ? "印刷準備中..." : "2人/A4印刷"}
+                {printJob ? "印刷準備中..." : "印刷…"}
               </Button>
             </div>
           </div>
 
-          {/* 使い方ガイド（常時表示・#1/#2 対策） */}
-          <div className="flex items-start gap-2 rounded-lg border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-xs text-indigo-900">
-            <Info className="h-3.5 w-3.5 mt-0.5 shrink-0 text-indigo-500" />
+          {/* 使い方ガイド（常時表示） */}
+          <div className="flex items-start gap-2 rounded-lg border border-indigo-100 bg-indigo-50/60 dark:bg-indigo-500/10 dark:border-indigo-500/30 px-3 py-2 text-xs text-indigo-900 dark:text-indigo-100">
+            <Info className="h-3.5 w-3.5 mt-0.5 shrink-0 text-indigo-500 dark:text-indigo-300" />
             <p className="leading-relaxed">
               <span className="font-semibold">給与の流れ：</span>
-              ①「月次実績入力」で保存 → ② ここで<strong>「一括計算」</strong>（1人だけ直すときは明細の<strong>「再計算」</strong>）→ ③ 金額を確認して<strong>「確定」</strong>。
-              <span className="ml-1 text-indigo-700">確定すると金額がロックされます（訂正するときは「確定解除」）。</span>
+              ①「月次実績入力」で入力して<strong>「保存して計算」</strong> → ② ここで金額を見直す（直すときは右のパネルで<strong>「保存」</strong>、または<strong>「再計算」</strong>）→ ③ <strong>「確定」</strong>（全員そろったら「一括確定」）→ ④ <strong>「印刷…」</strong>。
+              <span className="ml-1 text-indigo-700 dark:text-indigo-300">確定すると金額がロックされます（訂正するときは「確定解除」）。</span>
             </p>
           </div>
+
+          {/* 確定前チェック */}
+          {payrolls.length > 0 && (
+            <ChecklistCard issues={issues} acked={acked} onToggleAck={toggleAck} onOpen={openIssue} loading={statusLoading} />
+          )}
+
+          {/* 単価・勤怠などが変わったあと、まだ計算し直していない人 */}
+          {needsRecalcRows.length > 0 && (
+            <div role="status" data-testid="stale-banner" className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-500/10 dark:border-amber-500/40 px-3 py-2 text-xs text-amber-900 dark:text-amber-100">
+              <RefreshCw className="h-3.5 w-3.5 shrink-0" />
+              <span className="flex-1 min-w-0">
+                未確定の明細<strong>{needsRecalcRows.length}件</strong>は、計算したあとで勤怠・手当・単価などが変わっています。反映するには再計算が必要です。
+              </span>
+              {canWrite && (
+                <Button size="sm" variant="outline" className="h-7 border-amber-400" onClick={handleRecalcStale} disabled={!!busy || calculating}>
+                  {busy === "recalcStale" ? "計算中…" : `${needsRecalcRows.length}件を一括再計算`}
+                </Button>
+              )}
+            </div>
+          )}
+
+          {calcProgress && <p className="text-xs text-muted-foreground" role="status">{calcProgress}</p>}
 
           {/* 集計サマリー */}
           {payrolls.length > 0 && <PayrollSummaryStats payrolls={payrolls} />}
 
-          {/* 計算エラー通知 */}
-          {calcErrors.length > 0 && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+          {/* 一括計算の結果（対象外とエラーを分けて出す） */}
+          {calcResult && (calcResult.errors.length > 0 || calcResult.notApplicable.length > 0 || calcResult.skippedConfirmed > 0) && (
+            <div className={`rounded-lg border p-3 ${calcResult.errors.length > 0 ? "border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-500/40" : "border-border bg-muted/40"}`}>
               <div className="flex items-start justify-between gap-3">
-                <div className="flex items-start gap-2 min-w-0">
-                  <AlertCircle className="h-5 w-5 text-red-500 mt-0.5 shrink-0" />
-                  <div className="min-w-0">
-                    <p className="font-semibold text-red-700 text-sm mb-2">以下の社員の給与計算でエラーが発生しました</p>
-                    <ul className="space-y-1.5">
-                      {calcErrors.map((e) => (
-                        <li key={e.employeeCode} className="text-sm text-red-700">
-                          <span className="font-semibold">{e.employeeCode} {e.name}</span>
-                          <span className="text-red-500 mx-1">—</span>
-                          <span>{e.message}</span>
-                          {e.message.includes("月次実績") && (
-                            <Link href={`/monthly-input`} className="ml-2 inline-flex items-center text-xs font-semibold text-red-600 underline underline-offset-2 hover:text-red-800">
-                              月次実績入力へ →
-                            </Link>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+                <div className="min-w-0 space-y-1.5 text-sm">
+                  <p className="font-semibold">一括計算の結果：{calcResult.ok}件を計算しました</p>
+                  {calcResult.skippedConfirmed > 0 && (
+                    <p className="text-xs text-muted-foreground">確定済みのため計算していない人：{calcResult.skippedConfirmed}名</p>
+                  )}
+                  {calcResult.notApplicable.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      対象外（この月の実績が無い人。休職など）：{calcResult.notApplicable.join("、")}
+                    </p>
+                  )}
+                  {calcResult.errors.length > 0 && (
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
+                      <ul className="space-y-1">
+                        {calcResult.errors.map((e) => (
+                          <li key={e.employeeCode} className="text-sm text-red-700 dark:text-red-300">
+                            <span className="font-semibold">{e.employeeCode} {e.name}</span>
+                            <span className="text-red-500 mx-1">—</span>
+                            <span>{e.message}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
-                <button onClick={() => setCalcErrors([])} className="shrink-0 text-red-400 hover:text-red-600 transition-colors" aria-label="閉じる">
+                <button onClick={() => setCalcResult(null)} className="shrink-0 text-muted-foreground hover:text-foreground transition-colors" aria-label="閉じる">
                   <X className="h-4 w-4" />
                 </button>
               </div>
@@ -401,6 +752,7 @@ export default function PayrollList() {
               <div className="flex-1 flex flex-col items-center justify-center gap-2 text-muted-foreground text-sm text-center px-4">
                 <Receipt className="h-7 w-7 text-muted-foreground/40" />
                 <p>{formatMonth(year, month)}の<br />給与データはありません</p>
+                <Link href={`/monthly-input?y=${year}&m=${month}`} className="text-xs text-primary underline">月次実績入力へ →</Link>
               </div>
             ) : (
               <PayrollListPane
@@ -410,6 +762,10 @@ export default function PayrollList() {
                 onSelect={trySelectPayroll}
                 search={search}
                 onSearchChange={setSearch}
+                diffs={diffs}
+                needsRecalc={needsRecalcIds}
+                checked={checked}
+                onCheckedChange={setChecked}
               />
             )}
           </div>
@@ -429,52 +785,91 @@ export default function PayrollList() {
                       <ArrowLeft className="h-5 w-5" />
                     </button>
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-bold text-base jp-tight truncate">{selectedPayroll?.employeeName ?? "—"}</span>
                         <span className="text-[11px] text-muted-foreground font-mono shrink-0">{selectedPayroll?.employeeCode}</span>
                         {selectedPayroll && (
                           selectedPayroll.status === "confirmed" ? (
-                            <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] px-1.5 py-0">確定済</Badge>
+                            <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-200 dark:border-emerald-500/40 text-[10px] px-1.5 py-0">確定済</Badge>
                           ) : (
-                            <Badge variant="secondary" className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] px-1.5 py-0">未確定</Badge>
+                            <Badge variant="secondary" className="bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/15 dark:text-amber-200 dark:border-amber-500/40 text-[10px] px-1.5 py-0">未確定</Badge>
                           )
+                        )}
+                        <SaveStatus state={panelSave} />
+                        {selectedPayroll && (
+                          <button type="button" onClick={() => requestNavigate(`/payroll/${selectedPayroll.id}`, navigate)} className="text-[11px] text-primary hover:underline inline-flex items-center gap-0.5" title="明細の詳細（1枚の表示）を開きます">
+                            <ExternalLink className="h-3 w-3" />詳細
+                          </button>
                         )}
                       </div>
                     </div>
                     {selectedPayroll && (
                       <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                        <Button variant="outline" size="sm" className="h-7 px-2 text-xs" disabled={calculating} onClick={recalcSelected}
-                          title="この社員だけ、最新の月次実績で計算し直します。">
-                          <Calculator className="h-3 w-3 mr-1" />再計算
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 px-2 text-xs border-amber-300 text-amber-800 hover:bg-amber-50"
-                          onClick={recalcManual}
-                          title="月次実績（勤怠）を使わず、マスターの基本給＋固定手当だけで計算します。日給制・歩合など勤怠連動の社員には使わないでください。"
-                        >
-                          <Calculator className="h-3 w-3 mr-1" />手入力固定
-                        </Button>
-                        <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={handlePrint}>
+                        {canWrite && selectedPayroll.status !== "confirmed" && (
+                          <>
+                            <Button variant="outline" size="sm" className="h-7 px-2 text-xs" disabled={calculating || !!busy || calculatePayroll.isPending} onClick={() => recalcWith("same")}
+                              title="この明細を作ったときと同じ計算方法で、最新の月次実績・手当・単価を使って計算し直します。">
+                              <Calculator className="h-3 w-3 mr-1" />{busy === "recalc" ? "計算中…" : "再計算"}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2 text-xs border-amber-300 text-amber-800 hover:bg-amber-50 dark:text-amber-200 dark:border-amber-500/50 dark:hover:bg-amber-500/10"
+                              onClick={() => recalcWith("manual")}
+                              disabled={calculating || !!busy || calculatePayroll.isPending}
+                              title={"「基本給（日給制は勤怠から）＋右の手当・控除の行の金額」で計算し直します。\n月次実績入力の「保存して計算」と同じ方法で、事務所はふだんこの方法です。\n残業代などをシステムが出す「自動計算」で作られた明細を、この方法に切り替えるときにも使います（切り替えると、自動で出ていた時間外手当などは手当の行の金額だけになります）。"}
+                            >
+                              <Calculator className="h-3 w-3 mr-1" />{busy === "manual" ? "計算中…" : "手入力固定"}
+                            </Button>
+                          </>
+                        )}
+                        <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => { void handlePrint(); }} disabled={!!busy}>
                           <FileText className="h-3.5 w-3.5 mr-1" />印刷
                         </Button>
-                        {selectedPayroll.status !== "confirmed" ? (
-                          <Button size="sm" className="h-7 px-2 text-xs bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleConfirm} disabled={confirmPayroll.isPending}
-                            title="この明細の金額を締めてロックします。以後は再計算されません（訂正するときは「確定解除」）。">
-                            <CheckCircle2 className="h-3.5 w-3.5 mr-1" />確定
+                        {canWrite && (selectedPayroll.status !== "confirmed" ? (
+                          <Button size="sm" className="h-7 px-2 text-xs bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { void handleConfirm(); }} disabled={!!busy || confirmPayroll.isPending}
+                            title={isDirty ? "保存していない変更があります。押すと、保存してから確定します。" : "この明細の金額を締めてロックします。以後は再計算されません（訂正するときは「確定解除」）。"}>
+                            <CheckCircle2 className="h-3.5 w-3.5 mr-1" />{isDirty ? "保存して確定" : busy === "confirm" ? "確定中…" : "確定"}
                           </Button>
                         ) : (
-                          <Button variant="outline" size="sm" className="h-7 px-2 text-xs border-amber-300 text-amber-800 hover:bg-amber-50" onClick={handleUnconfirm} disabled={unconfirmPayroll.isPending}>
+                          <Button variant="outline" size="sm" className="h-7 px-2 text-xs border-amber-300 text-amber-800 hover:bg-amber-50 dark:text-amber-200 dark:border-amber-500/50" onClick={() => setUnconfirmOpen(true)} disabled={!!busy}>
                             <RotateCcw className="h-3.5 w-3.5 mr-1" />確定解除
                           </Button>
-                        )}
-                        <button onClick={tryClosePanel} className="hidden md:inline-flex p-1.5 rounded-lg hover:bg-slate-100 transition-colors text-slate-400 hover:text-slate-600 shrink-0" aria-label="閉じる">
+                        ))}
+                        <button onClick={tryClosePanel} className="hidden md:inline-flex p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground shrink-0" aria-label="閉じる">
                           <X className="h-4 w-4" />
                         </button>
                       </div>
                     )}
                   </div>
+
+                  {/* 明細の金額（サーバーで計算した金額）と、右のパネルの見込みのずれ */}
+                  {selectedPayroll && (
+                    <div
+                      data-testid="amount-check"
+                      className={`px-3 md:px-4 py-2 border-b text-xs flex flex-wrap items-center gap-x-4 gap-y-1 ${mismatch && !isDirty ? "bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/40" : "bg-muted/10"}`}
+                    >
+                      <span className="text-muted-foreground">明細の金額（左の一覧と同じ）：</span>
+                      <span>総支給 <strong className="amount">{yen(serverGross)}</strong></span>
+                      <span>差引 <strong className="amount">{yen(serverNet)}</strong></span>
+                      {estGross !== null && estNet !== null && comparable && (
+                        isDirty ? (
+                          <span className="text-amber-700 dark:text-amber-300">保存していない変更があるため、下の見込み（総支給 {yen(estGross)}・差引 {yen(estNet)}）と違います。「保存」すると計算し直されます。</span>
+                        ) : mismatch ? (
+                          <span className="text-red-700 dark:text-red-300 font-semibold">
+                            下の見込み（総支給 {yen(estGross)}・差引 {yen(estNet)}）とずれています（差 {estNet - serverNet > 0 ? "+" : ""}{(estNet - serverNet).toLocaleString("ja-JP")}円）。「再計算」を押してください。
+                          </span>
+                        ) : (
+                          <span className="text-emerald-700 dark:text-emerald-300">下の見込みと一致しています</span>
+                        )
+                      )}
+                      {!comparable && selectedMode && (
+                        <span className="text-muted-foreground">
+                          {selectedIsBw ? "BW社員は時間外手当・業績手当をサーバーで計算するため、下の見込みとは一致しません。" : "自動計算で作られた明細のため、下の見込みとは一致しません。"}
+                        </span>
+                      )}
+                    </div>
+                  )}
 
                   {/* 詳細本体 */}
                   <div className="flex-1 min-h-0 overflow-y-auto p-3 md:p-4">
@@ -501,7 +896,11 @@ export default function PayrollList() {
                         onDirtyChange={setIsDirty}
                         year={year}
                         month={month}
-                        calculationMode={(selectedPayroll as { calculationMode?: string | null }).calculationMode}
+                        calculationMode={selectedMode}
+                        saveRef={panelSaveRef}
+                        onEstimateChange={setEstimate}
+                        onSaveStateChange={setPanelSave}
+                        readOnly={!canWrite}
                       />
                     ) : (
                       <div className="py-12 text-center text-muted-foreground">社員データが見つかりません</div>
@@ -526,7 +925,7 @@ export default function PayrollList() {
             <AlertDialogDescription>変更が保存されていません。このまま移動すると変更内容が失われます。</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>キャンセル</AlertDialogCancel>
+            <AlertDialogCancel>キャンセル（入力を続ける）</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive hover:bg-destructive/90"
               onClick={() => {
@@ -542,17 +941,77 @@ export default function PayrollList() {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* 確定解除（理由を残す） */}
+      <AlertDialog open={unconfirmOpen} onOpenChange={(v) => { if (!busy) setUnconfirmOpen(v); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{selectedPayroll?.employeeName}さんの確定を解除します</AlertDialogTitle>
+            <AlertDialogDescription>
+              未確定に戻すと、勤怠・手当の修正と再計算ができるようになります。
+              なぜ解除するのかを入れてください（操作の記録に残ります）。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <label className="text-sm font-medium" htmlFor="unconfirm-reason">解除する理由</label>
+          <Textarea
+            id="unconfirm-reason"
+            value={unconfirmReason}
+            onChange={(e) => setUnconfirmReason(e.target.value.slice(0, 200))}
+            placeholder="例：残業時間の入力まちがいを直すため"
+            rows={3}
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={!!busy}>やめる</AlertDialogCancel>
+            <Button
+              onClick={() => { void handleUnconfirm(); }}
+              disabled={!!busy || unconfirmReason.trim().length === 0}
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+            >
+              {busy === "unconfirm" ? "解除中…" : "確定を解除する"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <PrintDialog
+        open={printDialogOpen}
+        onOpenChange={setPrintDialogOpen}
+        counts={{
+          all: payrolls.length,
+          confirmed: payrolls.filter((p) => p.status === "confirmed").length,
+          checked: payrolls.filter((p) => checked.has(p.id)).length,
+          draftIn: (t) => pickTarget(t).filter((p) => p.status !== "confirmed").length,
+        }}
+        onStart={(t, f) => { void startPrint(t, f); }}
+      />
+
+      <TransferDialog open={transferOpen} onOpenChange={setTransferOpen} year={year} month={month} defaultDate={defaultTransferDate} />
+
+      {/* 印刷の準備中（画面に出す。印刷には出ない） */}
+      {printJob && (
+        <div role="status" data-testid="print-overlay" className="fixed bottom-4 right-4 z-50 print:hidden rounded-xl border bg-card shadow-xl px-4 py-3 flex items-center gap-3 text-sm">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+          <span>
+            {printJob.each ? `1人ずつ保存：${printJob.each.index} / ${printJob.each.total}人目（${printJob.payrolls[0]?.employeeName}）` : `印刷の準備中…（${printJob.payrolls.length}人分）`}
+          </span>
+          <Button size="sm" variant="outline" onClick={() => setPrintJob(null)}>中止</Button>
+        </div>
+      )}
+
       {/* ── 一括印刷ポータル ── */}
-      {bulkPrintActive && payrolls.length > 0 && (
+      {printJob && (
         <PayslipBulkPrint
-          payrolls={[...payrolls].sort((a, b) => (a.employeeCode ?? "").localeCompare(b.employeeCode ?? "")) as unknown as Parameters<typeof PayslipBulkPrint>[0]["payrolls"]}
+          key={printJob.key}
+          payrolls={printJob.payrolls as unknown as Parameters<typeof PayslipBulkPrint>[0]["payrolls"]}
           companyName={company?.name ?? "三川運送株式会社"}
           employees={(employees ?? []) as unknown as Parameters<typeof PayslipBulkPrint>[0]["employees"]}
           company={company as Parameters<typeof PayslipBulkPrint>[0]["company"]}
-          onDone={() => setBulkPrintLayout(null)}
+          onDone={onPrintDone}
+          onFailed={onPrintFailed}
+          onTimeout={onPrintTimeout}
           year={year}
           month={month}
-          layout={bulkPrintLayout ?? "1up"}
+          layout={printJob.layout}
+          title={printJob.title}
         />
       )}
 
@@ -567,6 +1026,7 @@ export default function PayrollList() {
           company={company as Parameters<typeof PayslipPrintClassic>[0]["company"]}
         />
       )}
+      {confirmDialog}
     </AppLayout>
   );
 }

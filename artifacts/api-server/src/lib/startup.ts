@@ -19,6 +19,8 @@ const REQUIRED: Array<[string, string]> = [
   ["alert_pushes", "key"],
   ["audit_logs", "action"],
   ["employees", "qr_key"],
+  ["employee_bank_accounts", "holder_kana"],
+  ["transfer_settings", "consignor_code"],
 ];
 
 export async function startupChecks(): Promise<void> {

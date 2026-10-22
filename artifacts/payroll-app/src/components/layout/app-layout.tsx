@@ -38,13 +38,15 @@ export function AppLayout({
 }) {
   const { user, logout } = useAuth();
   const [, setLocation] = useLocation();
-  const { pendingHref, cancelPending, confirmPending } = useNavigationGuard();
+  const { pendingHref, cancelPending, confirmPending, requestNavigate } = useNavigationGuard();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { theme, toggle: toggleTheme } = useTheme();
 
-  const handleLogout = async () => {
-    await logout();
-    setLocation("/login");
+  // ログアウトも、保存していない入力があれば先に確かめる（以前は確認なしで入力が消えていた）
+  const handleLogout = () => {
+    requestNavigate("/login", (href) => {
+      void logout().then(() => setLocation(href));
+    });
   };
 
   return (
@@ -87,9 +89,6 @@ export function AppLayout({
               </h1>
             </div>
             <div className="flex items-center gap-2 md:gap-4">
-              <div className="text-sm font-medium text-muted-foreground hidden sm:block">
-                {new Date().getFullYear()}年{new Date().getMonth() + 1}月
-              </div>
               {user && <AlertBell />}
               <button
                 type="button"

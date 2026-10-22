@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { AppLayout } from "@/components/layout/app-layout";
 import {
   useListAllowanceDefinitions,
@@ -47,6 +47,10 @@ import { DatePartsInput } from "@/components/ui/date-parts-input";
 import { InsuranceRatePeriodsCard } from "@/components/insurance/insurance-rate-periods-card";
 import { StandardRemunerationHistorySection } from "@/components/insurance/standard-remuneration-history";
 import { StandardRemunerationBulkTab } from "@/components/insurance/standard-remuneration-bulk";
+import { BankAccountTab, type BankAccountTabHandle } from "@/components/bank-account-tab";
+import { RecalcNotice } from "@/components/recalc-notice";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import type { FieldErrors } from "react-hook-form";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -636,17 +640,39 @@ function TipInput({ tip, ...props }: React.ComponentProps<typeof Input> & { tip:
   );
 }
 
+/** 入力欄の名前 → その欄があるタブ（保存を押したとき、誤りのある欄のタブへ移るのに使う）*/
+const EMP_FIELD_TAB: Record<string, string> = {
+  employeeCode: "basic", name: "basic", nameKana: "basic", department: "basic", position: "basic",
+  dateOfBirth: "basic", hireDate: "basic", isOfficeStaff: "basic", scheduledWorkStart: "basic", scheduledWorkEnd: "basic",
+  dependentCount: "insurance", hasSpouse: "insurance", standardRemuneration: "insurance", careInsuranceApplied: "insurance",
+  employmentInsuranceApplied: "insurance", pensionAppliedMode: "insurance", taxExempt: "insurance",
+  isActive: "management",
+};
+const EMP_FIELD_LABEL: Record<string, string> = {
+  employeeCode: "社員番号", name: "氏名", nameKana: "フリガナ", department: "部署", hireDate: "入社日",
+  dateOfBirth: "生年月日", baseSalary: "基本給", residentTax: "住民税", otherDeductionMonthly: "その他の控除",
+  dependentCount: "扶養人数", standardRemuneration: "標準報酬月額", dailyRateWeekday: "平日の日給",
+  dailyRateSaturday: "土曜の日給", overtimeHourlyRate: "残業 時給", lateNightHourlyRate: "深夜 単価",
+  bluewingCommissionRate: "BW歩合率", bluewingFixedOvertimeHours: "BW固定残業時間", bluewingFixedOvertimeAmount: "BW固定残業代",
+};
+const EMP_TAB_LABEL: Record<string, string> = { basic: "基本情報", salary: "給与設定", insurance: "保険・扶養", management: "管理" };
+
 function EmpFormFields({
   form: f,
   salaryType,
   additionalTabs,
   employeeId,
+  tab,
+  onTabChange,
 }: {
   form: ReturnType<typeof useForm<EmpFullValues>>;
   salaryType: string;
   additionalTabs?: Array<{ value: string; label: string; content: ReactNode }>;
   /** 編集中の社員ID（新規登録では無し）。標準報酬月額の履歴を出すのに使う */
   employeeId?: number;
+  /** いま開いているタブ（親が持つ。入力の誤りがあるタブへ移すため）*/
+  tab?: string;
+  onTabChange?: (t: string) => void;
 }) {
   const dobValue = f.watch("dateOfBirth");
   const age = calcAge(dobValue);
@@ -735,7 +761,7 @@ function EmpFormFields({
   );
 
   return (
-    <Tabs defaultValue="basic" className="w-full">
+    <Tabs {...(tab !== undefined ? { value: tab, onValueChange: onTabChange } : { defaultValue: "basic" })} className="w-full">
       <TabsList
         className="w-full"
         style={{ display: "grid", gridTemplateColumns: `repeat(${tabCount}, 1fr)` }}
@@ -1189,7 +1215,8 @@ function EmpFormFields({
 
       {/* ── 追加タブ ── */}
       {additionalTabs?.map((t) => (
-        <TabsContent key={t.value} value={t.value} className="pt-4">
+        // 追加のタブ（振込口座など）は、ほかのタブへ移っても入力が消えないよう、隠すだけにする
+        <TabsContent key={t.value} value={t.value} forceMount className="pt-4 data-[state=inactive]:hidden">
           {t.content}
         </TabsContent>
       ))}
@@ -1201,6 +1228,13 @@ function EmpFormFields({
 function EmployeeMasterTab() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { confirm, confirmDialog } = useConfirm();
+  const [editTab, setEditTab] = useState("basic");
+  const [createTab, setCreateTab] = useState("basic");
+  const bankRef = useRef<BankAccountTabHandle>(null);
+  const [bankDirty, setBankDirty] = useState(false);
+  /** 単価・扶養などを変えたあと「未確定の明細に反映するには再計算が必要」と知らせる */
+  const [showRecalc, setShowRecalc] = useState(false);
   // 更新後は invalidateQueries で明示再取得するため、毎マウントの強制リフェッチは不要。
   const { data: employees, isLoading } = useListEmployees({});
   const createEmployee = useCreateEmployee();
@@ -1294,6 +1328,8 @@ function EmployeeMasterTab() {
   const createSalaryType = createForm.watch("salaryType");
 
   const handleOpenEdit = (emp: Employee) => {
+    setEditTab("basic");
+    setBankDirty(false);
     setEditingEmployee(emp);
     editForm.reset({
       employeeCode: emp.employeeCode,
@@ -1345,10 +1381,18 @@ function EmployeeMasterTab() {
         overtimeUnitMinutes: (data.overtimeUnitMinutes ?? 0) > 0 ? data.overtimeUnitMinutes : null,
         pensionApplied: pensionAppliedMode === "auto" ? null : pensionAppliedMode === "on",
       };
+      // 口座（振込口座タブ）も一緒に保存する。誤りがあれば社員情報も保存せず、そのタブを開く
+      const bank = await bankRef.current?.save();
+      if (bank && !bank.ok) {
+        setEditTab("bank");
+        toast({ title: "振込口座の入力を直してください", description: bank.error, variant: "destructive" });
+        return;
+      }
       await updateEmployee.mutateAsync({ id: editingEmployee.id, data: saveData });
       toast({ title: "保存しました", description: `${editingEmployee.name}の情報を更新しました。` });
       queryClient.invalidateQueries({ queryKey: getListEmployeesQueryKey() });
       setEditingEmployee(null);
+      setShowRecalc(true);
     } catch {
       toast({ title: "エラー", description: "保存に失敗しました。", variant: "destructive" });
     }
@@ -1391,6 +1435,63 @@ function EmployeeMasterTab() {
     }
   };
 
+  // 保存を押したのに入力の誤りで止まったとき、誤りのある欄のタブへ移って知らせる
+  // （以前は別のタブに誤りがあると、押しても何も起きないように見えた）
+  const onInvalid = (setTab: (t: string) => void) => (errors: FieldErrors<EmpFullValues>) => {
+    const keys = Object.keys(errors);
+    if (keys.length === 0) return;
+    const tab = EMP_FIELD_TAB[keys[0]!] ?? "salary";
+    setTab(tab);
+    const names = keys.map((k) => EMP_FIELD_LABEL[k] ?? k).slice(0, 4).join("・");
+    toast({ title: "入力を直してください", description: `「${EMP_TAB_LABEL[tab] ?? tab}」タブの ${names} に足りないところ・誤りがあります。`, variant: "destructive" });
+  };
+
+  // 閉じる前に確かめる（Esc・外側のクリック・キャンセルで、変更ごと消えていた）
+  // ※ react-hook-form の formState は描画のときに読んでおかないと更新されない（あとで読むと常に false）
+  const editDirty = editForm.formState.isDirty;
+  const createDirty = createForm.formState.isDirty;
+  const tryCloseEdit = async () => {
+    if (editDirty || bankDirty) {
+      const ok = await confirm({
+        title: "保存していない変更があります",
+        description: "閉じると、この画面で変えた内容は消えます。",
+        okLabel: "保存せずに閉じる",
+        cancelLabel: "やめる（編集を続ける）",
+        danger: true,
+      });
+      if (!ok) return;
+    }
+    setEditingEmployee(null);
+    setBankDirty(false);
+  };
+  const tryCloseCreate = async () => {
+    if (createDirty) {
+      const ok = await confirm({
+        title: "入力した内容は保存されていません",
+        description: "閉じると、入力した内容は消えます。",
+        okLabel: "保存せずに閉じる",
+        cancelLabel: "やめる（入力を続ける）",
+        danger: true,
+      });
+      if (!ok) return;
+    }
+    setIsCreateOpen(false);
+    createForm.reset();
+  };
+
+  // ?emp=社員ID で開いたとき（お知らせ・確定前チェックから）、その社員の編集を開く
+  const openedFromUrlRef = useRef(false);
+  useEffect(() => {
+    if (openedFromUrlRef.current || !employees) return;
+    const id = Number(new URLSearchParams(window.location.search).get("emp"));
+    openedFromUrlRef.current = true;
+    if (!id) return;
+    const emp = employees.find((e) => e.id === id);
+    if (emp) handleOpenEdit(emp);
+    // 一度だけ開く
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employees]);
+
   const filtered = (employees ?? []).filter(emp => {
     if (!showInactive && !emp.isActive) return false;
     if (!search) return true;
@@ -1408,10 +1509,12 @@ function EmployeeMasterTab() {
           <h3 className="text-lg font-semibold">社員マスター</h3>
           <p className="text-sm text-muted-foreground">社員の基本情報・給与形態・保険設定をまとめて管理します。</p>
         </div>
-        <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+        <Button size="sm" onClick={() => { setCreateTab("basic"); setIsCreateOpen(true); }}>
           <UserPlus className="mr-2 h-4 w-4" />新規登録
         </Button>
       </div>
+
+      <RecalcNotice show={showRecalc} onClose={() => setShowRecalc(false)} what="社員の設定（単価・扶養など）" />
 
       <div className="flex items-center gap-3">
         <div className="relative flex-1 max-w-xs">
@@ -1529,16 +1632,16 @@ function EmployeeMasterTab() {
       </Card>
 
       {/* 新規登録ダイアログ */}
-      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+      <Dialog open={isCreateOpen} onOpenChange={(open) => { if (open) setIsCreateOpen(true); else void tryCloseCreate(); }}>
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>新規社員登録</DialogTitle>
           </DialogHeader>
           <Form {...createForm}>
-            <form onSubmit={createForm.handleSubmit(onCreateSubmit)} className="space-y-6">
-              <EmpFormFields form={createForm} salaryType={createSalaryType} />
+            <form onSubmit={createForm.handleSubmit(onCreateSubmit, onInvalid(setCreateTab))} className="space-y-6">
+              <EmpFormFields form={createForm} salaryType={createSalaryType} tab={createTab} onTabChange={setCreateTab} />
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setIsCreateOpen(false)}>キャンセル</Button>
+                <Button type="button" variant="outline" onClick={() => { void tryCloseCreate(); }}>キャンセル</Button>
                 <Button type="submit" disabled={createForm.formState.isSubmitting}>
                   <UserPlus className="mr-2 h-4 w-4" />登録する
                 </Button>
@@ -1549,19 +1652,27 @@ function EmployeeMasterTab() {
       </Dialog>
 
       {/* 編集ダイアログ */}
-      <Dialog open={!!editingEmployee} onOpenChange={(open) => { if (!open) setEditingEmployee(null); }}>
+      <Dialog open={!!editingEmployee} onOpenChange={(open) => { if (!open) void tryCloseEdit(); }}>
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingEmployee?.name}　社員情報編集</DialogTitle>
             <p className="text-sm text-muted-foreground mt-1">{editingEmployee?.employeeCode}　{editingEmployee?.department}</p>
           </DialogHeader>
           <Form {...editForm}>
-            <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">
+            <form onSubmit={editForm.handleSubmit(onEditSubmit, onInvalid(setEditTab))} className="space-y-4">
               <EmpFormFields
                 form={editForm}
                 salaryType={editSalaryType}
                 employeeId={editingEmployee?.id}
+                tab={editTab}
+                onTabChange={setEditTab}
                 additionalTabs={[{
+                  value: "bank",
+                  label: "振込口座",
+                  content: editingEmployee ? (
+                    <BankAccountTab ref={bankRef} employeeId={editingEmployee.id} onDirtyChange={setBankDirty} />
+                  ) : null,
+                }, {
                   value: "management",
                   label: "管理",
                   content: (
@@ -1636,13 +1747,15 @@ function EmployeeMasterTab() {
                   onClick={() => setDeleteTarget(editingEmployee)}>
                   <Trash2 className="mr-1 h-4 w-4" />削除
                 </Button>
-                <Button type="button" variant="outline" onClick={() => setEditingEmployee(null)}>キャンセル</Button>
+                <Button type="button" variant="outline" onClick={() => { void tryCloseEdit(); }}>キャンセル</Button>
                 <Button type="submit" disabled={editForm.formState.isSubmitting}>保存する</Button>
               </DialogFooter>
             </form>
           </Form>
         </DialogContent>
       </Dialog>
+
+      {confirmDialog}
 
       {/* 削除確認ダイアログ */}
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
@@ -1702,6 +1815,7 @@ type CompanyParamsValues = z.infer<typeof companyParamsSchema>;
 function CalcTableMasterTab() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [showRecalc, setShowRecalc] = useState(false);
   const { data: company, isLoading } = useGetCompany();
   const updateCompany = useUpdateCompany();
 
@@ -1720,6 +1834,7 @@ function CalcTableMasterTab() {
       await updateCompany.mutateAsync({ data });
       toast({ title: "保存しました", description: "運用パラメータを更新しました。" });
       queryClient.invalidateQueries({ queryKey: getGetCompanyQueryKey() });
+      setShowRecalc(true);
     } catch {
       toast({ title: "エラー", description: "保存に失敗しました。", variant: "destructive" });
     }
@@ -1735,6 +1850,8 @@ function CalcTableMasterTab() {
           年度ごとに変わる保険料率の履歴と、割増率などの計算基準・会社ごとの運用パラメータを管理します。
         </p>
       </div>
+
+      <RecalcNotice show={showRecalc} onClose={() => setShowRecalc(false)} what="運用パラメータ" />
 
       {/* ── ① 保険料率（年度ごとの履歴）── 編集可 */}
       <InsuranceRatePeriodsCard />
@@ -1757,7 +1874,8 @@ function CalcTableMasterTab() {
               <RefRow label="深夜追加割増" value="+0.25" />
             </div>
             <div>
-              <RefRow label="休日出勤割増" value="×1.35" />
+              <RefRow label="休日出勤割増（土曜・祝日）" value="×1.25" />
+              <RefRow label="休日出勤割増（日曜）" value="×1.35" />
               <RefRow label="源泉所得税" value="月額表・甲欄" note="社保控除後×扶養人数で自動" />
             </div>
           </div>

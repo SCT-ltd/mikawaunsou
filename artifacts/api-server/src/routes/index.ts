@@ -18,6 +18,7 @@ import calendarRouter from "./calendar";
 import insuranceRouter from "./insurance";
 import alertsRouter from "./alerts";
 import auditRouter from "./audit";
+import officeToolsRouter from "./office_tools";
 import { requireAdmin } from "../lib/auth-middleware";
 import { audit } from "../lib/audit";
 
@@ -94,7 +95,8 @@ router.use(async (req: Request, res: Response, next: NextFunction) => {
 //        全リクエストで mw が走り、別のルーターの処理まで巻き込んでしまうため使わない。
 // ── 操作の記録：管理画面からの書き込みを、成功したものだけすべて残す ───────────────
 // （確定・確定解除・ユーザー・暗証番号などは各ルートで中身つきで残しているので、ここでは除く）
-const AUDIT_SKIP = /^\/(auth\/|payroll\/\d+\/(confirm|unconfirm)$|users(\/|$)|employees\/\d+\/(pin|qr-key)|alerts\/read|push\/subscribe|messages(\/|$)|attendance\/location\/live$)/;
+const AUDIT_SKIP = /^\/(auth\/|payroll\/\d+\/(confirm|unconfirm)$|users(\/|$)|employees\/\d+\/(pin|qr-key)|alerts\/read|push\/subscribe|messages(\/|$)|attendance\/location\/live$|office-tools\/(bank-accounts|transfer-settings))/;
+// ↑ 振込口座・振込元は口座番号が入るので、ここでは残さない（ルート側で下3桁だけ残している）
 const SECRET_KEYS = /pin|password|secret|token|key|auth|p256dh|endpoint/i;
 function redact(v: unknown, depth = 0): unknown {
   if (depth > 4 || v === null || typeof v !== "object") return v;
@@ -138,6 +140,8 @@ router.use("/dashboard", requireAdmin);
 router.use("/journal-entries", requireAdmin);
 // 標準報酬月額（全社員分）は admin 専用。/employees/:id/standard-remuneration-history は上の "/employees" で admin。
 router.use("/standard-remuneration", requireAdmin);
+// 確定前チェック・振込一覧など事務所の締め作業の入口（閲覧のみの人は見るだけ）
+router.use("/office-tools", requireAdmin);
 
 // 全ルーターを通常マウント（個別エンドポイントの requireAdmin は各ファイル側で対応）
 router.use(companyRouter);     // PUT /company のみ admin（ファイル側）
@@ -154,6 +158,7 @@ router.use(messagesRouter);    // conversations, broadcast は admin（ファイ
 router.use(insuranceRouter);
 router.use(alertsRouter);      // 従業員のお知らせ（すべて admin・ファイル側）
 router.use(calendarRouter);    // カレンダー（見るのはログインした人、変えるのは管理者）
+router.use(officeToolsRouter); // 確定前チェック・振込口座・全銀の書き出し
 router.use(auditRouter);       // 操作の記録（管理者だけ）   // 保険料率マスターの GET はログインのみ、POST/PUT/DELETE は admin（ファイル側）
 
 export { requireAdmin };
