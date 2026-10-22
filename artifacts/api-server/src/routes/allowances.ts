@@ -1,9 +1,10 @@
 import { Router } from "express";
-import { db, allowanceDefinitionsTable, employeeAllowancesTable, deductionDefinitionsTable, employeeDeductionsTable } from "@workspace/db";
+import { db, allowanceDefinitionsTable, employeeAllowancesTable, deductionDefinitionsTable, employeeDeductionsTable, employeesTable } from "@workspace/db";
 import { paramStr } from "../lib/params";
 import { eq, and, ne } from "drizzle-orm";
 import { requireAdmin } from "../lib/auth-middleware";
 import { getMonthItems, saveMonthItems, isMonthLocked, MonthLockedError } from "../lib/month-items";
+import { residentTaxFor, scheduledWeekdays } from "../lib/payroll-context";
 
 const router = Router();
 
@@ -30,6 +31,7 @@ router.post("/allowance-definitions", requireAdmin, async (req, res) => {
     isActive: true,
     pinned: body.pinned ?? false,
     excludeFromEmploymentInsurance: body.excludeFromEmploymentInsurance ?? false,
+    includeInPremiumBase: body.includeInPremiumBase ?? false,
   }).returning();
   return res.status(201).json(created);
 });
@@ -65,6 +67,7 @@ router.put("/allowance-definitions/:id", requireAdmin, async (req, res) => {
     ...(body.isActive !== undefined && { isActive: body.isActive }),
     ...(body.pinned !== undefined && { pinned: body.pinned }),
     ...(body.excludeFromEmploymentInsurance !== undefined && { excludeFromEmploymentInsurance: body.excludeFromEmploymentInsurance }),
+    ...(typeof body.includeInPremiumBase === "boolean" && { includeInPremiumBase: body.includeInPremiumBase }),
     updatedAt: new Date(),
   }).where(eq(allowanceDefinitionsTable.id, id)).returning();
   if (!updated) return res.status(404).json({ error: "Not found" });
@@ -318,11 +321,14 @@ router.get("/employees/:id/month-items", async (req, res) => {
   const employeeId = parseInt(paramStr(req.params.id), 10);
   const ym = parseYearMonth(req.query as Record<string, unknown>);
   if (Number.isNaN(employeeId) || !ym) return res.status(400).json({ error: "社員と年月の指定が正しくありません。" });
-  const [items, locked] = await Promise.all([
+  const [items, locked, [emp]] = await Promise.all([
     getMonthItems(employeeId, ym.year, ym.month),
     isMonthLocked(employeeId, ym.year, ym.month),
+    db.select({ id: employeesTable.id, residentTax: employeesTable.residentTax }).from(employeesTable).where(eq(employeesTable.id, employeeId)),
   ]);
-  return res.json({ ...items, locked, year: ym.year, month: ym.month });
+  // その月に引く住民税（12か月分を入れた人はその月の額）と所定労働日数（欠勤控除の日割り用）。画面の概算がサーバーと合うように返す
+  const rt = emp ? await residentTaxFor(emp, ym.year, ym.month) : null;
+  return res.json({ ...items, locked, year: ym.year, month: ym.month, residentTax: rt?.amount ?? null, residentTaxFromSchedule: rt?.fromSchedule ?? false, scheduledDaysInMonth: scheduledWeekdays(ym.year, ym.month) });
 });
 
 router.put("/employees/:id/month-items", requireAdmin, async (req, res) => {

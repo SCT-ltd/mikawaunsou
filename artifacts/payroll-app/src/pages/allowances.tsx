@@ -66,6 +66,7 @@ const allowanceSchema = z.object({
   isActive: z.boolean().default(true).optional(),
   pinned: z.boolean().default(false),
   excludeFromEmploymentInsurance: z.boolean().default(false),
+  includeInPremiumBase: z.boolean().default(false),
   sortOrder: z.number().int().min(1, "1以上の整数を入力してください").optional(),
 });
 type AllowanceFormValues = z.infer<typeof allowanceSchema>;
@@ -84,12 +85,12 @@ function AllowanceMasterTab() {
 
   const form = useForm<AllowanceFormValues>({
     resolver: zodResolver(allowanceSchema),
-    defaultValues: { name: "", description: "", isTaxable: true, calculationType: "variable", isActive: true, pinned: false, excludeFromEmploymentInsurance: false },
+    defaultValues: { name: "", description: "", isTaxable: true, calculationType: "variable", isActive: true, pinned: false, excludeFromEmploymentInsurance: false, includeInPremiumBase: false },
   });
 
   const handleOpenCreate = () => {
     setEditingAllowance(null);
-    form.reset({ name: "", description: "", isTaxable: true, calculationType: "variable", isActive: true, pinned: false, excludeFromEmploymentInsurance: false });
+    form.reset({ name: "", description: "", isTaxable: true, calculationType: "variable", isActive: true, pinned: false, excludeFromEmploymentInsurance: false, includeInPremiumBase: false });
     setIsDialogOpen(true);
   };
 
@@ -103,6 +104,7 @@ function AllowanceMasterTab() {
       isActive: allowance.isActive,
       pinned: allowance.pinned ?? false,
       excludeFromEmploymentInsurance: allowance.excludeFromEmploymentInsurance ?? false,
+      includeInPremiumBase: (allowance as { includeInPremiumBase?: boolean }).includeInPremiumBase ?? false,
       sortOrder: Math.max(1, allowance.sortOrder),
     });
     setIsDialogOpen(true);
@@ -113,12 +115,12 @@ function AllowanceMasterTab() {
       if (editingAllowance) {
         await updateAllowance.mutateAsync({
           id: editingAllowance.id,
-          data: { name: data.name, description: data.description || undefined, isTaxable: data.isTaxable, calculationType: data.calculationType, isActive: data.isActive ?? true, sortOrder: data.sortOrder, pinned: data.pinned, excludeFromEmploymentInsurance: data.excludeFromEmploymentInsurance },
+          data: { name: data.name, description: data.description || undefined, isTaxable: data.isTaxable, calculationType: data.calculationType, isActive: data.isActive ?? true, sortOrder: data.sortOrder, pinned: data.pinned, excludeFromEmploymentInsurance: data.excludeFromEmploymentInsurance, includeInPremiumBase: data.includeInPremiumBase } as never,
         });
         toast({ title: "保存しました", description: "手当マスタを更新しました。" });
       } else {
         await createAllowance.mutateAsync({
-          data: { name: data.name, description: data.description || undefined, isTaxable: data.isTaxable, calculationType: data.calculationType, pinned: data.pinned, excludeFromEmploymentInsurance: data.excludeFromEmploymentInsurance },
+          data: { name: data.name, description: data.description || undefined, isTaxable: data.isTaxable, calculationType: data.calculationType, pinned: data.pinned, excludeFromEmploymentInsurance: data.excludeFromEmploymentInsurance, includeInPremiumBase: data.includeInPremiumBase } as never,
         });
         toast({ title: "追加しました", description: "新しい手当を登録しました。" });
       }
@@ -279,6 +281,15 @@ function AllowanceMasterTab() {
                   <div>
                     <FormLabel className="text-base">雇用保険の対象外にする</FormLabel>
                     <p className="text-sm text-muted-foreground">オンにすると、この手当は雇用保険料の計算基礎から除きます（携帯代など実費弁償の手当向け。交通費は対象に含めるためオフのまま）</p>
+                  </div>
+                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="includeInPremiumBase" render={({ field }) => (
+                <FormItem className="flex items-center justify-between rounded-lg border border-violet-200 bg-violet-50/50 dark:bg-violet-500/10 dark:border-violet-500/25 p-4">
+                  <div>
+                    <FormLabel className="text-base">割増の基礎・最低賃金に入れる</FormLabel>
+                    <p className="text-sm text-muted-foreground">オンにすると、残業・休日・深夜の単価（会社設定①が入のとき）と最低賃金の比較に、この手当を入れます。家族手当・通勤手当・住宅手当・臨時の手当・残業などの手当は入れません（労基法37条5項）。</p>
                   </div>
                   <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
                 </FormItem>

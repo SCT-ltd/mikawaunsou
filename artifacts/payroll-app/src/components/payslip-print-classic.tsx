@@ -357,7 +357,12 @@ export function ClassicContent({ payroll, companyName, employeeAllowances, emplo
   const appliedStd = payroll.appliedStandardRemuneration;
   const appliedHealth = payroll.appliedHealthInsuranceRate;
   let healthAmt: number;
-  if (appliedStd != null && appliedHealth != null) {
+  // 2026-10-24 以降に計算した明細は、健康保険料・厚生年金保険料を分けて保存している。その値をそのまま出す（計算し直さない）。
+  const storedHealth = (payroll as { healthInsuranceAmount?: number | null }).healthInsuranceAmount;
+  const storedPension = (payroll as { pensionAmount?: number | null }).pensionAmount;
+  if (storedHealth != null && storedPension != null && storedHealth + storedPension === socialBase) {
+    healthAmt = storedHealth;
+  } else if (appliedStd != null && appliedHealth != null) {
     const healthRateTotal = appliedHealth + (payroll.appliedCareInsuranceRate ?? 0);
     healthAmt = Math.min(socialBase, round50sen(appliedStd * (Math.round((healthRateTotal / 2) * 1e10) / 1e10)));
   } else {

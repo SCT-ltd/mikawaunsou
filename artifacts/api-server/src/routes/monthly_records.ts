@@ -28,6 +28,7 @@ const RECORD_FIELDS = {
   overtimeUnitPrice: monthlyRecordsTable.overtimeUnitPrice,
   bluewingSalesAmount: monthlyRecordsTable.bluewingSalesAmount,
   actualWorkHours: monthlyRecordsTable.actualWorkHours,
+  restDayOvertimeHours: monthlyRecordsTable.restDayOvertimeHours,
   createdAt: monthlyRecordsTable.createdAt,
   updatedAt: monthlyRecordsTable.updatedAt,
 };
@@ -78,6 +79,7 @@ router.post("/monthly-records", async (req, res) => {
       overtimeUnitPrice: body.overtimeUnitPrice ?? existing[0].overtimeUnitPrice,
       bluewingSalesAmount: body.bluewingSalesAmount ?? existing[0].bluewingSalesAmount,
       actualWorkHours: body.actualWorkHours ?? existing[0].actualWorkHours,
+      restDayOvertimeHours: body.restDayOvertimeHours ?? existing[0].restDayOvertimeHours,
       updatedAt: new Date(),
     }).where(eq(monthlyRecordsTable.id, existing[0].id)).returning();
     return res.status(201).json(updated);
@@ -105,6 +107,7 @@ router.post("/monthly-records", async (req, res) => {
     overtimeUnitPrice: body.overtimeUnitPrice ?? 2111,
     bluewingSalesAmount: body.bluewingSalesAmount ?? 0,
     actualWorkHours: body.actualWorkHours ?? 0,
+    restDayOvertimeHours: body.restDayOvertimeHours ?? 0,
   }).returning();
   return res.status(201).json(record);
 });
@@ -141,6 +144,7 @@ router.put("/monthly-records/:id", async (req, res) => {
     ...(body.overtimeUnitPrice !== undefined && { overtimeUnitPrice: body.overtimeUnitPrice }),
     ...(body.bluewingSalesAmount !== undefined && { bluewingSalesAmount: body.bluewingSalesAmount }),
     ...(body.actualWorkHours !== undefined && { actualWorkHours: body.actualWorkHours }),
+    ...(body.restDayOvertimeHours !== undefined && { restDayOvertimeHours: body.restDayOvertimeHours }),
     updatedAt: new Date(),
   }).where(eq(monthlyRecordsTable.id, id)).returning();
   if (!updated) return res.status(404).json({ error: "月次実績が見つかりません。" });

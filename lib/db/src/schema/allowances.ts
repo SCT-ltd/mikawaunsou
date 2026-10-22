@@ -16,6 +16,9 @@ export const allowanceDefinitionsTable = pgTable("allowance_definitions", {
   // ON にすると、この手当は雇用保険料の計算基礎から除外される（例: 携帯代など実費弁償の手当）。
   // 交通費（通勤手当）は非課税でも賃金に含めるため OFF のまま。
   excludeFromEmploymentInsurance: boolean("exclude_from_employment_insurance").notNull().default(false),
+  // ON にすると、割増賃金（残業・休日・深夜）の基礎と最低賃金の比較に入れる（会社設定①が ON のとき使う）。
+  // 家族手当・通勤手当・別居手当・子女教育手当・住宅手当・臨時の賃金は入れない（労基法37条5項・労基則21条）。
+  includeInPremiumBase: boolean("include_in_premium_base").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

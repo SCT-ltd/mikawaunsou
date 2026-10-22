@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { Link } from "wouter";
 import { AppLayout } from "@/components/layout/app-layout";
 import { useGetCompany, useUpdateCompany, getGetCompanyQueryKey } from "@workspace/api-client-react";
 import { useForm } from "react-hook-form";
@@ -11,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { Save, Building2, Info } from "lucide-react";
+import { PayRulesCard } from "@/components/payroll/pay-rules-card";
 
 const companySchema = z.object({
   name: z.string().min(1, "会社名を入力してください"),
@@ -86,7 +88,7 @@ export default function Settings() {
           <div>
             <h2 className="text-2xl font-bold tracking-tight">会社設定</h2>
             <p className="text-sm text-muted-foreground mt-1">
-              会社の基本情報・給与締め日・支払日を設定します。
+              会社の基本情報・給与締め日・支払日を設定します。有給・住民税・賞与・賃金台帳などは <Link href="/payroll-law" className="underline">給与と法令</Link> の画面です。
             </p>
           </div>
         </div>
@@ -224,6 +226,9 @@ export default function Settings() {
             </div>
           </form>
         </Form>
+
+        {/* 給与計算の切り替え（スイッチ）と法令の設定。保存ボタンは別（上の会社設定とは別に保存する） */}
+        <div className="pb-12"><PayRulesCard /></div>
       </div>
     </AppLayout>
   );

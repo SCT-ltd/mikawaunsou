@@ -53,7 +53,9 @@ export default function JournalEntries() {
     const blob = await res.blob();
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `仕訳データ_${format}_${year}${String(month).padStart(2, "0")}.csv`;
+    // 保存名は会計ソフトの名前を日本語で（以前は yayoi などの英字のままだった）
+    const formatName: Record<string, string> = { yayoi: "弥生会計", yayoi_import: "弥生会計インポート", freee: "freee", moneyforward: "マネーフォワード", generic: "汎用" };
+    a.download = `仕訳_${year}年${month}月_${formatName[format] ?? format}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -173,7 +175,8 @@ export default function JournalEntries() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={ExportJournalEntriesCsvFormat.yayoi}>弥生会計</SelectItem>
+                      <SelectItem value={ExportJournalEntriesCsvFormat.yayoi}>弥生会計（見出しつき）</SelectItem>
+                      <SelectItem value="yayoi_import">弥生会計（仕訳日記帳のインポート形式・25項目）</SelectItem>
                       <SelectItem value={ExportJournalEntriesCsvFormat.freee}>freee会計</SelectItem>
                       <SelectItem value={ExportJournalEntriesCsvFormat.moneyforward}>マネーフォワードクラウド会計</SelectItem>
                       <SelectItem value={ExportJournalEntriesCsvFormat.generic}>汎用フォーマット</SelectItem>

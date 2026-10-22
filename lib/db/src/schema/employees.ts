@@ -32,7 +32,37 @@ export const employeesTable = pgTable("employees", {
   employmentInsuranceApplied: boolean("employment_insurance_applied").notNull().default(true),
   /** 厚生年金適用（null=生年月日から自動判定、true=強制ON、false=強制OFF）70歳以上は自動的にfalse */
   pensionApplied: boolean("pension_applied"),
+  /** @deprecated 社保・雇用保険・源泉税をまとめて止める旧い印。下の3つに分けた（画面から変えると3つにも写す） */
   taxExempt: boolean("tax_exempt").notNull().default(false),
+  /** 社会保険（健保・介護・子育て支援金・厚年）を引かない */
+  socialInsuranceExempt: boolean("social_insurance_exempt").notNull().default(false),
+  /** 雇用保険料を引かない */
+  employmentInsuranceExempt: boolean("employment_insurance_exempt").notNull().default(false),
+  /** 源泉所得税を引かない */
+  incomeTaxExempt: boolean("income_tax_exempt").notNull().default(false),
+  /** 健康保険の適用（auto＝75歳の誕生日の月から止める／applied＝適用／not_applied＝非適用） */
+  healthInsuranceMode: text("health_insurance_mode").notNull().default("auto"),
+  /** 扶養控除等申告書（kou＝提出あり・甲欄／otsu＝提出なし・乙欄） */
+  taxColumn: text("tax_column").notNull().default("kou"),
+  /** 本人の障害（none／general＝一般の障害者／special＝特別障害者） */
+  disability: text("disability").notNull().default("none"),
+  widow: boolean("widow").notNull().default(false),
+  singleParent: boolean("single_parent").notNull().default(false),
+  workingStudent: boolean("working_student").notNull().default(false),
+  /** 扶養親族（配偶者を含む）のうち障害者の数（同居特別障害者は2として数える） */
+  dependentDisabilityCount: integer("dependent_disability_count").notNull().default(0),
+  /** 通勤の手段（none／public＝交通機関／car＝マイカー・自転車など）と片道の距離（km） */
+  commuteMethod: text("commute_method"),
+  commuteDistanceKm: doublePrecision("commute_distance_km"),
+  /** 週の所定労働日数・時間（有給の比例付与の判定） */
+  weeklyScheduledDays: doublePrecision("weekly_scheduled_days"),
+  weeklyScheduledHours: doublePrecision("weekly_scheduled_hours"),
+  /** 労働者名簿（労基法107条） */
+  gender: text("gender"),
+  address: text("address"),
+  jobType: text("job_type"),
+  retirementDate: date("retirement_date"),
+  retirementReason: text("retirement_reason"),
   residentTax: doublePrecision("resident_tax").notNull().default(0),
   incomeTaxMonthly: doublePrecision("income_tax_monthly").notNull().default(0),
   otherDeductionMonthly: doublePrecision("other_deduction_monthly").notNull().default(0),

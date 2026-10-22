@@ -13,7 +13,15 @@ import {
   companyTable,
 } from "@workspace/db";
 import { and, eq, gt, or } from "drizzle-orm";
-import { lateNightRateFor } from "./payroll-calculator";
+import {
+  deriveAutoValues,
+  autoContextFromAllowances,
+  payRulesFromCompany,
+  type AttendanceForAuto,
+  type EmployeeForAuto,
+  type CompanyForAuto,
+  type AutoValues,
+} from "@workspace/tax-tables-reiwa8/core";
 
 /**
  * 月ごとの手当・控除（schema/month_items.ts）を読み書きする。
@@ -195,75 +203,30 @@ async function writeMonthRows(
 // 式は components/monthly-input/allowance-panel.tsx と同じにしておくこと。
 // ────────────────────────────────────────────────────────────────
 
-export interface AttendanceForAuto {
-  workDays: number | null;
-  saturdayWorkDays: number | null;
-  sundayWorkHours: number | null;
-  /** 祝日の出勤日数（土曜と同じ日当＝1.25倍） */
-  holidayWorkDays?: number | null;
-  paidLeaveDays: number | null;
-  overtimeHours: number | null;
-  lateNightHours: number | null;
-}
-export interface EmployeeForAuto {
-  id: number;
-  salaryType: string | null;
-  baseSalary: number | null;
-  dailyRateWeekday?: number | null;
-  dailyRateSaturday?: number | null;
-  overtimeHourlyRate?: number | null;
-  lateNightHourlyRate?: number | null;
-}
-export interface CompanyForAuto {
-  dailyWageWeekday?: number | null;
-  dailyWageSaturday?: number | null;
-  hourlyWageSunday?: number | null;
-}
-/** base＝日給制の基本給（日給制でなければ null）。a＝手当ID→金額。 */
-export interface AutoValues {
-  base: number | null;
-  a: Record<string, number>;
-}
+// 式の本体は共有の lib/tax-tables-reiwa8/src/payroll-core.ts（画面の手当パネルと同じ関数）。
+export type { AttendanceForAuto, EmployeeForAuto, CompanyForAuto, AutoValues } from "@workspace/tax-tables-reiwa8/core";
+export { deriveAutoValues };
 
-export function deriveAutoValues(
+/**
+ * その月の自動の手当を出す。会社設定のスイッチ（①⑥など）が使う「その月の手当の行」も渡す。
+ * スイッチが OFF なら、手当の行は計算に使われない（今までと同じ金額）。
+ */
+async function autoFor(
+  ex: Executor,
   emp: EmployeeForAuto,
   rec: AttendanceForAuto,
-  company: CompanyForAuto,
-  /** 有効な手当の定義（並び順どおり） */
-  activeDefs: Array<{ id: number; name: string }>,
-): AutoValues {
-  const rateWeekday = (emp.dailyRateWeekday ?? 0) > 0 ? emp.dailyRateWeekday! : (company.dailyWageWeekday ?? 9808);
-  const rateSaturday = (emp.dailyRateSaturday ?? 0) > 0 ? emp.dailyRateSaturday! : (company.dailyWageSaturday ?? 12260);
-  const rateSundayHour = company.hourlyWageSunday ?? 1655;
-  const overtimeRate = emp.overtimeHourlyRate ?? 0;
-  const personalNightRate = emp.lateNightHourlyRate ?? 0;
-  const workDays = rec.workDays ?? 0;
-  const saturdayDays = rec.saturdayWorkDays ?? 0;
-  const sundayHours = rec.sundayWorkHours ?? 0;
-  const holidayDays = rec.holidayWorkDays ?? 0;
-  const paidLeaveDays = rec.paidLeaveDays ?? 0;
-  const overtimeHours = rec.overtimeHours ?? 0;
-  const lateNightHours = rec.lateNightHours ?? 0;
-
-  const a: Record<string, number> = {};
-  const put = (keyword: string, amount: number) => {
-    const def = activeDefs.find((d) => d.name.includes(keyword));
-    if (def) a[String(def.id)] = amount;
-  };
-  put("有給", Math.round(rateWeekday * paidLeaveDays));
-  // 日曜だけ1.35倍（日曜時給）、土曜と祝日は1.25倍（土曜日当）
-  put("休日出勤手当", Math.round((saturdayDays + holidayDays) * rateSaturday + sundayHours * rateSundayHour));
-  // 残業時給が未設定の社員は入れ直さない（手で入れた金額を0円で消さないため）
-  if (overtimeRate > 0) {
-    const OT_THRESHOLD = 60;
-    put("早出残業手当", overtimeHours <= OT_THRESHOLD
-      ? Math.round(overtimeRate * overtimeHours)
-      : Math.round(overtimeRate * OT_THRESHOLD) + Math.round(overtimeRate * 1.20 * (overtimeHours - OT_THRESHOLD)));
-  }
-  if (overtimeRate > 0 || personalNightRate > 0) {
-    put("深夜手当", Math.round(lateNightRateFor(personalNightRate, overtimeRate) * lateNightHours));
-  }
-  return { base: emp.salaryType === "daily" ? Math.round(workDays * rateWeekday) : null, a };
+  company: (CompanyForAuto & Record<string, unknown>) | null | undefined,
+  allowances: Array<{ allowanceDefinitionId: number; allowanceName?: string; amount: number }>,
+  defs?: Array<typeof allowanceDefinitionsTable.$inferSelect>,
+): Promise<AutoValues> {
+  const activeDefs = defs ?? await activeAllowanceDefs(ex);
+  const rules = payRulesFromCompany(company ?? {});
+  const premiumIds = new Set(activeDefs.filter((d) => d.includeInPremiumBase).map((d) => d.id));
+  const ctx = autoContextFromAllowances(
+    allowances.map((x) => ({ allowanceDefinitionId: x.allowanceDefinitionId, amount: x.amount, name: x.allowanceName ?? activeDefs.find((d) => d.id === x.allowanceDefinitionId)?.name })),
+    premiumIds, rules,
+  );
+  return deriveAutoValues(emp, rec, company ?? {}, activeDefs, ctx);
 }
 
 /** 勤怠がまだ無いときに保存された月の印。勤怠が入ったら、作りたてと同じに全部入れ直す。 */
@@ -297,7 +260,7 @@ async function activeAllowanceDefs(ex: Executor) {
  *     今の勤怠から出した金額を控えるだけにする。
  */
 export async function syncMonthItemsWithAttendance(
-  emp: EmployeeForAuto,
+  emp: EmployeeForAuto & { id: number },
   rec: AttendanceForAuto,
   company: CompanyForAuto,
   year: number,
@@ -305,11 +268,11 @@ export async function syncMonthItemsWithAttendance(
 ): Promise<MonthItems> {
   return db.transaction(async (tx) => {
     const defs = await activeAllowanceDefs(tx);
-    const auto = deriveAutoValues(emp, rec, company, defs);
-    const autoJson = JSON.stringify(auto);
     const [set] = await tx.select().from(employeeMonthSetsTable)
       .where(sameMonth(employeeMonthSetsTable, emp.id, year, month));
     const current = await getMonthItems(emp.id, year, month, tx);
+    const auto = await autoFor(tx, emp, rec, company as CompanyForAuto & Record<string, unknown>, current.allowances, defs);
+    const autoJson = JSON.stringify(auto);
     const prev = set ? parseAuto(set.autoValues) : "pending";
 
     if (set && prev === null) {
@@ -430,7 +393,7 @@ export async function saveMonthItems(
     let autoValues = AUTO_PENDING;
     if (rec && emp) {
       const [company] = await tx.select().from(companyTable).limit(1);
-      autoValues = JSON.stringify(deriveAutoValues(emp, rec, company ?? {}, await activeAllowanceDefs(tx)));
+      autoValues = JSON.stringify(await autoFor(tx, emp, rec, company, allowances));
     }
     await tx.update(employeeMonthSetsTable).set({ autoValues })
       .where(sameMonth(employeeMonthSetsTable, employeeId, year, month));

@@ -35,6 +35,8 @@ PostgreSQL への接続（pg `Pool`）と Drizzle ORM のスキーマ定義を�
 - 実装済み: 上記スキーマ一式
 - 注意: フィールドの詳細・新規カラムの意味は `replit.md` の「Database Schema」を正典とする（ここでは重複させない）
 
+- 2026-10-24: batch-d の列・表を追加（`schema/payroll_law.ts`：住民税の12か月分・有給の調整・賞与・年末調整の申告書・雇用保険の不足の精算。company にスイッチと最低賃金など、employees に保険・税の印・名簿・退職、monthly_records に rest_day_overtime_hours、allowance_definitions に include_in_premium_base、payrolls に health_insurance_amount / pension_amount / calc_warnings）。SQL は `deploy/migrations/2026-10-24-batch-d.sql`。
+
 ## 決定事項
 
 - 2026-09-14 **保険料率と標準報酬月額の履歴テーブルを追加**（年度改定・定時決定をマスターで切り替えるため）。

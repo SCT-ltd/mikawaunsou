@@ -8,6 +8,8 @@ import {
   HOLIDAY_RATE_R8,
 } from "@/lib/tax-tables-reiwa8";
 import { DEFAULT_INSURANCE_RATES_R8, type MonthInsurance } from "@/lib/insurance-rates";
+import { panelDeductions } from "@/lib/payroll-shared";
+import { bluewingCalc, payRulesFromCompany } from "@workspace/tax-tables-reiwa8/core";
 
 /**
  * 月次実績入力の概算計算ロジック。
@@ -211,29 +213,24 @@ export function computeQuickEstimate(
     const empStd = insurance
       ? insurance.standardRemunerationOf(emp.id, emp.standardRemuneration)
       : (emp.standardRemuneration ?? 0);
-    const stdRem = empStd > 0 ? empStd : grossEstimate;
-    const healthRate = emp.careInsuranceApplied ? rates.healthWithCareEmployeeRate : rates.healthEmployeeRate;
-    const isPensionApplied = resolvePensionApplied(emp);
-    const { healthInsurance, pension } = calculateInsuranceByGrade(stdRem, healthRate, rates.pensionEmployeeRate);
-    const childcareSupport = round50sen(stdRem * rates.childcareEmployeeRate);
     // 雇用保険料の概算。ここでの grossEstimate は勤怠のみ（基本給＋残業等）で、
     // カスタム手当（携帯代・職務手当など）を含まない。したがって「雇用保険の対象外」
     // 手当（携帯代）も元から基礎に入っておらず、確定計算のような除外処理は不要。
     // これは月次入力の速報概算であり、手当込みの正確な雇用保険料は明細（手当・控除パネル）で算出する。
-    const employmentInsurance = emp.employmentInsuranceApplied !== false
-      ? round50sen(grossEstimate * rates.employmentInsuranceRate)
-      : 0;
-    const totalInsurance =
-      healthInsurance +
-      (isPensionApplied ? pension : 0) +
-      childcareSupport +
-      employmentInsurance;
-    const afterInsurance = Math.max(0, grossEstimate - totalInsurance);
-    const incomeTax = calculateIncomeTaxFromOfficialTable(
-      afterInsurance,
-      emp.dependentCount ?? 0,
-      emp.hasSpouse ?? false,
-    );
+    // 保険料・源泉税の式はサーバーと同じ共有の関数（lib/payroll-shared.ts）。
+    // 以前は年月を渡さず「今日」で70歳を判定し、標準報酬が65万円を超える人の厚生年金を0円にしていた。
+    const ded = panelDeductions({
+      employee: emp, company, rates,
+      year: insurance?.year ?? new Date().getFullYear(),
+      month: insurance?.month ?? new Date().getMonth() + 1,
+      standardRemuneration: empStd,
+      grossSalary: grossEstimate,
+      nonTaxableAllowances: 0,
+      employmentInsuranceExcluded: 0,
+      employmentInsuranceOverride: null,
+    });
+    const totalInsurance = ded.healthInsurance + ded.pension + ded.childcareSupportContribution + ded.employmentInsurance;
+    const incomeTax = ded.incomeTax;
     const residentTax = emp.residentTax ?? 0;
     net = roundJapanese(grossEstimate - totalInsurance - incomeTax - residentTax);
   }
@@ -272,21 +269,12 @@ export function computeBWCalc(
   const dailyWage     = company?.dailyWageWeekday  ?? 9808;
   const dailySaturday = company?.dailyWageSaturday ?? 12260;
 
-  // 超過残業代
-  const actualOTHours = Math.max(0, overtimeHours - fixedOTHours);
-  const actualOTPay   = Math.round(actualOTHours * otUnitPrice);
+  // BW深夜手当: 個人の深夜単価、無ければ残業単価から素の時給を復元して25%（サーバーと同じ lateNightRateFor）
+  const lateNightPay = Math.floor(lateNightRateFor((emp as { lateNightHourlyRate?: number }).lateNightHourlyRate, otUnitPrice) * lateNightHours);
 
-  // BW深夜手当: 残業単価から素の時給を復元して25%（例 2111 → 1689 → 422円/h、4.5h → 1,899円）
-  const lateNightPay = Math.floor(lateNightPremiumPerHour(otUnitPrice) * lateNightHours);
-
-  // 休日出勤: 「日曜/祝日」列 = sundayWorkHours（時間）× 日曜時給
+  // 休日出勤: 「日曜/祝日」列 = sundayWorkHours（時間）× 日曜時給（サーバーと同じく四捨五入）
   const sundayHours = Number(rowData.sundayWorkHours) || 0;
-  const holidayPay  = Math.floor((company?.hourlyWageSunday ?? 1655) * sundayHours);
-
-  // 公式A: 調整済み歩合率 × 売上
-  const otRatio      = sales > 0 ? Math.round((actualOTPay / sales) * 1000) / 1000 : 0;
-  const adjustedRate = Math.max(0, commissionRate - otRatio);
-  const solutionA    = Math.floor(sales * adjustedRate);
+  const holidayPay  = Math.round((company?.hourlyWageSunday ?? 1655) * sundayHours);
 
   // 公式B: 基本給（平日+土曜）+ マスター手当 + カスタム手当合計 + 休日 + 深夜
   // ※ サーバー側の fixedAllowancesTotal = masterFixed + customAllowancesTotal と一致させる
@@ -297,14 +285,17 @@ export function computeBWCalc(
     (emp.positionAllowance              ?? 0) +
     (emp.familyAllowance                ?? 0) +
     (emp.earlyOvertimeAllowance         ?? 0);
-  const basePay   = Math.floor(workDays * dailyWage + saturdayDays * dailySaturday);
-  const solutionB = Math.floor(basePay + masterAllowances + customAllowancesTotal + holidayPay + lateNightPay);
+  const basePay   = Math.floor(workDays * dailyWage) + Math.floor(saturdayDays * dailySaturday);
 
-  // 解答C → 業績手当
-  const solutionC      = solutionA - solutionB;
-  const perfAllowance  = Math.max(0, solutionC);
+  // 式はサーバーと同じ共有の関数（会社設定④⑤のスイッチもここで効く）
+  const rules = payRulesFromCompany(company as Record<string, unknown> | undefined);
+  const r = bluewingCalc({
+    bluewingSalesAmount: sales, commissionRate, fixedOvertimeHours: fixedOTHours, overtimeHours, overtimeUnitPrice: otUnitPrice,
+    baseSalary: basePay, fixedAllowancesTotal: masterAllowances + customAllowancesTotal, holidayPay,
+    fixedOvertimeAmount: (emp as { bluewingFixedOvertimeAmount?: number }).bluewingFixedOvertimeAmount ?? 0, lateNightPay,
+  }, { v2: rules.bluewingPerformanceV2, over60: rules.bluewingOver60 });
 
-  return { solutionA, solutionB, solutionC, perfAllowance, actualOTPay, otRatio, adjustedRate };
+  return { solutionA: r.solutionA, solutionB: r.solutionB, solutionC: r.solutionC, perfAllowance: r.performanceAllowance, actualOTPay: r.actualOvertimePay, otRatio: r.otRatio, adjustedRate: r.adjustedRate };
 }
 
 // ── 入力データ有無の判定（リストの「入力済」状態表示用）──────────────────
@@ -314,7 +305,7 @@ export function hasAnyRecordData(ed: RowData | undefined): boolean {
     "workDays", "saturdayWorkDays", "sundayWorkDays", "sundayWorkHours", "absenceDays", "paidLeaveDays",
     "overtimeHours", "lateNightHours", "holidayWorkDays",
     "drivingDistanceKm", "deliveryCases", "actualWorkHours",
-    "bluewingSalesAmount",
+    "bluewingSalesAmount", "restDayOvertimeHours",
   ];
   if (numericFields.some((f) => (Number(ed[f]) || 0) > 0)) return true;
   return String(ed.notes || "").trim().length > 0;

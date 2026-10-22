@@ -11,6 +11,7 @@ import {
 import { and, eq, inArray } from "drizzle-orm";
 import { logger } from "./logger";
 import fs from "fs/promises";
+import { overtimeAlerts, payrollLawAlerts } from "./alerts-payroll";
 import path from "path";
 
 /**
@@ -21,7 +22,7 @@ import path from "path";
  *   40歳：その月分から介護保険料がかかる
  *   65歳：その月分から介護保険料がかからない
  *   70歳：その月分から厚生年金保険料を引かない（雇用保険・健康保険は続く）
- *   75歳：その月分から健康保険（協会けんぽ）を外れ、後期高齢者医療制度へ
+ *   75歳：誕生日「当日」に健康保険（協会けんぽ）を外れ、後期高齢者医療制度へ（誕生日の月分から保険料なし）
  */
 
 export type AlertLevel = "danger" | "warn" | "info";
@@ -102,7 +103,8 @@ export async function computeAlerts(): Promise<EmployeeAlert[]> {
     const r40 = reachDate(e.dateOfBirth, 40);
     const r65 = reachDate(e.dateOfBirth, 65);
     const r70 = reachDate(e.dateOfBirth, 70);
-    const r75 = reachDate(e.dateOfBirth, 75);
+    // 75歳は「誕生日の前日」ではなく誕生日当日（高齢者医療確保法52条）
+    const r75 = (() => { const r = reachDate(e.dateOfBirth, 75); if (r) r.setUTCDate(r.getUTCDate() + 1); return r; })();
     if (!r40 || !r65 || !r70 || !r75) continue;
 
     const careShould = nowYm >= ymOf(r40) && nowYm < ymOf(r65);
@@ -142,11 +144,13 @@ export async function computeAlerts(): Promise<EmployeeAlert[]> {
         : "システムが自動で止めます。") + "雇用保険・健康保険はそのまま続きます。",
     }));
 
+    const healthMode = e.healthInsuranceMode ?? "auto";
     milestone(75, r75, (_l, when) => ({
-      level: "warn",
+      level: healthMode === "applied" ? "warn" : "info",
       title: `${name}さんは${when}（${fmtDate(r75)}）`,
-      body: `${fmtMonth(r75)}から健康保険（協会けんぽ）を外れ、後期高齢者医療制度に移ります。` +
-        "このシステムは健康保険料を自動では止めません。手続きと控除の扱いを社労士に確認してください。",
+      body: `${fmtMonth(r75)}から健康保険（協会けんぽ）を外れ、後期高齢者医療制度に移ります。` + (healthMode === "applied"
+        ? "社員の法令の情報で「健康保険」が「適用する」に固定されているため止まりません。「自動」に戻してください。"
+        : "システムが自動で健康保険料（介護・子ども子育て支援金を含む）を止めます。資格喪失届（5日以内）を出してください。"),
     }));
 
     // 節目のお知らせが出ていない人で、介護保険の設定が年齢と合わないもの
@@ -161,9 +165,9 @@ export async function computeAlerts(): Promise<EmployeeAlert[]> {
       out.push({ ...base, key: `pension70:${e.id}`, level: "warn", title: `${name}さんの厚生年金の設定を確認してください`,
         body: "70歳以上ですが、社員マスターの「厚生年金」が「適用する」に固定されています。" });
     }
-    if (nowYm >= ymOf(r75) && Math.round((today.getTime() - r75.getTime()) / DAY) > AFTER_DAYS) {
+    if (healthMode === "applied" && nowYm >= ymOf(r75) && Math.round((today.getTime() - r75.getTime()) / DAY) > AFTER_DAYS) {
       out.push({ ...base, key: `age75over:${e.id}`, level: "warn", title: `${name}さんは75歳以上です`,
-        body: "健康保険（協会けんぽ）の対象外です。健康保険料を引いていないか確認してください。" });
+        body: "健康保険（協会けんぽ）の対象外ですが、「健康保険」が「適用する」に固定されていて保険料を引いています。" });
     }
   }
 
@@ -174,7 +178,7 @@ export async function computeAlerts(): Promise<EmployeeAlert[]> {
     let newest = 0;
     try {
       for (const name of await fs.readdir(dir)) {
-        if (!/^mikawa-d{8}-d{6}.dump$/.test(name)) continue;
+        if (!/^mikawa-\d{8}-\d{6}\.dump$/.test(name)) continue;
         const st = await fs.stat(path.join(dir, name));
         if (st.size > 1024) newest = Math.max(newest, st.mtimeMs);
       }
@@ -196,29 +200,10 @@ export async function computeAlerts(): Promise<EmployeeAlert[]> {
       body: `${names}${noPin.length > 6 ? " ほか" : ""}。打刻はできますが、事務所とのメッセージとスマホの通知が使えません。社員マスターで設定してください。` });
   }
 
-  // ── 残業（いちばん新しい月の実績）──
-  const empIds = emps.map((e) => e.id);
-  if (empIds.length > 0) {
-    const recs = await db.select({
-      employeeId: monthlyRecordsTable.employeeId, year: monthlyRecordsTable.year, month: monthlyRecordsTable.month,
-      overtimeHours: monthlyRecordsTable.overtimeHours,
-    }).from(monthlyRecordsTable).where(inArray(monthlyRecordsTable.employeeId, empIds));
-    const latest = recs.reduce((m, r) => Math.max(m, r.year * 12 + r.month - 1), -1);
-    if (latest >= 0) {
-      const ly = Math.floor(latest / 12), lm = (latest % 12) + 1;
-      for (const r of recs.filter((x) => x.year === ly && x.month === lm)) {
-        const h = r.overtimeHours ?? 0;
-        if (h <= 45) continue;
-        const e = emps.find((x) => x.id === r.employeeId)!;
-        const name = nameOf(e.name);
-        out.push({ key: `ot:${e.id}:${ly}-${lm}`, level: h > 80 ? "danger" : "warn", employeeId: e.id, employeeName: name, href: "/monthly-input",
-          title: `${name}さんの${lm}月の残業が${h}時間です`,
-          body: h > 80
-            ? "80時間を超えています。長時間労働の面談（医師の面接指導）の対象になりえます。"
-            : "月45時間を超えています（36協定の原則の上限）。年6回までの特別条項の範囲か確認してください。" });
-      }
-    }
-  }
+  // ── 残業（いちばん新しい月の実績・年の累計）── 運転者の年960時間に合わせた文。lib/alerts-payroll.ts
+  out.push(...await overtimeAlerts(emps, today));
+  // ── 給与計算と法令（最低賃金・固定残業代・有給の年5日・算定/月変・住民税・退職）──
+  try { out.push(...await payrollLawAlerts(emps, today)); } catch (err) { logger.warn({ err }, "給与と法令のお知らせを作れませんでした"); }
 
   // ── 先月分の明細が確定していない ──
   const prev = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1));
