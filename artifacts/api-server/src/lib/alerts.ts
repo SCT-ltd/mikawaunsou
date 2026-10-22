@@ -268,5 +268,7 @@ export function startAlertJob(): void {
   started = true;
   const run = () => { pushNewAlerts().catch((err) => logger.warn({ err }, "従業員のお知らせのプッシュ通知に失敗")); };
   setTimeout(run, 60_000);
-  setInterval(run, 60 * 60_000);
+  // 5分ごと（以前は1時間ごと。出勤の予定を過ぎても出勤していない知らせが最大1時間遅れていた）。
+  // 同じお知らせは1回しか送らない（alert_pushes）。
+  setInterval(run, 5 * 60_000);
 }

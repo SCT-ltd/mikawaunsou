@@ -9,6 +9,8 @@ import { daysFrom, LIMITS } from "./compliance";
 import { isFullDayAbsence } from "../routes/absences";
 import { pushOnce, pushToEmployee } from "./push";
 import { logger } from "./logger";
+import { schedulesFor, comparePlan, planTimes } from "./schedules";
+import { getAttendanceSettings } from "./attendance-settings";
 
 /**
  * 勤怠まわりの「従業員のお知らせ」（右上のベル・ダッシュボード・PCのプッシュ通知）。
@@ -19,6 +21,7 @@ import { logger } from "./logger";
  *   ・アルコールの検知
  *   ・まだ決めていない打刻の修正申請
  *   ・1日休みなのに出勤もある日
+ *   ・出勤の予定（シフト）を過ぎても出勤していない人（今日）
  */
 const nameOf = (n: string) => n.replace(/[\s　]+/g, " ").trim();
 const md = (d: string) => `${Number(d.slice(5, 7))}月${Number(d.slice(8, 10))}日`;
@@ -112,6 +115,29 @@ export async function computeAttendanceAlerts(): Promise<EmployeeAlert[]> {
     out.push({ key: `corrections:${corrections.map(c => c.id).join(",")}`.slice(0, 200), level: "warn", href: "/attendance-records",
       title: `打刻の修正申請が${corrections.length}件あります`, body: "内容を確かめて、承認するか見送ってください。" });
   }
+  // ── 予定（シフト）を過ぎても出勤していない（今日） ──
+  try {
+    const settings = await getAttendanceSettings();
+    if (settings.noShowAlert) {
+      const schedules = await schedulesFor(ids, today, today);
+      for (const e of emps) {
+        const sch = schedules.get(`${e.id}:${today}`);
+        const t = planTimes(today, sch);
+        if (!t) continue;
+        const inRec = recs.find(r => r.employeeId === e.id && r.workDate === today && r.eventType === "clock_in");
+        const cmp = comparePlan(today, sch, inRec ? new Date(inRec.recordedAt).getTime() : null, null, {
+          now: now.getTime(), today, graceMin: settings.lateGraceMinutes, noShowMin: settings.noShowAlertMinutes,
+          hasFullDayAbsence: absences.some(a => a.employeeId === e.id && a.workDate === today && isFullDayAbsence(a.absenceType)),
+        });
+        // 予定の終わりを過ぎたら出さない（その日はもう遅い）
+        if (!cmp.noShow || now.getTime() > t.end) continue;
+        const name = nameOf(e.name);
+        out.push({ employeeId: e.id, employeeName: name, href: `/attendance?emp=${e.id}`, key: `noshow:${e.id}:${today}`, level: "warn",
+          title: `${name}さんが出勤していません（予定 ${sch!.start}〜）`,
+          body: `予定の始まりから${settings.noShowAlertMinutes}分たっても出勤の打刻がありません。連絡を取ってください（休みなら勤怠管理で「欠勤・休暇登録」を入れると消えます）。`, date: today });
+      }
+    }
+  } catch (err) { logger.warn({ err }, "出勤の予定のお知らせを作れませんでした"); }
   // ── 1日休みなのに出勤もある ──
   for (const a of absences) {
     if (!isFullDayAbsence(a.absenceType)) continue;

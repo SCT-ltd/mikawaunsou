@@ -300,7 +300,10 @@ function Kaizen() {
 }
 
 // ── 勤怠の設定 ────────────────────────────────────────
-interface AttSettings { requireChecklist: boolean; requireAlcohol: boolean; vehicles: string[]; officeRounding: "all_office" | "hourly_only" | "none" }
+interface AttSettings {
+  requireChecklist: boolean; requireAlcohol: boolean; vehicles: string[]; officeRounding: "all_office" | "hourly_only" | "none";
+  lateGraceMinutes: number; noShowAlertMinutes: number; noShowAlert: boolean;
+}
 function SettingsTab() {
   const [s, setS] = useState<AttSettings | null>(null);
   const [vehicles, setVehicles] = useState("");
@@ -334,6 +337,25 @@ function SettingsTab() {
           <label key={v} className="flex items-center gap-2"><input type="radio" name="rounding" checked={s.officeRounding === v} onChange={() => setS({ ...s, officeRounding: v })} />{l}</label>
         ))}
         <p className="text-xs text-muted-foreground">会社の決まり（就業規則）に合わせて選んでください。月次実績への取り込みと、事務員の打刻ページの「計算時間」に効きます。</p>
+      </div>
+      <div className="space-y-2 text-sm border-t pt-4">
+        <p className="font-bold">出勤の予定（シフト）との比べ方</p>
+        <p className="text-xs text-muted-foreground">予定は「月の勤怠表」で入れます（曜日ごとの「予定の型」と、日ごとの予定）。予定が無い人・日は比べません。</p>
+        <label className="flex items-center gap-2">
+          遅刻・早退にしない猶予
+          <Input type="number" min={0} max={120} className="w-20 h-8" value={s.lateGraceMinutes}
+            onChange={e => setS({ ...s, lateGraceMinutes: Number(e.target.value) })} />分
+        </label>
+        <label className="flex items-start gap-2">
+          <input type="checkbox" className="mt-1" checked={s.noShowAlert} onChange={e => setS({ ...s, noShowAlert: e.target.checked })} />
+          <span><b>予定の始まりを過ぎても出勤していない人を知らせる</b>（右上のベルとパソコンの通知）</span>
+        </label>
+        <label className="flex items-center gap-2 pl-6">
+          予定の始まりから
+          <Input type="number" min={0} max={240} className="w-20 h-8" value={s.noShowAlertMinutes} disabled={!s.noShowAlert}
+            onChange={e => setS({ ...s, noShowAlertMinutes: Number(e.target.value) })} />分たったら知らせる
+        </label>
+        <p className="text-xs text-muted-foreground pl-6">「欠勤・休暇登録」で1日休みを入れた人には知らせません。</p>
       </div>
       <div className="flex items-center gap-3">
         <Button onClick={save}>保存</Button>

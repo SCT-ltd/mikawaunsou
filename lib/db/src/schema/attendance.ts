@@ -196,3 +196,29 @@ export const attendanceSettingsTable = pgTable("attendance_settings", {
   data: text("data").notNull().default("{}"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+/**
+ * 出勤の予定（シフト）。1人1日1件。無い日は「予定の型」（曜日ごと）を使う。
+ * 時刻は日本時間の "HH:MM"。終わりが始まりより前なら翌日（夜勤）。isOff＝その日は休み。
+ */
+export const workSchedulesTable = pgTable("work_schedules", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  workDate: date("work_date").notNull(),
+  startTime: text("start_time"),
+  endTime: text("end_time"),
+  isOff: boolean("is_off").notNull().default(false),
+  note: text("note"),
+  updatedBy: text("updated_by"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => [unique("work_schedules_emp_date_unique").on(t.employeeId, t.workDate)]);
+
+/**
+ * 予定の型（曜日ごと）。data＝{"0":{"start":"08:00","end":"17:00"}|null, … "6":…, "holidayOff":true}
+ * 0=日曜〜6=土曜。null の曜日は予定なし（休み）。holidayOff＝祝日は休みにする。
+ */
+export const schedulePatternsTable = pgTable("schedule_patterns", {
+  employeeId: integer("employee_id").primaryKey(),
+  data: text("data").notNull().default("{}"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});

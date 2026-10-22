@@ -10,12 +10,18 @@ import { eq } from "drizzle-orm";
  *       'all_office'  … 事務員は全員（時給も月給も）＝これまでと同じ
  *       'hourly_only' … 時給の人だけ
  *       'none'        … 切り上げない
+ *  - lateGraceMinutes   … 予定（シフト）より何分までの遅れ・早上がりは遅刻・早退にしないか（既定5分）
+ *  - noShowAlertMinutes … 予定の始まりから何分たっても出勤していなければ知らせるか（既定15分）
+ *  - noShowAlert        … 上の知らせを出すか（ベルとPCの通知）
  */
 export interface AttendanceSettings {
   requireChecklist: boolean;
   requireAlcohol: boolean;
   vehicles: string[];
   officeRounding: "all_office" | "hourly_only" | "none";
+  lateGraceMinutes: number;
+  noShowAlertMinutes: number;
+  noShowAlert: boolean;
 }
 
 export const DEFAULT_SETTINGS: AttendanceSettings = {
@@ -23,9 +29,18 @@ export const DEFAULT_SETTINGS: AttendanceSettings = {
   requireAlcohol: false,
   vehicles: [],
   officeRounding: "all_office",
+  lateGraceMinutes: 5,
+  noShowAlertMinutes: 15,
+  noShowAlert: true,
 };
 
 let cache: { at: number; value: AttendanceSettings } | null = null;
+
+function clampInt(v: unknown, min: number, max: number, dflt: number): number {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return dflt;
+  return Math.min(max, Math.max(min, Math.round(n)));
+}
 
 function normalize(raw: unknown): AttendanceSettings {
   const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
@@ -38,6 +53,9 @@ function normalize(raw: unknown): AttendanceSettings {
     requireAlcohol: o.requireAlcohol === true,
     vehicles,
     officeRounding: r === "hourly_only" || r === "none" ? r : "all_office",
+    lateGraceMinutes: clampInt(o.lateGraceMinutes, 0, 120, 5),
+    noShowAlertMinutes: clampInt(o.noShowAlertMinutes, 0, 240, 15),
+    noShowAlert: o.noShowAlert !== false,
   };
 }
 

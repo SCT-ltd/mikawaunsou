@@ -18,6 +18,7 @@ import {
 import { resolveActor, actorName, isUniqueViolation } from "../lib/attendance-auth";
 import { getAttendanceSettings, roundsUpTo30 } from "../lib/attendance-settings";
 import { daysFrom, type DayCompliance } from "../lib/compliance";
+import { schedulesFor, comparePlan } from "../lib/schedules";
 import { later, pushOnce, pushToOffice } from "../lib/push";
 
 const router = Router();
@@ -124,6 +125,14 @@ async function buildSnapshot(date?: string) {
       .from(attendanceRecordsTable).where(and(gte(attendanceRecordsTable.workDate, addDaysStr(minDate, -3)), lte(attendanceRecordsTable.workDate, maxDate), active)),
     db.select({ employeeId: attendanceCorrectionsTable.employeeId }).from(attendanceCorrectionsTable).where(eq(attendanceCorrectionsTable.status, "pending")),
   ]);
+  // 出勤の予定（シフト）と、その日の休みの登録（予定と比べて遅刻・早退・出勤していないを出す）
+  const [schedules, settings, dayAbsences] = await Promise.all([
+    schedulesFor(ids, minDate, maxDate),
+    getAttendanceSettings(),
+    db.select({ employeeId: absenceRecordsTable.employeeId, workDate: absenceRecordsTable.workDate, absenceType: absenceRecordsTable.absenceType })
+      .from(absenceRecordsTable).where(allDates.length ? inArray(absenceRecordsTable.workDate, allDates) : sql`false`),
+  ]);
+  const today = jstDate(now);
 
   return employees.map(emp => {
     const wd = dates.get(emp.id)!;
@@ -155,6 +164,13 @@ async function buildSnapshot(date?: string) {
       report: reports.find(r => r.employeeId === emp.id && r.workDate === wd) ?? null,
       compliance,
       pendingCorrections: corrections.filter(c => c.employeeId === emp.id).length,
+      /** 出勤の予定（無ければ null） */
+      schedule: schedules.get(`${emp.id}:${wd}`) ?? null,
+      /** 予定との比べ（遅刻・早退の分、出勤していない、休みの日の出勤） */
+      plan: comparePlan(wd, schedules.get(`${emp.id}:${wd}`), clockIn ? new Date(clockIn.recordedAt).getTime() : null,
+        (() => { const o = [...empRecords].reverse().find(r => r.eventType === "clock_out"); return o ? new Date(o.recordedAt).getTime() : null; })(),
+        { now: now.getTime(), today, graceMin: settings.lateGraceMinutes, noShowMin: settings.noShowAlertMinutes,
+          hasFullDayAbsence: dayAbsences.some(a => a.employeeId === emp.id && a.workDate === wd && isFullDayAbsence(a.absenceType)) }),
     };
   });
 }

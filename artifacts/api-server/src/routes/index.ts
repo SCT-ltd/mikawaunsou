@@ -11,6 +11,7 @@ import dashboardRouter from "./dashboard";
 import allowancesRouter from "./allowances";
 import attendanceRouter from "./attendance";
 import attendanceExtraRouter from "./attendance-extra";
+import attendanceScheduleRouter from "./attendance-schedule";
 import absencesRouter from "./absences";
 import messagesRouter from "./messages";
 import usersRouter from "./users";
@@ -170,6 +171,7 @@ router.use(journalEntriesRouter);
 router.use(allowancesRouter);  // /*-definitions の POST/PUT/DELETE は admin（ファイル側）。/employees/:id/{allowances,deductions} は上の "/employees" プレフィックスで admin
 router.use(attendanceRouter);  // monthly-summary, gps-locations, location/live GET は admin（ファイル側）
 router.use(attendanceExtraRouter); // 修正申請・アルコールチェック・日報・点検の判断・改善基準・勤怠の設定
+router.use(attendanceScheduleRouter); // 出勤の予定（シフト）・予定の型・月の勤怠表
 router.use(absencesRouter);    // 現状認証のみ（owner設計後に強化）
 router.use(messagesRouter);    // conversations, broadcast は admin（ファイル側）
 router.use(insuranceRouter);

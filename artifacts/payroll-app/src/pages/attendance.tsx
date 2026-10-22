@@ -40,7 +40,10 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
  * SSE＋ポーリング・ドラッグ並べ替え・GPS・集計などのロジックは旧テーブル型 UI から変更なし。
  */
 export default function AttendancePage() {
-  const [selectedDate, setSelectedDate] = useState(() => todayJST());
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const d = new URLSearchParams(window.location.search).get("date");
+    return d && /^\d{4}-\d{2}-\d{2}$/.test(d) && d <= todayJST() ? d : todayJST();
+  });
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [calendarPos, setCalendarPos] = useState({ top: 0, left: 0 });
   const calendarBtnRef = useRef<HTMLButtonElement>(null);
@@ -49,7 +52,7 @@ export default function AttendancePage() {
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [now, setNow] = useState(new Date());
 
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(() => Number(new URLSearchParams(window.location.search).get("emp")) || null);
   const [search, setSearch] = useState("");
   /** 状態で絞り込む（全員／出勤中／…／要確認） */
   const [statusFilter, setStatusFilter] = useState<FilterKey>("all");
@@ -487,6 +490,9 @@ export default function AttendancePage() {
               <Button variant="outline" size="sm" onClick={() => fetchData(selectedDate)} className="gap-1.5 border-slate-200">
                 <RefreshCw className="h-3.5 w-3.5" />更新
               </Button>
+              <Link href={`/attendance-month?y=${selectedDate.slice(0, 4)}&m=${Number(selectedDate.slice(5, 7))}`}>
+                <Button variant="outline" size="sm" className="gap-1.5 border-slate-200">月の勤怠表</Button>
+              </Link>
               <Link href="/attendance-records">
                 <Button variant="outline" size="sm" className="gap-1.5 border-slate-200">
                   修正申請・アルコール・日報{(() => { const n = data.reduce((s, d) => s + (d.pendingCorrections ?? 0), 0); return n > 0 ? <span className="ml-1 rounded-full bg-red-500 text-white text-[10px] px-1.5">{n}</span> : null; })()}

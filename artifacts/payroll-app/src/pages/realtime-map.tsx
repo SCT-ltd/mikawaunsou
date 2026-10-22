@@ -80,6 +80,22 @@ export default function RealtimeMapPage() {
     setMobileListOpen(false);
   };
 
+  // 勤怠管理から ?emp=社員ID で来たら、最初に読み込めたときにその人へ寄せる（1回だけ）
+  const [focusDone, setFocusDone] = useState(false);
+  useEffect(() => {
+    if (focusDone || locations.length === 0) return;
+    const id = Number(new URLSearchParams(window.location.search).get("emp"));
+    setFocusDone(true);
+    if (!id) return;
+    const emp = locations.find((l) => l.employeeId === id);
+    if (!emp) return;
+    setSelectedId(emp.employeeId);
+    const ev = (emp.eventLocations ?? [])[0];
+    if (emp.latitude != null && emp.longitude != null) setFlyTarget({ lat: emp.latitude, lng: emp.longitude, seq: Date.now() });
+    else if (ev) setFlyTarget({ lat: ev.latitude, lng: ev.longitude, seq: Date.now() });
+    else setSearch(emp.name);
+  }, [locations, focusDone]);
+
   const handleEventClick = (ev: EventLocation) => {
     setFlyTarget({ lat: ev.latitude, lng: ev.longitude, seq: Date.now() });
     setMobileListOpen(false);

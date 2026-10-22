@@ -7,7 +7,9 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   X, Plus, Trash2, Pencil, GripVertical, CalendarOff, QrCode, ArrowLeft, AlertTriangle,
 } from "lucide-react";
-import { attentionOf, dayTotals, DayBar, HourScale, segmentsOf, windowFor } from "./board";
+import { attentionOf, dayTotals, DayBar, HourScale, segmentsOf, windowFor, planOf } from "./board";
+import { Link } from "wouter";
+import { MapPin } from "lucide-react";
 import {
   EmployeeStatus,
   AttendanceRecord,
@@ -115,7 +117,9 @@ export function DetailPanel({
   const showElapsed = selected.status !== "未出勤" && selected.status !== "退勤済";
   const totals = dayTotals(selected.records, now, isToday);
   const daySegs = segmentsOf(selected.records, now, isToday);
-  const dayWin = windowFor(selected.workDate ?? selected.records[0]?.workDate ?? new Date(now.getTime() + 9 * 3600000).toISOString().slice(0, 10), daySegs);
+  const dayDate = selected.workDate ?? selected.records[0]?.workDate ?? new Date(now.getTime() + 9 * 3600000).toISOString().slice(0, 10);
+  const plan = planOf(dayDate, selected.schedule);
+  const dayWin = windowFor(dayDate, plan ? [...daySegs, { from: plan.start, to: plan.end, kind: "work", open: false }] : daySegs);
   const attention = attentionOf(selected, now, isToday);
 
   return (
@@ -148,6 +152,12 @@ export function DetailPanel({
             <StatusBadge status={selected.status} />
           </div>
         </div>
+        <Link href={`/realtime-map?emp=${selected.employee.id}`}>
+          <Button variant="outline" size="sm" className="gap-1.5 shrink-0" title="地図で見る（いまいる場所・打刻した場所）">
+            <MapPin className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">地図</span>
+          </Button>
+        </Link>
         <Button
           variant="outline"
           size="sm"
@@ -195,10 +205,22 @@ export function DetailPanel({
             ))}
           </div>
           {/* 1日の帯 */}
-          {daySegs.length > 0 && (
+          {/* 予定（シフト）と予定との比べ */}
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+            <span className="text-muted-foreground">予定</span>
+            <span className="font-semibold amount">
+              {selected.schedule ? (selected.schedule.off ? "休み" : `${selected.schedule.start}〜${selected.schedule.end}`) : "なし"}
+              {selected.schedule?.note ? <span className="ml-1 font-normal text-muted-foreground">（{selected.schedule.note}）</span> : null}
+            </span>
+            {(selected.plan?.lateMin ?? 0) > 0 && <span className="text-orange-600 font-semibold">遅刻 {selected.plan!.lateMin}分</span>}
+            {(selected.plan?.earlyMin ?? 0) > 0 && <span className="text-orange-600 font-semibold">早退 {selected.plan!.earlyMin}分</span>}
+            {selected.plan?.offWork && <span className="text-purple-600 font-semibold">予定では休みの日の出勤</span>}
+            <Link href={`/attendance-month?y=${dayDate.slice(0, 4)}&m=${Number(dayDate.slice(5, 7))}`} className="ml-auto text-indigo-600 hover:underline">予定を直す（月の勤怠表）</Link>
+          </div>
+          {(daySegs.length > 0 || plan) && (
             <div className="mt-3">
               <HourScale win={dayWin} />
-              <DayBar segs={daySegs} win={dayWin} now={now} live={isToday} height="h-4" />
+              <DayBar segs={daySegs} win={dayWin} now={now} live={isToday} height="h-4" plan={plan} />
             </div>
           )}
 

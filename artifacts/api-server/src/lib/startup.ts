@@ -34,6 +34,9 @@ const REQUIRED: Array<[string, string]> = [
   // 2026-10-24-batch-c.sql（振込）
   ["employee_bank_accounts", "holder_kana"],
   ["transfer_settings", "consignor_code"],
+  // 2026-10-25-schedules.sql（出勤の予定）
+  ["work_schedules", "start_time"],
+  ["schedule_patterns", "data"],
   // 2026-10-24-batch-d.sql（給与計算と法令）
   ["company", "rule_premium_base_includes_allowances"],
   ["company", "minimum_wage_hourly"],

@@ -76,6 +76,15 @@ function dayStart(workDate: string): number {
  * 表示範囲を決める。ふだんは 5時〜24時。早出・日をまたぐ勤務があれば、それが入るまで広げる（翌6時まで）。
  * 全員を並べるときは全員ぶんの区間を渡して同じ範囲にそろえる。
  */
+/** 予定（"HH:MM"）を時刻（ミリ秒）に。終わりが始まり以下なら翌日 */
+export function planOf(workDate: string, s: EmployeeStatus["schedule"]): { start: number; end: number } | null {
+  if (!s || s.off || !s.start || !s.end) return null;
+  const start = new Date(`${workDate}T${s.start}:00+09:00`).getTime();
+  let end = new Date(`${workDate}T${s.end}:00+09:00`).getTime();
+  if (end <= start) end += 24 * H;
+  return { start, end };
+}
+
 export function windowFor(workDate: string, segs: Segment[]): Window {
   const base = dayStart(workDate);
   let s = 5, e = 24;
@@ -96,9 +105,11 @@ function hourLabel(t: number): string {
 
 /* ── 1日の帯 ────────────────────────────────────────── */
 export function DayBar({
-  segs, win, now, live, height = "h-3.5", ticks = true,
+  segs, win, now, live, height = "h-3.5", ticks = true, plan = null,
 }: {
   segs: Segment[]; win: Window; now: Date; live: boolean; height?: string; ticks?: boolean;
+  /** 予定（シフト）の始まりと終わり。帯の上に枠で描く */
+  plan?: { start: number; end: number } | null;
 }) {
   const span = win.end - win.start;
   const pct = (t: number) => `${Math.max(0, Math.min(100, ((t - win.start) / span) * 100))}%`;
@@ -120,6 +131,10 @@ export function DayBar({
           title={`${g.kind === "work" ? "勤務" : "休憩"} ${fmt(new Date(g.from).toISOString())}〜${g.open ? "（いま）" : fmt(new Date(g.to).toISOString())}`}
         />
       ))}
+      {plan && (
+        <span className="absolute inset-y-0 rounded-sm border-2 border-indigo-500/70 dark:border-indigo-300/70 pointer-events-none"
+          style={{ left: pct(plan.start), width: width(plan.start, plan.end) }} title="予定" />
+      )}
       {live && nowT > win.start && nowT < win.end && (
         <span className="absolute -top-px -bottom-px w-0.5 bg-red-500" style={{ left: pct(nowT) }} title="いま" />
       )}
@@ -154,6 +169,7 @@ export function attentionOf(d: EmployeeStatus, now: Date, live: boolean): string
   if ((d.alcohol ?? []).some((a) => a.detected)) out.push("アルコール検知");
   if (d.compliance?.flags.some((f) => f.level === "danger")) out.push("改善基準超え");
   if ((d.pendingCorrections ?? 0) > 0) out.push(`修正申請${d.pendingCorrections}件`);
+  if (live && d.plan?.noShow) out.push(`出勤なし（予定 ${d.schedule?.start ?? ""}〜）`);
   if (live && (d.status === "出勤中" || d.status === "休憩中") && d.clockInTime && now.getTime() - new Date(d.clockInTime).getTime() > 14 * H) {
     out.push("退勤の打ち忘れ？");
   }
@@ -220,7 +236,9 @@ export function TimelineView({
   selectedId: number | null; onSelect: (id: number) => void; absences: AbsenceRecord[];
 }) {
   const segsById = new Map(rows.map((d) => [d.employee.id, segmentsOf(d.records, now, live)]));
-  const win = windowFor(workDate, [...segsById.values()].flat());
+  const planSegs = rows.map((d) => planOf(d.workDate ?? workDate, d.schedule)).filter((p): p is { start: number; end: number } => !!p)
+    .map((p) => ({ from: p.start, to: p.end, kind: "work" as const, open: false }));
+  const win = windowFor(workDate, [...[...segsById.values()].flat(), ...planSegs]);
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="flex items-end gap-3 px-3 pt-2 pb-1 border-b shrink-0 bg-muted/20">
@@ -254,7 +272,7 @@ export function TimelineView({
                 </div>
                 {att.length > 0 && <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0 ml-auto" aria-label={att.join("、")} />}
               </div>
-              <div className="flex-1 min-w-0"><DayBar segs={segs} win={win} now={now} live={live} /></div>
+              <div className="flex-1 min-w-0"><DayBar segs={segs} win={win} now={now} live={live} plan={planOf(d.workDate ?? workDate, d.schedule)} /></div>
               <div className="w-[5.5rem] shrink-0 text-right text-xs font-semibold amount whitespace-nowrap text-slate-700 dark:text-slate-200">{t.restraintMin > 0 ? minToStr(t.workMin) : "—"}</div>
             </button>
           );
@@ -263,6 +281,7 @@ export function TimelineView({
       <div className="px-3 py-1.5 border-t bg-muted/30 shrink-0 flex items-center gap-4 text-[11px] text-muted-foreground">
         <span className="inline-flex items-center gap-1"><span className="w-3 h-2 rounded-sm bg-emerald-500/85" />勤務</span>
         <span className="inline-flex items-center gap-1"><span className="w-3 h-2 rounded-sm bg-amber-400" />休憩</span>
+        <span className="inline-flex items-center gap-1"><span className="w-3 h-2 rounded-sm border-2 border-indigo-500/70" />予定</span>
         {live && <span className="inline-flex items-center gap-1"><span className="w-0.5 h-3 bg-red-500" />いま</span>}
         <span className="ml-auto amount">{rows.length}名</span>
       </div>

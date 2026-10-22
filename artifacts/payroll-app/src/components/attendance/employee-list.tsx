@@ -16,7 +16,7 @@ import {
   minToStr,
   todayJST,
 } from "./shared";
-import { attentionOf, dayTotals, DayBar, segmentsOf, windowFor } from "./board";
+import { attentionOf, dayTotals, DayBar, segmentsOf, windowFor, planOf } from "./board";
 
 export function filterAttendance(data: EmployeeStatus[], search: string): EmployeeStatus[] {
   const q = search.trim().toLowerCase();
@@ -156,6 +156,8 @@ export function EmployeeList({
                             <span key={a.id} className={`shrink-0 text-[10px] font-semibold px-1.5 rounded-full border leading-4 ${ABSENCE_COLORS[a.absenceType]}`}>{ABSENCE_LABELS[a.absenceType]}</span>
                           ))}
                           {insp && <span className={`shrink-0 text-[10px] font-semibold px-1.5 rounded-full border leading-4 ${insp.tone}`}>{insp.text}</span>}
+                          {(d.plan?.lateMin ?? 0) > 0 && <span className="shrink-0 text-[10px] font-semibold px-1.5 rounded-full border leading-4 bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-500/10 dark:text-orange-300 dark:border-orange-500/30">遅刻{d.plan!.lateMin}分</span>}
+                          {(d.plan?.earlyMin ?? 0) > 0 && <span className="shrink-0 text-[10px] font-semibold px-1.5 rounded-full border leading-4 bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-500/10 dark:text-orange-300 dark:border-orange-500/30">早退{d.plan!.earlyMin}分</span>}
                           {att.filter((x) => !x.startsWith("点検")).map((x) => (
                             <span key={x} className="shrink-0 text-[10px] font-bold px-1.5 rounded-full border leading-4 bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-300 dark:border-red-500/30">{x}</span>
                           ))}
@@ -172,6 +174,10 @@ export function EmployeeList({
                               {isActive ? elapsedStr(d.clockInTime, now) : `実働 ${minToStr(t.workMin)}`}
                             </p>
                           </>
+                        ) : d.schedule && !d.schedule.off && d.schedule.start ? (
+                          <p className={`text-[11px] amount ${d.plan?.noShow ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>予定 {d.schedule.start}〜</p>
+                        ) : d.schedule?.off ? (
+                          <p className="text-[11px] text-muted-foreground">予定は休み</p>
                         ) : (
                           <p className="text-xs text-slate-300 dark:text-slate-600">—</p>
                         )}
@@ -179,7 +185,7 @@ export function EmployeeList({
                     </div>
                     {/* 1日の帯（打刻がある人だけ） */}
                     {segs.length > 0 && (
-                      <div className="mt-1 pl-[2.375rem]"><DayBar segs={segs} win={win} now={now} live={live} height="h-1.5" ticks={false} /></div>
+                      <div className="mt-1 pl-[2.375rem]"><DayBar segs={segs} win={win} now={now} live={live} height="h-1.5" ticks={false} plan={planOf(d.workDate ?? workDate ?? todayJST(), d.schedule)} /></div>
                     )}
                   </button>
                 );

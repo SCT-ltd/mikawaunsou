@@ -72,6 +72,10 @@ export interface EmployeeStatus {
   report?: DailyReport | null;
   compliance?: DayCompliance | null;
   pendingCorrections?: number;
+  /** 出勤の予定（シフト）。無ければ null */
+  schedule?: { start: string | null; end: string | null; off: boolean; note: string | null; source: "day" | "pattern" } | null;
+  /** 予定との比べ */
+  plan?: { lateMin: number; earlyMin: number; noShow: boolean; offWork: boolean } | null;
 }
 
 export const METHOD_LABELS: Record<string, string> = { face: "対面", phone: "電話", video: "ビデオ通話", other: "その他" };
