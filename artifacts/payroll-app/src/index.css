@@ -311,3 +311,8 @@
 .monthly-input-table input[type="number"] {
   -moz-appearance: textfield;
 }
+
+/* リアルタイムマップ：スマホでは地図の上にタイトルと道具の列があるので、拡大・縮小のボタンをその下へ */
+@media (max-width: 767px) {
+  .mk-map .leaflet-top.leaflet-left { top: 6.25rem; }
+}

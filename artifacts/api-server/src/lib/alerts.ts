@@ -11,6 +11,7 @@ import {
 import { and, eq, inArray } from "drizzle-orm";
 import { logger } from "./logger";
 import { computeAttendanceAlerts } from "./alerts-attendance";
+import { computeMapAlerts } from "./geo";
 import fs from "fs/promises";
 import { overtimeAlerts, payrollLawAlerts } from "./alerts-payroll";
 import path from "path";
@@ -219,6 +220,8 @@ export async function computeAlerts(): Promise<EmployeeAlert[]> {
   }
 
   out.push(...(await computeAttendanceAlerts().catch((err) => { logger.warn({ err }, "勤怠のお知らせを作れませんでした"); return []; })));
+  // 地図：勤務中なのに位置が届かない・登録した場所の外で長く止まっている
+  out.push(...(await computeMapAlerts().catch((err) => { logger.warn({ err }, "地図のお知らせを作れませんでした"); return []; })));
 
   return out.sort((a, b) =>
     LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level] ||

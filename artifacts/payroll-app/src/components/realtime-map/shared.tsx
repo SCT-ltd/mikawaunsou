@@ -22,7 +22,50 @@ export interface EmployeeLocation {
   accuracy: number | null;
   lastUpdated: string | null;
   eventLocations: EventLocation[];
+  /** 電話番号（社員マスター） */
+  phone?: string | null;
+  /** 勤務中なのに位置が届いていない（設定の分数を過ぎた） */
+  stale?: boolean;
 }
+
+/* ── 道すじ・場所 ───────────────────────────────────── */
+export interface TrackPoint { lat: number; lng: number; at: string; acc: number | null }
+export interface Stop { lat: number; lng: number; from: string; to: string; minutes: number; place: string | null; ongoing: boolean }
+export interface Visit { id: number; placeId: number; placeName: string; arrivedAt: string; leftAt: string | null; minutes: number; employeeId?: number; employeeName?: string | null }
+export interface Track {
+  date: string;
+  points: TrackPoint[];
+  distanceKm: number;
+  stops: Stop[];
+  visits: Visit[];
+  events: Array<{ eventType: EventType; recordedAt: string; latitude: number | null; longitude: number | null }>;
+  retentionDays: number;
+}
+export interface MonthDistance { ym: string; days: Array<{ date: string; km: number }>; totalKm: number; monthlyRecordKm: number | null }
+export interface Place { id: number; name: string; kind: string; latitude: number; longitude: number; radiusM: number; address: string | null; note: string | null }
+export const PLACE_KIND: Record<string, { label: string; color: string }> = {
+  site: { label: "現場", color: "#7c3aed" },
+  office: { label: "営業所・車庫", color: "#0f766e" },
+  shipper: { label: "荷主", color: "#c2410c" },
+  other: { label: "そのほか", color: "#475569" },
+};
+
+/** 2点の距離（m） */
+export function distM(aLat: number, aLng: number, bLat: number, bLng: number): number {
+  const toR = (d: number) => (d * Math.PI) / 180;
+  const dLat = toR(bLat - aLat), dLng = toR(bLng - aLng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(toR(aLat)) * Math.cos(toR(bLat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * 6371000 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+/** 「3分前」「1時間5分前」 */
+export function elapsedText(iso: string | null, now: number): string {
+  if (!iso) return "";
+  const min = Math.max(0, Math.floor((now - new Date(iso).getTime()) / 60000));
+  if (min < 1) return "いま";
+  if (min < 60) return `${min}分前`;
+  return `${Math.floor(min / 60)}時間${min % 60}分前`;
+}
+export const kmText = (m: number) => (m < 1000 ? `${Math.round(m)}m` : `${(m / 1000).toFixed(1)}km`);
 
 export interface FlyToTarget {
   lat: number;
@@ -55,13 +98,15 @@ export const EVENT_CONFIG: Record<EventType, { label: string; color: string; emo
 
 /* ── Leaflet アイコン ───────────────────────────────── */
 // ライブ位置マーカー（大・パルス付き）
-export function makeLiveIcon(color: string, pulse: boolean) {
+export function makeLiveIcon(color: string, pulse: boolean, stale = false) {
+  if (stale) color = "#ef4444";
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 40" width="32" height="40">
       ${pulse ? `<circle cx="16" cy="16" r="14" fill="${color}" opacity="0.25"/>` : ""}
       <path d="M16 2C9.925 2 5 6.925 5 13c0 8.25 11 25 11 25S27 21.25 27 13C27 6.925 22.075 2 16 2z"
         fill="${color}" stroke="white" stroke-width="2"/>
-      <circle cx="16" cy="13" r="5" fill="white"/>
+      <circle cx="16" cy="13" r="${stale ? 7 : 5}" fill="white"/>
+      ${stale ? `<text x="16" y="17.5" text-anchor="middle" font-size="12" font-weight="bold" fill="#ef4444" font-family="sans-serif">!</text>` : ""}
     </svg>`;
   return L.divIcon({
     html: svg,
@@ -92,7 +137,7 @@ export function makeEventIcon(eventType: EventType) {
 /* ── 時刻フォーマット ───────────────────────────────── */
 export function formatTime(str: string | null): string {
   if (!str) return "-";
-  return new Date(str).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+  return new Date(str).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Tokyo" });
 }
 
 export function formatDateTime(str: string | null): string {

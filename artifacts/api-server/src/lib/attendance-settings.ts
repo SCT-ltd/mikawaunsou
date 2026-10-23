@@ -24,6 +24,14 @@ export interface AttendanceSettings {
   noShowAlert: boolean;
   /** 一覧に「未点検」の札を出すか（日常点検を使っていなければ全員に付いて目障りなので消せる） */
   showUninspected: boolean;
+  /** 地図：勤務中（出勤〜退勤）だけ位置を残す・見せる（勤務時間の外の位置は扱わない） */
+  mapTrackOnlyOnDuty: boolean;
+  /** 地図：勤務中なのに位置が◯分届かなければ知らせる */
+  mapStaleMinutes: number;
+  /** 地図：登録した場所の外で◯分以上止まっていたら知らせる（0＝知らせない） */
+  mapLongStopMinutes: number;
+  /** 地図：位置の記録を残す日数（過ぎたら消す。到着・出発の記録は残す） */
+  mapRetentionDays: number;
 }
 
 export const DEFAULT_SETTINGS: AttendanceSettings = {
@@ -35,6 +43,10 @@ export const DEFAULT_SETTINGS: AttendanceSettings = {
   noShowAlertMinutes: 15,
   noShowAlert: true,
   showUninspected: true,
+  mapTrackOnlyOnDuty: true,
+  mapStaleMinutes: 10,
+  mapLongStopMinutes: 30,
+  mapRetentionDays: 60,
 };
 
 let cache: { at: number; value: AttendanceSettings } | null = null;
@@ -60,6 +72,10 @@ function normalize(raw: unknown): AttendanceSettings {
     noShowAlertMinutes: clampInt(o.noShowAlertMinutes, 0, 240, 15),
     noShowAlert: o.noShowAlert !== false,
     showUninspected: o.showUninspected !== false,
+    mapTrackOnlyOnDuty: o.mapTrackOnlyOnDuty !== false,
+    mapStaleMinutes: clampInt(o.mapStaleMinutes, 3, 120, 10),
+    mapLongStopMinutes: clampInt(o.mapLongStopMinutes, 0, 480, 30),
+    mapRetentionDays: clampInt(o.mapRetentionDays, 7, 400, 60),
   };
 }
 

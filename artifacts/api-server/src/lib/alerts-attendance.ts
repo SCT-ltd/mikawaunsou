@@ -11,6 +11,7 @@ import { pushOnce, pushToEmployee } from "./push";
 import { logger } from "./logger";
 import { schedulesFor, comparePlan, planTimes } from "./schedules";
 import { getAttendanceSettings } from "./attendance-settings";
+import { purgeOldLocations } from "./geo";
 
 /**
  * 勤怠まわりの「従業員のお知らせ」（右上のベル・ダッシュボード・PCのプッシュ通知）。
@@ -184,7 +185,11 @@ let started = false;
 export function startAttendanceJobs(): void {
   if (started) return;
   started = true;
-  const run = () => { morningOpenShiftPush().catch((err) => logger.warn({ err }, "退勤の打ち忘れの知らせに失敗")); };
+  const run = () => {
+    morningOpenShiftPush().catch((err) => logger.warn({ err }, "退勤の打ち忘れの知らせに失敗"));
+    // 地図：残す日数を過ぎた位置の記録を消す（中で1日1回に絞っている）
+    purgeOldLocations().catch((err) => logger.warn({ err }, "古い位置の記録を消せませんでした"));
+  };
   setTimeout(run, 90_000);
   setInterval(run, 30 * 60_000);
 }

@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, date, timestamp, doublePrecision, unique, boolean } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, date, timestamp, doublePrecision, unique, boolean, index } from "drizzle-orm/pg-core";
 import { employeesTable } from "./employees";
 
 export const attendanceRecordsTable = pgTable("attendance_records", {
@@ -230,3 +230,45 @@ export const attendanceMonthChecksTable = pgTable("attendance_month_checks", {
   checkedBy: text("checked_by"),
   checkedAt: timestamp("checked_at").notNull().defaultNow(),
 }, (t) => [unique("attendance_month_checks_unique").on(t.employeeId, t.ym)]);
+
+/**
+ * 位置の記録（リアルタイムマップの「1日の道すじ」「走行距離の目安」「長く止まっている場所」用）。
+ * 打刻ページが送る位置（15秒ごと）のうち、1分以上たったか30m以上動いたものだけを残す。
+ * 勤務中だけ残し（設定）、残す日数を過ぎたら消す（設定・既定60日）。
+ */
+export const locationPointsTable = pgTable("location_points", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  workDate: date("work_date").notNull(),
+  latitude: doublePrecision("latitude").notNull(),
+  longitude: doublePrecision("longitude").notNull(),
+  accuracy: doublePrecision("accuracy"),
+  recordedAt: timestamp("recorded_at").notNull(),
+}, (t) => [index("location_points_emp_date").on(t.employeeId, t.workDate), index("location_points_at").on(t.recordedAt)]);
+
+/** よく行く場所（現場・営業所・荷主など）。半径の中に入ると「到着」、出ると「出発」を残す */
+export const placesTable = pgTable("places", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  /** site＝現場／office＝営業所・車庫／shipper＝荷主／other＝そのほか */
+  kind: text("kind").notNull().default("site"),
+  latitude: doublePrecision("latitude").notNull(),
+  longitude: doublePrecision("longitude").notNull(),
+  radiusM: integer("radius_m").notNull().default(150),
+  address: text("address"),
+  note: text("note"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+/** 場所への到着・出発（位置から自動で付ける）。場所を消しても名前は残す */
+export const placeVisitsTable = pgTable("place_visits", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  placeId: integer("place_id").notNull(),
+  placeName: text("place_name").notNull(),
+  workDate: date("work_date").notNull(),
+  arrivedAt: timestamp("arrived_at").notNull(),
+  leftAt: timestamp("left_at"),
+}, (t) => [index("place_visits_emp_date").on(t.employeeId, t.workDate), index("place_visits_date").on(t.workDate)]);

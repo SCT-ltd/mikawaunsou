@@ -17,6 +17,7 @@ import {
 } from "../lib/shift";
 import { resolveActor, actorName, isUniqueViolation } from "../lib/attendance-auth";
 import { getAttendanceSettings, roundsUpTo30 } from "../lib/attendance-settings";
+import { ingestLocation, closeVisits } from "../lib/geo";
 import { daysFrom, type DayCompliance } from "../lib/compliance";
 import { schedulesFor, comparePlan } from "../lib/schedules";
 import { later, pushOnce, pushToOffice } from "../lib/push";
@@ -489,6 +490,8 @@ router.post("/attendance/record", async (req, res) => {
     });
 
     notifyAttendanceChanged();
+    // 退勤したら、場所に着いたままの記録を閉じる（地図の到着・出発）
+    if (result.record.eventType === "clock_out") void closeVisits(employeeId, new Date(result.record.recordedAt)).catch(() => {});
     return res.status(201).json({ ...result.record, autoBreakEnd: result.autoBreakEnd });
   } catch (err) {
     if (err instanceof HttpError) return res.status(err.status).json(err.body);
@@ -916,10 +919,13 @@ router.post("/attendance/location/live", requireOwnerOrAdmin(req => Number((req.
   if (!employeeId || typeof latitude !== "number" || typeof longitude !== "number") {
     return res.status(400).json({ error: "employeeId, latitude, longitude は必須です" });
   }
-  await db.insert(liveLocationsTable)
-    .values({ employeeId, latitude, longitude, accuracy: accuracy ?? null, updatedAt: new Date() })
-    .onConflictDoUpdate({ target: liveLocationsTable.employeeId, set: { latitude, longitude, accuracy: accuracy ?? null, updatedAt: new Date() } });
-  return res.status(200).json({ ok: true });
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
+    return res.status(400).json({ error: "位置が正しくありません" });
+  }
+  // いまの位置・道すじ・場所への到着と出発（勤務時間の外は設定で扱わない）は lib/geo.ts
+  const acc = typeof accuracy === "number" && Number.isFinite(accuracy) ? accuracy : null;
+  const r = await ingestLocation(employeeId, latitude, longitude, acc);
+  return res.status(200).json({ ok: true, accepted: r.accepted });
 });
 
 /** 社員ごとの「いまの勤務」の打刻（地図用） */
@@ -934,6 +940,7 @@ async function currentShiftRecordsAll(employeeIds: number[]) {
 
 // ── ライブ位置情報 全社員取得（マップ表示用） ─────────────
 router.get("/attendance/location/live", requireAdmin, async (_req, res) => {
+  const settings = await getAttendanceSettings();
   const [employees, liveRows] = await Promise.all([
     db.select().from(employeesTable).where(eq(employeesTable.isActive, true)).orderBy(asc(employeesTable.employeeCode)),
     db.select().from(liveLocationsTable),
@@ -944,18 +951,25 @@ router.get("/attendance/location/live", requireAdmin, async (_req, res) => {
   return res.json(employees.map(emp => {
     const empRecords = recs.filter(r => r.employeeId === emp.id && r.workDate === dates.get(emp.id));
     const live = liveMap.get(emp.id);
-    const isRecent = live ? (Date.now() - new Date(live.updatedAt).getTime()) < 5 * 60 * 1000 : false;
+    const status = statusOf(empRecords);
+    const onDuty = status === "出勤中" || status === "休憩中";
+    // 以前は5分届かないと地図から消えていた。いまは勤務中なら最後の位置を「届いていない」として出す（12時間まで）。
+    // 勤務時間の外は、設定が「勤務中だけ」なら位置を見せない
+    const ageMin = live ? (Date.now() - new Date(live.updatedAt).getTime()) / 60000 : Infinity;
+    const show = !!live && ageMin < 12 * 60 && (onDuty || (!settings.mapTrackOnlyOnDuty && ageMin < 5));
     return {
       employeeId: emp.id,
       employeeCode: emp.employeeCode,
       name: emp.name,
       department: emp.department,
+      phone: emp.phone ?? null,
       workDate: dates.get(emp.id),
-      status: statusOf(empRecords),
-      latitude: isRecent ? live!.latitude : null,
-      longitude: isRecent ? live!.longitude : null,
-      accuracy: isRecent ? (live!.accuracy ?? null) : null,
-      lastUpdated: isRecent ? live!.updatedAt : null,
+      status,
+      latitude: show ? live!.latitude : null,
+      longitude: show ? live!.longitude : null,
+      accuracy: show ? (live!.accuracy ?? null) : null,
+      lastUpdated: show ? live!.updatedAt : null,
+      stale: show && onDuty && ageMin >= settings.mapStaleMinutes,
       eventLocations: empRecords.filter(r => r.latitude != null && r.longitude != null).map(r => ({
         eventType: r.eventType, recordedAt: r.recordedAt, latitude: r.latitude as number, longitude: r.longitude as number,
       })),

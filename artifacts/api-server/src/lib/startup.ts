@@ -43,6 +43,10 @@ const REQUIRED: Array<[string, string]> = [
   // 2026-10-27-audit-detail.sql（操作の記録を細かく）
   ["audit_logs", "summary"],
   ["audit_logs", "employee_id"],
+  // 2026-10-29-map.sql（リアルタイムマップ）
+  ["location_points", "recorded_at"],
+  ["places", "radius_m"],
+  ["place_visits", "arrived_at"],
   // 2026-10-24-batch-d.sql（給与計算と法令）
   ["company", "rule_premium_base_includes_allowances"],
   ["company", "minimum_wage_hourly"],

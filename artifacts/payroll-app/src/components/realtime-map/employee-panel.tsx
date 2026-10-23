@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { RefreshCw, MapPin, WifiOff, Search } from "lucide-react";
+import { RefreshCw, MapPin, WifiOff, Search, Route, AlertTriangle } from "lucide-react";
 import {
   EmployeeLocation,
   EventLocation,
@@ -27,6 +27,19 @@ export interface EmployeePanelProps {
   onRefresh: () => void;
   search: string;
   onSearchChange: (s: string) => void;
+  /** 状態で絞り込み（地図の印も同じ絞り込み） */
+  statusFilter: string;
+  onStatusFilter: (s: string) => void;
+  counts: Record<string, number>;
+  onOpenTrack: (emp: EmployeeLocation) => void;
+}
+
+/** 状態の絞り込み（「位置が届かない」は勤務中なのに位置が古い人） */
+export const STATUS_FILTERS = ["すべて", "出勤中", "休憩中", "退勤済", "未出勤", "位置が届かない"] as const;
+export function matchStatus(e: EmployeeLocation, f: string): boolean {
+  if (f === "すべて") return true;
+  if (f === "位置が届かない") return !!e.stale || ((e.status === "出勤中" || e.status === "休憩中") && e.latitude == null);
+  return e.status === f;
 }
 
 // 打刻地点リスト（GPS取得済み/未取得で共通）
@@ -69,6 +82,10 @@ export function EmployeePanel({
   onRefresh,
   search,
   onSearchChange,
+  statusFilter,
+  onStatusFilter,
+  counts,
+  onOpenTrack,
 }: EmployeePanelProps) {
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -101,6 +118,14 @@ export function EmployeePanel({
             className="h-9 pl-8 text-sm"
           />
         </div>
+        <div className="flex flex-wrap gap-1 mt-2" role="group" aria-label="状態で絞り込む">
+          {STATUS_FILTERS.map((f) => (
+            <button key={f} type="button" onClick={() => onStatusFilter(f)} data-status-filter={f}
+              className={`h-7 px-2 rounded-full text-[11px] border transition-colors ${statusFilter === f ? (f === "位置が届かない" ? "bg-red-600 text-white border-red-600" : "bg-foreground text-background border-foreground") : f === "位置が届かない" && (counts[f] ?? 0) > 0 ? "border-red-300 text-red-700 bg-red-50" : "bg-background hover:bg-muted border-input"}`}>
+              {f}<span className="ml-1 amount opacity-80">{counts[f] ?? 0}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto min-h-0">
@@ -129,8 +154,11 @@ export function EmployeePanel({
                   </div>
                   <div className="mt-0.5 pl-4.5 space-y-0.5">
                     <p className="text-xs text-muted-foreground">{emp.department}</p>
+                    {emp.stale && (
+                      <p className="text-xs font-semibold text-red-600 flex items-center gap-1"><AlertTriangle className="h-3 w-3" />位置が届いていません</p>
+                    )}
                     {emp.lastUpdated && (
-                      <p className="text-xs text-muted-foreground">
+                      <p className={`text-xs ${emp.stale ? "text-red-600" : "text-muted-foreground"}`}>
                         現在地更新: <span className="amount">{formatTime(emp.lastUpdated)}</span>（{elapsedLabel(emp.lastUpdated)}）
                       </p>
                     )}
@@ -138,6 +166,11 @@ export function EmployeePanel({
                       <p className="text-xs text-muted-foreground/60">精度: ±{Math.round(emp.accuracy)}m</p>
                     )}
                   </div>
+                </div>
+                <div className="px-4 pb-2 pl-7 flex gap-2">
+                  <button type="button" onClick={() => onOpenTrack(emp)} className="text-[11px] text-indigo-700 hover:underline flex items-center gap-1" data-open-track="">
+                    <Route className="h-3 w-3" />今日の道すじ
+                  </button>
                 </div>
                 <EventList events={emp.eventLocations ?? []} onEventClick={onEventClick} />
               </div>

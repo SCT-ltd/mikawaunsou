@@ -22,6 +22,7 @@ import alertsRouter from "./alerts";
 import auditRouter from "./audit";
 import officeToolsRouter from "./office_tools";
 import payrollLawRouter from "./payroll-law";
+import mapRouter from "./map";
 import { requireAdmin } from "../lib/auth-middleware";
 import { audit, takeSnap, changesOf, redact, employeeName } from "../lib/audit";
 import { findSpec } from "../lib/audit-catalog";
@@ -238,6 +239,7 @@ router.use(alertsRouter);      // 従業員のお知らせ（すべて admin・�
 router.use(calendarRouter);    // カレンダー（見るのはログインした人、変えるのは管理者）
 router.use(officeToolsRouter); // 確定前チェック・振込口座・全銀の書き出し
 router.use(payrollLawRouter);  // 給与計算と法令の画面（"/payroll-law" プレフィックスで admin）
+router.use(mapRouter);         // リアルタイムマップ：道すじ・走行距離・場所（"/map" プレフィックスで admin）
 router.use(auditRouter);       // 操作の記録（管理者だけ）   // 保険料率マスターの GET はログインのみ、POST/PUT/DELETE は admin（ファイル側）
 
 export { requireAdmin };
