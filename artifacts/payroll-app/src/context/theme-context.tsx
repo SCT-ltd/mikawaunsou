@@ -13,7 +13,11 @@ const STORAGE_KEY = "theme";
 
 // 初期テーマ: index.html のインラインスクリプトが付与した .dark を最優先で読み、
 // 次に localStorage、最後に OS 設定に追従する。
+/** スタッフの打刻ページ（明るい表示だけで作ってある）。スマホが暗い設定でも暗くしない */
+const isStaffPage = () => typeof location !== "undefined" && /^\/(driver|office)\//.test(location.pathname);
+
 function getInitialTheme(): Theme {
+  if (isStaffPage()) return "light";
   if (typeof document !== "undefined" && document.documentElement.classList.contains("dark")) {
     return "dark";
   }
@@ -32,7 +36,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   // html.dark の付け外し
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", theme === "dark");
+    document.documentElement.classList.toggle("dark", theme === "dark" && !isStaffPage());
   }, [theme]);
 
   // OS のカラースキーム変更に追従（明示的な選択が保存されていない場合のみ）
@@ -42,6 +46,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       try {
         if (localStorage.getItem(STORAGE_KEY)) return; // ユーザーが手動選択済みなら追従しない
       } catch { /* ignore */ }
+      if (isStaffPage()) return;
       setThemeState(e.matches ? "dark" : "light");
     };
     mq.addEventListener("change", handler);

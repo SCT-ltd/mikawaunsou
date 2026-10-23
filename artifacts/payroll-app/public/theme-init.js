@@ -3,6 +3,9 @@
 // FOUC対策: Reactマウント前にテーマを確定して html.dark を付与する
 (function () {
   try {
+    // スタッフの打刻ページ（/driver・/office）は明るい表示だけで作ってあるので、スマホが暗い設定でも暗くしない
+    // （暗くすると文字だけ白くなって、白い背景の上で読めなくなっていた）
+    if (/^\/(driver|office)\//.test(location.pathname)) return;
     var saved = localStorage.getItem("theme");
     var dark = saved ? saved === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
     if (dark) document.documentElement.classList.add("dark");
