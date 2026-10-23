@@ -69,10 +69,16 @@ const rawBody = (req: express.Request, res: express.Response, next: express.Next
     return res.status(st === 413 ? 413 : 400).json({ error: st === 413 ? "1つのファイルは10MBまでです" : "ファイルを受け取れませんでした" });
   });
 const ownerOf = (req: { params: Record<string, unknown> }) => parseInt(paramStr(req.params["employeeId"] as string), 10);
-router.post("/messages/:employeeId/attachments", requireOwnerOrAdmin(ownerOf, { requirePin: true }),
-  rawBody, async (req, res) => {
+// 一斉送信の添付（事務所だけ）。会話はまだ決まっていないので社員は 0 で置き、送るときに各人の会話へ写す
+// ※「/messages/:employeeId/attachments」より先に置く（後ろだと broadcast が社員番号として扱われる）
+router.post("/messages/broadcast/attachments", requireAdmin, rawBody, async (req, res) => saveUpload(req, res, 0));
+router.post("/messages/:employeeId/attachments", requireOwnerOrAdmin(ownerOf, { requirePin: true }), rawBody, async (req, res) => {
   const employeeId = ownerOf(req);
   if (Number.isNaN(employeeId)) return res.status(400).json({ error: "Invalid employeeId" });
+  return saveUpload(req, res, employeeId);
+});
+
+async function saveUpload(req: express.Request, res: express.Response, employeeId: number) {
   const mime = String(req.headers["content-type"] ?? "").split(";")[0]!.trim().toLowerCase();
   if (!ATTACH_TYPES[mime]) return res.status(400).json({ error: "送れるのは写真（JPEG・PNG・WebP・GIF）とPDFだけです" });
   const data = req.body as Buffer;
@@ -93,7 +99,7 @@ router.post("/messages/:employeeId/attachments", requireOwnerOrAdmin(ownerOf, { 
     fileName, mime, size: data.length, data, createdAt: new Date(),
   }).returning(metaCols);
   return res.status(201).json({ id: row!.id, fileName: row!.fileName, mime: row!.mime, size: row!.size });
-});
+}
 
 router.get("/messages/:employeeId/attachments/:id", requireOwnerOrAdmin(ownerOf, { requirePin: true }), async (req, res) => {
   const employeeId = ownerOf(req);
@@ -319,7 +325,10 @@ router.post("/messages/:employeeId/read", requireOwnerOrAdmin(req => parseInt(pa
       eq(messagesTable.sender, senderToMark),
       isNull(messagesTable.readAt),
     ))
-    .returning({ id: messagesTable.id });
+    .returning({ id: messagesTable.id, readAt: messagesTable.readAt });
+
+  // 送った側の画面に「既読」をその場で出す（事務所の画面と本人の打刻ページの両方へ）
+  if (updated.length) broadcastToEmployee(employeeId, { type: "read", employeeId, reader, ids: updated.map((u) => u.id), at: updated[0]!.readAt });
 
   console.log("[MESSAGES_MARK_READ]", {
     employeeId,
@@ -480,10 +489,20 @@ async function sendMessagePush(employeeId: number, sender: "office" | "employee"
 }
 
 // ── 一斉送信 ───────────────────────────────────────────
+// 一斉送信は事務所（管理者）だけ。従業員の打刻ページからは届かない（公開ホストの許可の一覧にも入れていない）
 router.post("/messages/broadcast", requireAdmin, async (req, res) => {
-  const { content, employeeIds } = req.body as { content: string; employeeIds?: number[] };
-  if (typeof content !== "string" || !content.trim()) {
+  const { content: rawContent, employeeIds, attachmentIds: rawIds } = req.body as { content?: string; employeeIds?: number[]; attachmentIds?: unknown };
+  const content = typeof rawContent === "string" ? rawContent : "";
+  const attachmentIds = Array.isArray(rawIds) ? [...new Set(rawIds.map(Number).filter((n) => Number.isInteger(n) && n > 0))] : [];
+  if (attachmentIds.length > ATTACH_MAX_PER_MESSAGE) return res.status(400).json({ error: `添付は1回に${ATTACH_MAX_PER_MESSAGE}つまでです` });
+  if (!content.trim() && attachmentIds.length === 0) {
     return res.status(400).json({ error: "メッセージ内容が必要です" });
+  }
+  if (attachmentIds.length) {
+    const ok = await db.select({ id: messageAttachmentsTable.id }).from(messageAttachmentsTable).where(and(
+      inArray(messageAttachmentsTable.id, attachmentIds), eq(messageAttachmentsTable.employeeId, 0),
+      eq(messageAttachmentsTable.uploadedBy, "office"), isNull(messageAttachmentsTable.messageId)));
+    if (ok.length !== attachmentIds.length) return res.status(400).json({ error: "添付が見つかりません。もう一度ファイルを選んでください。" });
   }
   if (content.length > 2000) {
     return res.status(400).json({ error: "メッセージは2,000文字までです" });
@@ -498,6 +517,7 @@ router.post("/messages/broadcast", requireAdmin, async (req, res) => {
     ? allActive.filter(e => employeeIds.includes(e.id))
     : allActive;
 
+  if (employees.length === 0) return res.status(400).json({ error: "送り先を選んでください" });
   const inserted = await Promise.all(
     employees.map(emp =>
       db.insert(messagesTable).values({
@@ -507,9 +527,21 @@ router.post("/messages/broadcast", requireAdmin, async (req, res) => {
       }).returning().then(rows => rows[0]!)
     )
   );
+  // 添付は各人の会話へ写す（本人は自分の会話の添付しか開けない決まりのため）。写したら元は消す
+  if (attachmentIds.length) {
+    for (const m of inserted) {
+      await db.execute(sql`insert into message_attachments (employee_id, message_id, uploaded_by, file_name, mime, size, data, created_at)
+        select ${m.employeeId}, ${m.id}, 'office', file_name, mime, size, data, now() at time zone 'UTC'
+        from message_attachments where id in (${sql.join(attachmentIds.map((i) => sql`${i}`), sql`, `)}) order by id`);
+    }
+    await db.delete(messageAttachmentsTable).where(inArray(messageAttachmentsTable.id, attachmentIds));
+  }
+  const att = await attachmentsOf(inserted.map((m) => m.id));
+  const pushBody = content.trim() || (attachmentIds.length ? "📎 写真・ファイルが届きました" : "");
 
   // SSE + プッシュ通知を各従業員へ
-  for (const message of inserted) {
+  for (const m0 of inserted) {
+    const message = { ...m0, attachments: att.get(m0.id) ?? [] };
     broadcastToEmployee(message.employeeId, { type: "message", message });
 
     const targets = await db.select()
@@ -526,7 +558,7 @@ router.post("/messages/broadcast", requireAdmin, async (req, res) => {
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
           JSON.stringify({
             title: "事務所からのお知らせ（全員）",
-            body: content.trim().slice(0, 80),
+            body: pushBody.slice(0, 80),
             url: `/driver/${message.employeeId}`,
           })
         );

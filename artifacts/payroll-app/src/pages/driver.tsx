@@ -29,7 +29,7 @@ interface AttendanceRecord {
 }
 
 interface Employee { id: number; employeeCode: string; name: string; department: string; isOfficeStaff?: boolean }
-interface Message { id: number; employeeId: number; sender: "office" | "employee"; content: string; createdAt: string; pending?: boolean; attachments?: Attachment[] }
+interface Message { id: number; employeeId: number; sender: "office" | "employee"; content: string; createdAt: string; readAt?: string | null; pending?: boolean; attachments?: Attachment[] }
 interface PublicSettings { requireChecklist: boolean; requireAlcohol: boolean; vehicles: string[]; /** 取引先マスターの荷主の名前（日報で選べる） */ shippers?: string[] }
 interface AlcoholToday { items: Array<{ id: number; phase: string; valueMg: number | null; detected: boolean; checkedAt: string }>; lastChecker: string | null; lastMethod: string | null }
 
@@ -542,7 +542,13 @@ export default function DriverPage() {
     // サーバーの入れ替え中などで切れたままになったら、自分でつなぎ直す。
     return openLiveStream(`${BASE}/api/messages/stream?employeeId=${employeeId}${qrQuery()}`, { onOpen: () => { loadMessages(); }, onMessage: (e) => {
       try {
-        const data = JSON.parse(e.data) as { type: string; message: Message };
+        const data = JSON.parse(e.data) as { type: string; message: Message; reader?: string; ids?: number[]; at?: string; employeeId?: number };
+        // 事務所が読んだ → 自分が送った吹き出しを「既読」に
+        if (data.type === "read" && data.reader === "office" && data.employeeId === employeeId && data.ids?.length) {
+          const ids = new Set(data.ids);
+          setMessages(prev => prev.map(m => ids.has(m.id) ? { ...m, readAt: data.at ?? new Date().toISOString() } : m));
+          return;
+        }
         if (data.type === "message" && data.message.employeeId === employeeId) {
           setMessages(prev => prev.find(m => m.id === data.message.id) ? prev : [...prev, data.message]);
           if (data.message.sender === "office") {
@@ -1345,6 +1351,10 @@ export default function DriverPage() {
                       </div>
                     )}
                     <p className={`text-xs text-muted-foreground mt-1 ${isMe ? "text-right mr-1" : "ml-1"}`}>
+                      {/* 自分が送った分は、事務所が読んだかどうかを出す */}
+                      {isMe && !msg.pending && (msg.readAt
+                        ? <span className="text-emerald-600 font-semibold mr-1.5" data-read="">既読</span>
+                        : <span className="mr-1.5" data-unread="">未読</span>)}
                       {msg.pending ? "送信待ち" : fmtHM(msg.createdAt)}
                     </p>
                   </div>

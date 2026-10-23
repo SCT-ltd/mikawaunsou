@@ -52,8 +52,8 @@ export async function prepareFile(file: File): Promise<{ blob: Blob; name: strin
   }
 }
 
-/** 1つ上げて番号をもらう */
-export async function uploadAttachment(base: string, employeeId: number, f: File, headers: Record<string, string> = {}): Promise<Attachment> {
+/** 1つ上げて番号をもらう（employeeId に "broadcast" を渡すと一斉送信の添付） */
+export async function uploadAttachment(base: string, employeeId: number | "broadcast", f: File, headers: Record<string, string> = {}): Promise<Attachment> {
   const p = await prepareFile(f);
   if ("error" in p) throw new Error(p.error);
   const res = await fetch(`${base}/api/messages/${employeeId}/attachments`, {

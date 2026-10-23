@@ -2,6 +2,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Megaphone } from "lucide-react";
 import { Conversation, Avatar } from "./shared";
+import { AttachButton, PendingStrip, type PendingFile } from "./attachments";
 
 export function BroadcastDialog({
   open,
@@ -16,7 +17,14 @@ export function BroadcastDialog({
   done,
   onSend,
   onCancel,
+  files,
+  onFiles,
+  onRemoveFile,
 }: {
+  /** 送る前の添付（写真・PDF） */
+  files: PendingFile[];
+  onFiles: (f: FileList) => void;
+  onRemoveFile: (key: string) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   conversations: Conversation[];
@@ -83,11 +91,19 @@ export function BroadcastDialog({
                 autoFocus
                 className="w-full rounded-xl border bg-muted/30 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
               />
+              {/* 写真・PDF（選んだ全員に同じものが届く） */}
+              <div>
+                <PendingStrip files={files} onRemove={onRemoveFile} />
+                <div className="flex items-center gap-2">
+                  <AttachButton onFiles={onFiles} disabled={broadcasting} className="h-9 w-9" />
+                  <span className="text-xs text-muted-foreground">写真・PDFを添付（1回に4つ・1つ10MBまで）</span>
+                </div>
+              </div>
               <div className="flex justify-end gap-2">
                 <button onClick={onCancel} className="px-4 py-2 rounded-lg text-sm text-muted-foreground hover:bg-muted transition-colors">
                   キャンセル
                 </button>
-                <Button onClick={onSend} disabled={!text.trim() || broadcasting || selected.size === 0} className="flex items-center gap-2">
+                <Button onClick={onSend} disabled={(!text.trim() && files.length === 0) || broadcasting || selected.size === 0} className="flex items-center gap-2" data-broadcast-send="">
                   <Megaphone className="h-4 w-4" />
                   {broadcasting ? "送信中..." : `${selected.size}名に送信`}
                 </Button>

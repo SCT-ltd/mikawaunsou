@@ -2,6 +2,13 @@ import { useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Send, ArrowLeft } from "lucide-react";
 import { Conversation, Message, Avatar, formatHM, jstDay, DaySeparator } from "./shared";
+
+/** 既読の時刻。送った日と別の日に読まれたら日付も出す（10/24 08:15） */
+function readText(readAt: string, sentAt: string): string {
+  if (jstDay(readAt) === jstDay(sentAt)) return formatHM(readAt);
+  const [, m, d] = jstDay(readAt).split("-");
+  return `${Number(m)}/${Number(d)} ${formatHM(readAt)}`;
+}
 import { AttachButton, AttachmentView, PendingStrip, type PendingFile } from "./attachments";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -99,8 +106,12 @@ export function ChatView({
                         urlOf={(a) => `${BASE}/api/messages/${msg.employeeId}/attachments/${a.id}`} />
                     </div>
                   )}
-                  <p className={`text-[11px] text-muted-foreground mt-1 amount ${isOffice ? "text-right mr-1" : "ml-1"}`} data-msg-time="">
-                    {formatHM(msg.createdAt)}
+                  <p className={`text-[11px] text-muted-foreground mt-1 amount ${isOffice ? "text-right mr-1" : "ml-1"}`}>
+                    {/* 事務所が送った分は、本人が読んだかどうかを出す */}
+                    {isOffice && (msg.readAt
+                      ? <span className="text-emerald-600 font-semibold mr-1.5" data-read="" title={`${readText(msg.readAt, msg.createdAt)}に読まれました`}>既読 {readText(msg.readAt, msg.createdAt)}</span>
+                      : <span className="mr-1.5" data-unread="">未読</span>)}
+                    <span data-msg-time="">{formatHM(msg.createdAt)}</span>
                   </p>
                 </div>
               </div>

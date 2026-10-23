@@ -55,6 +55,8 @@ export default function MessagesPage() {
   const [input, setInput] = useState("");
   /** 送る前の添付 */
   const [files, setFiles] = useState<PendingFile[]>([]);
+  /** 一斉送信の添付 */
+  const [broadcastFiles, setBroadcastFiles] = useState<PendingFile[]>([]);
   const [sending, setSending] = useState(false);
   const [pushEnabled, setPushEnabled] = useState<boolean | null>(null);
   const [search, setSearch] = useState("");
@@ -114,7 +116,15 @@ export default function MessagesPage() {
     const es = new EventSource(`${BASE}/api/messages/stream?employeeId=0`);
     es.onmessage = (e) => {
       try {
-        const data = JSON.parse(e.data) as { type: string; message: Message };
+        const data = JSON.parse(e.data) as { type: string; message: Message; reader?: string; ids?: number[]; at?: string };
+        // 本人が読んだ（打刻ページで開いた）→ 事務所が送った吹き出しを「既読」に
+        if (data.type === "read") {
+          if (data.reader === "employee" && data.ids?.length) {
+            const ids = new Set(data.ids);
+            setMessages(prev => prev.map(m => ids.has(m.id) ? { ...m, readAt: data.at ?? new Date().toISOString() } : m));
+          }
+          return;
+        }
         if (data.type !== "message") return;
         const msg = data.message;
 
@@ -201,20 +211,35 @@ export default function MessagesPage() {
   };
 
   const sendBroadcast = async () => {
-    if (!broadcastText.trim() || broadcasting || broadcastSelected.size === 0) return;
+    if ((!broadcastText.trim() && broadcastFiles.length === 0) || broadcasting || broadcastSelected.size === 0) return;
     setBroadcasting(true);
     try {
+      // 添付は先に1つずつ上げる（一斉送信用）。送るときにサーバーが各人の会話へ写す
+      const attachmentIds: number[] = [];
+      try {
+        for (const f of broadcastFiles) attachmentIds.push((await uploadAttachment(BASE, "broadcast", f.file)).id);
+      } catch (e) {
+        toast({ title: "添付を送れませんでした", description: e instanceof Error ? e.message : "", variant: "destructive" });
+        return;
+      }
       const res = await fetch(`${BASE}/api/messages/broadcast`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           content: broadcastText.trim(),
           employeeIds: Array.from(broadcastSelected),
+          attachmentIds,
         }),
       });
-      const data = await res.json() as { count: number };
-      setBroadcastDone(data.count);
+      const data = await res.json().catch(() => ({})) as { count?: number; error?: string };
+      if (!res.ok) {
+        toast({ title: "一斉送信できませんでした", description: data.error ?? `もう一度お試しください（${res.status}）`, variant: "destructive" });
+        return;
+      }
+      setBroadcastDone(data.count ?? 0);
       setBroadcastText("");
+      broadcastFiles.forEach((f) => f.preview && URL.revokeObjectURL(f.preview));
+      setBroadcastFiles([]);
       await fetchConversations();
       setTimeout(() => {
         setBroadcastDone(null);
@@ -336,6 +361,9 @@ export default function MessagesPage() {
         broadcasting={broadcasting}
         done={broadcastDone}
         onSend={sendBroadcast}
+        files={broadcastFiles}
+        onFiles={(list) => { const r = addPending(broadcastFiles, list); setBroadcastFiles(r.next); if (r.error) toast({ title: r.error, variant: "destructive" }); }}
+        onRemoveFile={(key) => setBroadcastFiles((prev) => { const f = prev.find((x) => x.key === key); if (f?.preview) URL.revokeObjectURL(f.preview); return prev.filter((x) => x.key !== key); })}
         onCancel={closeBroadcast}
       />
     </AppLayout>
