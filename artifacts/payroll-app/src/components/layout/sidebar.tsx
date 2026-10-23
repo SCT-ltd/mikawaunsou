@@ -100,6 +100,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                   <TooltipTrigger asChild>
                     <button
                       type="button"
+                      data-tour-nav={item.href}
                       onClick={() => handleNav(item.href)}
                       className={cn(
                         "w-full group flex items-center rounded-md px-2 py-2.5 text-sm font-medium transition-colors text-left",
@@ -142,6 +143,7 @@ export function Sidebar({ onClose }: SidebarProps) {
         <button
           type="button"
           onClick={() => handleNav("/updates")}
+          data-tour-nav="/updates"
           className={cn(
             "w-full group flex items-center rounded-md px-2 py-2 text-sm font-medium transition-colors text-left",
             updatesActive ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground",

@@ -27,6 +27,7 @@ import { LogOut, UserCircle, ChevronDown, Menu, Sun, Moon } from "lucide-react";
 import { useLocation } from "wouter";
 import { useTheme } from "@/context/theme-context";
 import { AlertBell } from "@/components/alerts/alert-bell";
+import { GuideProvider, GuideButton } from "@/components/guide/guide";
 
 export function AppLayout({
   children,
@@ -51,6 +52,7 @@ export function AppLayout({
 
   return (
     <UnreadProvider>
+    <GuideProvider>
       <div id="layout-root" className="flex h-screen overflow-hidden bg-background">
 
         {/* ── デスクトップ サイドバー ── */}
@@ -89,7 +91,8 @@ export function AppLayout({
               </h1>
             </div>
             <div className="flex items-center gap-2 md:gap-4">
-              {user && <AlertBell />}
+              <GuideButton />
+              {user && <span data-tour="bell" className="inline-flex"><AlertBell /></span>}
               <button
                 type="button"
                 onClick={toggleTheme}
@@ -171,6 +174,7 @@ export function AppLayout({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </GuideProvider>
     </UnreadProvider>
   );
 }
