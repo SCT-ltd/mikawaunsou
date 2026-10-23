@@ -133,19 +133,22 @@ export function TrackPanel({
 
 /* ── よく行く場所 ───────────────────────────────────── */
 export function PlacesPanel({
-  places, onAddByMap, onEdit, onDelete, onFocus, picking,
+  places, onAddByMap, onEdit, onDelete, onFocus, onMove, moving, picking,
 }: {
   places: Place[];
   onAddByMap: () => void;
   onEdit: (p: Place) => void;
   onDelete: (p: Place) => void;
   onFocus: (p: Place) => void;
+  /** 地図で位置を直す（住所からの位置がずれていた・出せなかった） */
+  onMove: (p: Place) => void;
+  moving: Place | null;
   picking: boolean;
 }) {
   return (
     <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3" data-panel="places">
       <div className="rounded-lg bg-muted/40 p-2.5 text-xs leading-relaxed text-muted-foreground">
-        現場・営業所・荷主などを登録しておくと、スタッフが円の中に入った時刻（到着）と出た時刻（出発）が自動で残ります。日報の確認に使えます。
+        現場・営業所・荷主などを登録しておくと、スタッフが円の中に入った時刻（到着）と出た時刻（出発）が自動で残ります。日報の確認に使えます。住所・電話・担当者は「マスター管理」→「取引先マスター」でも登録できます（同じものです）。
       </div>
       <Button type="button" className="w-full gap-1.5" variant={picking ? "secondary" : "default"} onClick={onAddByMap} data-add-place="">
         {picking ? <><Crosshair className="h-4 w-4" />地図で場所を押してください（もう一度押すとやめる）</> : <><Plus className="h-4 w-4" />地図を押して場所を登録する</>}
@@ -160,7 +163,11 @@ export function PlacesPanel({
               <button type="button" className="flex-1 min-w-0 text-left" onClick={() => onFocus(p)}>
                 <p className="text-sm font-semibold truncate">{p.name}</p>
                 <p className="text-[11px] text-muted-foreground">{k.label}・半径{p.radiusM}m{p.address ? `・${p.address}` : ""}</p>
+                {p.latitude == null && <p className="text-[11px] font-semibold text-amber-700">位置なし（住所から出せませんでした）</p>}
               </button>
+              <Button type="button" size="sm" variant={moving?.id === p.id ? "secondary" : "ghost"} className="h-7 px-1.5 text-[11px] gap-0.5" onClick={() => onMove(p)} title="地図で押して位置を直す" data-move-place="">
+                <Crosshair className="h-3.5 w-3.5" />{p.latitude == null ? "位置を決める" : "位置を直す"}
+              </Button>
               <Button type="button" size="icon" variant="ghost" className="h-7 w-7" aria-label="変える" onClick={() => onEdit(p)}><Pencil className="h-3.5 w-3.5" /></Button>
               <Button type="button" size="icon" variant="ghost" className="h-7 w-7 text-destructive" aria-label="消す" onClick={() => onDelete(p)}><Trash2 className="h-3.5 w-3.5" /></Button>
             </li>

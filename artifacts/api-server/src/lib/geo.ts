@@ -32,11 +32,14 @@ const STOP_RADIUS_M = 80;     // この範囲にとどまっていたら「止�
 /** 社員ごとに前に残した点（毎回DBに聞かないように覚えておく） */
 const lastKept = new Map<number, { lat: number; lng: number; at: number }>();
 
-let placeCache: { at: number; rows: Array<typeof placesTable.$inferSelect> } | null = null;
+/** 位置のある場所（取引先のうち住所から位置が出せなかったものは除く） */
+export type LocatedPlace = typeof placesTable.$inferSelect & { latitude: number; longitude: number };
+let placeCache: { at: number; rows: LocatedPlace[] } | null = null;
 export function forgetPlaces() { placeCache = null; }
-async function activePlaces() {
+export async function activePlaces(): Promise<LocatedPlace[]> {
   if (placeCache && Date.now() - placeCache.at < 60_000) return placeCache.rows;
-  const rows = await db.select().from(placesTable).where(eq(placesTable.active, true));
+  const all = await db.select().from(placesTable).where(eq(placesTable.active, true));
+  const rows = all.filter((p): p is LocatedPlace => p.latitude != null && p.longitude != null);
   placeCache = { at: Date.now(), rows };
   return rows;
 }

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import {
   db, attendanceRecordsTable, employeesTable, attendanceCorrectionsTable, attendanceRecordLogsTable,
-  alcoholChecksTable, dailyReportsTable, dailyInspectionsTable, inspectionHistoryTable,
+  alcoholChecksTable, dailyReportsTable, dailyInspectionsTable, inspectionHistoryTable, placesTable,
 } from "@workspace/db";
 import { and, desc, eq, gte, lte, inArray } from "drizzle-orm";
 import { paramStr } from "../lib/params";
@@ -34,7 +34,10 @@ const str = (v: unknown, n: number) => (typeof v === "string" && v.trim() ? v.tr
 // ── 設定 ─────────────────────────────────────────────
 router.get("/attendance/settings/public", async (_req, res) => {
   const s = await getAttendanceSettings();
-  return res.json({ requireChecklist: s.requireChecklist, requireAlcohol: s.requireAlcohol, vehicles: s.vehicles, officeRounding: s.officeRounding, showUninspected: s.showUninspected });
+  // 日報の「荷主」で選べるように、取引先マスターの荷主の名前だけを返す（住所・電話は出さない）
+  const shippers = (await db.select({ name: placesTable.name }).from(placesTable)
+    .where(and(eq(placesTable.active, true), eq(placesTable.kind, "shipper"))).orderBy(placesTable.name)).map((r) => r.name);
+  return res.json({ requireChecklist: s.requireChecklist, requireAlcohol: s.requireAlcohol, vehicles: s.vehicles, officeRounding: s.officeRounding, showUninspected: s.showUninspected, shippers });
 });
 router.get("/attendance/settings", requireAdmin, async (_req, res) => res.json(await getAttendanceSettings()));
 router.put("/attendance/settings", requireAdmin, async (req, res) => {

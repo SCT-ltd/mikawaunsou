@@ -67,7 +67,7 @@ const FIELD: Record<string, string> = {
   pay_date: "支払日", days: "日数", collect_year: "徴収の年", collect_month: "徴収の月", apply_year: "反映の年", apply_month: "反映の月",
   standard_bonus: "標準賞与額", total: "合計",
   // 地図の場所
-  radius_m: "範囲（m）", active: "使っている", place_name: "場所",
+  radius_m: "範囲（m）", contact: "担当者", geo_source: "位置の出どころ", geo_label: "位置（地名）", active: "使っている", place_name: "場所",
   map_track_only_on_duty: "勤務中だけ位置を残す", map_stale_minutes: "位置が届かないと知らせる分数", map_long_stop_minutes: "止まっていると知らせる分数", map_retention_days: "位置の記録を残す日数",
 };
 

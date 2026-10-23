@@ -29,7 +29,7 @@ interface AttendanceRecord {
 
 interface Employee { id: number; employeeCode: string; name: string; department: string; isOfficeStaff?: boolean }
 interface Message { id: number; employeeId: number; sender: "office" | "employee"; content: string; createdAt: string; pending?: boolean }
-interface PublicSettings { requireChecklist: boolean; requireAlcohol: boolean; vehicles: string[] }
+interface PublicSettings { requireChecklist: boolean; requireAlcohol: boolean; vehicles: string[]; /** 取引先マスターの荷主の名前（日報で選べる） */ shippers?: string[] }
 interface AlcoholToday { items: Array<{ id: number; phase: string; valueMg: number | null; detected: boolean; checkedAt: string }>; lastChecker: string | null; lastMethod: string | null }
 
 const EVENT_LABELS: Record<EventType, string> = {
@@ -1222,8 +1222,10 @@ export default function DriverPage() {
             <div className="mx-4 mt-2 mb-1">
               <p className="text-xs font-semibold text-muted-foreground mb-1.5">📝 日報（任意・退勤のとき残します）</p>
               <div className="grid grid-cols-2 gap-2">
-                <input type="text" value={shipper} onChange={e => setShipper(e.target.value)} placeholder="荷主（例：A社）"
+                {/* 取引先マスターの荷主から選べる（一覧に無ければ打ち込む） */}
+                <input type="text" value={shipper} onChange={e => setShipper(e.target.value)} placeholder="荷主（例：A社）" list="shipper-list" aria-label="荷主"
                   className="rounded-xl border border-gray-200 bg-white px-3 py-3 text-base placeholder:text-gray-300 shadow-sm" />
+                <datalist id="shipper-list">{(settings?.shippers ?? []).map((n) => <option key={n} value={n} />)}</datalist>
                 <div className="relative">
                   <input type="number" inputMode="numeric" min="0" value={waitingMin} onChange={e => setWaitingMin(e.target.value)} placeholder="待機時間"
                     className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 pr-10 text-base placeholder:text-gray-300 shadow-sm" />

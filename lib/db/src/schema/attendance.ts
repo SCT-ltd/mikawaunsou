@@ -246,14 +246,24 @@ export const locationPointsTable = pgTable("location_points", {
   recordedAt: timestamp("recorded_at").notNull(),
 }, (t) => [index("location_points_emp_date").on(t.employeeId, t.workDate), index("location_points_at").on(t.recordedAt)]);
 
-/** よく行く場所（現場・営業所・荷主など）。半径の中に入ると「到着」、出ると「出発」を残す */
+/**
+ * 取引先・よく行く場所（荷主・現場・営業所など）。マスター管理の「取引先」とリアルタイムマップの「場所」は同じもの。
+ * 位置（緯度経度）があれば地図に円で出し、半径の中に入ると「到着」、出ると「出発」を残す。
+ * 位置は住所から国土地理院の住所検索で出す（geo_source=gsi）か、地図で押して決める（manual）。出せなければ空。
+ */
 export const placesTable = pgTable("places", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   /** site＝現場／office＝営業所・車庫／shipper＝荷主／other＝そのほか */
   kind: text("kind").notNull().default("site"),
-  latitude: doublePrecision("latitude").notNull(),
-  longitude: doublePrecision("longitude").notNull(),
+  latitude: doublePrecision("latitude"),
+  longitude: doublePrecision("longitude"),
+  /** 位置の出どころ（gsi＝住所から自動／manual＝地図で決めた／null＝位置なし） */
+  geoSource: text("geo_source"),
+  /** 住所から探したときに見つかった地名（どこに当てたかの確認用） */
+  geoLabel: text("geo_label"),
+  phone: text("phone"),
+  contact: text("contact"),
   radiusM: integer("radius_m").notNull().default(150),
   address: text("address"),
   note: text("note"),

@@ -53,6 +53,8 @@ export default function RealtimeMapPage() {
   const [pickMode, setPickMode] = useState<PickMode>("none");
   const [nearest, setNearest] = useState<Nearest | null>(null);
   const [placeDraft, setPlaceDraft] = useState<PlaceDraft | null>(null);
+  /** 地図で位置を直している取引先 */
+  const [moving, setMoving] = useState<Place | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [retentionDays, setRetentionDays] = useState(60);
   // 道すじ
@@ -190,6 +192,13 @@ export default function RealtimeMapPage() {
         .map((emp) => ({ emp, m: distM(lat, lng, emp.latitude!, emp.longitude!) }))
         .sort((a, b) => a.m - b.m);
       setNearest({ origin: { lat, lng }, list });
+    } else if (pickMode === "move" && moving) {
+      // 地図で押した位置に直す（住所から出した位置がずれていたとき・位置が出せなかったとき）
+      const p = moving;
+      setPickMode("none"); setMoving(null);
+      void mapApi(`/map/places/${p.id}`, { method: "PUT", body: JSON.stringify({ name: p.name, latitude: lat, longitude: lng, geoSource: "manual" }) })
+        .then(() => { toast({ title: "位置を直しました", description: p.name }); void fetchPlaces(); })
+        .catch((e) => toast({ title: "直せませんでした", description: e instanceof Error ? e.message : "", variant: "destructive" }));
     } else if (pickMode === "place") {
       setPickMode("none");
       setPlaceDraft({ name: "", kind: "site", latitude: lat, longitude: lng, radiusM: 150, address: "", note: "" });
@@ -199,6 +208,23 @@ export default function RealtimeMapPage() {
     if (pickMode === "nearest") { setPickMode("none"); setNearest(null); return; }
     setPickMode("nearest"); setNearest(null);
   };
+
+  const startMove = (p: Place) => {
+    setMoving(p); setPickMode("move"); setNearest(null); setShowPlaces(true); setMobileListOpen(false);
+    if (p.latitude != null && p.longitude != null) setFlyTarget({ lat: p.latitude, lng: p.longitude, seq: Date.now() });
+  };
+
+  // 取引先マスターの「地図で見る」（?place=ID）で来たら、場所の切り替えを開いてそこへ寄せる（1回だけ）
+  const [placeFocusDone, setPlaceFocusDone] = useState(false);
+  useEffect(() => {
+    if (placeFocusDone || places.length === 0) return;
+    setPlaceFocusDone(true);
+    const id = Number(new URLSearchParams(window.location.search).get("place"));
+    const p = places.find((x) => x.id === id);
+    if (!p) return;
+    setTab("places"); setShowPlaces(true);
+    if (p.latitude != null && p.longitude != null) setFlyTarget({ lat: p.latitude, lng: p.longitude, seq: Date.now() });
+  }, [places, placeFocusDone]);
 
   const deletePlace = async (p: Place) => {
     if (!window.confirm(`「${p.name}」を消しますか？（これまでの到着・出発の記録は残ります）`)) return;
@@ -259,9 +285,13 @@ export default function RealtimeMapPage() {
       {tab === "places" && (
         <PlacesPanel places={places} picking={pickMode === "place"}
           onAddByMap={() => { setPickMode(pickMode === "place" ? "none" : "place"); setNearest(null); setMobileListOpen(false); }}
-          onEdit={(p) => setPlaceDraft({ id: p.id, name: p.name, kind: p.kind, latitude: p.latitude, longitude: p.longitude, radiusM: p.radiusM, address: p.address ?? "", note: p.note ?? "" })}
+          onEdit={(p) => p.latitude != null && p.longitude != null
+            ? setPlaceDraft({ id: p.id, name: p.name, kind: p.kind, latitude: p.latitude, longitude: p.longitude, radiusM: p.radiusM, address: p.address ?? "", note: p.note ?? "" })
+            : startMove(p)}
+          onMove={startMove}
+          moving={pickMode === "move" ? moving : null}
           onDelete={deletePlace}
-          onFocus={(p) => { setShowPlaces(true); setFlyTarget({ lat: p.latitude, lng: p.longitude, seq: Date.now() }); setMobileListOpen(false); }} />
+          onFocus={(p) => { if (p.latitude == null || p.longitude == null) { startMove(p); return; } setShowPlaces(true); setFlyTarget({ lat: p.latitude, lng: p.longitude, seq: Date.now() }); setMobileListOpen(false); }} />
       )}
       {tab === "visits" && <VisitsPanel date={visitsDate} onDate={setVisitsDate} />}
     </div>
@@ -305,6 +335,12 @@ export default function RealtimeMapPage() {
                 <Settings2 className="h-3.5 w-3.5" /><span className="max-sm:hidden">設定</span>
               </button>
             </div>
+            {pickMode === "move" && moving && (
+              <div className="absolute bottom-16 md:bottom-4 left-1/2 -translate-x-1/2 z-[820] rounded-full bg-violet-600 text-white text-xs font-semibold px-4 py-2 shadow-lg flex items-center gap-2" data-moving="">
+                「{moving.name}」の正しい位置を地図で押してください
+                <button type="button" onClick={() => { setPickMode("none"); setMoving(null); }} aria-label="やめる"><X className="h-4 w-4" /></button>
+              </div>
+            )}
             {pickMode === "place" && (
               <div className="absolute bottom-16 md:bottom-4 left-1/2 -translate-x-1/2 z-[820] rounded-full bg-indigo-600 text-white text-xs font-semibold px-4 py-2 shadow-lg flex items-center gap-2">
                 登録する場所を地図で押してください

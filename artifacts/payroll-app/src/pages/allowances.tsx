@@ -33,6 +33,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PartnerMasterTab } from "@/components/partner-master";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
@@ -40,7 +41,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { Plus, Edit2, Trash2, Settings2, Users, Wallet, Calculator, Minus, Search, KeyRound, RotateCcw, UserPlus, Pin, ClipboardList } from "lucide-react";
+import { Plus, Edit2, Trash2, Settings2, Users, Wallet, Calculator, Minus, Search, KeyRound, RotateCcw, UserPlus, Pin, ClipboardList, Building2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { DatePartsInput } from "@/components/ui/date-parts-input";
@@ -1976,7 +1977,7 @@ export default function MasterManagement() {
         </div>
 
         <Tabs defaultValue="employees" className="w-full">
-          <TabsList className="grid w-full grid-cols-5 mb-6">
+          <TabsList className="grid w-full grid-cols-6 mb-6">
             <TabsTrigger value="employees" className="flex items-center gap-1.5">
               <Users className="h-4 w-4" /><span className="hidden sm:inline">社員マスター</span><span className="sm:hidden">社員</span>
             </TabsTrigger>
@@ -1988,6 +1989,9 @@ export default function MasterManagement() {
             </TabsTrigger>
             <TabsTrigger value="standard-remuneration" className="flex items-center gap-1.5">
               <ClipboardList className="h-4 w-4" /><span className="hidden sm:inline">標準報酬</span><span className="sm:hidden">標報</span>
+            </TabsTrigger>
+            <TabsTrigger value="partners" className="flex items-center gap-1.5" data-tab="partners">
+              <Building2 className="h-4 w-4" /><span className="hidden sm:inline">取引先マスター</span><span className="sm:hidden">取引先</span>
             </TabsTrigger>
             <TabsTrigger value="calc-tables" className="flex items-center gap-1.5">
               <Calculator className="h-4 w-4" /><span className="hidden sm:inline">計算テーブルマスター</span><span className="sm:hidden">計算</span>
@@ -2008,6 +2012,10 @@ export default function MasterManagement() {
 
           <TabsContent value="standard-remuneration">
             <StandardRemunerationBulkTab />
+          </TabsContent>
+
+          <TabsContent value="partners">
+            <PartnerMasterTab />
           </TabsContent>
 
           <TabsContent value="calc-tables">

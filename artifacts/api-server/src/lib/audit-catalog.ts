@@ -141,10 +141,10 @@ export const SPECS: AuditSpec[] = [
   { method: "PUT", re: /^\/insurance-rate-periods\/(\d+)$/, category: "マスター", label: "保険料率（年度）を変更", snap: byId("insurance_rate_periods") },
   { method: "DELETE", re: /^\/insurance-rate-periods\/(\d+)$/, category: "マスター", label: "保険料率（年度）を削除", snap: byId("insurance_rate_periods") },
 
-  // ── 地図（よく行く場所） ─────────────────────────────────
-  { method: "POST", re: /^\/map\/places$/, category: "設定", label: (req) => `地図に場所を登録（${String((req.body as Record<string, unknown>)?.["name"] ?? "")}）` },
-  { method: "PUT", re: /^\/map\/places\/(\d+)$/, category: "設定", label: "地図の場所を変更", snap: byId("places") },
-  { method: "DELETE", re: /^\/map\/places\/(\d+)$/, category: "設定", label: "地図の場所を削除", snap: byId("places") },
+  // ── 取引先・よく行く場所（マスター管理・地図） ─────────────────────────────────
+  { method: "POST", re: /^\/map\/places$/, category: "設定", label: (req) => `取引先・場所を登録（${String((req.body as Record<string, unknown>)?.["name"] ?? "")}）` },
+  { method: "PUT", re: /^\/map\/places\/(\d+)$/, category: "設定", label: "取引先・場所を変更", snap: byId("places") },
+  { method: "DELETE", re: /^\/map\/places\/(\d+)$/, category: "設定", label: "取引先・場所を削除", snap: byId("places") },
 
   // ── 設定 ───────────────────────────────────────────
   { method: "PUT", re: /^\/company$/, category: "設定", label: "会社設定を変更", snap: { one: true, sql: "select * from company order by id limit 1", args: () => [] } },

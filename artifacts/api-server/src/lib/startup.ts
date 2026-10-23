@@ -47,6 +47,9 @@ const REQUIRED: Array<[string, string]> = [
   ["location_points", "recorded_at"],
   ["places", "radius_m"],
   ["place_visits", "arrived_at"],
+  // 2026-10-30-partners.sql（取引先マスター）
+  ["places", "geo_source"],
+  ["places", "contact"],
   // 2026-10-24-batch-d.sql（給与計算と法令）
   ["company", "rule_premium_base_includes_allowances"],
   ["company", "minimum_wage_hourly"],

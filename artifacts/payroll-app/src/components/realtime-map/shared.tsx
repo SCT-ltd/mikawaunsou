@@ -42,7 +42,8 @@ export interface Track {
   retentionDays: number;
 }
 export interface MonthDistance { ym: string; days: Array<{ date: string; km: number }>; totalKm: number; monthlyRecordKm: number | null }
-export interface Place { id: number; name: string; kind: string; latitude: number; longitude: number; radiusM: number; address: string | null; note: string | null }
+/** 取引先・よく行く場所（マスター管理の「取引先」と同じ）。住所から位置が出せなかったものは緯度経度が空 */
+export interface Place { id: number; name: string; kind: string; latitude: number | null; longitude: number | null; radiusM: number; address: string | null; note: string | null; phone?: string | null; contact?: string | null; geoSource?: string | null; geoLabel?: string | null }
 export const PLACE_KIND: Record<string, { label: string; color: string }> = {
   site: { label: "現場", color: "#7c3aed" },
   office: { label: "営業所・車庫", color: "#0f766e" },

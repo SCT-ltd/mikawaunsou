@@ -19,7 +19,7 @@ import {
   kmText,
 } from "./shared";
 
-export type PickMode = "none" | "nearest" | "place";
+export type PickMode = "none" | "nearest" | "place" | "move";
 export interface Nearest { origin: { lat: number; lng: number }; list: Array<{ emp: EmployeeLocation; m: number }> }
 
 // 初回のみ全ポイントに収まるよう地図を合わせる
@@ -139,10 +139,10 @@ export function MapView({
       <PickHandler mode={pickMode} onPick={onPick} />
 
       {/* よく行く場所（半径の円） */}
-      {showPlaces && places.map((p) => {
+      {showPlaces && places.filter((p) => p.latitude != null && p.longitude != null).map((p) => {
         const k = PLACE_KIND[p.kind] ?? PLACE_KIND["other"]!;
         return (
-          <Circle key={`place-${p.id}`} center={[p.latitude, p.longitude]} radius={p.radiusM}
+          <Circle key={`place-${p.id}`} center={[p.latitude!, p.longitude!]} radius={p.radiusM}
             pathOptions={{ color: k.color, weight: 1.5, fillColor: k.color, fillOpacity: 0.12, dashArray: "4 4" }}>
             <Tooltip direction="center" permanent className="!bg-white/90 !border-0 !shadow-sm !text-[10px] !font-semibold !px-1.5 !py-0.5">{p.name}</Tooltip>
           </Circle>

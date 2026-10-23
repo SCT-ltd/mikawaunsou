@@ -6,10 +6,11 @@
   try {
     if (!/^\/(driver|office)\/\d+\/?$/.test(location.pathname)) return;
     var set = function (sel, attr, val) { var el = document.querySelector(sel); if (el) el.setAttribute(attr, val); };
-    set('link[rel="icon"][type="image/svg+xml"]', "href", "/favicon-staff.svg");
-    set('link[rel="icon"][type="image/png"]', "href", "/favicon-staff-32.png");
-    set('link[rel="manifest"]', "href", "/manifest.webmanifest");
-    set('link[rel="apple-touch-icon"]', "href", "/apple-touch-icon.png");
+    set('link[rel="icon"][sizes="48x48"]', "href", "/favicon-staff-32.png?v=20261023");
+    set('link[rel="icon"][type="image/svg+xml"]', "href", "/favicon-staff.svg?v=20261023");
+    set('link[rel="icon"][type="image/png"]', "href", "/favicon-staff-32.png?v=20261023");
+    set('link[rel="manifest"]', "href", "/manifest.webmanifest?v=20261023");
+    set('link[rel="apple-touch-icon"]', "href", "/apple-touch-icon.png?v=20261023");
     set('meta[name="apple-mobile-web-app-title"]', "content", "三川打刻");
     set('meta[name="theme-color"]', "content", "#FF3C00");
   } catch (e) { /* アイコンが既定のままでも動く */ }
