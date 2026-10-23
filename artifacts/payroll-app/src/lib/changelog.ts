@@ -9,6 +9,13 @@ export interface Release { date: string; title: string; items: ChangeItem[] }
 
 export const RELEASES: Release[] = [
   {
+    date: "2026-10-23", title: "社員編集の窓の表示崩れ",
+    items: [
+      { kind: "fix", text: "社員情報編集の「保険・扶養」で、中身が窓の右にはみ出して切れていたのを直しました（ほかの窓も、長い行があっても幅に収まるようにしました）。" },
+      { kind: "fix", text: "スマホで社員情報編集のタブ（管理など）が右に切れていたのを、1行に収まるようにしました。" },
+    ],
+  },
+  {
     date: "2026-10-23", title: "打刻PINの設定",
     items: [
       { kind: "fix", text: "打刻PINを設定できなかったとき「失敗しました」としか出ず、理由が分からなかったのを直しました。理由（使えない番号など）をそのまま出します。" },

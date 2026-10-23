@@ -778,13 +778,14 @@ function EmpFormFields({
     <Tabs {...(tab !== undefined ? { value: tab, onValueChange: onTabChange } : { defaultValue: "basic" })} className="w-full">
       <TabsList
         className="w-full"
-        style={{ display: "grid", gridTemplateColumns: `repeat(${tabCount}, 1fr)` }}
+        // 列は minmax(0,1fr)：1fr だけだと一番長い名前に合わせて広がり、スマホで右のタブが切れる
+        style={{ display: "grid", gridTemplateColumns: `repeat(${tabCount}, minmax(0, 1fr))` }}
       >
-        <TabsTrigger value="basic">基本情報</TabsTrigger>
-        <TabsTrigger value="salary">給与設定</TabsTrigger>
-        <TabsTrigger value="insurance">保険・扶養</TabsTrigger>
+        <TabsTrigger value="basic" className={TAB_CLS}>基本情報</TabsTrigger>
+        <TabsTrigger value="salary" className={TAB_CLS}>給与設定</TabsTrigger>
+        <TabsTrigger value="insurance" className={TAB_CLS}>保険・扶養</TabsTrigger>
         {additionalTabs?.map((t) => (
-          <TabsTrigger key={t.value} value={t.value}>{t.label}</TabsTrigger>
+          <TabsTrigger key={t.value} value={t.value} className={TAB_CLS}>{t.label}</TabsTrigger>
         ))}
       </TabsList>
 
@@ -1953,6 +1954,9 @@ function weakPinInput(pin: string): boolean {
   if (/^(\d)\1{3}$/.test(pin)) return true;
   return "0123456789012".includes(pin) || "9876543210987".includes(pin);
 }
+
+/** 社員編集のタブ：スマホでは文字を小さく・余白を詰めて5つが1行に収まるようにする */
+const TAB_CLS = "min-w-0 px-1 sm:px-3 text-[11px] sm:text-sm";
 
 export default function MasterManagement() {
   return (
