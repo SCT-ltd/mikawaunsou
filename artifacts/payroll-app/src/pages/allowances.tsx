@@ -1282,6 +1282,11 @@ function EmployeeMasterTab() {
       toast({ title: "エラー", description: "4桁の数字を入力してください", variant: "destructive" });
       return;
     }
+    // サーバーと同じ決まり（同じ数字の繰り返し・並びは使えない）。送る前に知らせる
+    if (weakPinInput(pinInput)) {
+      toast({ title: "この番号は使えません", description: "「1111」のような同じ数字の繰り返しや、「1234」「4321」のような並びは使えません。別の番号にしてください。", variant: "destructive" });
+      return;
+    }
     setPinSaving(true);
     try {
       const res = await fetch(`${BASE}/api/employees/${editingEmployee.id}/pin`, {
@@ -1289,11 +1294,15 @@ function EmployeeMasterTab() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pin: pinInput }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        // 断られた理由をそのまま出す（以前は「失敗しました」だけで理由が分からなかった）
+        const err = await res.json().catch(() => null) as { error?: string } | null;
+        throw new Error(err?.error || `PINを設定できませんでした（${res.status}）`);
+      }
       setPinSet(true); setPinInput("");
       toast({ title: "PIN設定完了", description: "PINコードを設定しました" });
-    } catch {
-      toast({ title: "エラー", description: "PIN設定に失敗しました", variant: "destructive" });
+    } catch (e) {
+      toast({ title: "PINを設定できませんでした", description: e instanceof Error && e.message ? e.message : "PIN設定に失敗しました", variant: "destructive" });
     } finally { setPinSaving(false); }
   };
 
@@ -1753,7 +1762,7 @@ function EmployeeMasterTab() {
                               </AlertDialog>
                             )}
                           </div>
-                          <p className="text-xs text-muted-foreground">PINを設定すると、QRコード読み取り後に4桁の入力が必要になります。</p>
+                          <p className="text-xs text-muted-foreground">PINを設定すると、QRコード読み取り後に4桁の入力が必要になります。「1111」のような同じ数字の繰り返しや「1234」「4321」のような並びは使えません。</p>
                         </div>
                       </div>
                     </div>
@@ -1938,6 +1947,12 @@ function CalcTableMasterTab() {
 }
 
 // ─── Main Page ──────────────────────────────────────────────────────
+
+/** 暗証番号として弱すぎるもの（サーバーの weakPin と同じ決まり：同じ数字の繰り返し・並び） */
+function weakPinInput(pin: string): boolean {
+  if (/^(\d)\1{3}$/.test(pin)) return true;
+  return "0123456789012".includes(pin) || "9876543210987".includes(pin);
+}
 
 export default function MasterManagement() {
   return (

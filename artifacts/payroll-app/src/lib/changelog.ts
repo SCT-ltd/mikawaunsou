@@ -9,6 +9,13 @@ export interface Release { date: string; title: string; items: ChangeItem[] }
 
 export const RELEASES: Release[] = [
   {
+    date: "2026-10-23", title: "打刻PINの設定",
+    items: [
+      { kind: "fix", text: "打刻PINを設定できなかったとき「失敗しました」としか出ず、理由が分からなかったのを直しました。理由（使えない番号など）をそのまま出します。" },
+      { kind: "improve", text: "「1111」のような同じ数字の繰り返しや「1234」「4321」のような並びは、設定を押す前に「この番号は使えません」と知らせるようにしました。" },
+    ],
+  },
+  {
     date: "2026-10-23", title: "操作の記録を細かく・アップデート履歴",
     items: [
       { kind: "improve", text: "操作の記録に「何をどう変えたか」を変更前→変更後で残すようにしました（例：打刻の時刻 7:05 → 7:00、基本給 200,000 → 210,000）。" },
