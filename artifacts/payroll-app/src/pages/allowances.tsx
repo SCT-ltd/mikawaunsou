@@ -1201,14 +1201,15 @@ function EmpFormFields({
             )} />
             <FormField control={f.control} name="pensionAppliedMode" render={({ field }) => (
               <FormItem className="rounded-lg border p-3">
-                <div className="flex items-center justify-between">
-                  <div>
+                {/* スマホでは説明と選ぶ欄を縦に並べる（横に詰めると両方が切れる） */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <div className="min-w-0">
                     <FormLabel>厚生年金</FormLabel>
                     <p className="text-xs text-muted-foreground">70歳以上は自動的に不適用。手動で上書き可。</p>
                   </div>
                   <FormControl>
                     <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger className="w-44">
+                      <SelectTrigger className="w-full sm:w-60 shrink-0">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1662,7 +1663,7 @@ function EmployeeMasterTab() {
 
       {/* 新規登録ダイアログ */}
       <Dialog open={isCreateOpen} onOpenChange={(open) => { if (open) setIsCreateOpen(true); else void tryCloseCreate(); }}>
-        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-xl lg:max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>新規社員登録</DialogTitle>
           </DialogHeader>
@@ -1682,7 +1683,7 @@ function EmployeeMasterTab() {
 
       {/* 編集ダイアログ */}
       <Dialog open={!!editingEmployee} onOpenChange={(open) => { if (!open) void tryCloseEdit(); }}>
-        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-xl lg:max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingEmployee?.name}　社員情報編集</DialogTitle>
             <p className="text-sm text-muted-foreground mt-1">{editingEmployee?.employeeCode}　{editingEmployee?.department}</p>

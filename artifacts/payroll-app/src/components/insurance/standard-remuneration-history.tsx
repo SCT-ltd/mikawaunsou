@@ -128,10 +128,12 @@ export function StandardRemunerationHistorySection({
         ) : (
           <>
             {rows.map((r) => (
-              <div key={r.id} className="flex items-center gap-3 px-3 py-1.5" data-testid="std-rem-history-row">
-                <span className="w-32 shrink-0">{formatYearMonth(r.effectiveYear, r.effectiveMonth)}〜</span>
-                <span className="font-mono tabular-nums w-28 text-right shrink-0">{r.amount.toLocaleString()}円</span>
-                <span className="text-xs text-muted-foreground flex-1 min-w-0 truncate">
+              <div key={r.id} className="flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-0.5 px-3 py-1.5" data-testid="std-rem-history-row">
+                <span className="sm:w-32 shrink-0">{formatYearMonth(r.effectiveYear, r.effectiveMonth)}〜</span>
+                <span className="font-mono tabular-nums ml-auto sm:ml-0 sm:w-28 text-right shrink-0">{r.amount.toLocaleString()}円</span>
+                {/* 狭い幅では理由を2段目に回す（1段に詰めると理由が切れて読めない） */}
+                <span className="text-xs text-muted-foreground order-last sm:order-none basis-full sm:basis-auto sm:flex-1 min-w-0 sm:truncate"
+                  title={`${REMUNERATION_REASON_LABELS[r.reason] ?? r.reason}${r.note ? `・${r.note}` : ""}`}>
                   {REMUNERATION_REASON_LABELS[r.reason] ?? r.reason}{r.note ? `・${r.note}` : ""}
                 </span>
                 <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive shrink-0" aria-label="履歴を削除" onClick={() => handleDelete(r)}>
@@ -139,10 +141,10 @@ export function StandardRemunerationHistorySection({
                 </Button>
               </div>
             ))}
-            <div className="flex items-center gap-3 px-3 py-1.5 text-muted-foreground">
-              <span className="w-32 shrink-0">それより前</span>
-              <span className="font-mono tabular-nums w-28 text-right shrink-0">{initialAmount > 0 ? `${initialAmount.toLocaleString()}円` : "未設定"}</span>
-              <span className="text-xs flex-1">上の「標準報酬月額（初期値）」</span>
+            <div className="flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-0.5 px-3 py-1.5 text-muted-foreground">
+              <span className="sm:w-32 shrink-0">それより前</span>
+              <span className="font-mono tabular-nums ml-auto sm:ml-0 sm:w-28 text-right shrink-0">{initialAmount > 0 ? `${initialAmount.toLocaleString()}円` : "未設定"}</span>
+              <span className="text-xs basis-full sm:basis-auto sm:flex-1">上の「標準報酬月額（初期値）」</span>
             </div>
           </>
         )}
