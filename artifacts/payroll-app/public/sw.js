@@ -2,7 +2,8 @@
 //  1. プッシュ通知を出す（事務所からのメッセージ・打ち忘れのお知らせなど）
 //  2. 打刻ページ（/driver/:id・/office/:id）の画面の控えを持つ。電波が無くても画面が開き、
 //     押した打刻は端末に溜めておける（電波が戻ったら画面が送る）。API（/api/）は控えない。
-const CACHE = "mikawa-shell-v1";
+// v2：アイコンを作り直した（同じ名前の古い画像の控えを捨てる）
+const CACHE = "mikawa-shell-v2";
 const SCOPE = new URL(self.registration.scope).pathname.replace(/\/$/, "");
 const SHELL_KEY = `${SCOPE}/__driver-shell`;
 const PUNCH_PAGE = new RegExp(`^${SCOPE}/(driver|office)/\\d+/?$`);
@@ -56,7 +57,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   // 画面の部品（名前に版が入っているので、控えがあればそれを使う）
-  if (url.pathname.startsWith(`${SCOPE}/assets/`) || /\/(theme-init\.js|favicon\.svg|icon-\d+\.png|apple-touch-icon\.png|manifest\.webmanifest)$/.test(url.pathname)) {
+  if (url.pathname.startsWith(`${SCOPE}/assets/`) || /\/(theme-init\.js|icon-init\.js|favicon[\w-]*\.(?:svg|png)|icon-[\w-]+\.png|apple-touch-icon[\w-]*\.png|manifest[\w-]*\.webmanifest)$/.test(url.pathname)) {
     event.respondWith((async () => {
       const hit = await caches.match(req);
       if (hit && url.pathname.startsWith(`${SCOPE}/assets/`)) return hit;

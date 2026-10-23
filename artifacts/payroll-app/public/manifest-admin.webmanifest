@@ -1,0 +1,16 @@
+{
+  "name": "三川運送 給与・勤怠",
+  "short_name": "三川管理",
+  "description": "三川運送の勤怠管理・給与明細・事務所の管理画面",
+  "display": "standalone",
+  "start_url": "/",
+  "scope": "/",
+  "background_color": "#16181d",
+  "theme_color": "#16181d",
+  "lang": "ja",
+  "icons": [
+    { "src": "/icon-admin-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-admin-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-admin-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

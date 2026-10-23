@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { DaySeparator, jstDay } from "@/components/messages/shared";
 import { useParams } from "wouter";
 import { qrKeyFor, isQrKeyError } from "@/lib/qr-key";
 import { playNotificationSound, unlockAudio } from "@/lib/notification-sound";
@@ -1302,10 +1303,14 @@ export default function DriverPage() {
                 <span className="text-4xl opacity-30">💬</span>
                 <p className="text-sm">メッセージはありません</p>
               </div>
-            ) : [...messages, ...pending.filter(p => p.kind === "message").map((p, i): Message => ({ id: -(i + 1), employeeId, sender: "employee", content: String(p.body.content ?? ""), createdAt: new Date(p.createdAt).toISOString(), pending: true }))].map(msg => {
+            ) : [...messages, ...pending.filter(p => p.kind === "message").map((p, i): Message => ({ id: -(i + 1), employeeId, sender: "employee", content: String(p.body.content ?? ""), createdAt: new Date(p.createdAt).toISOString(), pending: true }))].map((msg, i, arr) => {
               const isMe = msg.sender === "employee";
+              // 日が変わるところに日付の区切りを入れる（時刻だけだと何日のことか分からない）
+              const newDay = i === 0 || jstDay(arr[i - 1]!.createdAt) !== jstDay(msg.createdAt);
               return (
-                <div key={msg.id} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
+                <div key={msg.id} className="space-y-2">
+                {newDay && <DaySeparator at={msg.createdAt} />}
+                <div className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
                   {!isMe && <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary text-sm font-bold shrink-0 mr-2 mt-1">事</div>}
                   <div className="max-w-[80%]">
                     {!isMe && <p className="text-xs text-muted-foreground mb-1 ml-1">事務所</p>}
@@ -1316,6 +1321,7 @@ export default function DriverPage() {
                       {msg.pending ? "送信待ち" : fmtHM(msg.createdAt)}
                     </p>
                   </div>
+                </div>
                 </div>
               );
             })}

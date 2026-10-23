@@ -1,7 +1,7 @@
 import { useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Send, ArrowLeft } from "lucide-react";
-import { Conversation, Message, Avatar, formatTime } from "./shared";
+import { Conversation, Message, Avatar, formatHM, jstDay, DaySeparator } from "./shared";
 
 export function ChatView({
   conversation,
@@ -57,10 +57,14 @@ export function ChatView({
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3 bg-slate-50/70">
         {messages
           .filter((m) => m.employeeId === empId)
-          .map((msg) => {
+          .map((msg, i, arr) => {
             const isOffice = msg.sender === "office";
+            // 日が変わるところに日付の区切りを入れる
+            const newDay = i === 0 || jstDay(arr[i - 1]!.createdAt) !== jstDay(msg.createdAt);
             return (
-              <div key={msg.id} className={`flex ${isOffice ? "justify-end" : "justify-start"}`}>
+              <div key={msg.id} className="space-y-3">
+              {newDay && <DaySeparator at={msg.createdAt} />}
+              <div className={`flex ${isOffice ? "justify-end" : "justify-start"}`}>
                 {!isOffice && (
                   <div className="mr-2 mt-1">
                     <Avatar name={name} size="sm" />
@@ -77,10 +81,11 @@ export function ChatView({
                   }`}>
                     {msg.content}
                   </div>
-                  <p className={`text-[11px] text-muted-foreground mt-1 amount ${isOffice ? "text-right mr-1" : "ml-1"}`}>
-                    {formatTime(msg.createdAt)}
+                  <p className={`text-[11px] text-muted-foreground mt-1 amount ${isOffice ? "text-right mr-1" : "ml-1"}`} data-msg-time="">
+                    {formatHM(msg.createdAt)}
                   </p>
                 </div>
+              </div>
               </div>
             );
           })}

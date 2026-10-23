@@ -12,6 +12,9 @@ if (!process.env.DATABASE_URL) {
 
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
+  // 時刻の列（タイムゾーンなし）は UTC で持つ（drizzle は UTC として読み書きする）。
+  // 本番の DB は日本時間なので、DB の既定値 now() だけ日本時間で入り、画面で9時間ずれていた（チャットの時刻など）
+  options: "-c TimeZone=UTC",
   // NAS の DB は再起動することがある。待ち時間の上限を決め、使っていない接続は長めに保つ
   max: 8,
   idleTimeoutMillis: 60_000,
