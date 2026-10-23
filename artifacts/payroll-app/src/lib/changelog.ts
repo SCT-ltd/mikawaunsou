@@ -9,6 +9,12 @@ export interface Release { date: string; title: string; items: ChangeItem[] }
 
 export const RELEASES: Release[] = [
   {
+    date: "2026-10-23", title: "ガイドを自動で出さない設定",
+    items: [
+      { kind: "improve", text: "ガイドの下に「今後、ガイドを自動で表示しない」を付けました。チェックすると、初めての画面でもガイドが自動で始まらなくなります（パソコン・スマホごと）。見たいときは右上の「ガイド」を押してください。チェックを外すと元に戻ります。" },
+    ],
+  },
+  {
     date: "2026-10-23", title: "画面ごとのガイド",
     items: [
       { kind: "new", text: "すべての画面に、使い方を順番に説明するガイドを付けました。説明している場所が明るく照らされます。右上の「ガイド」を押すと、いつでも最初から見られます。" },

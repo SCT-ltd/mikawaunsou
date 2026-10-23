@@ -13,6 +13,10 @@ import { guideFor, type GuideStep } from "@/lib/guides";
  * 中身の文章は lib/guides.ts。画面の言葉を変えたら、あちらも直す。
  */
 const SEEN_KEY = "mikawa.guide.seen.v1";
+/** 「今後、自動で表示しない」（すべての画面）。右上の「ガイド」からはいつでも見られる */
+const OFF_KEY = "mikawa.guide.autoOff";
+const autoOff = () => { try { return localStorage.getItem(OFF_KEY) === "1"; } catch { return false; } };
+const setAutoOff = (v: boolean) => { try { if (v) localStorage.setItem(OFF_KEY, "1"); else localStorage.removeItem(OFF_KEY); } catch { /* 使えない端末では覚えない */ } };
 
 function seenSet(): Set<string> {
   try { return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || "[]") as string[]); } catch { return new Set(); }
@@ -90,7 +94,7 @@ export function GuideProvider({ children }: { children: React.ReactNode }) {
   // 画面が変わったら閉じる。初めての画面なら、表示が落ち着いてから一度だけ自動で始める
   useEffect(() => {
     setOpen(false);
-    if (!guide || seenSet().has(guide.key)) return;
+    if (!guide || autoOff() || seenSet().has(guide.key)) return;
     const t = setTimeout(() => {
       if (document.querySelector("[role=dialog],[role=alertdialog]")) return; // 何かの窓が開いていたら邪魔しない
       setI(0); setOpen(true);
@@ -132,6 +136,7 @@ function GuideOverlay({ steps, title, index, setIndex, onClose }: {
   const bubbleRef = useRef<HTMLDivElement>(null);
   const [bh, setBh] = useState(200);
   const last = index === steps.length - 1;
+  const [off, setOff] = useState(autoOff);
 
   // 照らす場所を画面の中へ寄せる
   useEffect(() => {
@@ -214,6 +219,10 @@ function GuideOverlay({ steps, title, index, setIndex, onClose }: {
           <p className="font-bold text-[15px] leading-snug" data-guide-title="">{step.title}</p>
           <p className="text-sm text-muted-foreground leading-relaxed mt-1.5 whitespace-pre-line">{step.body}</p>
         </div>
+        <label className="flex items-center gap-2 px-4 pb-2.5 text-xs text-muted-foreground cursor-pointer select-none" data-guide-off="">
+          <input type="checkbox" checked={off} onChange={(e) => { setOff(e.target.checked); setAutoOff(e.target.checked); }} className="h-3.5 w-3.5 accent-primary" />
+          今後、ガイドを自動で表示しない（右上の「ガイド」からは見られます）
+        </label>
         <div className="flex items-center gap-2 px-4 py-2.5 border-t bg-muted/30">
           <div className="flex gap-1 flex-wrap max-w-[45%]" aria-hidden="true">
             {steps.map((_, n) => (
