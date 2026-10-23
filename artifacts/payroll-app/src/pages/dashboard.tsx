@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { RichMonthPicker } from "@/components/rich-month-picker";
 import { AlertsCard } from "@/components/alerts/alert-bell";
+import { TransferSlipCard } from "@/components/transfer-slip-card";
 import { Badge } from "@/components/ui/badge";
 import { LayoutDashboard, Wallet, ClipboardCheck, TrendingUp, Landmark, AlertTriangle, ChevronRight } from "lucide-react";
 
@@ -138,6 +139,9 @@ export default function Dashboard() {
             tone={{ bg: "bg-amber-50/60 border-amber-100 dark:bg-amber-500/10 dark:border-amber-500/30", num: "text-amber-700 dark:text-amber-300", iconBg: "bg-amber-100 dark:bg-amber-500/20" }}
           />
         </div>
+
+        {/* ── 振替伝票（科目ごとの合計）── */}
+        <TransferSlipCard year={year} month={month} />
 
         {/* ── グラフ + アラート ── */}
         <div className="grid gap-4 lg:grid-cols-7">
