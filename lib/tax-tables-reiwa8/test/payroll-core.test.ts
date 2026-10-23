@@ -301,3 +301,16 @@ test("算定基礎・月額変更の候補", () => {
   assert.ok(zuijiCandidate([{ payYear: 2026, payMonth: 5, amount: 360_000, baseDays: 20 }, { payYear: 2026, payMonth: 6, amount: 360_000, baseDays: 20 }, { payYear: 2026, payMonth: 7, amount: 360_000, baseDays: 20 }], 300_000, true));
   assert.equal(zuijiCandidate([{ payYear: 2026, payMonth: 5, amount: 310_000, baseDays: 20 }, { payYear: 2026, payMonth: 6, amount: 310_000, baseDays: 20 }, { payYear: 2026, payMonth: 7, amount: 310_000, baseDays: 20 }], 300_000, true), null);
 });
+
+test("保険料の端数は四捨五入（50銭ちょうどは切り上げ・三川運送の決まり）", () => {
+  // 標準報酬71万円の子ども・子育て支援金（本人 0.115%）＝816.5円 → 817円（2026年9月分と同じ）
+  assert.equal(round50sen(710_000 * 0.00115), 817);
+  // 標準報酬17万円の健康保険（本人 4.925%）＝8,372.5円 → 8,373円
+  assert.equal(round50sen(170_000 * 0.04925), 8373);
+  // 50銭未満は切り捨て・50銭を超えたら切り上げ
+  assert.equal(round50sen(816.49), 816);
+  assert.equal(round50sen(816.51), 817);
+  // 料率の掛け算の誤差（816.4999999…）でも 50銭ちょうどとして切り上げる
+  assert.equal(round50sen(816.4999999999), 817);
+  assert.equal(round50sen(816), 816);
+});
