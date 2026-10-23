@@ -52,6 +52,11 @@ const REQUIRED: Array<[string, string]> = [
   ["places", "contact"],
   // 2026-10-31-attachments.sql（チャットの添付）
   ["message_attachments", "data"],
+  // 2026-11-01-staff.sql（経費・立替・休みの申請・写真）
+  ["staff_files", "data"],
+  ["expense_claims", "settle_month"],
+  ["leave_requests", "absence_id"],
+  ["alcohol_checks", "photo_file_id"],
   // 2026-10-24-batch-d.sql（給与計算と法令）
   ["company", "rule_premium_base_includes_allowances"],
   ["company", "minimum_wage_hourly"],

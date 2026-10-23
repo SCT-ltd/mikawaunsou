@@ -32,6 +32,16 @@ export interface AttendanceSettings {
   mapLongStopMinutes: number;
   /** 地図：位置の記録を残す日数（過ぎたら消す。到着・出発の記録は残す） */
   mapRetentionDays: number;
+  /** 打刻ページ：位置情報と通知を ON にしないと使えないようにする */
+  requirePermissions: boolean;
+  /** 打刻ページ：本人が確定した給与明細を見られる */
+  staffPayslip: boolean;
+  /** 打刻ページ：休憩なしの時間・拘束時間が改善基準に近づいたら本人のスマホに知らせる */
+  staffWorkAlerts: boolean;
+  /** 打刻ページ：出勤・退勤の押し忘れを本人のスマホに知らせる */
+  punchReminders: boolean;
+  /** 予定の終わりから何分たっても退勤していなければ知らせるか */
+  clockOutReminderMinutes: number;
 }
 
 export const DEFAULT_SETTINGS: AttendanceSettings = {
@@ -47,6 +57,11 @@ export const DEFAULT_SETTINGS: AttendanceSettings = {
   mapStaleMinutes: 10,
   mapLongStopMinutes: 30,
   mapRetentionDays: 60,
+  requirePermissions: true,
+  staffPayslip: true,
+  staffWorkAlerts: true,
+  punchReminders: true,
+  clockOutReminderMinutes: 60,
 };
 
 let cache: { at: number; value: AttendanceSettings } | null = null;
@@ -76,6 +91,11 @@ function normalize(raw: unknown): AttendanceSettings {
     mapStaleMinutes: clampInt(o.mapStaleMinutes, 3, 120, 10),
     mapLongStopMinutes: clampInt(o.mapLongStopMinutes, 0, 480, 30),
     mapRetentionDays: clampInt(o.mapRetentionDays, 7, 400, 60),
+    requirePermissions: o.requirePermissions !== false,
+    staffPayslip: o.staffPayslip !== false,
+    staffWorkAlerts: o.staffWorkAlerts !== false,
+    punchReminders: o.punchReminders !== false,
+    clockOutReminderMinutes: clampInt(o.clockOutReminderMinutes, 15, 480, 60),
   };
 }
 

@@ -55,7 +55,7 @@ export function ChoiceSheet({ open, title, message, choices, onClose }: { open: 
 
 const METHODS: Array<[string, string]> = [["face", "対面"], ["phone", "電話"], ["video", "ビデオ通話"], ["other", "その他"]];
 
-export interface AlcoholValues { phase: "before" | "after"; valueMg: number; detected: boolean; method: string; checker: string; vehicle: string; note: string }
+export interface AlcoholValues { phase: "before" | "after"; valueMg: number; detected: boolean; method: string; checker: string; vehicle: string; note: string; /** 検知器の表示の写真（任意） */ photo?: File | null }
 
 /** アルコールチェックの記録（乗る前・乗った後） */
 export function AlcoholSheet({ open, phase, defaultChecker, defaultMethod, vehicles, defaultVehicle, onSubmit, onClose }: {
@@ -68,11 +68,18 @@ export function AlcoholSheet({ open, phase, defaultChecker, defaultMethod, vehic
   const [checker, setChecker] = useState(defaultChecker);
   const [vehicle, setVehicle] = useState(defaultVehicle);
   const [note, setNote] = useState("");
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!photo) { setPhotoUrl(null); return; }
+    const u = URL.createObjectURL(photo); setPhotoUrl(u);
+    return () => URL.revokeObjectURL(u);
+  }, [photo]);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (!open) return;
-    setValue(""); setDetected(false); setErr(null); setNote("");
+    setValue(""); setDetected(false); setErr(null); setNote(""); setPhoto(null);
     setMethod(defaultMethod || "face"); setChecker(defaultChecker); setVehicle(defaultVehicle);
   }, [open, defaultChecker, defaultMethod, defaultVehicle]);
   const num = value.trim() === "" ? null : Number(value);
@@ -82,7 +89,7 @@ export function AlcoholSheet({ open, phase, defaultChecker, defaultMethod, vehic
     if (num === null || !Number.isFinite(num) || num < 0 || num > 5) { setErr("検知器の数値を入れてください（検知しなければ 0）"); return; }
     if (!checker.trim()) { setErr("確認した人の名前を入れてください"); return; }
     setBusy(true);
-    const e = await onSubmit({ phase, valueMg: num, detected: detected || over, method, checker: checker.trim(), vehicle, note });
+    const e = await onSubmit({ phase, valueMg: num, detected: detected || over, method, checker: checker.trim(), vehicle, note, photo });
     setBusy(false);
     if (e) setErr(e);
   };
@@ -113,6 +120,22 @@ export function AlcoholSheet({ open, phase, defaultChecker, defaultMethod, vehic
         <input type="text" value={checker} onChange={e => setChecker(e.target.value)} placeholder="例：運行管理者の名前" className="w-full rounded-xl border border-gray-200 px-3 py-3 text-base" />
       </label>
       <VehiclePicker vehicles={vehicles} value={vehicle} onChange={setVehicle} />
+      {/* 検知器の表示を写真で残す（記録の証拠になる） */}
+      <div>
+        <span className="block text-xs font-semibold text-gray-600 mb-1">検知器の表示の写真（おすすめ）</span>
+        {photo ? (
+          <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 p-2">
+            {photoUrl && <img src={photoUrl} alt="" className="h-16 w-16 rounded-lg object-cover border" />}
+            <span className="flex-1 text-xs text-gray-600">撮りました</span>
+            <button type="button" onClick={() => setPhoto(null)} className="shrink-0 rounded-lg border bg-white px-3 py-2 text-xs font-semibold text-gray-600">撮り直す</button>
+          </div>
+        ) : (
+          <label className="flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-300 bg-white py-3.5 text-sm font-semibold text-gray-600 cursor-pointer" data-alcohol-photo="">
+            📷 数値が見えるように撮る
+            <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={(e) => { const f = e.target.files?.[0]; if (f) setPhoto(f); e.target.value = ""; }} />
+          </label>
+        )}
+      </div>
       <label className="block">
         <span className="block text-xs font-semibold text-gray-600 mb-1">メモ（任意）</span>
         <input type="text" value={note} onChange={e => setNote(e.target.value)} className="w-full rounded-xl border border-gray-200 px-3 py-3 text-base" />

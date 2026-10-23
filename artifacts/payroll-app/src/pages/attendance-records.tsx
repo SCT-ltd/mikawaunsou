@@ -12,6 +12,8 @@ import { METHOD_LABELS, minToStr, todayJST, addDays, type AlcoholCheck, type Dai
  *   日報            … 退勤のときに残した発着地・メーター・荷主・待機時間
  *   改善基準（月）  … 拘束時間・休息・連続の目安を、月と日で赤く出す
  *   勤怠の設定      … 点検・アルコールチェックを必須にするか、車両の一覧、事務員の30分切り上げ
+ *   経費・立替      … スタッフが打刻ページから出した申請（レシートの写真つき）。承認するとその月の給与の「立替金精算」に入る
+ *   休みの申請      … 承認すると「欠勤・休暇登録」に入る
  */
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const EV: Record<string, string> = { clock_in: "出勤", clock_out: "退勤", break_start: "休憩開始", break_end: "休憩終了" };
@@ -26,11 +28,16 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
-type Tab = "corrections" | "alcohol" | "reports" | "kaizen" | "settings";
+type Tab = "corrections" | "expenses" | "leaves" | "alcohol" | "reports" | "kaizen" | "settings";
+const TABS: Array<[Tab, string]> = [["corrections", "修正申請"], ["expenses", "経費・立替"], ["leaves", "休みの申請"], ["alcohol", "アルコールチェック"], ["reports", "日報"], ["kaizen", "改善基準（月）"], ["settings", "勤怠の設定"]];
 
 export default function AttendanceRecordsPage() {
-  const [tab, setTab] = useState<Tab>("corrections");
-  const tabs: Array<[Tab, string]> = [["corrections", "修正申請"], ["alcohol", "アルコールチェック"], ["reports", "日報"], ["kaizen", "改善基準（月）"], ["settings", "勤怠の設定"]];
+  // スマホの通知から開いたときは ?tab=expenses などでその表を出す
+  const [tab, setTab] = useState<Tab>(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    return TABS.some(([k]) => k === t) ? (t as Tab) : "corrections";
+  });
+  const tabs = TABS;
   return (
     <AppLayout>
       <div className="space-y-4">
@@ -45,6 +52,8 @@ export default function AttendanceRecordsPage() {
           ))}
         </div>
         {tab === "corrections" && <Corrections />}
+        {tab === "expenses" && <Expenses />}
+        {tab === "leaves" && <Leaves />}
         {tab === "alcohol" && <Alcohol />}
         {tab === "reports" && <Reports />}
         {tab === "kaizen" && <Kaizen />}
@@ -151,10 +160,10 @@ function Alcohol() {
       <div className="overflow-x-auto rounded-xl border bg-card">
         <table className="w-full text-sm">
           <thead className="bg-muted/40 text-xs text-muted-foreground">
-            <tr><th className="px-2 py-2 text-left">勤務日</th><th className="px-2 text-left">確認日時</th><th className="px-2 text-left">氏名</th><th className="px-2 text-left">乗る前/後</th><th className="px-2 text-right">数値(mg/L)</th><th className="px-2 text-left">酒気帯び</th><th className="px-2 text-left">方法</th><th className="px-2 text-left">確認した人</th><th className="px-2 text-left">車両</th></tr>
+            <tr><th className="px-2 py-2 text-left">勤務日</th><th className="px-2 text-left">確認日時</th><th className="px-2 text-left">氏名</th><th className="px-2 text-left">乗る前/後</th><th className="px-2 text-right">数値(mg/L)</th><th className="px-2 text-left">酒気帯び</th><th className="px-2 text-left">方法</th><th className="px-2 text-left">確認した人</th><th className="px-2 text-left">車両</th><th className="px-2 text-left">写真</th></tr>
           </thead>
           <tbody>
-            {shown.length === 0 && <tr><td colSpan={9} className="text-center py-6 text-muted-foreground">記録はありません</td></tr>}
+            {shown.length === 0 && <tr><td colSpan={10} className="text-center py-6 text-muted-foreground">記録はありません</td></tr>}
             {shown.map(r => (
               <tr key={r.id} className={`border-t ${r.detected ? "bg-red-50 text-red-800 font-semibold" : ""}`}>
                 <td className="px-2 py-1.5">{md(r.workDate)}</td>
@@ -172,6 +181,7 @@ function Alcohol() {
                   )}
                 </td>
                 <td className="px-2">{r.vehicle ?? ""}</td>
+                <td className="px-2">{r.photoFileId ? <a href={`${BASE}/api/staff/${r.employeeId}/files/${r.photoFileId}`} target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline text-xs">見る</a> : ""}</td>
               </tr>
             ))}
           </tbody>
@@ -303,6 +313,7 @@ function Kaizen() {
 interface AttSettings {
   requireChecklist: boolean; requireAlcohol: boolean; vehicles: string[]; officeRounding: "all_office" | "hourly_only" | "none";
   lateGraceMinutes: number; noShowAlertMinutes: number; noShowAlert: boolean; showUninspected: boolean;
+  requirePermissions: boolean; staffPayslip: boolean; staffWorkAlerts: boolean; punchReminders: boolean; clockOutReminderMinutes: number;
 }
 function SettingsTab() {
   const [s, setS] = useState<AttSettings | null>(null);
@@ -361,10 +372,184 @@ function SettingsTab() {
         <input type="checkbox" className="mt-1" checked={s.showUninspected} onChange={e => setS({ ...s, showUninspected: e.target.checked })} />
         <span><b>勤怠管理の一覧に「未点検」の札を出す</b><br /><span className="text-xs text-muted-foreground">日常点検をまだ使っていないときは、全員に付いて目障りなので外せます（点検の「否」はいつも出ます）。</span></span>
       </label>
+      <div className="space-y-3 text-sm border-t pt-4" data-staff-settings="">
+        <p className="font-bold">スタッフの打刻ページ</p>
+        <label className="flex items-start gap-2">
+          <input type="checkbox" className="mt-1" checked={s.requirePermissions} onChange={e => setS({ ...s, requirePermissions: e.target.checked })} />
+          <span><b>位置情報と通知を ON にしないと使えないようにする</b><br /><span className="text-xs text-muted-foreground">ON にするまで打刻ページの中に進めません。位置は出勤中だけ届きます。iPhone はホーム画面に追加したアプリから開く必要があります（打刻ページに手順が出ます）。古いスマホで通知が使えない人がいるときは、いったん外してください。</span></span>
+        </label>
+        <label className="flex items-start gap-2">
+          <input type="checkbox" className="mt-1" checked={s.staffPayslip} onChange={e => setS({ ...s, staffPayslip: e.target.checked })} />
+          <span><b>本人が給与明細をスマホで見られる</b><br /><span className="text-xs text-muted-foreground">確定した明細だけ出ます。だれがいつ見たかは「操作の記録」に残ります。</span></span>
+        </label>
+        <label className="flex items-start gap-2">
+          <input type="checkbox" className="mt-1" checked={s.staffWorkAlerts} onChange={e => setS({ ...s, staffWorkAlerts: e.target.checked })} />
+          <span><b>休憩のとり忘れ・拘束時間を本人のスマホに知らせる</b><br /><span className="text-xs text-muted-foreground">休憩なしで3時間45分・4時間、出勤から12時間30分・14時間30分で知らせます（改善基準告示の目安・ドライバーだけ）。</span></span>
+        </label>
+        <label className="flex items-start gap-2">
+          <input type="checkbox" className="mt-1" checked={s.punchReminders} onChange={e => setS({ ...s, punchReminders: e.target.checked })} />
+          <span><b>出勤・退勤の押し忘れを本人のスマホに知らせる</b><br /><span className="text-xs text-muted-foreground">出勤の予定（シフト）がある人だけ。出勤は上の「◯分たったら」と同じ時間で知らせます。</span></span>
+        </label>
+        <label className="flex items-center gap-2 pl-6">
+          退勤は、予定の終わりから
+          <Input type="number" min={15} max={480} className="w-20 h-8" value={s.clockOutReminderMinutes} disabled={!s.punchReminders}
+            onChange={e => setS({ ...s, clockOutReminderMinutes: Number(e.target.value) })} />分たったら知らせる
+        </label>
+      </div>
       <div className="flex items-center gap-3">
         <Button onClick={save}>保存</Button>
         {msg && <span className="text-sm text-muted-foreground">{msg}</span>}
       </div>
+    </div>
+  );
+}
+
+// ── 経費・立替 ───────────────────────────────────────
+interface Expense {
+  id: number; employeeId: number; employeeName: string | null; employeeCode: string | null; useDate: string; category: string; amount: number; note: string | null;
+  fileId: number | null; status: string; settleYear: number | null; settleMonth: number | null; decidedBy: string | null; decidedAt: string | null; decisionNote: string | null; createdAt: string;
+}
+const EXPENSE: Record<string, string> = { fuel: "ガソリン", toll: "高速代", parking: "駐車場", other: "その他" };
+const STATUS_TABS: Array<[string, string]> = [["pending", "確認待ち"], ["approved", "承認した"], ["rejected", "見送った"], ["all", "すべて"]];
+function StatusTabs({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex items-center gap-2 text-sm">
+      <span className="text-muted-foreground">表示：</span>
+      {STATUS_TABS.map(([v, l]) => (
+        <button key={v} type="button" onClick={() => onChange(v)} className={`rounded px-2 py-1 ${value === v ? "bg-slate-800 text-white" : "bg-slate-100"}`}>{l}</button>
+      ))}
+    </div>
+  );
+}
+function Expenses() {
+  const [status, setStatus] = useState("pending");
+  const [rows, setRows] = useState<Expense[]>([]);
+  const [notes, setNotes] = useState<Record<number, string>>({});
+  const [months, setMonths] = useState<Record<number, string>>({});
+  const [busy, setBusy] = useState<number | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const load = useCallback(() => { api<Expense[]>(`/staff-admin/expenses?status=${status}`).then(setRows).catch(e => setErr(e.message)); }, [status]);
+  useEffect(() => { load(); }, [load]);
+  const thisMonth = todayJST().slice(0, 7);
+  const decide = async (x: Expense, approve: boolean) => {
+    setBusy(x.id); setErr(null);
+    const ym = months[x.id] ?? thisMonth;
+    try {
+      await api(`/staff-admin/expenses/${x.id}/decide`, { method: "POST", body: JSON.stringify({ approve, note: notes[x.id] ?? "", year: Number(ym.slice(0, 4)), month: Number(ym.slice(5, 7)) }) });
+      load();
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
+  };
+  const revoke = async (x: Expense) => {
+    if (!window.confirm(`${x.employeeName}さんの ${x.amount.toLocaleString()}円 の承認を取り消しますか？（${x.settleMonth}月分の給与の「立替金精算」からも引きます）`)) return;
+    setBusy(x.id); setErr(null);
+    try { await api(`/staff-admin/expenses/${x.id}/revoke`, { method: "POST", body: "{}" }); load(); } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
+  };
+  const total = rows.filter(r => r.status === "pending").reduce((s, r) => s + r.amount, 0);
+  return (
+    <div className="space-y-3" data-expenses="">
+      <StatusTabs value={status} onChange={setStatus} />
+      <p className="text-xs text-muted-foreground">承認すると、選んだ月の給与明細に手当「立替金精算」（課税しない・雇用保険の対象外）として入ります。給与明細で「保存して計算」し直すと金額に反映されます。確定済みの月には入れられません。</p>
+      {status === "pending" && rows.length > 0 && <p className="text-sm font-semibold">確認待ち {rows.length}件・合計 {total.toLocaleString()}円</p>}
+      {err && <p className="text-sm text-red-600">{err}</p>}
+      {rows.length === 0 ? <p className="text-sm text-muted-foreground py-6 text-center">申請はありません</p> : (
+        <div className="space-y-2">
+          {rows.map(x => (
+            <div key={x.id} className="rounded-xl border bg-card p-3 space-y-2">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="font-bold">{x.employeeName}</span>
+                <span className="text-xs text-muted-foreground font-mono">{x.employeeCode}</span>
+                <span className="text-xs rounded bg-slate-100 px-1.5 py-0.5">{md(x.useDate)} に使った</span>
+                <span className="text-xs font-semibold text-indigo-700">{EXPENSE[x.category] ?? x.category}</span>
+                <span className="text-base font-bold amount">{x.amount.toLocaleString()}円</span>
+                <span className="ml-auto text-[11px] text-muted-foreground">申請 {fmtDT(x.createdAt)}</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-3 text-xs">
+                {x.note && <span className="text-slate-600 bg-slate-50 rounded px-2 py-1">{x.note}</span>}
+                {x.fileId ? <a href={`${BASE}/api/staff/${x.employeeId}/files/${x.fileId}`} target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline font-semibold">📷 レシートを見る</a> : <span className="text-amber-700">レシートの写真なし</span>}
+              </div>
+              {x.status === "pending" ? (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <label className="flex items-center gap-1 text-xs">払う月
+                    <Input type="month" value={months[x.id] ?? thisMonth} onChange={e => setMonths(m => ({ ...m, [x.id]: e.target.value }))} className="h-8 w-36 text-xs" /></label>
+                  <Input value={notes[x.id] ?? ""} onChange={e => setNotes(n => ({ ...n, [x.id]: e.target.value }))} placeholder="ひとこと（任意・本人に届きます）" className="h-8 text-xs max-w-xs" />
+                  <Button size="sm" className="h-8" disabled={busy === x.id} onClick={() => decide(x, true)} data-expense-approve="">承認して給与に入れる</Button>
+                  <Button size="sm" variant="outline" className="h-8" disabled={busy === x.id} onClick={() => decide(x, false)}>見送る</Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                  <span>{x.status === "approved" ? `承認（${x.settleYear}年${x.settleMonth}月分の給与で払う）` : x.status === "rejected" ? "見送り" : "本人が取り下げ"}：{x.decidedBy}（{fmtDT(x.decidedAt)}）{x.decisionNote ? `「${x.decisionNote}」` : ""}</span>
+                  {x.status === "approved" && <button type="button" className="underline" disabled={busy === x.id} onClick={() => revoke(x)}>承認を取り消す</button>}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 休みの申請 ───────────────────────────────────────
+interface LeaveReq {
+  id: number; employeeId: number; employeeName: string | null; employeeCode: string | null; workDate: string; absenceType: string; reason: string | null;
+  status: string; decidedBy: string | null; decidedAt: string | null; decisionNote: string | null; createdAt: string;
+}
+const LEAVE: Record<string, string> = {
+  sick: "病欠", paid_leave: "有給休暇", paid_leave_am: "有給（午前半日）", paid_leave_pm: "有給（午後半日）", bereavement: "忌引き",
+  morning_half: "午前休み", afternoon_half: "午後休み", other: "その他の休み",
+};
+const DOW = ["日", "月", "火", "水", "木", "金", "土"];
+function Leaves() {
+  const [status, setStatus] = useState("pending");
+  const [rows, setRows] = useState<LeaveReq[]>([]);
+  const [notes, setNotes] = useState<Record<number, string>>({});
+  const [busy, setBusy] = useState<number | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const load = useCallback(() => { api<LeaveReq[]>(`/staff-admin/leaves?status=${status}`).then(setRows).catch(e => setErr(e.message)); }, [status]);
+  useEffect(() => { load(); }, [load]);
+  const decide = async (x: LeaveReq, approve: boolean) => {
+    setBusy(x.id); setErr(null);
+    try { await api(`/staff-admin/leaves/${x.id}/decide`, { method: "POST", body: JSON.stringify({ approve, note: notes[x.id] ?? "" }) }); load(); }
+    catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
+  };
+  const revoke = async (x: LeaveReq) => {
+    if (!window.confirm(`${x.employeeName}さんの ${md(x.workDate)} の休みの承認を取り消しますか？（欠勤・休暇登録からも消します）`)) return;
+    setBusy(x.id); setErr(null);
+    try { await api(`/staff-admin/leaves/${x.id}/revoke`, { method: "POST", body: "{}" }); load(); } catch (e) { setErr((e as Error).message); } finally { setBusy(null); }
+  };
+  return (
+    <div className="space-y-3" data-leaves="">
+      <StatusTabs value={status} onChange={setStatus} />
+      <p className="text-xs text-muted-foreground">承認すると「欠勤・休暇登録」に入り、月の勤怠表・月次実績・有給の日数に反映されます。</p>
+      {err && <p className="text-sm text-red-600">{err}</p>}
+      {rows.length === 0 ? <p className="text-sm text-muted-foreground py-6 text-center">申請はありません</p> : (
+        <div className="space-y-2">
+          {rows.map(x => (
+            <div key={x.id} className="rounded-xl border bg-card p-3 space-y-2">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="font-bold">{x.employeeName}</span>
+                <span className="text-xs text-muted-foreground font-mono">{x.employeeCode}</span>
+                <span className="text-sm font-bold">{md(x.workDate)}（{DOW[new Date(`${x.workDate}T00:00:00Z`).getUTCDay()]}）</span>
+                <span className="text-xs font-semibold text-indigo-700">{LEAVE[x.absenceType] ?? x.absenceType}</span>
+                <span className="ml-auto text-[11px] text-muted-foreground">申請 {fmtDT(x.createdAt)}</span>
+              </div>
+              {x.reason && <p className="text-xs text-slate-600 bg-slate-50 rounded px-2 py-1">{x.reason}</p>}
+              {x.status === "pending" ? (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Input value={notes[x.id] ?? ""} onChange={e => setNotes(n => ({ ...n, [x.id]: e.target.value }))} placeholder="ひとこと（任意・本人に届きます）" className="h-8 text-xs max-w-xs" />
+                  <Button size="sm" className="h-8" disabled={busy === x.id} onClick={() => decide(x, true)} data-leave-approve="">承認する</Button>
+                  <Button size="sm" variant="outline" className="h-8" disabled={busy === x.id} onClick={() => decide(x, false)}>見送る</Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                  <span>{x.status === "approved" ? "承認" : x.status === "rejected" ? "見送り" : "本人が取り下げ"}：{x.decidedBy}（{fmtDT(x.decidedAt)}）{x.decisionNote ? `「${x.decisionNote}」` : ""}</span>
+                  {x.status === "approved" && <button type="button" className="underline" disabled={busy === x.id} onClick={() => revoke(x)}>承認を取り消す</button>}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

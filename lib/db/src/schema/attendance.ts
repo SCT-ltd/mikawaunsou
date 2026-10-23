@@ -167,6 +167,8 @@ export const alcoholChecksTable = pgTable("alcohol_checks", {
   vehicle: text("vehicle"),
   note: text("note"),
   clientId: text("client_id"),
+  /** 検知器の表示の写真（staff_files） */
+  photoFileId: integer("photo_file_id"),
   updatedBy: text("updated_by"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

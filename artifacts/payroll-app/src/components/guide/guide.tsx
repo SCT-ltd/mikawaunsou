@@ -141,7 +141,8 @@ function GuideOverlay({ steps, title, index, setIndex, onClose }: {
   // 照らす場所を画面の中へ寄せる
   useEffect(() => {
     const el = findTarget(step.target);
-    if (el) el.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+    // 大きい物は頭が見えるように上へ寄せる（真ん中に寄せると見出しが画面の外に出る）
+    if (el) el.scrollIntoView({ block: el.getBoundingClientRect().height > window.innerHeight * 0.55 ? "start" : "center", inline: "nearest", behavior: "smooth" });
   }, [step]);
 
   // 位置を追いかける（スクロール・画面の大きさの変化・遅れて出てくる部品に合わせる）
@@ -185,6 +186,9 @@ function GuideOverlay({ steps, title, index, setIndex, onClose }: {
     // スマホは画面の下にまとめる。照らした所が下半分なら上に出す
     const low = rect && rect.top + rect.height / 2 > vh * 0.55;
     pos = low ? { left: 12, right: 12, top: 12 } : { left: 12, right: 12, bottom: 12 };
+  } else if (rect && rect.height > vh * 0.55) {
+    // 画面の半分より大きい物（お知らせの一覧・振替伝票など）は、上下に置く所が無いので右下の隅に出す
+    pos = { right: 16, bottom: 16, width: W };
   } else if (!rect) {
     pos = { left: (vw - W) / 2, top: Math.max(12, (vh - bh) / 2), width: W };
   } else {

@@ -15,3 +15,4 @@ export * from "./alerts";
 export * from "./audit";
 export * from "./transfer";
 export * from "./payroll_law";
+export * from "./staff";

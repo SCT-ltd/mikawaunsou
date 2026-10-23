@@ -137,7 +137,7 @@ router.get("/dashboard/transfer-slip", async (req, res) => {
   type Line = { account: string; summary: string; amount: number; people?: number; detail?: { label: string; amount: number }[] };
 
   // ── 借方（払うもの）
-  const allowAccount = (name: string) => /交通/.test(name) ? "旅費交通費" : /携帯|通信|電話/.test(name) ? "通信費" : null;
+  const allowAccount = (name: string) => /立替/.test(name) ? "立替金" : /交通/.test(name) ? "旅費交通費" : /携帯|通信|電話/.test(name) ? "通信費" : null;
   const special = new Map<string, { amount: number; people: Set<number>; names: Map<string, number> }>();
   const specialOf = new Map<number, number>(); // 社員ごとの「給料以外の科目」の合計
   for (const a of allow) {
@@ -156,7 +156,7 @@ router.get("/dashboard/transfer-slip", async (req, res) => {
   const debit: Line[] = [];
   if (salaryPeople) debit.push({ account: "給料手当", summary: "給料", amount: yen(salary), people: salaryPeople });
   if (miscPeople) debit.push({ account: "雑給", summary: "アルバイト（時給の人）", amount: yen(misc), people: miscPeople });
-  for (const acc of ["旅費交通費", "通信費"]) {
+  for (const acc of ["旅費交通費", "通信費", "立替金"]) {
     const g = special.get(acc); if (!g) continue;
     debit.push({ account: acc, summary: [...g.names.keys()].join("・"), amount: yen(g.amount), people: g.people.size });
   }

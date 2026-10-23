@@ -11,6 +11,7 @@ import {
   ChoiceSheet, AlcoholSheet, CorrectionSheet, PushCard, VehiclePicker,
   fmtHM, fmtMD, todayJst, type Choice, type AlcoholValues, type CorrectionValues, type CorrectionRequest,
 } from "@/components/driver/driver-parts";
+import { PermissionGate, usePermissions, WorkTimeBar, RequestsTab, MeTab, useStaffSummary, uploadStaffFile } from "@/components/driver/staff-extras";
 
 type EventType = "clock_in" | "clock_out" | "break_start" | "break_end";
 type Status = "未出勤" | "出勤中" | "休憩中" | "退勤済";
@@ -30,7 +31,7 @@ interface AttendanceRecord {
 
 interface Employee { id: number; employeeCode: string; name: string; department: string; isOfficeStaff?: boolean }
 interface Message { id: number; employeeId: number; sender: "office" | "employee"; content: string; createdAt: string; readAt?: string | null; pending?: boolean; attachments?: Attachment[] }
-interface PublicSettings { requireChecklist: boolean; requireAlcohol: boolean; vehicles: string[]; /** 取引先マスターの荷主の名前（日報で選べる） */ shippers?: string[] }
+interface PublicSettings { requireChecklist: boolean; requireAlcohol: boolean; vehicles: string[]; /** 取引先マスターの荷主の名前（日報で選べる） */ shippers?: string[]; /** 位置情報と通知を ON にしないと使えない */ requirePermissions?: boolean; /** 本人が給与明細を見られる */ staffPayslip?: boolean }
 interface AlcoholToday { items: Array<{ id: number; phase: string; valueMg: number | null; detected: boolean; checkedAt: string }>; lastChecker: string | null; lastMethod: string | null }
 
 const EVENT_LABELS: Record<EventType, string> = {
@@ -162,7 +163,28 @@ export default function DriverPage() {
   /** 送る前の添付（写真・PDF） */
   const [msgFiles, setMsgFiles] = useState<PendingFile[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [activeTab, setActiveTab] = useState<"attendance" | "messages" | "checklist">("attendance");
+  const [activeTab, setActiveTab] = useState<"attendance" | "messages" | "checklist" | "requests" | "me">("attendance");
+  /** 会社の設定を読み込んだか（読み込む前に「位置情報と通知」の画面を出さない） */
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  /** 文字を大きくする（年配の方向け・端末に覚える） */
+  const [bigText, setBigText] = useState(() => { try { return localStorage.getItem("drv.bigText") === "1"; } catch { return false; } });
+  useEffect(() => {
+    document.documentElement.style.fontSize = bigText ? "19px" : "";
+    try { localStorage.setItem("drv.bigText", bigText ? "1" : "0"); } catch { /* ignore */ }
+    return () => { document.documentElement.style.fontSize = ""; };
+  }, [bigText]);
+  /** 前回の勤務の値（車両・帰着メーター・着地）。出勤前に入れておき、メーターの打ち間違いも見る */
+  const [lastValues, setLastValues] = useState<{ vehicle: string | null; endOdometer: number | null; endOdometerDate: string | null; departure: string | null } | null>(null);
+  const [prefilled, setPrefilled] = useState(false);
+  /** 日常点検の「否」の写真を事務所に送る */
+  const [ngPhotoBusy, setNgPhotoBusy] = useState(false);
+  const [ngPhotoSent, setNgPhotoSent] = useState(false);
+  const [online, setOnline] = useState(() => navigator.onLine !== false);
+  useEffect(() => {
+    const on = () => setOnline(true), off = () => setOnline(false);
+    window.addEventListener("online", on); window.addEventListener("offline", off);
+    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
+  }, []);
   const activeTabRef = useRef(activeTab);
   activeTabRef.current = activeTab;
   /** 押してから1分は取り消せる（いちばん新しい打刻） */
@@ -474,6 +496,25 @@ export default function DriverPage() {
     return () => clearInterval(t);
   }, [pinVerified, employeeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (!pinVerified) return;
+    apiFetch(`/staff/${employeeId}/last-values`).then((v) => setLastValues(v)).catch(() => {});
+  }, [pinVerified, employeeId]);
+  useEffect(() => {
+    if (!lastValues || prefilled || loading || !draftLoadedRef.current) return;
+    if (getStatus(records) !== "未出勤") { setPrefilled(true); return; }
+    let used = false;
+    let nextStart = startOdometer, nextRoutes = routes;
+    if (!vehicle && lastValues.vehicle) { setVehicle(lastValues.vehicle); used = true; }
+    if (startOdometer.trim() === "" && lastValues.endOdometer != null) { nextStart = String(lastValues.endOdometer); setStartOdometer(nextStart); used = true; }
+    if (routes.length === 1 && !routes[0]!.dep && !routes[0]!.arr && lastValues.departure) { nextRoutes = [{ dep: lastValues.departure, arr: "" }]; setRoutes(nextRoutes); used = true; }
+    setPrefilled(true);
+    // 下書きとして残す（残さないと、15秒ごとの取り直しで空に戻ってしまう）
+    if (nextStart !== startOdometer || nextRoutes !== routes) { saveDraftLocal(nextRoutes, nextStart, endOdometer); saveDraftToApi(nextRoutes, nextStart, endOdometer); }
+    if (used) setSuccessMsg("前回の車両・メーター・着いた場所を入れておきました（違っていたら直してください）");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastValues, prefilled, loading, records]);
+
   // 現在時刻を毎秒更新
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
@@ -493,7 +534,7 @@ export default function DriverPage() {
         if (isQrKeyError(String((e as Error)?.message ?? ""))) setQrKeyMissing(true);
         else setPinVerified(true);
       });
-    apiFetch(`/attendance/settings/public`).then((s: PublicSettings) => setSettings(s)).catch(() => {});
+    apiFetch(`/attendance/settings/public`).then((s: PublicSettings) => { setSettings(s); setSettingsLoaded(true); }).catch(() => setSettingsLoaded(true));
   }, [fetchData, employeeId]);
 
   const loadSide = useCallback(() => {
@@ -565,6 +606,16 @@ export default function DriverPage() {
   }, [employeeId, pinVerified, loadMessages, markRead]);
 
   useEffect(() => { if (pinVerified) loadMessages(); }, [pinVerified, loadMessages]);
+
+  // ── 位置情報と通知（会社の設定で必須にできる） ──
+  const perms = usePermissions(pinVerified && settingsLoaded && settings.requirePermissions === true);
+  /** 有給の残り（申請の画面に出す） */
+  const ymNow = useMemo(() => { const t = todayJst(); return { y: Number(t.slice(0, 4)), m: Number(t.slice(5, 7)) }; }, []);
+  const summaryNow = useStaffSummary(employeeId, qrHeaders, pinVerified && activeTab === "requests", ymNow);
+  // スマホの設定から通知を許可して戻ってきたときも、この端末を通知の届け先に登録する
+  useEffect(() => {
+    if (pinVerified && perms.push === "granted") void subscribePush(employeeId, qrHeaders(), false).then((r) => setPush((x) => ({ ...x, state: r.state })));
+  }, [pinVerified, perms.push, employeeId]);
 
   // ── スマホの通知：許可されていれば黙って登録し直す（許可を求めるのはボタンを押したときだけ） ──
   useEffect(() => {
@@ -934,7 +985,14 @@ export default function DriverPage() {
   };
 
   const submitAlcohol = async (v: AlcoholValues): Promise<string | null> => {
-    const r = await sendOrQueue({ clientId: newClientId(), employeeId, path: "/attendance/alcohol", kind: "alcohol", body: { employeeId, ...v, vehicle: v.vehicle || null, note: v.note || null } }, qrHeaders());
+    // 検知器の表示の写真（任意）。写真は電波のある所でだけ送る（記録そのものは電波が無くても端末に溜まる）
+    let photoFileId: number | null = null;
+    if (v.photo) {
+      if (!navigator.onLine) return "写真は電波のある所で送ってください（写真を外せば、記録は端末に溜めて後で送れます）。";
+      try { photoFileId = await uploadStaffFile(employeeId, "alcohol", v.photo, qrHeaders); } catch (e) { return e instanceof Error ? e.message : "写真を送れませんでした"; }
+    }
+    const { photo: _photo, ...rest } = v;
+    const r = await sendOrQueue({ clientId: newClientId(), employeeId, path: "/attendance/alcohol", kind: "alcohol", body: { employeeId, ...rest, vehicle: v.vehicle || null, note: v.note || null, photoFileId } }, qrHeaders());
     if (!r.ok && !r.queued) return r.error;
     if (v.vehicle) setVehicle(v.vehicle);
     setAlcohol(a => ({ ...a, lastChecker: v.checker, lastMethod: v.method, items: [...a.items, { id: -Date.now(), phase: v.phase, valueMg: v.valueMg, detected: v.detected, checkedAt: new Date().toISOString() }] }));
@@ -946,6 +1004,23 @@ export default function DriverPage() {
     afterAlcoholRef.current = null;
     if (next && !v.detected) next();
     return null;
+  };
+
+  /** 日常点検の「否」を写真つきで事務所へ送る（チャットに届く） */
+  const sendNgPhoto = async (file: File) => {
+    if (!navigator.onLine) { setError("写真は電波のある所で送ってください。"); return; }
+    setNgPhotoBusy(true);
+    try {
+      const a = await uploadAttachment(BASE, employeeId, file, qrHeaders());
+      const text = `【日常点検で否】${ngItems.map(i => i.area).join("・")}${vehicle ? `（車両：${vehicle}）` : ""}`;
+      await apiFetch("/messages", { method: "POST", body: JSON.stringify({ employeeId, sender: "employee", content: text, attachmentIds: [a.id] }) });
+      setNgPhotoSent(true);
+      setSuccessMsg("点検の写真を事務所に送りました。事務所の判断を待ってください");
+      loadMessages();
+    } catch (e) {
+      setError(e instanceof Error && e.message ? e.message : "写真を送れませんでした。電波の良いところでもう一度送ってください。");
+    }
+    setNgPhotoBusy(false);
   };
 
   const submitCorrection = async (v: CorrectionValues): Promise<string | null> => {
@@ -1073,6 +1148,23 @@ export default function DriverPage() {
 
   const shiftLabel = shiftDate !== today ? `${fmtMD(shiftDate)}の勤務` : null;
 
+  // ── 位置情報と通知を ON にするまで使えない（会社の設定で切り替え） ──
+  if (settingsLoaded && settings.requirePermissions && perms.checked && !perms.ok) {
+    return (
+      <PermissionGate name={employee.name} geo={perms.geo} push={perms.push} pushMessage={push.message}
+        onGeo={() => { void perms.requestGeo(); }}
+        onPush={async () => { await enablePush(); void perms.refresh(); }} />
+    );
+  }
+  /** 出勤の前にまだ済んでいないこと（出勤ボタンの近くに出す） */
+  const notReady: Array<{ label: string; go: () => void }> = [];
+  if (status === "未出勤") {
+    if (!checklistDone) notReady.push({ label: `日常点検（あと${TOTAL_ITEMS - checkedCount}項目）`, go: () => setActiveTab("checklist") });
+    if (!employee.isOfficeStaff && !hasAlcoholBefore) notReady.push({ label: "乗る前のアルコールチェック", go: () => { afterAlcoholRef.current = null; setAlcoholPhase("before"); } });
+  }
+  const startKmNum = odo(startOdometer);
+  const startBelowLast = lastValues?.endOdometer != null && startKmNum !== null && Number.isFinite(startKmNum) && startKmNum < lastValues.endOdometer;
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col pb-20">
       {/* ヘッダー */}
@@ -1082,6 +1174,10 @@ export default function DriverPage() {
           <p className="font-bold text-lg leading-tight">{employee.name}</p>
           <p className="text-sm text-muted-foreground">{employee.department} · {employee.employeeCode}</p>
         </div>
+        <button type="button" onClick={() => setBigText(v => !v)} aria-pressed={bigText} title="文字の大きさを変える"
+          className={`shrink-0 rounded-lg border px-2 py-1 text-sm font-bold ${bigText ? "bg-primary text-primary-foreground border-primary" : "bg-white text-gray-600 border-gray-200"}`} data-big-text="">
+          {bigText ? "あA" : "Aa"}
+        </button>
         <div className={`px-3 py-1 rounded-full text-sm font-semibold ${statusColor[status]}`}>{status}</div>
       </div>
 
@@ -1159,6 +1255,8 @@ export default function DriverPage() {
             </div>
           )}
 
+          {working && !employee.isOfficeStaff && <WorkTimeBar records={records} now={now} />}
+
           {/* 発着地入力（複数行対応） */}
           <div className="mx-4 mt-3 mb-1">
             <p className="text-xs font-semibold text-muted-foreground mb-1.5">📍 発着地（任意・退勤のとき日報に残ります）</p>
@@ -1233,6 +1331,11 @@ export default function DriverPage() {
               if (e < s) return <div className="mt-1.5 text-center text-sm font-semibold text-red-600">帰着が出発より小さくなっています</div>;
               return <div className={`mt-1.5 text-center text-sm font-semibold ${e - s > 1500 ? "text-red-600" : "text-primary"}`}>走行距離：{(e - s).toFixed(1)} km{e - s > 1500 ? "（桁を確かめてください）" : ""}</div>;
             })()}
+            {startBelowLast && (
+              <div className="mt-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700" data-odo-warn="">
+                ⚠️ 出発のメーター（{startKmNum}）が、前の勤務の帰着（{lastValues!.endOdometer}・{lastValues!.endOdometerDate ? fmtMD(lastValues!.endOdometerDate) : ""}）より小さくなっています。車を替えていなければ数字を確かめてください。
+              </div>
+            )}
             {working && endOdometer.trim() === "" && (
               <div className="mt-2 flex items-center justify-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
                 ⚠️ 退勤するには「帰着時（km）」の入力が必要です
@@ -1281,6 +1384,15 @@ export default function DriverPage() {
               <span className="text-4xl">🔵</span><span>休憩終了</span>
             </button>
           </div>
+
+          {notReady.length > 0 && (
+            <div className="mx-4 -mt-2 mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3" data-not-ready="">
+              <p className="text-xs font-bold text-amber-900 mb-1.5">出勤の前に、まだ済んでいないこと</p>
+              <div className="flex flex-wrap gap-1.5">
+                {notReady.map(n => <button key={n.label} type="button" onClick={n.go} className="rounded-full bg-white border border-amber-300 px-3 py-1.5 text-xs font-bold text-amber-900">{n.label} ›</button>)}
+              </div>
+            </div>
+          )}
 
           {/* 退勤のあと：乗った後のアルコールチェック */}
           {status === "退勤済" && !hasAlcoholAfter && !employee.isOfficeStaff && (
@@ -1423,6 +1535,10 @@ export default function DriverPage() {
             {ngItems.length > 0 && (
               <div className="px-4 py-3 bg-red-50 border-t border-red-100">
                 <p className="text-red-700 font-bold text-xs mb-2">⚠️ 異常あり — 事務所に自動で知らせました。事務所の判断を待ってから運行してください</p>
+                <label className={`mb-2.5 flex items-center justify-center gap-2 rounded-xl border-2 border-dashed py-3 text-sm font-bold cursor-pointer ${ngPhotoSent ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-red-300 bg-white text-red-700"} ${ngPhotoBusy ? "opacity-50 pointer-events-none" : ""}`} data-ng-photo="">
+                  {ngPhotoBusy ? "送っています…" : ngPhotoSent ? "✓ 写真を送りました（もう1枚送る）" : "📷 傷んでいる所の写真を撮って事務所に送る"}
+                  <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={(e) => { const f = e.target.files?.[0]; if (f) void sendNgPhoto(f); e.target.value = ""; }} />
+                </label>
                 <ul className="space-y-1">
                   {ngItems.map(item => (
                     <li key={item.id} className="text-xs text-red-600 flex items-center gap-1.5">
@@ -1451,14 +1567,20 @@ export default function DriverPage() {
         </div>
       )}
 
+      {activeTab === "requests" && (
+        <RequestsTab employeeId={employeeId} headers={qrHeaders} online={online} paidLeaveRemaining={summaryNow?.paidLeave?.remaining ?? null}
+          onDone={(m) => setSuccessMsg(m)} />
+      )}
+      {activeTab === "me" && <MeTab employeeId={employeeId} headers={qrHeaders} payslipEnabled={settings.staffPayslip !== false} />}
+
       {/* ── フッターナビゲーション ── */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex z-50 safe-area-pb" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
-        <button onClick={() => setActiveTab("attendance")}
+        <button onClick={() => setActiveTab("attendance")} data-tab="attendance"
           className={`flex-1 flex flex-col items-center justify-center gap-1 py-3 transition-colors ${activeTab === "attendance" ? "text-primary" : "text-gray-400"}`}>
           <span className="text-2xl">🟢</span>
           <span className={`text-xs font-semibold ${activeTab === "attendance" ? "text-primary" : "text-gray-400"}`}>勤怠入力</span>
         </button>
-        <button onClick={() => { setActiveTab("messages"); setUnreadCount(0); }}
+        <button onClick={() => { setActiveTab("messages"); setUnreadCount(0); }} data-tab="messages"
           className={`flex-1 flex flex-col items-center justify-center gap-1 py-3 relative transition-colors ${activeTab === "messages" ? "text-primary" : "text-gray-400"}`}>
           <div className="relative">
             <span className="text-2xl">💬</span>
@@ -1468,7 +1590,7 @@ export default function DriverPage() {
           </div>
           <span className={`text-xs font-semibold ${activeTab === "messages" ? "text-primary" : "text-gray-400"}`}>メッセージ</span>
         </button>
-        <button onClick={() => setActiveTab("checklist")}
+        <button onClick={() => setActiveTab("checklist")} data-tab="checklist"
           className={`flex-1 flex flex-col items-center justify-center gap-1 py-3 relative transition-colors ${activeTab === "checklist" ? "text-primary" : "text-gray-400"}`}>
           <div className="relative">
             <span className="text-2xl">📋</span>
@@ -1476,7 +1598,17 @@ export default function DriverPage() {
               <span className="absolute -top-1 -right-2 bg-gray-400 text-white text-xs font-bold rounded-full w-4 h-4 flex items-center justify-center leading-none">{TOTAL_ITEMS - checkedCount}</span>
             )}
           </div>
-          <span className={`text-xs font-semibold ${activeTab === "checklist" ? "text-primary" : "text-gray-400"}`}>チェックリスト</span>
+          <span className={`text-xs font-semibold ${activeTab === "checklist" ? "text-primary" : "text-gray-400"}`}>点検</span>
+        </button>
+        <button onClick={() => setActiveTab("requests")} data-tab="requests"
+          className={`flex-1 flex flex-col items-center justify-center gap-1 py-3 transition-colors ${activeTab === "requests" ? "text-primary" : "text-gray-400"}`}>
+          <span className="text-2xl">📝</span>
+          <span className={`text-xs font-semibold ${activeTab === "requests" ? "text-primary" : "text-gray-400"}`}>申請</span>
+        </button>
+        <button onClick={() => setActiveTab("me")} data-tab="me"
+          className={`flex-1 flex flex-col items-center justify-center gap-1 py-3 transition-colors ${activeTab === "me" ? "text-primary" : "text-gray-400"}`}>
+          <span className="text-2xl">👤</span>
+          <span className={`text-xs font-semibold ${activeTab === "me" ? "text-primary" : "text-gray-400"}`}>わたし</span>
         </button>
       </div>
 

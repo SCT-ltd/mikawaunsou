@@ -400,8 +400,10 @@ export async function saveMonthItems(
 
     if (!(await hasLaterSet(tx, employeeId, year, month))) {
       await tx.delete(employeeAllowancesTable).where(eq(employeeAllowancesTable.employeeId, employeeId));
-      if (allowances.length > 0) {
-        await tx.insert(employeeAllowancesTable).values(allowances.map((a, i) => ({
+      // 立替金の精算はその月だけのもの。次の月の初期値に写さない（写すと毎月払ってしまう）
+      const forMaster = allowances.filter((a) => a.allowanceName !== REIMBURSE_NAME);
+      if (forMaster.length > 0) {
+        await tx.insert(employeeAllowancesTable).values(forMaster.map((a, i) => ({
           employeeId, allowanceDefinitionId: a.allowanceDefinitionId, amount: a.amount, sortOrder: i,
         })));
       }
@@ -438,5 +440,35 @@ export async function ensureMonthItems(
     const base = emp.salaryType === "daily" ? (emp.baseSalary ?? 0) : null;
     await writeMonthRows(tx, emp.id, year, month, base, again.allowances, again.deductions);
     return getMonthItems(emp.id, year, month, tx);
+  });
+}
+
+/**
+ * 経費・立替の申請を承認した分を、その月の手当「立替金精算」に足す（delta が負なら引く）。
+ * 確定済みの月には入れない（MonthLockedError）。手当の定義が無ければ作る（課税しない・雇用保険の対象外）。
+ * その月の控えがまだ無ければ、作りたてと同じ扱い（勤怠で決まる手当は次の計算で入る）にする。
+ */
+export const REIMBURSE_NAME = "立替金精算";
+
+export async function adjustReimbursement(employeeId: number, year: number, month: number, delta: number): Promise<void> {
+  await db.transaction(async (tx) => {
+    if (await isMonthLocked(employeeId, year, month, tx)) throw new MonthLockedError();
+    let [def] = await tx.select().from(allowanceDefinitionsTable).where(eq(allowanceDefinitionsTable.name, REIMBURSE_NAME));
+    if (!def) {
+      [def] = await tx.insert(allowanceDefinitionsTable).values({
+        name: REIMBURSE_NAME, description: "スタッフが打刻ページから申請した経費・立替を、事務所が承認した分（給与と一緒に払う・課税しない）",
+        isTaxable: false, calculationType: "variable", isActive: true, sortOrder: 900, excludeFromEmploymentInsurance: true,
+      }).returning();
+    }
+    const current = await getMonthItems(employeeId, year, month, tx);
+    const allowances = current.allowances.map((x) => ({ ...x }));
+    const idx = allowances.findIndex((x) => x.allowanceDefinitionId === def!.id);
+    const next = Math.max(0, (idx >= 0 ? allowances[idx]!.amount : 0) + delta);
+    if (idx >= 0) { if (next > 0) allowances[idx]!.amount = next; else allowances.splice(idx, 1); }
+    else if (next > 0) allowances.push({ allowanceDefinitionId: def!.id, allowanceName: def!.name, isTaxable: false, excludeFromEmploymentInsurance: true, amount: next, sortOrder: allowances.length });
+    await writeMonthRows(tx, employeeId, year, month, undefined, allowances, current.deductions);
+    if (!current.exists) {
+      await tx.update(employeeMonthSetsTable).set({ autoValues: AUTO_PENDING }).where(sameMonth(employeeMonthSetsTable, employeeId, year, month));
+    }
   });
 }

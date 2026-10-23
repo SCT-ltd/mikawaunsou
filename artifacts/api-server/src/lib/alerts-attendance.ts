@@ -1,6 +1,6 @@
 import {
   db, employeesTable, attendanceRecordsTable, absenceRecordsTable, attendanceCorrectionsTable,
-  dailyInspectionsTable, alcoholChecksTable,
+  dailyInspectionsTable, alcoholChecksTable, expenseClaimsTable, leaveRequestsTable,
 } from "@workspace/db";
 import { and, eq, gte, lte, inArray } from "drizzle-orm";
 import type { EmployeeAlert } from "./alerts";
@@ -123,6 +123,20 @@ export async function computeAttendanceAlerts(): Promise<EmployeeAlert[]> {
   if (corrections.length > 0) {
     out.push({ key: `corrections:${corrections.map(c => c.id).join(",")}`.slice(0, 200), level: "warn", href: "/attendance-records",
       title: `打刻の修正申請が${corrections.length}件あります`, body: "内容を確かめて、承認するか見送ってください。" });
+  }
+  // ── スタッフの申請（経費・立替・休み） ──
+  const [pendExp, pendLeave] = await Promise.all([
+    db.select({ id: expenseClaimsTable.id, amount: expenseClaimsTable.amount }).from(expenseClaimsTable).where(eq(expenseClaimsTable.status, "pending")),
+    db.select({ id: leaveRequestsTable.id }).from(leaveRequestsTable).where(eq(leaveRequestsTable.status, "pending")),
+  ]);
+  if (pendExp.length > 0) {
+    out.push({ key: `expenses:${pendExp.map(c => c.id).join(",")}`.slice(0, 200), level: "warn", href: "/attendance-records?tab=expenses",
+      title: `経費・立替の申請が${pendExp.length}件あります（合計${pendExp.reduce((t, c) => t + c.amount, 0).toLocaleString("ja-JP")}円）`,
+      body: "レシートを確かめて、承認するか見送ってください。承認すると給与と一緒に払います。" });
+  }
+  if (pendLeave.length > 0) {
+    out.push({ key: `leaves:${pendLeave.map(c => c.id).join(",")}`.slice(0, 200), level: "warn", href: "/attendance-records?tab=leaves",
+      title: `休みの申請が${pendLeave.length}件あります`, body: "内容を確かめて、承認するか見送ってください。" });
   }
   // ── 予定（シフト）を過ぎても出勤していない（今日） ──
   try {

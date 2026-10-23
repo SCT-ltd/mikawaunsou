@@ -23,6 +23,7 @@ import auditRouter from "./audit";
 import officeToolsRouter from "./office_tools";
 import payrollLawRouter from "./payroll-law";
 import mapRouter from "./map";
+import staffRouter from "./staff";
 import { requireAdmin } from "../lib/auth-middleware";
 import { audit, takeSnap, changesOf, redact, employeeName } from "../lib/audit";
 import { findSpec } from "../lib/audit-catalog";
@@ -76,6 +77,8 @@ function isPublicDriverFlowRequest(req: Request): boolean {
   // チャットの添付（本人の会話だけ。中で暗証番号を確かめた端末か確かめる）
   if (m === "POST" && /^\/messages\/\d+\/attachments$/.test(p)) return true;
   if (m === "GET"  && /^\/messages\/\d+\/attachments\/\d+$/.test(p)) return true;
+  // スタッフの打刻ページの機能（経費・休みの申請・わたしの記録・給与明細・写真）。本人だけ（中で暗証番号を確かめた端末か確かめる）
+  if ((m === "GET" || m === "POST") && /^\/staff\/\d+\/[a-z-]+(\/\d+(\/cancel)?)?$/.test(p)) return true;
   return false;
 }
 
@@ -243,6 +246,8 @@ router.use(calendarRouter);    // カレンダー（見るのはログインし�
 router.use(officeToolsRouter); // 確定前チェック・振込口座・全銀の書き出し
 router.use(payrollLawRouter);  // 給与計算と法令の画面（"/payroll-law" プレフィックスで admin）
 router.use(mapRouter);         // リアルタイムマップ：道すじ・走行距離・場所（"/map" プレフィックスで admin）
+router.use("/staff-admin", requireAdmin);
+router.use(staffRouter);       // スタッフの打刻ページの申請・記録・給与明細（"/staff-admin" は admin）
 router.use(auditRouter);       // 操作の記録（管理者だけ）   // 保険料率マスターの GET はログインのみ、POST/PUT/DELETE は admin（ファイル側）
 
 export { requireAdmin };

@@ -3,6 +3,7 @@ import { logger } from "./lib/logger";
 import { startAlertJob } from "./lib/alerts";
 import { startupChecks } from "./lib/startup";
 import { startAttendanceJobs } from "./lib/alerts-attendance";
+import { startStaffAlertJobs } from "./lib/staff-alerts";
 import { pool } from "@workspace/db";
 
 const rawPort = process.env["PORT"];
@@ -32,6 +33,7 @@ const server = app.listen(port, (err) => {
   startAlertJob();
   // 毎朝、前の日から開いたままの勤務（退勤の打ち忘れ）を本人のスマホに知らせる
   startAttendanceJobs();
+  startStaffAlertJobs();
 });
 
 // 止めるとき（docker compose の入れ替え）に、受け付け中の要求を終えてから閉じる。

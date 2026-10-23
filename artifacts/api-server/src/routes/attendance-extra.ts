@@ -13,6 +13,7 @@ import { monthCompliance } from "../lib/compliance";
 import { later, pushOnce, pushToOffice, pushToEmployee } from "../lib/push";
 import { notifyAttendanceChanged, inspectionView } from "./attendance";
 import { audit } from "../lib/audit";
+import { ownFile } from "./staff";
 
 /**
  * 勤怠まわりの追加の機能。
@@ -37,7 +38,7 @@ router.get("/attendance/settings/public", async (_req, res) => {
   // 日報の「荷主」で選べるように、取引先マスターの荷主の名前だけを返す（住所・電話は出さない）
   const shippers = (await db.select({ name: placesTable.name }).from(placesTable)
     .where(and(eq(placesTable.active, true), eq(placesTable.kind, "shipper"))).orderBy(placesTable.name)).map((r) => r.name);
-  return res.json({ requireChecklist: s.requireChecklist, requireAlcohol: s.requireAlcohol, vehicles: s.vehicles, officeRounding: s.officeRounding, showUninspected: s.showUninspected, shippers });
+  return res.json({ requireChecklist: s.requireChecklist, requireAlcohol: s.requireAlcohol, vehicles: s.vehicles, officeRounding: s.officeRounding, showUninspected: s.showUninspected, shippers, requirePermissions: s.requirePermissions, staffPayslip: s.staffPayslip });
 });
 router.get("/attendance/settings", requireAdmin, async (_req, res) => res.json(await getAttendanceSettings()));
 router.put("/attendance/settings", requireAdmin, async (req, res) => {
@@ -179,7 +180,7 @@ router.post("/attendance/corrections/:id/decide", requireAdmin, async (req, res)
 const METHODS = ["face", "phone", "video", "other"] as const;
 
 router.post("/attendance/alcohol", async (req, res) => {
-  const b = (req.body ?? {}) as { employeeId?: number; phase?: string; valueMg?: unknown; detected?: boolean; method?: string; checker?: string; vehicle?: string; note?: string; clientId?: string; clientTime?: string; offline?: boolean };
+  const b = (req.body ?? {}) as { employeeId?: number; phase?: string; valueMg?: unknown; detected?: boolean; method?: string; checker?: string; vehicle?: string; note?: string; clientId?: string; clientTime?: string; offline?: boolean; photoFileId?: unknown };
   const who = await resolveActor(req, res, b.employeeId);
   if (!who) return;
   if (b.phase !== "before" && b.phase !== "after") return res.status(400).json({ error: "乗る前か乗った後かを選んでください" });
@@ -198,8 +199,10 @@ router.post("/attendance/alcohol", async (req, res) => {
   const workDate = await currentShiftDate(who.employeeId, at);
   const [emp] = await db.select({ name: employeesTable.name }).from(employeesTable).where(eq(employeesTable.id, who.employeeId));
   const clientId = typeof b.clientId === "string" && CLIENT_RE.test(b.clientId) ? b.clientId : null;
+  // 検知器の表示の写真（任意・本人が撮った物だけ）
+  const photoFileId = b.photoFileId == null || b.photoFileId === "" ? null : await ownFile(who.employeeId, b.photoFileId, "alcohol");
   try {
-    const [row] = await db.insert(alcoholChecksTable).values({
+    const [row] = await db.insert(alcoholChecksTable).values({ photoFileId,
       employeeId: who.employeeId, employeeName: emp?.name ?? "", workDate, phase: b.phase, checkedAt: at,
       valueMg: value, detected, method, checker: str(b.checker, 80), vehicle: str(b.vehicle, 40), note: str(b.note, 500), clientId,
     }).returning();

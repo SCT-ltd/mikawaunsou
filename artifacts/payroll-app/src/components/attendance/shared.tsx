@@ -46,6 +46,8 @@ export interface Inspection {
   officeAction: string | null; officeDecision: "ok" | "ng" | null; decidedBy: string | null; decidedAt: string | null; updatedAt: string;
 }
 export interface AlcoholCheck {
+  /** 検知器の表示の写真（staff_files） */
+  photoFileId?: number | null;
   id: number; employeeId: number; employeeName: string; workDate: string; phase: "before" | "after"; checkedAt: string;
   valueMg: number | null; detected: boolean; method: string; checker: string | null; vehicle: string | null; note: string | null;
 }

@@ -158,6 +158,20 @@ export const SPECS: AuditSpec[] = [
   { method: "POST", re: /^\/messages\/broadcast$/, category: "メッセージ", label: "一斉にメッセージを送信" },
   // 添付を上げただけでは残さない（送ったメッセージの記録に「attachmentIds」として残る）
   { method: "POST", re: /^\/messages\/\d+\/attachments$/, category: "メッセージ", skip: true, label: "" },
+  { method: "POST", re: /^\/messages\/broadcast\/attachments$/, category: "メッセージ", skip: true, label: "" },
+
+  // ── スタッフの打刻ページの申請（経費・立替・休み） ───────────────
+  { method: "POST", re: /^\/staff\/\d+\/files$/, category: "勤怠", skip: true, label: "" },
+  { method: "POST", re: /^\/staff\/(\d+)\/expenses$/, category: "勤怠", driver: true, emp: p1, label: "経費・立替を申請" },
+  { method: "POST", re: /^\/staff\/(\d+)\/expenses\/\d+\/cancel$/, category: "勤怠", driver: true, emp: p1, label: "経費・立替の申請を取り下げ" },
+  { method: "POST", re: /^\/staff\/(\d+)\/leaves$/, category: "勤怠", driver: true, emp: p1, label: "休みを申請" },
+  { method: "POST", re: /^\/staff\/(\d+)\/leaves\/\d+\/cancel$/, category: "勤怠", driver: true, emp: p1, label: "休みの申請を取り下げ" },
+  { method: "POST", re: /^\/staff-admin\/expenses\/(\d+)\/decide$/, category: "給与", snap: byId("expense_claims"),
+    label: (req) => ((req.body as Record<string, unknown>)?.["approve"] ? "経費・立替の申請を承認" : "経費・立替の申請を見送り") },
+  { method: "POST", re: /^\/staff-admin\/expenses\/(\d+)\/revoke$/, category: "給与", snap: byId("expense_claims"), label: "経費・立替の承認を取り消し" },
+  { method: "POST", re: /^\/staff-admin\/leaves\/(\d+)\/decide$/, category: "勤怠", snap: byId("leave_requests"),
+    label: (req) => ((req.body as Record<string, unknown>)?.["approve"] ? "休みの申請を承認" : "休みの申請を見送り") },
+  { method: "POST", re: /^\/staff-admin\/leaves\/(\d+)\/revoke$/, category: "勤怠", snap: byId("leave_requests"), label: "休みの承認を取り消し" },
   { method: "POST", re: /^\/messages\/\d+\/read$/, category: "メッセージ", skip: true, label: "" },
   { method: "POST", re: /^\/push\/subscribe$/, category: "その他", skip: true, label: "" },
   { method: "POST", re: /^\/alerts\/read(-all)?$/, category: "その他", skip: true, label: "" },
@@ -182,6 +196,7 @@ export const MANUAL_LABELS: Record<string, [string, AuditCategory]> = {
   "auth.login.fail": ["ログインに失敗", "ログイン"],
   "auth.logout": ["ログアウト", "ログイン"],
   "payroll.confirm": ["給与明細を確定", "給与"],
+  "staff.payslip.view": ["給与明細を見た（本人・打刻ページ）", "給与"],
   "payroll.unconfirm": ["給与明細の確定を解除", "給与"],
   "user.create": ["ユーザーを追加", "ユーザー"],
   "user.update": ["ユーザーを変更", "ユーザー"],
