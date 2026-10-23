@@ -361,6 +361,7 @@ export default function MessagesPage() {
         broadcasting={broadcasting}
         done={broadcastDone}
         onSend={sendBroadcast}
+        onSelectMany={(ids, on) => setBroadcastSelected(prev => { const next = new Set(prev); for (const id of ids) { if (on) next.add(id); else next.delete(id); } return next; })}
         files={broadcastFiles}
         onFiles={(list) => { const r = addPending(broadcastFiles, list); setBroadcastFiles(r.next); if (r.error) toast({ title: r.error, variant: "destructive" }); }}
         onRemoveFile={(key) => setBroadcastFiles((prev) => { const f = prev.find((x) => x.key === key); if (f?.preview) URL.revokeObjectURL(f.preview); return prev.filter((x) => x.key !== key); })}
