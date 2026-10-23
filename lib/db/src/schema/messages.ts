@@ -1,4 +1,7 @@
-import { pgTable, serial, text, integer, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, boolean, index, customType } from "drizzle-orm/pg-core";
+
+/** 添付の中身（PostgreSQL の bytea） */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
 import { employeesTable } from "./employees";
 
 export const messagesTable = pgTable("messages", {
@@ -28,3 +31,22 @@ export const pushSubscriptionsTable = pgTable("push_subscriptions", {
 
 export type PushSubscription = typeof pushSubscriptionsTable.$inferSelect;
 export type InsertPushSubscription = typeof pushSubscriptionsTable.$inferInsert;
+
+/**
+ * メッセージの添付（写真・PDF）。中身は DB に入れる（バックアップ＝pg_dump に一緒に入る）。
+ *   送る前に上げて番号をもらい（message_id は空）、メッセージを送るときに番号を付けてつなぐ。
+ *   つながないまま1日たったものは消す。見られるのは、その会話の本人（暗証番号を確かめた端末）と管理者だけ。
+ */
+export const messageAttachmentsTable = pgTable("message_attachments", {
+  id: serial("id").primaryKey(),
+  /** どの会話か（社員）。メッセージにつなぐときも同じ社員の会話かを確かめる */
+  employeeId: integer("employee_id").notNull(),
+  messageId: integer("message_id"),
+  /** 上げた側（office｜employee） */
+  uploadedBy: text("uploaded_by").notNull(),
+  fileName: text("file_name").notNull(),
+  mime: text("mime").notNull(),
+  size: integer("size").notNull(),
+  data: bytea("data").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => [index("message_attachments_message").on(t.messageId), index("message_attachments_emp").on(t.employeeId)]);

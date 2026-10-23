@@ -73,6 +73,9 @@ function isPublicDriverFlowRequest(req: Request): boolean {
   if (m === "GET"  && /^\/messages\/\d+\/unread-count$/.test(p)) return true;
   if (m === "POST" && /^\/messages\/\d+\/read$/.test(p)) return true;
   if (m === "POST" && p === "/messages") return true;
+  // チャットの添付（本人の会話だけ。中で暗証番号を確かめた端末か確かめる）
+  if (m === "POST" && /^\/messages\/\d+\/attachments$/.test(p)) return true;
+  if (m === "GET"  && /^\/messages\/\d+\/attachments\/\d+$/.test(p)) return true;
   return false;
 }
 

@@ -1,8 +1,9 @@
-import { Router, type Response } from "express";
+import express, { Router, type Response } from "express";
 import webpush from "web-push";
 import { paramStr } from "../lib/params";
-import { db, messagesTable, pushSubscriptionsTable, employeesTable } from "@workspace/db";
-import { eq, and, desc, asc, isNull, sql } from "drizzle-orm";
+import { db, messagesTable, pushSubscriptionsTable, employeesTable, messageAttachmentsTable } from "@workspace/db";
+import { eq, and, desc, asc, isNull, sql, inArray, lt } from "drizzle-orm";
+import { logger } from "../lib/logger";
 import { requireAdmin, requireOwnerOrAdmin } from "../lib/auth-middleware";
 import { driverAccess, PIN_REQUIRED_BODY, PIN_NOT_SET_BODY } from "../lib/driver-token";
 import { isAdminReq } from "../lib/roles";
@@ -35,6 +36,85 @@ function broadcastToEmployee(employeeId: number, data: unknown) {
   // office (0) も通知
   sseClients.get(0)?.forEach(r => r.write(payload));
 }
+
+// ── 添付（写真・PDF） ─────────────────────────────────────
+// 送る前に POST /messages/:社員/attachments で上げて番号をもらい、POST /messages の attachmentIds でつなぐ。
+// 写真は端末で長い辺1600pxに縮めてから送る（そのままだと1枚数MBになる）。
+const ATTACH_TYPES: Record<string, string> = {
+  "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif", "application/pdf": "pdf",
+};
+const ATTACH_MAX_BYTES = 10 * 1024 * 1024;
+const ATTACH_MAX_PER_MESSAGE = 4;
+export type AttachmentMeta = { id: number; fileName: string; mime: string; size: number };
+const metaCols = { id: messageAttachmentsTable.id, messageId: messageAttachmentsTable.messageId, fileName: messageAttachmentsTable.fileName, mime: messageAttachmentsTable.mime, size: messageAttachmentsTable.size };
+
+/** メッセージに付いている添付（中身は除く） */
+async function attachmentsOf(messageIds: number[]): Promise<Map<number, AttachmentMeta[]>> {
+  const out = new Map<number, AttachmentMeta[]>();
+  if (messageIds.length === 0) return out;
+  const rows = await db.select(metaCols).from(messageAttachmentsTable).where(inArray(messageAttachmentsTable.messageId, messageIds)).orderBy(asc(messageAttachmentsTable.id));
+  for (const r of rows) {
+    if (!out.has(r.messageId!)) out.set(r.messageId!, []);
+    out.get(r.messageId!)!.push({ id: r.id, fileName: r.fileName, mime: r.mime, size: r.size });
+  }
+  return out;
+}
+
+/** 添付の中身を受け取る。大きすぎるときは 413 で理由を返す（そのままだと 500 になる） */
+const rawParser = express.raw({ type: () => true, limit: ATTACH_MAX_BYTES + 1024 });
+const rawBody = (req: express.Request, res: express.Response, next: express.NextFunction) =>
+  rawParser(req, res, (err?: unknown) => {
+    if (!err) return next();
+    const st = (err as { status?: number }).status;
+    return res.status(st === 413 ? 413 : 400).json({ error: st === 413 ? "1つのファイルは10MBまでです" : "ファイルを受け取れませんでした" });
+  });
+const ownerOf = (req: { params: Record<string, unknown> }) => parseInt(paramStr(req.params["employeeId"] as string), 10);
+router.post("/messages/:employeeId/attachments", requireOwnerOrAdmin(ownerOf, { requirePin: true }),
+  rawBody, async (req, res) => {
+  const employeeId = ownerOf(req);
+  if (Number.isNaN(employeeId)) return res.status(400).json({ error: "Invalid employeeId" });
+  const mime = String(req.headers["content-type"] ?? "").split(";")[0]!.trim().toLowerCase();
+  if (!ATTACH_TYPES[mime]) return res.status(400).json({ error: "送れるのは写真（JPEG・PNG・WebP・GIF）とPDFだけです" });
+  const data = req.body as Buffer;
+  if (!Buffer.isBuffer(data) || data.length === 0) return res.status(400).json({ error: "ファイルが空です" });
+  if (data.length > ATTACH_MAX_BYTES) return res.status(413).json({ error: "1つのファイルは10MBまでです" });
+  // 中身が名乗った種類と違うもの（拡張子を変えただけの物など）は断る
+  const head = data.subarray(0, 12);
+  const looks = mime === "application/pdf" ? head.subarray(0, 4).toString("latin1") === "%PDF"
+    : mime === "image/jpeg" ? head[0] === 0xff && head[1] === 0xd8
+    : mime === "image/png" ? head.subarray(1, 4).toString("latin1") === "PNG"
+    : mime === "image/gif" ? head.subarray(0, 3).toString("latin1") === "GIF"
+    : head.subarray(8, 12).toString("latin1") === "WEBP";
+  if (!looks) return res.status(400).json({ error: "ファイルの中身が写真・PDFではありません" });
+  let fileName = "添付";
+  try { fileName = decodeURIComponent(String(req.headers["x-file-name"] ?? "")).replace(/[\/\r\n\t"]/g, "_").trim().slice(0, 120) || fileName; } catch { /* 名前が読めなければ既定 */ }
+  const [row] = await db.insert(messageAttachmentsTable).values({
+    employeeId, messageId: null, uploadedBy: isAdminReq(req) ? "office" : "employee",
+    fileName, mime, size: data.length, data, createdAt: new Date(),
+  }).returning(metaCols);
+  return res.status(201).json({ id: row!.id, fileName: row!.fileName, mime: row!.mime, size: row!.size });
+});
+
+router.get("/messages/:employeeId/attachments/:id", requireOwnerOrAdmin(ownerOf, { requirePin: true }), async (req, res) => {
+  const employeeId = ownerOf(req);
+  const id = parseInt(paramStr(req.params["id"]), 10);
+  const [a] = await db.select().from(messageAttachmentsTable).where(and(eq(messageAttachmentsTable.id, id), eq(messageAttachmentsTable.employeeId, employeeId)));
+  if (!a) return res.status(404).json({ error: "添付が見つかりません" });
+  const dl = req.query["download"] === "1";
+  res.setHeader("Content-Type", a.mime);
+  res.setHeader("Content-Length", String(a.data.length));
+  res.setHeader("Content-Disposition", `${dl ? "attachment" : "inline"}; filename="file.${ATTACH_TYPES[a.mime] ?? "bin"}"; filename*=UTF-8''${encodeURIComponent(a.fileName)}`);
+  res.setHeader("Cache-Control", "private, max-age=86400");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  return res.end(a.data);
+});
+
+// つながないまま1日たった添付を消す（上げたあと送らずにやめた分）
+setInterval(() => {
+  void db.delete(messageAttachmentsTable)
+    .where(and(isNull(messageAttachmentsTable.messageId), lt(messageAttachmentsTable.createdAt, new Date(Date.now() - 24 * 3600_000))))
+    .catch((err) => logger.warn({ err }, "使われなかった添付を消せませんでした"));
+}, 3600_000).unref();
 
 // ── VAPID公開鍵 ──────────────────────────────────────
 router.get("/messages/vapid-public-key", (_req, res) => {
@@ -209,7 +289,8 @@ router.get("/messages/:employeeId", requireOwnerOrAdmin(req => parseInt(paramStr
     .from(messagesTable)
     .where(eq(messagesTable.employeeId, employeeId))
     .orderBy(asc(messagesTable.createdAt));
-  return res.json(messages);
+  const att = await attachmentsOf(messages.map((m) => m.id));
+  return res.json(messages.map((m) => ({ ...m, attachments: att.get(m.id) ?? [] })));
 });
 
 // ── 既読処理 ───────────────────────────────────────────
@@ -257,13 +338,17 @@ router.post("/messages/:employeeId/read", requireOwnerOrAdmin(req => parseInt(pa
 router.post("/messages", async (req, res) => {
   // 未ログイン（QR打刻ページからのドライバー → 事務所 メッセージ）は元仕様通り公開で受ける。
   // ログイン中は admin/driver それぞれの owner チェックを後続で実施。
-  const { employeeId: bodyEmployeeId, content } = req.body as {
+  const { employeeId: bodyEmployeeId, content: rawContent, attachmentIds: rawIds } = req.body as {
     employeeId?: number;
     sender?: "office" | "employee";
     content?: string;
+    attachmentIds?: unknown;
   };
-
-  if (typeof content !== "string" || !content.trim()) {
+  // 添付だけ（本文なし）でも送れる
+  const attachmentIds = Array.isArray(rawIds) ? [...new Set(rawIds.map(Number).filter((n) => Number.isInteger(n) && n > 0))] : [];
+  if (attachmentIds.length > ATTACH_MAX_PER_MESSAGE) return res.status(400).json({ error: `添付は1回に${ATTACH_MAX_PER_MESSAGE}つまでです` });
+  const content = typeof rawContent === "string" ? rawContent : "";
+  if (!content.trim() && attachmentIds.length === 0) {
     return res.status(400).json({ error: "メッセージ内容が必要です" });
   }
   if (content.length > 2000) {
@@ -309,7 +394,14 @@ router.post("/messages", async (req, res) => {
   const clientId = typeof rawClientId === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(rawClientId) ? rawClientId : null;
   if (clientId) {
     const [dup] = await db.select().from(messagesTable).where(and(eq(messagesTable.employeeId, employeeId), eq(messagesTable.clientId, clientId)));
-    if (dup) return res.status(200).json(dup);
+    if (dup) return res.status(200).json({ ...dup, attachments: (await attachmentsOf([dup.id])).get(dup.id) ?? [] });
+  }
+  // 添付は「この会話に・同じ側が上げて・まだどこにもつながっていない」ものだけ
+  if (attachmentIds.length) {
+    const ok = await db.select({ id: messageAttachmentsTable.id }).from(messageAttachmentsTable).where(and(
+      inArray(messageAttachmentsTable.id, attachmentIds), eq(messageAttachmentsTable.employeeId, employeeId),
+      eq(messageAttachmentsTable.uploadedBy, sender), isNull(messageAttachmentsTable.messageId)));
+    if (ok.length !== attachmentIds.length) return res.status(400).json({ error: "添付が見つかりません。もう一度ファイルを選んでください。" });
   }
 
   let message: typeof messagesTable.$inferSelect;
@@ -329,14 +421,20 @@ router.post("/messages", async (req, res) => {
     throw err;
   }
 
+  if (attachmentIds.length) {
+    await db.update(messageAttachmentsTable).set({ messageId: message.id }).where(inArray(messageAttachmentsTable.id, attachmentIds));
+  }
+  const full = { ...message, attachments: (await attachmentsOf([message.id])).get(message.id) ?? [] };
+
   // SSEでリアルタイム配信
-  broadcastToEmployee(employeeId, { type: "message", message });
+  broadcastToEmployee(employeeId, { type: "message", message: full });
 
   // 先に「送れた」と返し、プッシュ通知はそのあとで送る。
   // 以前は事務所の端末すべてへ送り終わるまで返事をしなかったため、電波の悪い所では
   // 「送れなかった」と思って押し直し、同じメッセージが2回届いていた。
-  res.status(201).json(message);
-  setImmediate(() => { void sendMessagePush(employeeId, sender, content.trim()).catch(() => {}); });
+  res.status(201).json(full);
+  const pushText = content.trim() || (full.attachments.some((a) => a.mime.startsWith("image/")) ? "📎 写真が届きました" : "📎 ファイルが届きました");
+  setImmediate(() => { void sendMessagePush(employeeId, sender, pushText).catch(() => {}); });
   return;
 });
 

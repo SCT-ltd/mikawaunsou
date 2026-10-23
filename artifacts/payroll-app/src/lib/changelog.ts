@@ -9,6 +9,14 @@ export interface Release { date: string; title: string; items: ChangeItem[] }
 
 export const RELEASES: Release[] = [
   {
+    date: "2026-10-23", title: "チャットに写真・PDFを添付",
+    items: [
+      { kind: "new", text: "メッセージに写真とPDFを添付できるようにしました（📎ボタン・1回に4つ・1つ10MBまで）。事務所の画面からも、スタッフの打刻ページからも送れます。スマホではその場でカメラで撮って送れます。" },
+      { kind: "new", text: "届いた写真は押すと大きく表示され、「保存する」で端末に保存できます。PDFは名前を押すと開きます。" },
+      { kind: "improve", text: "写真は送る前にスマホの中で小さくしてから送るので、電波の弱い所でも送りやすくしています（写真・PDFは電波のある所で送ってください）。" },
+    ],
+  },
+  {
     date: "2026-10-23", title: "取引先マスター",
     items: [
       { kind: "new", text: "マスター管理に「取引先マスター」を作りました。荷主・現場・営業所などの名前・住所・電話・担当者を登録できます。" },

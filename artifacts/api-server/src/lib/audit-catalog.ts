@@ -156,6 +156,8 @@ export const SPECS: AuditSpec[] = [
   // ── メッセージ（本文は残さず、文字数だけ） ───────────────────
   { method: "POST", re: /^\/messages$/, category: "メッセージ", driver: true, emp: bodyEmp, label: (req) => (req.session?.userId ? "メッセージを送信" : "事務所へメッセージを送信") },
   { method: "POST", re: /^\/messages\/broadcast$/, category: "メッセージ", label: "一斉にメッセージを送信" },
+  // 添付を上げただけでは残さない（送ったメッセージの記録に「attachmentIds」として残る）
+  { method: "POST", re: /^\/messages\/\d+\/attachments$/, category: "メッセージ", skip: true, label: "" },
   { method: "POST", re: /^\/messages\/\d+\/read$/, category: "メッセージ", skip: true, label: "" },
   { method: "POST", re: /^\/push\/subscribe$/, category: "その他", skip: true, label: "" },
   { method: "POST", re: /^\/alerts\/read(-all)?$/, category: "その他", skip: true, label: "" },

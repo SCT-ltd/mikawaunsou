@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { DaySeparator, jstDay } from "@/components/messages/shared";
+import { AttachButton, AttachmentView, PendingStrip, addPending, uploadAttachment, type Attachment, type PendingFile } from "@/components/messages/attachments";
 import { useParams } from "wouter";
 import { qrKeyFor, isQrKeyError } from "@/lib/qr-key";
 import { playNotificationSound, unlockAudio } from "@/lib/notification-sound";
@@ -28,7 +29,7 @@ interface AttendanceRecord {
 }
 
 interface Employee { id: number; employeeCode: string; name: string; department: string; isOfficeStaff?: boolean }
-interface Message { id: number; employeeId: number; sender: "office" | "employee"; content: string; createdAt: string; pending?: boolean }
+interface Message { id: number; employeeId: number; sender: "office" | "employee"; content: string; createdAt: string; pending?: boolean; attachments?: Attachment[] }
 interface PublicSettings { requireChecklist: boolean; requireAlcohol: boolean; vehicles: string[]; /** 取引先マスターの荷主の名前（日報で選べる） */ shippers?: string[] }
 interface AlcoholToday { items: Array<{ id: number; phase: string; valueMg: number | null; detected: boolean; checkedAt: string }>; lastChecker: string | null; lastMethod: string | null }
 
@@ -158,6 +159,8 @@ export default function DriverPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [msgInput, setMsgInput] = useState("");
   const [msgSending, setMsgSending] = useState(false);
+  /** 送る前の添付（写真・PDF） */
+  const [msgFiles, setMsgFiles] = useState<PendingFile[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [activeTab, setActiveTab] = useState<"attendance" | "messages" | "checklist">("attendance");
   const activeTabRef = useRef(activeTab);
@@ -571,14 +574,28 @@ export default function DriverPage() {
 
   const sendMessage = async () => {
     const content = msgInput.trim();
-    if (!content || msgSending) return;
+    if ((!content && msgFiles.length === 0) || msgSending) return;
     setMsgSending(true);
     setMsgError(null);
+    // 添付は電波のある所でだけ送れる（写真は端末に溜めておかない）。先に1つずつ上げて番号をもらう
+    let attachmentIds: number[] = [];
+    if (msgFiles.length) {
+      if (!navigator.onLine) { setMsgSending(false); setMsgError("写真・PDFは電波のある所で送ってください（文だけなら端末に溜めて後で送れます）。"); return; }
+      try {
+        for (const f of msgFiles) attachmentIds.push((await uploadAttachment(BASE, employeeId, f.file, qrHeaders())).id);
+      } catch (e) {
+        setMsgSending(false);
+        setMsgError(e instanceof Error && e.message ? e.message : "写真・PDFを送れませんでした。電波の良いところでもう一度送ってください。");
+        return;
+      }
+    }
     const clientId = newClientId();
-    const r = await sendOrQueue({ clientId, employeeId, path: "/messages", body: { employeeId, sender: "employee", content }, kind: "message" }, qrHeaders());
+    const r = await sendOrQueue({ clientId, employeeId, path: "/messages", body: { employeeId, sender: "employee", content, ...(attachmentIds.length ? { attachmentIds } : {}) }, kind: "message" }, qrHeaders());
     setMsgSending(false);
     if (r.ok) {
       setMsgInput("");
+      msgFiles.forEach((f) => f.preview && URL.revokeObjectURL(f.preview));
+      setMsgFiles([]);
       const m = r.json as Message;
       setMessages(prev => prev.find(x => x.id === m.id) ? prev : [...prev, m]);
     } else if (r.queued) {
@@ -1316,9 +1333,17 @@ export default function DriverPage() {
                   {!isMe && <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary text-sm font-bold shrink-0 mr-2 mt-1">事</div>}
                   <div className="max-w-[80%]">
                     {!isMe && <p className="text-xs text-muted-foreground mb-1 ml-1">事務所</p>}
+                    {msg.content && (
                     <div className={`px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${isMe ? "bg-primary text-primary-foreground rounded-tr-sm" : "bg-white border shadow-sm rounded-tl-sm"} ${msg.pending ? "opacity-60" : ""}`}>
                       {msg.content}
                     </div>
+                    )}
+                    {(msg.attachments?.length ?? 0) > 0 && (
+                      <div className={`${msg.content ? "mt-1.5" : ""} flex ${isMe ? "justify-end" : "justify-start"}`}>
+                        <AttachmentView items={msg.attachments!} mine={false}
+                          urlOf={(a) => `${BASE}/api/messages/${employeeId}/attachments/${a.id}?x=1${qrQuery()}`} />
+                      </div>
+                    )}
                     <p className={`text-xs text-muted-foreground mt-1 ${isMe ? "text-right mr-1" : "ml-1"}`}>
                       {msg.pending ? "送信待ち" : fmtHM(msg.createdAt)}
                     </p>
@@ -1330,13 +1355,15 @@ export default function DriverPage() {
             <div ref={msgBottomRef} />
           </div>
           {msgError && <div className="px-3 py-2 border-t bg-red-50 text-red-700 text-xs">{msgError}</div>}
+          {msgFiles.length > 0 && <div className="px-3 pt-2 border-t bg-white"><PendingStrip files={msgFiles} onRemove={(key) => setMsgFiles((prev) => { const f = prev.find((x) => x.key === key); if (f?.preview) URL.revokeObjectURL(f.preview); return prev.filter((x) => x.key !== key); })} /></div>}
           <div className="px-3 py-3 border-t bg-white flex gap-2 shrink-0">
+            <AttachButton disabled={msgSending} className="w-12 h-12" onFiles={(list) => { const r = addPending(msgFiles, list); setMsgFiles(r.next); setMsgError(r.error); }} />
             <input type="text" value={msgInput} onChange={e => setMsgInput(e.target.value)}
               onKeyDown={e => e.key === "Enter" && !e.nativeEvent.isComposing && sendMessage()}
               placeholder="事務所にメッセージを送る..."
               className="flex-1 rounded-xl border px-3 py-3 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-primary/30" />
-            <button onClick={sendMessage} disabled={!msgInput.trim() || msgSending}
-              className="bg-primary text-primary-foreground rounded-xl px-5 py-3 text-sm font-semibold disabled:opacity-40 active:scale-95 transition-all">送信</button>
+            <button onClick={sendMessage} disabled={(!msgInput.trim() && msgFiles.length === 0) || msgSending}
+              className="shrink-0 whitespace-nowrap bg-primary text-primary-foreground rounded-xl px-4 py-3 text-sm font-semibold disabled:opacity-40 active:scale-95 transition-all">送信</button>
           </div>
         </div>
       )}

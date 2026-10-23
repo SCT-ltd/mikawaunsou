@@ -8,6 +8,7 @@ import { Conversation, Message } from "@/components/messages/shared";
 import { ConversationList } from "@/components/messages/conversation-list";
 import { ChatView } from "@/components/messages/chat-view";
 import { BroadcastDialog } from "@/components/messages/broadcast-dialog";
+import { addPending, uploadAttachment, type PendingFile } from "@/components/messages/attachments";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -52,6 +53,8 @@ export default function MessagesPage() {
   const [mobileView, setMobileView] = useState<"list" | "chat">("list");
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  /** 送る前の添付 */
+  const [files, setFiles] = useState<PendingFile[]>([]);
   const [sending, setSending] = useState(false);
   const [pushEnabled, setPushEnabled] = useState<boolean | null>(null);
   const [search, setSearch] = useState("");
@@ -223,19 +226,31 @@ export default function MessagesPage() {
   };
 
   const sendMessage = async () => {
-    if (!selectedId || !input.trim() || sending) return;
+    if (!selectedId || (!input.trim() && files.length === 0) || sending) return;
     setSending(true);
     const content = input.trim();
+    const sendingFiles = files;
     setInput("");
     try {
+      // 添付は先に1つずつ上げて番号をもらう
+      let attachmentIds: number[] = [];
+      try {
+        for (const f of sendingFiles) attachmentIds.push((await uploadAttachment(BASE, selectedId, f.file)).id);
+      } catch (e) {
+        setInput(content);
+        toast({ title: "添付を送れませんでした", description: e instanceof Error ? e.message : "", variant: "destructive" });
+        return;
+      }
       const res = await fetch(`${BASE}/api/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ employeeId: selectedId, sender: "office", content }),
+        body: JSON.stringify({ employeeId: selectedId, sender: "office", content, attachmentIds }),
       });
       if (res.ok) {
         const msg = await res.json() as Message;
         setMessages(prev => prev.find(m => m.id === msg.id) ? prev : [...prev, msg]);
+        sendingFiles.forEach((f) => f.preview && URL.revokeObjectURL(f.preview));
+        setFiles([]);
         await fetchConversations();
       } else {
         setInput(content);
@@ -298,6 +313,9 @@ export default function MessagesPage() {
                   onSend={sendMessage}
                   sending={sending}
                   onBack={() => setMobileView("list")}
+                  files={files}
+                  onFiles={(list) => { const r = addPending(files, list); setFiles(r.next); if (r.error) toast({ title: r.error, variant: "destructive" }); }}
+                  onRemoveFile={(key) => setFiles((prev) => { const f = prev.find((x) => x.key === key); if (f?.preview) URL.revokeObjectURL(f.preview); return prev.filter((x) => x.key !== key); })}
                 />
               </div>
             )}

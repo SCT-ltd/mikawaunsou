@@ -14,6 +14,8 @@ export interface Message {
   content: string;
   readAt: string | null;
   createdAt: string;
+  /** 添付（写真・PDF） */
+  attachments?: Array<{ id: number; fileName: string; mime: string; size: number }>;
 }
 
 export interface Conversation {

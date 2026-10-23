@@ -2,6 +2,9 @@ import { useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Send, ArrowLeft } from "lucide-react";
 import { Conversation, Message, Avatar, formatHM, jstDay, DaySeparator } from "./shared";
+import { AttachButton, AttachmentView, PendingStrip, type PendingFile } from "./attachments";
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 export function ChatView({
   conversation,
@@ -11,6 +14,9 @@ export function ChatView({
   onSend,
   sending,
   onBack,
+  files,
+  onFiles,
+  onRemoveFile,
 }: {
   conversation: Conversation | undefined;
   messages: Message[];
@@ -19,6 +25,10 @@ export function ChatView({
   onSend: () => void;
   sending: boolean;
   onBack: () => void;
+  /** 送る前の添付 */
+  files: PendingFile[];
+  onFiles: (f: FileList) => void;
+  onRemoveFile: (key: string) => void;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -74,6 +84,7 @@ export function ChatView({
                   <p className={`text-[11px] text-muted-foreground mb-1 ${isOffice ? "text-right mr-1" : "ml-1"}`}>
                     {isOffice ? "事務所" : name}
                   </p>
+                  {msg.content && (
                   <div className={`px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words ${
                     isOffice
                       ? "bg-primary text-primary-foreground rounded-tr-sm"
@@ -81,6 +92,13 @@ export function ChatView({
                   }`}>
                     {msg.content}
                   </div>
+                  )}
+                  {(msg.attachments?.length ?? 0) > 0 && (
+                    <div className={`${msg.content ? "mt-1.5" : ""} flex ${isOffice ? "justify-end" : "justify-start"}`}>
+                      <AttachmentView items={msg.attachments!} mine={false}
+                        urlOf={(a) => `${BASE}/api/messages/${msg.employeeId}/attachments/${a.id}`} />
+                    </div>
+                  )}
                   <p className={`text-[11px] text-muted-foreground mt-1 amount ${isOffice ? "text-right mr-1" : "ml-1"}`} data-msg-time="">
                     {formatHM(msg.createdAt)}
                   </p>
@@ -94,7 +112,9 @@ export function ChatView({
 
       {/* 入力欄 */}
       <div className="px-3 md:px-4 py-3 border-t bg-card shrink-0">
+        <PendingStrip files={files} onRemove={onRemoveFile} />
         <div className="flex items-end gap-2">
+          <AttachButton onFiles={onFiles} disabled={sending} className="h-[42px] w-[42px]" />
           <textarea
             value={input}
             onChange={(e) => onInputChange(e.target.value)}
@@ -106,11 +126,11 @@ export function ChatView({
             className="flex-1 resize-none rounded-xl border bg-muted/30 px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 max-h-32 overflow-y-auto"
             style={{ minHeight: "42px" }}
           />
-          <Button size="icon" className="h-[42px] w-[42px] rounded-xl shrink-0" onClick={onSend} disabled={!input.trim() || sending}>
+          <Button size="icon" className="h-[42px] w-[42px] rounded-xl shrink-0" onClick={onSend} disabled={(!input.trim() && files.length === 0) || sending} aria-label="送信">
             <Send className="h-4 w-4" />
           </Button>
         </div>
-        <p className="text-[11px] text-muted-foreground mt-1.5 ml-1">Enterで送信 · Shift+Enterで改行</p>
+        <p className="text-[11px] text-muted-foreground mt-1.5 ml-1">Enterで送信 · Shift+Enterで改行 · 📎で写真・PDFを添付（1回に4つ・1つ10MBまで）</p>
       </div>
     </div>
   );

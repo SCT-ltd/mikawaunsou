@@ -114,7 +114,7 @@ export function ConversationList({
                   </div>
                   <p className={`text-xs truncate mt-0.5 ${hasUnread ? "font-semibold text-foreground/80" : "text-muted-foreground"}`}>
                     {conv.latestMessage
-                      ? `${conv.latestMessage.sender === "office" ? "自分: " : ""}${conv.latestMessage.content}`
+                      ? `${conv.latestMessage.sender === "office" ? "自分: " : ""}${conv.latestMessage.content || "📎 添付"}`
                       : "メッセージなし"}
                   </p>
                 </div>
